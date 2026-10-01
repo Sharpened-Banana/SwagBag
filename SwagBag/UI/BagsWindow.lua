@@ -88,6 +88,9 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 	W.state, W.pos, W.view, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, nil, false, false, false
 	W.areaHeld = false
 	W.ClearDropGuard()
+	if SB.Focus then
+		SB.Focus.WindowClosed() -- peeks and closes end with the bag; pins stay until the mode changes (spec 6.1)
+	end
 	SB.Buttons.ReleasePlaceholders(child)
 	SB.Emit("SB_BAGS_CLOSED")
 end, "bags"))
@@ -397,8 +400,17 @@ local function headerLabels(pos)
 		return W.records[bag] and W.records[bag][slot]
 	end) or {}
 	local vendor, labels = H.IsVendor(), {}
+	local F = SB.Focus
+	local focused = F and F.Applies()
 	for i, h in ipairs(pos.headers) do
 		labels[i] = H.Label(SB.Categories.Name(h.id), h.count, h.collapsed, h.overflow, totals[h.id], vendor)
+		-- Only on a header drawn open: a peek or pin whose re-stack still waits shows "+" alone.
+		local o = focused and not h.collapsed and F.OverrideOf(h.id)
+		if o == "peek" then
+			labels[i] = labels[i] .. L.HEADER_PEEK
+		elseif o == "pin" then
+			labels[i] = labels[i] .. L.HEADER_PINNED
+		end
 	end
 	return labels
 end
@@ -586,16 +598,30 @@ end
 -- is anywhere over the items, a header, a placeholder or a gap, so no item slides under the
 -- pointer (ruling W4-13). While such a switch waits, every re-stack waits the same way, so a
 -- header click cannot draw it under the mouse; the click applies with it once the mouse leaves.
+-- area = a section id (a peek, close or pin in a focus mode): the same area hold, but only when
+-- that clicked header itself would move (an earlier change above it still waits); otherwise only
+-- a button that would move holds it, as for any header click.
+local function headerY(pos, id)
+	for _, h in ipairs(pos.headers) do
+		if h.id == id then
+			return h.y
+		end
+	end
+end
+
 function W.Restack(area)
 	if not W.state then
 		return true
 	end
-	area = area == true or W.areaHeld
 	local view = snapshot(W.state, W.EffectiveCollapsed())
 	local pos = SB.Layout.Position(W.state, positionOpts(), view)
+	local wait = area == true or W.areaHeld
+	if not wait and type(area) == "string" and W.pos then
+		wait = headerY(W.pos, area) ~= headerY(pos, area)
+	end
 	local moves = SB.Layout.Moves(W.pos, pos)
-	if (area and (scroll:IsMouseOver() or SB.Adapter.CursorItem())) or anyBusy(moves) then
-		W.areaHeld = area
+	if (wait and (scroll:IsMouseOver() or SB.Adapter.CursorItem())) or anyBusy(moves) then
+		W.areaHeld = wait
 		SB.Debounce("bags.restack", W.RETRY, function()
 			W.Restack(area)
 		end, "bags")
@@ -609,10 +635,51 @@ function W.Restack(area)
 	return true
 end
 
+-- The user's own collapse/expand, saved per character (no focus mode applies).
 function W.ToggleSection(id)
 	local set = W.Collapsed()
 	set[id] = not set[id] or nil
 	W.Restack()
+end
+
+local function flashSection(key, id)
+	W.Flash(L[key]:format(SB.Categories.Name(id)))
+end
+
+-- A left-click on a header. While a focus mode applies it peeks a section drawn collapsed, or
+-- closes one drawn open, for this opening of the bag (AC8.3); with "Keep open until the mode
+-- changes" a peek pins at once. "Collapsed now" is what is drawn (W.view), so a switch that still
+-- waits never turns a close into a peek. The saved collapse state is never written in a mode
+-- (AC8.2); without a mode (or paused) the click collapses or expands as before. Every click in a
+-- mode answers in the title (P2), also when its re-stack waits for the mouse.
+function W.ClickSection(id)
+	local F = SB.Focus
+	local result = F and F.HeaderClick(id, W.view ~= nil and W.view[id] == true)
+	if not result then
+		W.ToggleSection(id)
+		return
+	end
+	W.Restack(id)
+	if result == "close" then
+		flashSection("HEADER_FLASH_CLOSED", id)
+	elseif F.OverrideOf(id) == "pin" then
+		flashSection("HEADER_FLASH_KEPT", id)
+	else
+		flashSection("HEADER_FLASH_PEEK", id)
+	end
+end
+
+-- A right-click on a header while a focus mode applies: keep that section open until the mode
+-- changes, or (a second time) give it back to the mode (spec 6.1 pin). Otherwise a plain click.
+function W.PinSection(id)
+	local F = SB.Focus
+	local result = F and F.Pin(id)
+	if not result then
+		W.ToggleSection(id)
+		return
+	end
+	W.Restack(id)
+	flashSection(result == "pin" and "HEADER_FLASH_KEPT" or "HEADER_FLASH_UNPINNED", id)
 end
 
 -- A full layout moves many buttons, so it waits while an item is on the cursor or the
@@ -740,14 +807,16 @@ function W.DropOnSection(id)
 	return true
 end
 
-SB.SectionHeaders.onClick = function(id)
+SB.SectionHeaders.onClick = function(id, mouseButton)
 	if dropGuard == id then
 		return
 	end
 	if SB.Adapter.CursorItem() then
 		W.DropOnSection(id)
+	elseif mouseButton == "RightButton" then
+		W.PinSection(id)
 	else
-		W.ToggleSection(id)
+		W.ClickSection(id)
 	end
 end
 SB.SectionHeaders.onDrop = function(id)
@@ -760,10 +829,34 @@ W.reflowButton = titleButton(L.BTN_REFLOW, "bags.reflowButton", function()
 	W.Reflow("reflow")
 end, 60)
 W.reflowButton:SetPoint("RIGHT", W.viewButton, "LEFT", -4, 0)
+-- Pause / Resume (spec 6.1): one click stops focus modes for this session (until /reload) and
+-- the title says "Paused"; the next click switches them back on. Chat confirms both (P2).
+function W.TogglePause()
+	local F = SB.Focus
+	if not F then
+		return
+	end
+	if F.IsPaused() then
+		F.Resume()
+		SB.Print(L.MODE_RESUMED)
+	else
+		F.Pause()
+		SB.Print(L.MODE_PAUSED)
+	end
+end
+
+function W.RefreshModeButton()
+	W.modeButton:SetText(SB.Focus and SB.Focus.IsPaused() and L.BTN_RESUME or L.BTN_PAUSE)
+end
+
+W.modeButton = titleButton(L.BTN_PAUSE, "bags.modeButton", function()
+	W.TogglePause()
+end, 64)
+W.modeButton:SetPoint("RIGHT", W.reflowButton, "LEFT", -4, 0)
 W.sortButton = titleButton(L.BTN_SORT, "bags.sortButton", function()
 	W.Sort()
 end, 52)
-W.sortButton:SetPoint("RIGHT", W.reflowButton, "LEFT", -4, 0)
+W.sortButton:SetPoint("RIGHT", W.modeButton, "LEFT", -4, 0)
 
 -- W3-26 parity: the title (and its flashes) ends left of the leftmost SHOWN title button, on one
 -- line. leftmost: a button shown left of Sort ("Bank still open", BankWindow.lua), or nil.
@@ -805,6 +898,7 @@ function W.Open()
 	frame:SetScale(SB.GridLayout.ClampScale(SB.Config.Get("bags.scale")))
 	W.sortPending, W.sortSawUpdate = false, false
 	W.viewButton:SetText(W.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	W.RefreshModeButton()
 	W.RefreshTitle()
 	frame:Show()
 	W.Layout("open")
@@ -970,12 +1064,13 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 	end
 end, "bags"))
 
--- A focus mode switched, or a focus setting changed (Engine/Focus.lua): the title follows at
--- once; the sections re-stack, held back while a button that would move is under the mouse or
--- an item is on the cursor. In the grid view there are no sections, so only the title changes.
--- A closed window picks the state up on its next open.
+-- A focus mode switched, paused or resumed, or a focus setting changed (Engine/Focus.lua): the
+-- title and the Pause button follow at once; the sections re-stack, held back while a button
+-- that would move is under the mouse or an item is on the cursor. In the grid view there are no
+-- sections, so only the title changes. A closed window picks the state up on its next open.
 SB.On("SB_FOCUS_CHANGED", function()
 	W.RefreshTitle()
+	W.RefreshModeButton()
 	if frame:IsShown() and W.state then
 		W.Restack(true)
 	end

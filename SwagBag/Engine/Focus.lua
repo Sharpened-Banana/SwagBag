@@ -18,6 +18,7 @@
 --   Focus.Label() -> text | nil                  "M+", "M+ + Fishing", "Paused" (title, AC8.5)
 --   Focus.Sections(id, raw) -> { category ids }       a mode's section set (settings or default)
 --   Focus.SetSections(id, list) -> bool, Focus.ResetSections(id) -> bool, Focus.SetEnabled(id, on) -> bool
+--   Focus.ListLines() -> { lines }               one chat line per mode (/swagbag mode list)
 -- No announce while paused; Resume recomputes silently (the title and the view change, no chat line).
 -- A view change with the same active set (bank opens, professions arrive) emits and keeps peeks and pins.
 -- The windows hear SB_FOCUS_CHANGED(reason) whenever what is open may have changed: the active set
@@ -390,6 +391,43 @@ function Focus.ResetSections(id)
 	end
 	return true
 end
+
+---------------------------------------------------------------------------
+-- /swagbag mode [pause|resume|list] (spec 10.5). Every form answers (P2).
+---------------------------------------------------------------------------
+local function sectionNames(id)
+	local names = {}
+	for _, sid in ipairs(Focus.Sections(id)) do
+		names[#names + 1] = SB.Categories and SB.Categories.Name(sid) or sid
+	end
+	return #names > 0 and table.concat(names, ", ") or SB.L.REPORT_NONE
+end
+
+function Focus.ListLines()
+	local L, lines = SB.L, {}
+	local active = {}
+	for _, id in ipairs(Focus.active) do
+		active[id] = true
+	end
+	for _, m in ipairs(Focus.MODES) do
+		lines[#lines + 1] = L.MODE_LIST_LINE:format(L[m.name], Focus.IsEnabled(m.id) and L.OVERLAY_ON or L.OVERLAY_OFF,
+			active[m.id] and L.MODE_ACTIVE or "", sectionNames(m.id))
+	end
+	return lines
+end
+
+SB.Slash.Register("mode", SB.L.HELP_MODE, function(arg)
+	local L = SB.L
+	arg = (arg or ""):lower()
+	if arg == "pause" then
+		return Focus.Pause() and L.MODE_PAUSED or L.MODE_ALREADY_PAUSED
+	elseif arg == "resume" then
+		return Focus.Resume() and L.MODE_RESUMED or L.MODE_NOT_PAUSED
+	elseif arg == "list" then
+		return Focus.ListLines()
+	end
+	return L.MODE_STATUS:format(Focus.Label() or L.FOCUS_NONE)
+end, "bags")
 
 -- Any focus setting changed, by a writer above, a character override, a reset or a new Init: the
 -- cached view is stale. Refresh never writes settings, so this cannot loop.
