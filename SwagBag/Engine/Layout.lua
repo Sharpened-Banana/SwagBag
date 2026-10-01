@@ -188,10 +188,24 @@ local function newHasRoom(st, collapsed)
 	return not collapsed[Layout.NEW] and new.size < (new.capacity or st.newRows * st.columns)
 end
 
-local function overflow(st, result)
+-- New's "+N more below" is the size of a set of slot keys, so a slot that arrives again
+-- is not counted twice and one that leaves or is removed stops counting.
+local function overflow(st, result, key)
 	local new = section(st, Layout.NEW)
-	new.overflow = new.overflow + 1
-	result.overflowed = result.overflowed + 1
+	new.overflowKeys = new.overflowKeys or {}
+	if not new.overflowKeys[key] then
+		new.overflowKeys[key] = true
+		new.overflow = new.overflow + 1
+		result.overflowed = result.overflowed + 1
+	end
+end
+
+local function clearOverflow(st, key)
+	local new = section(st, Layout.NEW)
+	if new.overflowKeys and new.overflowKeys[key] then
+		new.overflowKeys[key] = nil
+		new.overflow = new.overflow - 1
+	end
 end
 
 local function applyOne(st, ch, collapsed, result)
@@ -201,6 +215,7 @@ local function applyOne(st, ch, collapsed, result)
 		if not w then
 			append(st, Layout.FREE, { bag = ch.bag, slot = ch.slot })
 			result.moved[#result.moved + 1] = key
+			st.needsReflow = true
 		end
 		return
 	end
@@ -209,8 +224,10 @@ local function applyOne(st, ch, collapsed, result)
 	end
 	local id = w.section
 	if ch.kind == "removed" then
+		clearOverflow(st, key)
 		take(st, key)
 	elseif ch.kind == "left" then
+		clearOverflow(st, key)
 		if id == Layout.FREE or id == Layout.NEW then
 			return
 		end
@@ -224,7 +241,7 @@ local function applyOne(st, ch, collapsed, result)
 		end
 		if id == Layout.FREE then
 			if not newHasRoom(st, collapsed) then
-				overflow(st, result)
+				overflow(st, result, key)
 				return
 			end
 			local _, cell = take(st, key)
@@ -237,7 +254,7 @@ local function applyOne(st, ch, collapsed, result)
 				append(st, Layout.NEW, cell)
 			else
 				append(st, Layout.FREE, cell)
-				overflow(st, result)
+				overflow(st, result, key)
 			end
 		end
 	else
@@ -247,6 +264,8 @@ local function applyOne(st, ch, collapsed, result)
 	result.moved[#result.moved + 1] = key
 end
 
+-- Change tables passed to Apply must not be reused or mutated afterwards: deferred entries
+-- keep references to them.
 function Layout.Apply(st, changes, isBusy, collapsed)
 	collapsed = collapsed or {}
 	local result = { moved = {}, placeholders = 0, overflowed = 0, deferred = 0 }
