@@ -4,7 +4,7 @@
 -- combat is allowed (ruling P9). The window supplies the actions:
 --   Headers.onClick(sectionId)  left-click (collapse/expand, or drop the cursor item)
 --   Headers.onDrop(sectionId)   an item dragged onto the header (AC4.3)
--- Those two are the bags window's. Another window passes its own { onClick, onDrop } as the
+-- Those two are the bags window's. Another window passes its own { onClick, onDrop, window } as the
 -- owner of the headers it acquires, and releases only the headers inside its own frame.
 local _, SB = ...
 
@@ -26,7 +26,6 @@ function H.Label(name, count, collapsed, overflow)
 end
 
 local function create(parent)
-	local Guard = SB.ErrorTrap.Guard
 	local h = CreateFrame("Button", nil, parent)
 	h:SetHeight(H.HEIGHT)
 	h:EnableMouse(true)
@@ -37,22 +36,31 @@ local function create(parent)
 	h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	h.text:SetPoint("LEFT", h, "LEFT", 4, 0)
 	h.text:SetJustifyH("LEFT")
-	h:SetScript("OnClick", Guard("header.click", function(self)
-		local o = owners[self] or H
-		if o.onClick then
-			o.onClick(self.sectionId)
-		end
-	end, "bags"))
-	h:SetScript("OnReceiveDrag", Guard("header.drop", function(self)
-		local o = owners[self] or H
-		if o.onDrop then
-			o.onDrop(self.sectionId)
-		end
-	end, "bags"))
+	-- The ErrorTrap window is the owner's (W3-22, spec P6): an error in a bank header puts the
+	-- bank window, not the bags window, in Safe Mode. No owner window: the bags window.
+	h:SetScript("OnClick", function(self)
+		local o = owners[self]
+		SB.ErrorTrap.Run("header.click", o and o.window or "bags", function()
+			o = o or H
+			if o.onClick then
+				o.onClick(self.sectionId)
+			end
+		end)
+	end)
+	h:SetScript("OnReceiveDrag", function(self)
+		local o = owners[self]
+		SB.ErrorTrap.Run("header.drop", o and o.window or "bags", function()
+			o = o or H
+			if o.onDrop then
+				o.onDrop(self.sectionId)
+			end
+		end)
+	end)
 	return h
 end
 
--- A shown header for sectionId at (x, y) inside parent. owner: optional { onClick, onDrop }.
+-- A shown header for sectionId at (x, y) inside parent. owner: optional { onClick, onDrop,
+-- window } (window: the ErrorTrap window of its scripts, default "bags").
 function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	local h = table.remove(H.pool) or create(parent)
 	h:SetParent(parent)

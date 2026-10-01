@@ -47,6 +47,7 @@ UI/BagsWindow.lua
 UI/SafeModeHooks.lua
 UI/SearchBox.lua
 UI/TinyHost.lua
+UI/GroupView.lua
 UI/BankWindow.lua
 UI/GuildButtons.lua
 UI/GuildBankWindow.lua

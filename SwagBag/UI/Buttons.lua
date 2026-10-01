@@ -39,7 +39,7 @@ function Buttons.SetParentFor(kind, frame)
 				f:SetAllPoints(frame)
 			end
 		end
-	end, "buttons.parent." .. kind, "bags")
+	end, "buttons.parent." .. kind, kind == "bags" and "bags" or "bank")
 end
 
 local function parentFor(kind)
@@ -103,7 +103,7 @@ function Buttons.EnsureCapacity(bag, n)
 			if want then
 				Buttons.EnsureCapacity(bag, want)
 			end
-		end, "buttons.grow." .. bag, "bags")
+		end, "buttons.grow." .. bag, kindOf(bag) == "bags" and "bags" or "bank")
 		return 0
 	end
 	bagFrame(bag)
