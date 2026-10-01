@@ -105,7 +105,162 @@ function M.New(SB)
 		return true, v
 	end
 
+	M.AddContainers(m)
 	return m
+end
+
+-- Fake bags and items. Fixture helpers:
+--   m.AddItem(itemID, { name, classID, subclassID, equipLoc, quality, ilvl, reqLevel,
+--                       maxStack, bind, isCraftingReagent, usable, toy, pending })
+--   m.SetBagSize(bag, n)
+--   m.Put(bag, slot, itemID, count, { link, isLocked, isBound, isWUE, onCooldown,
+--                                    inSet, upgrade, quest, ilvl })
+--   m.Clear(bag, slot)
+function M.AddContainers(m)
+	m.bagIDs = { bags = { 0, 1, 2, 3, 4, 5 }, bank = {}, warband = {} }
+	m.sizes = {}
+	m.slots = {}
+	m.items = {}
+	m.loadRequests = {}
+
+	function m.AddItem(itemID, def)
+		m.items[itemID] = def
+	end
+
+	function m.SetBagSize(bag, n)
+		m.sizes[bag] = n
+		m.slots[bag] = m.slots[bag] or {}
+	end
+
+	function m.Put(bag, slot, itemID, count, extra)
+		local s = extra or {}
+		s.itemID = itemID
+		s.count = count or 1
+		m.slots[bag] = m.slots[bag] or {}
+		m.slots[bag][slot] = s
+	end
+
+	function m.Clear(bag, slot)
+		if m.slots[bag] then
+			m.slots[bag][slot] = nil
+		end
+	end
+
+	local function slotOf(bag, slot)
+		return m.slots[bag] and m.slots[bag][slot]
+	end
+
+	local function itemOf(itemID)
+		return m.items[itemID] or {}
+	end
+
+	function m.GetBagIDs(kind)
+		local out = {}
+		for i, id in ipairs(m.bagIDs[kind] or {}) do
+			out[i] = id
+		end
+		return out
+	end
+
+	function m.NumSlots(bag)
+		return m.sizes[bag] or 0
+	end
+
+	function m.GetSlot(bag, slot)
+		local s = slotOf(bag, slot)
+		if not s then
+			return nil
+		end
+		local it = itemOf(s.itemID)
+		return {
+			bag = bag,
+			slot = slot,
+			itemID = s.itemID,
+			link = s.link or ("item:" .. s.itemID),
+			count = s.count,
+			quality = it.quality,
+			icon = s.itemID,
+			isLocked = s.isLocked == true,
+			isBound = s.isBound == true,
+			name = (not it.pending) and it.name or nil,
+			hasNoValue = false,
+		}
+	end
+
+	function m.GetItemInstant(itemID)
+		local it = m.items[itemID]
+		if not it then
+			return nil
+		end
+		return { itemID = itemID, equipLoc = it.equipLoc or "", icon = itemID, classID = it.classID, subclassID = it.subclassID }
+	end
+
+	function m.GetItemInfo(itemID)
+		local it = m.items[itemID]
+		if not it or it.pending then
+			return nil
+		end
+		return {
+			name = it.name,
+			quality = it.quality,
+			baseIlvl = it.ilvl,
+			reqLevel = it.reqLevel or 0,
+			maxStack = it.maxStack or 1,
+			sellPrice = 0,
+			bind = it.bind or "none",
+			expansionID = 0,
+			isCraftingReagent = it.isCraftingReagent == true,
+		}
+	end
+
+	function m.GetIlvl(bag, slot)
+		local s = slotOf(bag, slot)
+		if not s then
+			return nil
+		end
+		local it = itemOf(s.itemID)
+		if it.pending then
+			return nil
+		end
+		return s.ilvl or it.ilvl
+	end
+
+	function m.IsWarboundUntilEquip(bag, slot)
+		local s = slotOf(bag, slot)
+		return s ~= nil and s.isWUE == true
+	end
+
+	function m.HasUpgradeTrack(bag, slot)
+		local s = slotOf(bag, slot)
+		return s ~= nil and s.upgrade == true
+	end
+
+	function m.IsOnCooldown(bag, slot)
+		local s = slotOf(bag, slot)
+		return s ~= nil and s.onCooldown == true
+	end
+
+	function m.InEquipmentSet(bag, slot)
+		local s = slotOf(bag, slot)
+		return s ~= nil and s.inSet == true
+	end
+
+	function m.IsUsable(itemID)
+		return itemOf(itemID).usable == true
+	end
+
+	function m.IsToy(itemID)
+		return itemOf(itemID).toy == true
+	end
+
+	function m.IsQuestItem(bag, slot)
+		local s = slotOf(bag, slot)
+		return s ~= nil and s.quest == true
+	end
+
+	function m.RequestLoad(itemID)
+		m.loadRequests[#m.loadRequests + 1] = itemID
+	end
 end
 
 return M
