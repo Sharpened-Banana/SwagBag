@@ -164,6 +164,26 @@ describe("SearchBox", function()
 		assert.equal(6, dimCount())
 	end)
 
+	it("a warning is drawn in a different colour from an error", function()
+		open()
+		local function line()
+			local found
+			for _, fs in ipairs(window.frame.created) do
+				if fs.calls.SetWordWrap then
+					found = fs
+				end
+			end
+			return found
+		end
+		SB.Slash.Dispatch("search #potin")
+		local warn = line().calls.SetTextColor
+		assert.truthy(warn)
+		SB.Slash.Dispatch("search boe &")
+		local err = line().calls.SetTextColor
+		assert.truthy(err)
+		assert.falsy(warn[1] == err[1] and warn[2] == err[2] and warn[3] == err[3])
+	end)
+
 	it("a failing keyword does not break the window and reports the problem", function()
 		open()
 		SB.Query.RegisterKeyword({ name = "boom", class = "volatile", eval = function() error("x") end })

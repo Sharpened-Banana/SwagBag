@@ -193,26 +193,35 @@ describe("Query parser", function()
 		assert.equal("SHALLOWER", err101.expected)
 	end)
 
-	it("never throws on any mix of the new syntax (~ || bare levels ranges)", function()
-		local pieces = { "~", "||", "|", "&", "!", "<", ">", "<=", ">=", "=", "1", "99999999999999999999", "5-9", "-", "9-", "-9",
-			"0x10", "1e3", "a", "#", "#x", "(", ")", "\"", "a b", " " }
+	it("never throws on any mix of the new syntax; errors point inside the text", function()
+		local pieces = { "||", "|", "&", "~", "!", "(", ")", "\"", "<", "<=", ">", ">=", "=", "#", "1", "285", "99999999999999999999", "5-9",
+			"9-5", "-", "0x10", "a", "boe", "gear", "potion", "ilvl", "a b", "Ara-Kara", "1-2-3", "x", " " }
 		local seed = 12345
 		local function rnd(n)
-			seed = (seed * 1103515245 + 12345) % 2147483648
+			seed = seed * 16807 % 2147483647 -- Park-Miller, exact in doubles
 			return seed % n + 1
 		end
+		local distinct, nDistinct = {}, 0
 		for _ = 1, 2000 do
 			local parts = {}
 			for i = 1, rnd(8) do
 				parts[i] = pieces[rnd(#pieces)]
 			end
 			local text = table.concat(parts, rnd(2) == 1 and " " or "")
-			local ok = pcall(function()
-				assert.truthy(Lexer.Tokenize(text))
+			if not distinct[text] then
+				distinct[text] = true
+				nDistinct = nDistinct + 1
+			end
+			local ok, ast, err = pcall(function()
+				Lexer.Tokenize(text)
 				return P.Parse(text)
 			end)
 			assert.truthy(ok, text)
+			if ast == nil then
+				assert.truthy(type(err) == "table" and err.position >= 1 and err.position <= #text + 1, text)
+			end
 		end
+		assert.truthy(nDistinct > 1000, "generator is degenerate: " .. nDistinct)
 	end)
 
 	it("allows exactly 100 levels of nesting", function()

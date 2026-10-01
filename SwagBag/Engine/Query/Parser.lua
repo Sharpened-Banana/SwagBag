@@ -1,7 +1,7 @@
 -- SwagBag query parser (spec 7.2). Pure Lua. Precedence: ! > & > | ; parentheses override.
---   or      := and ( "|" and )*
+--   or      := and ( ("|" | "||") and )*
 --   and     := not ( "&" not )*
---   not     := "!" not | primary
+--   not     := ("!" | "~") not | primary
 --   primary := "(" or ")" | STRING | "#" phrase | OP NUMBER | phrase [ OP NUMBER ]
 --   phrase  := WORD+            adjacent words form ONE phrase (spec 7.5 #1)
 -- Syndicator-style item level (spec 7.5 #8), always on the "ilvl" keyword:

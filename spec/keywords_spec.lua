@@ -170,6 +170,27 @@ describe("Keywords (v1.0, week-1 families)", function()
 		end
 	end)
 
+	it("every keyword name and alias is registered exactly once (no silent overwrite)", function()
+		local seen, dupes, count = {}, {}, 0
+		local original = Q.RegisterKeyword
+		Q.RegisterKeyword = function(def)
+			for _, n in ipairs({ def.name, unpack(def.aliases or {}) }) do
+				n = n:lower()
+				count = count + 1
+				if seen[n] then
+					dupes[#dupes + 1] = n
+				end
+				seen[n] = true
+			end
+			return original(def)
+		end
+		Q.ResetKeywords()
+		SB.Keywords.RegisterAll()
+		Q.RegisterKeyword = original
+		assert.same({}, dupes)
+		assert.truthy(count > 50)
+	end)
+
 	it("location keywords and tab=N", function()
 		assert.same({ 1 }, matching("backpack & potion", { 1 }))
 		assert.same({ 1 }, matching("reagentbag", { 1 }, 5))

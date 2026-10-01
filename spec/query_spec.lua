@@ -311,33 +311,60 @@ describe("Query errors, Validate, Pretty, registry", function()
 		end
 		local tooDeep = Q.Compile(string.rep("!", 101) .. "a")
 		assert.equal("SHALLOWER", tooDeep.errors[1].expected)
-		assert.equal("Expected fewer nested ( and ! (at most 100 levels) but found \"!\" at character 101",
+		assert.equal("Expected fewer nested (, ! and ~ (at most 100 levels) but found \"!\" at character 101",
 			Q.FormatError(tooDeep.errors[1]))
 		assert.equal("Put & between a name and a comparison (at character 1)",
 			Q.FormatError(Q.Compile("a b ilvl>5").errors[1]))
 	end)
 
 	it("Compile and Eval never throw on the new syntax, and ~ obeys the depth limit", function()
-		local pieces = { "~", "||", "|", "&", "!", "<", ">", "=", "1", "99999999999999999999", "5-9", "-", "0x10", "boe",
-			"#", "#x", "#potion", "(", ")", "a b", "ilvl>3" }
+		local pieces = { "||", "|", "&", "~", "!", "(", ")", "\"", "<", "<=", ">", ">=", "=", "#", "1", "285", "99999999999999999999", "5-9",
+			"9-5", "-", "0x10", "a", "boe", "gear", "potion", "ilvl", "a b", "Ara-Kara", "1-2-3", "x", " " }
+		local function same(a, b)
+			if type(a) ~= "table" then return a == b end
+			for k, v in pairs(a) do
+				if k ~= "s" and k ~= "e" and not same(v, b[k]) then return false end
+			end
+			for k in pairs(b) do
+				if k ~= "s" and k ~= "e" and a[k] == nil then return false end
+			end
+			return true
+		end
 		local seed = 777
 		local function rnd(n)
-			seed = (seed * 1103515245 + 12345) % 2147483648
+			seed = seed * 16807 % 2147483647 -- Park-Miller, exact in doubles
 			return seed % n + 1
 		end
+		local distinct, nDistinct, parsed = {}, 0, 0
 		for _ = 1, 2000 do
 			local parts = {}
 			for i = 1, rnd(8) do
 				parts[i] = pieces[rnd(#pieces)]
 			end
-			local text = table.concat(parts, " ")
-			local ok = pcall(function()
-				local c = Q.Compile(text)
-				Q.Eval(c, RING)
-				Q.Validate(c)
-			end)
+			local text = table.concat(parts, rnd(2) == 1 and " " or "")
+			if not distinct[text] then
+				distinct[text] = true
+				nDistinct = nDistinct + 1
+			end
+			local ok, c = pcall(Q.Compile, text)
 			assert.truthy(ok, text)
+			for _, rec in ipairs({ RING, POTION, LOADING }) do
+				local okEval, v = pcall(Q.Eval, c, rec)
+				assert.truthy(okEval, text)
+				assert.truthy(v == true or v == false or v == nil, text)
+			end
+			assert.truthy(pcall(Q.Validate, c), text)
+			if c.ast then
+				parsed = parsed + 1
+				local again = Q.Compile(Q.Pretty(c.ast))
+				assert.truthy(again.ast and same(c.ast, again.ast), text)
+			else
+				local e = c.errors[1]
+				assert.truthy(e and e.position >= 1 and e.position <= #text + 1, text)
+			end
 		end
+		assert.truthy(nDistinct > 1000, "generator is degenerate: " .. nDistinct)
+		assert.truthy(parsed > 200, "too few parseable inputs: " .. parsed)
 		local deep = Q.Compile(string.rep("~", 101) .. "a")
 		assert.is_nil(deep.fn)
 		assert.equal("SHALLOWER", deep.errors[1].expected)
