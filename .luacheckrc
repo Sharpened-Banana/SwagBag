@@ -21,7 +21,7 @@ read_globals = {
 	"GetCursorInfo", "ClearCursor", "GameTooltip",
 	"GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink", "QueryGuildBankTab",
 	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
-	"IsModifiedClick", "HandleModifiedItemClick",
+	"IsModifiedClick", "HandleModifiedItemClick", "time", "UnitName", "UnitClass", "UnitLevel",
 	"C_ChallengeMode", "C_PlayerInfo", "GetInventoryItemLink",
 }
 

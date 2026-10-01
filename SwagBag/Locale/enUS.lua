@@ -209,6 +209,21 @@ L.GUILD_ACTION_FAILED = "The guild bank did not accept that click. Try again, or
 L.GUILD_MODE_SAVED_NEXT = "Guild bank: saved; it applies on your next guild bank visit."
 L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
 
+-- Snapshots (spec F13: captured now, shown offline in November)
+L.HELP_SNAPSHOT = "snapshot: show how old this character's saved bags, bank and warband bank are"
+L.SNAPSHOT_LINE = "%s: %s"
+L.SNAPSHOT_BAGS = "Bags"
+L.SNAPSHOT_BANK = "Bank"
+L.SNAPSHOT_WARBAND = "Warband bank"
+L.SNAPSHOT_NEVER = "not saved yet (visit a banker)"
+L.SNAPSHOT_TOTAL = "Saved: %d characters, %d KB in all"
+L.SNAPSHOT_TRIMMED = "Saved bank snapshots went over 1.5 MB; dropped the oldest: %s."
+L.AGE_NOW = "just now"
+L.AGE_MINUTES = "%d min ago"
+L.AGE_HOURS = "%d h ago"
+L.AGE_DAYS = "%d days ago"
+L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
+
 -- Overlays (spec F9)
 L.OVERLAY_TRACK = "%s%d/%d"
 L.BADGE_BOE = "BoE"

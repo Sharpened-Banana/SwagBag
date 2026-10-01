@@ -43,6 +43,21 @@ function A.Date(fmt)
 	return date(fmt)
 end
 
+-- Seconds since the epoch (snapshot stamps).
+function A.Time()
+	return time()
+end
+
+-- "Name-Realm" of the logged-in character (the snapshot key, spec 8.2).
+function A.CharKey()
+	return tostring(UnitName("player")) .. "-" .. tostring(GetRealmName())
+end
+
+function A.CharInfo()
+	local _, class = UnitClass("player")
+	return { class = class, level = UnitLevel("player") }
+end
+
 function A.BuildInfo()
 	local version, build, _, toc = GetBuildInfo()
 	return { version = version, build = build, toc = toc, locale = GetLocale() }

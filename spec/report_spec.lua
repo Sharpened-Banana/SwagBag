@@ -84,6 +84,12 @@ describe("Report", function()
 		assert.truthy(SB.Report.Build():find("\nGuild bank: setting full, last visit view", 1, true))
 	end)
 
+	it("shows the snapshot counts and size, for the spec 8.4 budgets (check V10)", function()
+		SB.Checks.last = {}
+		SB.Snapshots = { Count = function() return 3, 1 end, Bytes = function() return 40 * 1024 end }
+		assert.truthy(SB.Report.Build():find("\nSnapshots: 3 characters, 1 guilds, 40 KB", 1, true))
+	end)
+
 	it("Hash is stable, order-independent and changes with content", function()
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 		local h2 = SB.Report.Hash({ x = "a", bags = { columns = 12 } })
