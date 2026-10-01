@@ -236,6 +236,9 @@ function M.AddContainers(m)
 		local s = extra or {}
 		s.itemID = itemID
 		s.count = count or 1
+		if s.upgrade then
+			m.upgradeLinks[s.link or ("item:" .. itemID)] = true
+		end
 		m.slots[bag] = m.slots[bag] or {}
 		m.slots[bag][slot] = s
 	end
@@ -328,11 +331,11 @@ function M.AddContainers(m)
 	-- Overlays: m.tracks[link] = { track, level, max }; m.dungeons[mapID] = name;
 	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
 	m.tracks, m.dungeons, m.equipped, m.cannotUse, m.pawn = {}, {}, {}, {}, nil
-	-- bag and slot are extra (the real call ignores them): they let a Put(..., { upgrade = true }) slot
-	-- report an upgrade track without sharing it with other slots holding the same link.
-	function m.UpgradeInfo(link, bag, slot)
-		local s = bag and slotOf(bag, slot)
-		return m.tracks[link], m.tracks[link] ~= nil or (s ~= nil and s.upgrade == true)
+	-- m.upgradeLinks[link] = true: the item has an upgrade track but no readable one. Put(..., { upgrade = true })
+	-- sets it for that slot's link, so give such a slot its own link when another slot holds the same item.
+	m.upgradeLinks = {}
+	function m.UpgradeInfo(link)
+		return m.tracks[link], m.tracks[link] ~= nil or m.upgradeLinks[link] == true
 	end
 
 	function m.DungeonName(mapID)

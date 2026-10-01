@@ -1,5 +1,5 @@
--- luacheck: globals GetCursorInfo ClearCursor C_Container
--- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2.
+-- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink
+-- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
 describe("Adapter cursor and sort helpers", function()
 	local A
 	before_each(function()
@@ -38,5 +38,42 @@ describe("Adapter cursor and sort helpers", function()
 		local ok, err = A.SortBags()
 		assert.equal(false, ok)
 		assert.truthy(err)
+	end)
+end)
+
+describe("Adapter.EquippedItems (real adapter, stubbed globals)", function()
+	local A
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+		GetInventoryItemLink = function(_, slot)
+			return (slot == 1 or slot == 2) and ("item:" .. slot) or nil
+		end
+		ItemLocation = { CreateFromEquipmentSlot = function(_, slot) return slot end }
+		C_Item = {
+			GetItemInfoInstant = function(link) return 1, nil, nil, "INVTYPE_HEAD", 0, 4, 0, link end,
+			GetCurrentItemLevel = function(slot)
+				if slot == 2 then
+					error("cannot read")
+				end
+				return 285
+			end,
+		}
+	end)
+
+	after_each(function()
+		GetInventoryItemLink, ItemLocation, C_Item = nil, nil, nil
+	end)
+
+	it("a readable item level is a number; an unreadable one is unknown, not 0; empty slots are absent", function()
+		local out = A.EquippedItems()
+		assert.equal(285, out[1].ilvl)
+		assert.is_nil(out[1].unknown)
+		assert.is_nil(out[2].ilvl)
+		assert.equal(true, out[2].unknown)
+		assert.is_nil(out[3])
+		C_Item.GetCurrentItemLevel = function() return "x" end
+		assert.equal(true, A.EquippedItems()[1].unknown, "not a number")
 	end)
 end)
