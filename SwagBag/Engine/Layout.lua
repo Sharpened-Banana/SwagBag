@@ -18,6 +18,25 @@
 --           placeholders = { {bag, slot, icon, x, y, shown} }, headers = { {id, y, count,
 --           overflow, collapsed} }, width, height }
 -- Layout.Moves(oldPos, newPos) -> keys whose button position changes (hover guard, 4.2 #5)
+-- Layout.Apply(state, changes, isBusy, collapsed) -> result   while the window is open
+--   changes: { { bag, slot, kind, icon } } in order. kind:
+--     "left"    the slot is now empty        "arrived" a different item is now in the slot
+--     "added"   the slot is new (bag grew)   "removed" the slot no longer exists
+--   isBusy(bag, slot) -> true while that button must not move (spec 4.2 rule 5: under the
+--     mouse, or an item on the cursor). Its changes wait in state.deferred, in order, and
+--     the next Apply retries them (the window calls Apply(state, {}) 300 ms later).
+--   result = { moved = { keys }, placeholders = n, overflowed = n, deferred = n }
+-- Transitions (spec 4.3 table):
+--   left    + button in a category section -> placeholder (old icon) in its cell, button to Free's end
+--   left    + button in Free or New        -> stays (repaint only)
+--   arrived + button in a category section -> placeholder in its cell, button to New's next cell
+--   arrived + button in Free               -> to New's next cell; its Free cell becomes a hole
+--   arrived + button in New                -> stays (repaint only)
+--   New full (its reserved rows) or collapsed -> the button goes to Free's end instead (one
+--     already in Free stays put) and New's header counts it ("+N more below")
+--   added -> a new button at Free's end;  removed -> its cell becomes a hole
+-- Nothing else ever moves, so no other button changes position. Any placeholder, move or
+-- hole sets state.needsReflow; the next full Build (close + open, Reflow, sort) clears it.
 local _, SB = ...
 
 local Layout = { NEW = "new", FREE = "free" }
@@ -152,4 +171,100 @@ function Layout.Moves(oldPos, newPos)
 	end
 	table.sort(out)
 	return out
+end
+
+-- Remove a button from its cell (leaving a hole). Returns where it was and the cell.
+local function take(st, key)
+	local w = st.where[key]
+	local sec = st.sections[w.section]
+	local cell = sec.cells[w.index]
+	sec.cells[w.index] = nil
+	st.where[key] = nil
+	return w, cell
+end
+
+local function newHasRoom(st, collapsed)
+	local new = section(st, Layout.NEW)
+	return not collapsed[Layout.NEW] and new.size < (new.capacity or st.newRows * st.columns)
+end
+
+local function overflow(st, result)
+	local new = section(st, Layout.NEW)
+	new.overflow = new.overflow + 1
+	result.overflowed = result.overflowed + 1
+end
+
+local function applyOne(st, ch, collapsed, result)
+	local key = Layout.Key(ch.bag, ch.slot)
+	local w = st.where[key]
+	if ch.kind == "added" then
+		if not w then
+			append(st, Layout.FREE, { bag = ch.bag, slot = ch.slot })
+			result.moved[#result.moved + 1] = key
+		end
+		return
+	end
+	if not w then
+		return
+	end
+	local id = w.section
+	if ch.kind == "removed" then
+		take(st, key)
+	elseif ch.kind == "left" then
+		if id == Layout.FREE or id == Layout.NEW then
+			return
+		end
+		local old, cell = take(st, key)
+		st.sections[id].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
+		result.placeholders = result.placeholders + 1
+		append(st, Layout.FREE, cell)
+	elseif ch.kind == "arrived" then
+		if id == Layout.NEW then
+			return
+		end
+		if id == Layout.FREE then
+			if not newHasRoom(st, collapsed) then
+				overflow(st, result)
+				return
+			end
+			local _, cell = take(st, key)
+			append(st, Layout.NEW, cell)
+		else
+			local old, cell = take(st, key)
+			st.sections[id].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
+			result.placeholders = result.placeholders + 1
+			if newHasRoom(st, collapsed) then
+				append(st, Layout.NEW, cell)
+			else
+				append(st, Layout.FREE, cell)
+				overflow(st, result)
+			end
+		end
+	else
+		return
+	end
+	st.needsReflow = true
+	result.moved[#result.moved + 1] = key
+end
+
+function Layout.Apply(st, changes, isBusy, collapsed)
+	collapsed = collapsed or {}
+	local result = { moved = {}, placeholders = 0, overflowed = 0, deferred = 0 }
+	local queue = st.deferred
+	for _, ch in ipairs(changes or {}) do
+		queue[#queue + 1] = ch
+	end
+	st.deferred = {}
+	local held = {}
+	for _, ch in ipairs(queue) do
+		local key = Layout.Key(ch.bag, ch.slot)
+		if held[key] or (isBusy and isBusy(ch.bag, ch.slot)) then
+			held[key] = true -- later changes of a held slot wait too, so order is kept
+			st.deferred[#st.deferred + 1] = ch
+		else
+			applyOne(st, ch, collapsed, result)
+		end
+	end
+	result.deferred = #st.deferred
+	return result
 end
