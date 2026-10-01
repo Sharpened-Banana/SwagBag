@@ -298,12 +298,13 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 | **Different item arrives** in a slot whose button is in a section | Placeholder at old position; button moves to the next cell of **New**. | Same. |
 | **Item arrives** in a Free slot | Button moves to New. | Same. |
 | **Count changes** | Repaint (`COUNT` reason). | Same. |
+| **Same item, changed link** (keystone level, enchant, gem) | Repaint only; re-categorized at the next open or Reflow. | Same. |
 | **Lock/cooldown changes** | Repaint only. | Same. |
-| **New overflows** its 2 rows | Further arrivals go to the end of Free (never shifting others); header shows "+N more below". | Same. |
+| **New overflows** its 2 rows | Further arrivals go to the end of Free (never shifting others); header shows "+N more below". New's rows are always reserved. | Same. |
 | **Bag size grows** (new bag equipped) | `EnsureCapacity` creates buttons; they appear in Free. | Logged; buttons created on `PLAYER_REGEN_ENABLED`; until then the slot is invisible (acceptable — equipping a bag in combat is not possible anyway). |
 | **Item data loads** (`ITEM_DATA_LOAD_RESULT`) for a pending item | Stays in New; re-categorized for the next layout. | Same. |
 | **Window closes** | Placeholders released; `needsReflow` cleared; the next open does a full layout. | Reflow deferred to `PLAYER_REGEN_ENABLED` plus next open. |
-| **Reflow button / sort button** | Full layout, guarded by rule 5 (retries until cursor is clear). | Allowed (verified), still guarded by rule 5. |
+| **Reflow button / sort button** | Full layout, guarded by rule 5 (retries until cursor is clear). Sort regroups 0.3 s after the last bag update. | Sort is refused with feedback; Reflow is allowed (verified), still guarded by rule 5. |
 | **Placeholder clicked** | Tooltip only. | Tooltip only. |
 
 ### 4.4 Scrolling
@@ -424,7 +425,7 @@ Every built-in mode's section set is editable; "Reset to default" is next to it 
                      "announce mode changes" (default off)
 ```
 
-Applying a mode never moves item buttons. Collapsing a section hides its buttons and placeholders and re-stacks section headers below it; the hover guard still applies (a collapse that would move the hovered button is deferred to `OnLeave`). Re-expanding uses the stored layout, so items return to the same cells.
+Applying a mode never moves a button relative to its own section header; sections below a collapsed one shift as a whole, and the hover guard holds the restack. Collapsing a section hides its buttons and placeholders and re-stacks section headers below it; the hover guard still applies (a collapse that would move the hovered button is deferred to `OnLeave`). Re-expanding uses the stored layout, so items return to the same cells.
 
 ### 6.5 Cost budget
 
@@ -565,6 +566,8 @@ Parse errors return `{position, expected, got}`. The search box underlines the s
 - `SwagBagCharDB` (`## SavedVariablesPerCharacter`): per-character overrides and per-character UI state only (window positions, collapse state, wizard-done flag).
 
 ### 8.2 Schema (v1)
+
+Note: the category fields (`categories`, `categoryOrder`, user edits) arrive in schema 2; the block below shows the overall shape.
 
 ```lua
 SwagBagDB = {
