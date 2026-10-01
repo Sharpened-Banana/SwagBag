@@ -82,20 +82,44 @@ local function on(event, fn)
 	end, "bags")
 end
 
-for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "SCENARIO_UPDATE",
-	"CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET", "ADDON_RESTRICTION_STATE_CHANGED" }) do
+for _, event in ipairs({ "ZONE_CHANGED_NEW_AREA", "SCENARIO_UPDATE",
+	"CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET" }) do
 	on(event, function()
 		Sig.ReadZone()
 	end)
 end
 
-on("UNIT_SPELLCAST_CHANNEL_START", function(_, unit, _, spellID)
+-- A new world (login, loading screen) closes every window: the open-flags cannot outlive it.
+on("PLAYER_ENTERING_WORLD", function()
+	local F = SB.Focus
+	F.signals.merchantOpen, F.signals.auctionOpen, F.signals.bankOpen = false, false, false
+	Sig.ReadZone()
+end)
+
+-- Only the ChallengeMode restriction matters (skipped by SB.On on a client without the event).
+on("ADDON_RESTRICTION_STATE_CHANGED", function(_, kind)
+	if SB.Adapter.IsChallengeModeRestriction(kind) then
+		Sig.ReadZone()
+	end
+end)
+
+-- Player casts only: RegisterUnitEvent keeps other units' casts out of Lua (W4-11); the unit
+-- check stays as a guard.
+local function onPlayer(event, fn)
+	SB.OnUnit(event, "player", function(...)
+		if Sig.ready then
+			fn(...)
+		end
+	end, "bags")
+end
+
+onPlayer("UNIT_SPELLCAST_CHANNEL_START", function(_, unit, _, spellID)
 	if unit == "player" and SB.FocusData.Matches(SB.FocusData.fishing, spellID) then
 		Sig.Fishing()
 	end
 end)
 
-on("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
+onPlayer("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
 	if unit == "player" and type(spellID) == "number" and not SB.Adapter.IsSecret(spellID) then
 		Sig.lastSpell, Sig.lastSpellAt = spellID, SB.Adapter.Now()
 	end

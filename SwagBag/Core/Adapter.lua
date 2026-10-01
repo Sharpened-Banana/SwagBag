@@ -702,7 +702,7 @@ function A.InstanceInfo()
 		return out
 	end
 	local ok, inside, kind = pcall(inInstance)
-	if not ok or not inside or type(kind) ~= "string" or isSecret(kind) or kind == "none" then
+	if not ok or isSecret(inside) or not inside or type(kind) ~= "string" or isSecret(kind) or kind == "none" then
 		return out
 	end
 	out.instanceType = kind
@@ -733,6 +733,16 @@ function A.ChallengeModeActive()
 		end
 	end
 	return nil
+end
+
+-- true when an ADDON_RESTRICTION_STATE_CHANGED payload `kind` is the ChallengeMode restriction.
+-- Without the enum the client cannot tell, so every restriction change counts (the zone is re-read).
+function A.IsChallengeModeRestriction(kind)
+	local E = Enum and Enum.AddOnRestrictionType
+	if not (E and E.ChallengeMode ~= nil) or type(kind) ~= "number" or isSecret(kind) then
+		return true
+	end
+	return kind == E.ChallengeMode
 end
 
 -- true inside a delve: the party API when the client has it, else a scenario at the delve
@@ -800,7 +810,7 @@ function A.GatheringProfessions()
 	local out = {}
 	for _, index in pairs({ first, second }) do
 		local okI, _, _, _, _, _, _, skillLine = pcall(info, index)
-		if okI and GATHER_SKILL_LINES[skillLine] then
+		if okI and type(skillLine) == "number" and not isSecret(skillLine) and GATHER_SKILL_LINES[skillLine] then
 			out[GATHER_SKILL_LINES[skillLine]] = true
 		end
 	end

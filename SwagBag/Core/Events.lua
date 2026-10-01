@@ -1,5 +1,6 @@
 -- SwagBag event bus, out-of-combat queue and debounce.
 --   SB.On(event, fn, window)   fn(event, ...) runs inside ErrorTrap.Run(label, window)
+--   SB.OnUnit(event, unit, fn, window)  like On, for one unit's events only (RegisterUnitEvent)
 --   SB.Emit(event, ...)        dispatch now (used for internal "SB_*" messages)
 --   SB.OutOfCombat(fn, label, window)  run now, or once combat ends (deduped by label)
 --   SB.Debounce(key, delay, fn, window) run fn once, `delay` s after the LAST call
@@ -30,6 +31,37 @@ function SB.On(event, fn, window)
 	list[#list + 1] = { fn = fn, window = window, label = "event:" .. event }
 	return true
 end
+
+-- Unit events (UNIT_SPELLCAST_*): registered for one unit only, so another unit's casts never
+-- reach Lua. A dedicated frame, because a frame's plain registration for the same event would
+-- deliver every unit. Returns false if WoW refused the event.
+local unitHandlers = {} -- event -> list of { fn, window, label }
+local unitFrame = CreateFrame("Frame")
+SB.unitFrame = unitFrame
+
+function SB.OnUnit(event, unit, fn, window)
+	local list = unitHandlers[event]
+	if not list then
+		local ok = pcall(unitFrame.RegisterUnitEvent, unitFrame, event, unit)
+		if not ok then
+			return false
+		end
+		list = {}
+		unitHandlers[event] = list
+	end
+	list[#list + 1] = { fn = fn, window = window, label = "event:" .. event }
+	return true
+end
+
+unitFrame:SetScript("OnEvent", function(_, event, ...)
+	local list = unitHandlers[event]
+	if list then
+		for i = 1, #list do
+			local h = list[i]
+			SB.ErrorTrap.Run(h.label, h.window, h.fn, event, ...)
+		end
+	end
+end)
 
 function SB.Emit(event, ...)
 	local list = handlers[event]

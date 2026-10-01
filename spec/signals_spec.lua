@@ -24,6 +24,7 @@ describe("Signals", function()
 
 	local function fire(event, ...)
 		SB.eventFrame:Fire(event, ...)
+		SB.unitFrame:Fire(event, ...) -- the client delivers per registration; the stub filters by unit
 	end
 
 	local function bagUpdate()
@@ -40,11 +41,75 @@ describe("Signals", function()
 	it("registers every event it listens to", function()
 		for _, e in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "SCENARIO_UPDATE", "CHALLENGE_MODE_START",
 			"CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_RESET", "ADDON_RESTRICTION_STATE_CHANGED",
-			"UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_SUCCEEDED",
 			"LOOT_READY", "SKILL_LINES_CHANGED", "MERCHANT_SHOW", "MERCHANT_CLOSED", "AUCTION_HOUSE_SHOW",
 			"AUCTION_HOUSE_CLOSED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED" }) do
 			assert.truthy(SB.eventFrame.events[e], e)
 		end
+		for _, e in ipairs({ "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_SUCCEEDED" }) do
+			assert.equal("player", SB.unitFrame.unitEvents[e], e)
+			assert.falsy(SB.eventFrame.events[e], e .. " must not be registered for every unit")
+		end
+	end)
+
+	-- Mutation (W4-11): register the spellcast events through SB.On instead of SB.OnUnit.
+	it("W4-11: a nameplate's or party member's cast never reaches the handler", function()
+		local calls = 0
+		SB.OnUnit("UNIT_SPELLCAST_SUCCEEDED", "player", function()
+			calls = calls + 1
+		end, "bags")
+		fire("UNIT_SPELLCAST_SUCCEEDED", "nameplate1", "guid", 2366)
+		fire("UNIT_SPELLCAST_SUCCEEDED", "party1", "guid", 2366)
+		assert.equal(0, calls)
+		fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 2366)
+		assert.equal(1, calls)
+	end)
+
+	-- Mutation: drop the `unit == "player"` part of the handler check AND register through SB.On.
+	it("a party member's gathering spell followed by node loot turns no mode on", function()
+		A.lootSource = "GameObject"
+		fire("UNIT_SPELLCAST_SUCCEEDED", "party1", "guid", 2366)
+		fire("LOOT_READY")
+		assert.same({}, F.Active())
+		assert.same({}, S.recent)
+	end)
+
+	it("ADDON_RESTRICTION_STATE_CHANGED re-reads the zone only for the ChallengeMode restriction", function()
+		local reads = 0
+		local read = S.ReadZone
+		S.ReadZone = function()
+			reads = reads + 1
+			return read()
+		end
+		fire("ADDON_RESTRICTION_STATE_CHANGED", 1, 1)
+		assert.equal(0, reads)
+		fire("ADDON_RESTRICTION_STATE_CHANGED", 2, 1)
+		assert.equal(1, reads)
+	end)
+
+	it("a client without the ADDON_RESTRICTION_STATE_CHANGED event loads Signals without error", function()
+		local files = {}
+		for i = 1, #FILES - 1 do
+			files[i] = FILES[i]
+		end
+		local SB2 = Loader.New(files)
+		Loader.Stub.unknownEvents.ADDON_RESTRICTION_STATE_CHANGED = true
+		local ok, err = pcall(Loader.LoadFile, SB2, "SwagBag/Engine/Signals.lua")
+		assert.truthy(ok, err)
+		assert.falsy(SB2.eventFrame.events.ADDON_RESTRICTION_STATE_CHANGED)
+		assert.truthy(SB2.eventFrame.events.PLAYER_ENTERING_WORLD)
+	end)
+
+	-- Mutation: drop the flag clearing in the PLAYER_ENTERING_WORLD handler.
+	it("a new world (PLAYER_ENTERING_WORLD) clears the vendor, auction house and bank flags", function()
+		fire("MERCHANT_SHOW")
+		fire("AUCTION_HOUSE_SHOW")
+		fire("BANKFRAME_OPENED")
+		assert.same({ "market" }, F.Active())
+		fire("PLAYER_ENTERING_WORLD")
+		assert.same({}, F.Active())
+		assert.equal(false, F.signals.merchantOpen)
+		assert.equal(false, F.signals.auctionOpen)
+		assert.equal(false, F.signals.bankOpen)
 	end)
 
 	it("nothing fires before login: settings are not loaded yet", function()
@@ -273,7 +338,7 @@ describe("Report focus lines", function()
 		A.instance = { instanceType = "party", difficultyID = 8 }
 		A.challengeMode = true
 		SB.eventFrame:Fire("CHALLENGE_MODE_START")
-		SB.eventFrame:Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 3365)
+		SB.unitFrame:Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 3365)
 		SB.eventFrame:Fire("LOOT_READY")
 		local text = SB.Report.Build()
 		assert.truthy(text:find("Focus: M+ (merge); zone party, collapsing yes; M+ yes, keystone yes, delve no, fishing no, "

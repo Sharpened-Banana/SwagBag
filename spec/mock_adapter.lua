@@ -256,6 +256,10 @@ function M.New(SB)
 	function m.ChallengeModeActive()
 		return m.challengeMode
 	end
+	m.restrictionKind = 2 -- the payload value that means ChallengeMode
+	function m.IsChallengeModeRestriction(kind)
+		return kind == m.restrictionKind
+	end
 	function m.InDelve()
 		return m.delve == true
 	end

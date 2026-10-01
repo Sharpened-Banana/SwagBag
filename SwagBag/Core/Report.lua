@@ -128,7 +128,7 @@ function Report.Build()
 			return v and L.REPORT_YES or L.REPORT_NO
 		end
 		lines[#lines + 1] = L.REPORT_FOCUS:format(F.Label() or L.FOCUS_NONE, tostring(SB.Config.Get("focus.resolve")),
-			tostring(s.instanceType or L.REPORT_NONE), tostring(F.Expanded() and L.REPORT_YES or L.REPORT_NO),
+			tostring(s.instanceType or L.REPORT_NONE), yes(F.Expanded()),
 			yes(s.challengeMode), yes(s.keystone), yes(s.delve), yes(s.fishing), yes(s.gathering))
 		local spells = {}
 		for i, id in ipairs(S.recent) do
