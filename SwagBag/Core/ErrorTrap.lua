@@ -34,6 +34,9 @@ end
 
 -- Adopt the saved list (SwagBagDB.errors) as the ring; keeps entries caught earlier.
 function ET.Attach(list)
+	if type(list) ~= "table" then
+		return
+	end
 	for _, entry in ipairs(ET.buffer) do
 		list[#list + 1] = entry
 	end
@@ -92,13 +95,15 @@ function ET.Run(label, window, fn, ...)
 	local r = pack(xpcall(function()
 		return fn(unpack(args, 1, args.n))
 	end, function(err)
-		caught = { message = clean(err), stack = SB.Adapter.Stack() }
+		local okS, st = pcall(SB.Adapter.Stack)
+		caught = { message = clean(err), stack = okS and st or "" }
 		return caught
 	end))
 	if r[1] then
 		return true, unpack(r, 2, r.n)
 	end
-	ET.OnError(label, window, caught.message, caught.stack)
+	caught = caught or { message = "error in error handler", stack = "" }
+	pcall(ET.OnError, label, window, caught.message, caught.stack)
 	return false
 end
 
