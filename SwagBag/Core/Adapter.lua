@@ -52,6 +52,9 @@ end
 function A.Resolve(path)
 	local cur = _G
 	for part in path:gmatch("[^%.]+") do
+		if type(cur) ~= "table" then
+			return nil
+		end
 		local ok, nxt = pcall(function()
 			return cur[part]
 		end)
