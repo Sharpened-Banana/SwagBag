@@ -88,6 +88,7 @@ L.REPORT_LAYOUT = "Last bags layout: %.1f ms (%s)"
 
 -- Bags window
 L.BAGS_TITLE = "SwagBag"
+L.BAGS_TITLE_ILVL = "SwagBag — ilvl %.1f"
 L.BAGS_SCALE = "SwagBag %d%%"
 L.VIEW_TO_GRID = "Grid"
 L.VIEW_TO_SECTIONS = "Categories"
@@ -205,6 +206,15 @@ L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
 L.OVERLAY_TRACK = "%s%d/%d"
 L.BADGE_BOE = "BoE"
 L.BADGE_WUE = "WuE"
+L.OVERLAY_KEYSTONE = "+%d"
+L.OVERLAY_ON = "on"
+L.OVERLAY_OFF = "off"
+L.HELP_OVERLAYS = "overlays [name on|off]: list or switch item overlays (ilvl, track, upgrade, keystone, junk, bind, pawn)"
+	.. " and the item level in the bags title (title)"
+L.OVERLAYS_STATE = "Overlays: %s"
+L.OVERLAYS_SET = "Overlay %s is now %s."
+L.OVERLAYS_USAGE = "Use /swagbag overlays, or /swagbag overlays <ilvl|track|upgrade|keystone|junk|bind|pawn|title> <on|off>."
+L.OVERLAYS_NO_PAWN = "Pawn is not loaded, so the item-level rule still decides the upgrade arrow."
 
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"

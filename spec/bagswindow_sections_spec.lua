@@ -6,6 +6,7 @@ local Fixtures = dofile("spec/fixtures/items.lua")
 
 local FILES = {
 	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
+	"SwagBag/Core/Slash.lua", "SwagBag/Engine/OverlayData.lua",
 	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Inventory.lua", "SwagBag/Engine/GridLayout.lua",
 	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
@@ -117,6 +118,7 @@ describe("BagsWindow category view", function()
 		SB.Buttons = B
 		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
 		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/Overlays.lua")
 		W = SB.BagsWindow
 		SB.Emit("SB_LOGIN")
 	end)
@@ -385,6 +387,30 @@ describe("BagsWindow category view", function()
 		assert.same({ 4, -24 }, at(0, 10), "first cell of New")
 		assert.equal("- New (1)", header("new").text.text)
 		assert.equal(0, #B.placeholders, "it came from Free: no placeholder")
+	end)
+
+	it("bag items get their overlays; an empty reagent-bag slot is tinted in Free", function()
+		A.SetBagSize(5, 2)
+		SB.Inventory.ScanAll()
+		W.Open()
+		local ring = SB.Overlays.regions[B.Get(0, 3)]
+		assert.same({ "285", "BoE" }, { ring.topLeft.text, ring.bind.text })
+		assert.truthy(SB.Overlays.regions[B.Get(5, 1)].reagent.shown)
+		assert.is_nil(SB.Overlays.regions[B.Get(0, 16)], "an ordinary empty slot gets nothing")
+		A.Clear(0, 3)
+		bagUpdate()
+		assert.equal("", ring.topLeft.text, "the emptied slot's overlays are cleared")
+	end)
+
+	it("an item whose data loads while open gets its overlays at once (it moves only on the next open)", function()
+		W.Open()
+		A.Put(0, 10, Fixtures.UNLOADED, 1)
+		bagUpdate()
+		assert.equal("", SB.Overlays.regions[B.Get(0, 10)].topLeft.text)
+		A.items[Fixtures.UNLOADED] = { name = "Robe", classID = A.ITEM_CLASS.Armor, subclassID = 0, quality = 3,
+			equipLoc = "INVTYPE_CHEST", ilvl = 280, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
+		assert.equal("280", SB.Overlays.regions[B.Get(0, 10)].topLeft.text)
 	end)
 
 	it("a stack count change only repaints", function()

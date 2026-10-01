@@ -92,18 +92,51 @@ end, "bags"))
 -- Title feedback, position and scale
 ---------------------------------------------------------------------------
 local titleToken = 0
+local flashing = false
 
--- Show text in the title for 1.5 s (feedback for header buttons and scaling, P2).
+-- The title at rest: "SwagBag — ilvl 279.4" (the average item level the character wears,
+-- one decimal) while bags.showIlvl is on and the client answers; otherwise "SwagBag" (D18).
+function W.Title()
+	if SB.Config.Get("bags.showIlvl") then
+		local ilvl = SB.Adapter.EquippedItemLevel()
+		if ilvl then
+			return L.BAGS_TITLE_ILVL:format(ilvl)
+		end
+	end
+	return L.BAGS_TITLE
+end
+
+-- Shows the resting title, unless a flash is up (the flash puts the resting title back).
+function W.RefreshTitle()
+	if not flashing then
+		frame.title:SetText(W.Title())
+	end
+end
+
+-- Show text in the title for 1.5 s (feedback for header buttons and scaling, P2), then
+-- the resting title.
 function W.Flash(text)
 	titleToken = titleToken + 1
 	local token = titleToken
+	flashing = true
 	frame.title:SetText(text)
 	SB.Adapter.After(1.5, Guard("bags.flash", function()
 		if token == titleToken then
-			frame.title:SetText(L.BAGS_TITLE)
+			flashing = false
+			frame.title:SetText(W.Title())
 		end
 	end, "bags"))
 end
+
+-- A gear swap changes the item level in the title. SB.On skips an event the client does
+-- not know, so a missing PLAYER_AVG_ITEM_LEVEL_UPDATE costs nothing.
+local function itemLevelChanged()
+	if frame:IsShown() then
+		W.RefreshTitle()
+	end
+end
+SB.On("PLAYER_EQUIPMENT_CHANGED", itemLevelChanged, "bags")
+SB.On("PLAYER_AVG_ITEM_LEVEL_UPDATE", itemLevelChanged, "bags")
 
 function W.RestorePosition()
 	local p = SB.Config.UI().positions.bags
@@ -228,6 +261,13 @@ local function bagList()
 	return list
 end
 
+-- Overlays (spec F9) follow the record; an empty reagent-bag slot gets its Free cue.
+local function overlay(bag, slot)
+	if SB.Overlays then
+		SB.Overlays.Apply(SB.Buttons.Get(bag, slot), W.records[bag] and W.records[bag][slot], bag)
+	end
+end
+
 local function describe(bag, slot)
 	W.records[bag] = W.records[bag] or {}
 	local record = SB.Items.Describe(bag, slot)
@@ -235,6 +275,7 @@ local function describe(bag, slot)
 		record.icon = (SB.Adapter.GetItemInstant(record.itemID) or {}).icon
 	end
 	W.records[bag][slot] = record
+	overlay(bag, slot)
 	return record
 end
 
@@ -247,6 +288,7 @@ local function refreshRecord(bag, slot)
 	if old and fresh and fresh.itemID == old.itemID then
 		fresh.icon = fresh.icon or old.icon
 		W.records[bag][slot] = fresh
+		overlay(bag, slot)
 	end
 end
 
@@ -586,6 +628,7 @@ function W.Open()
 	frame:SetScale(SB.GridLayout.ClampScale(SB.Config.Get("bags.scale")))
 	W.sortPending, W.sortSawUpdate = false, false
 	W.viewButton:SetText(W.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	W.RefreshTitle()
 	frame:Show()
 	W.Layout("open")
 	return true

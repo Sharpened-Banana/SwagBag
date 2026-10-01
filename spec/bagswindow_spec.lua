@@ -158,6 +158,53 @@ describe("BagsWindow", function()
 		assert.equal(SB.L.BAGS_TITLE, W.frame.title.text)
 	end)
 
+	it("the title shows the average equipped item level with one decimal (D18)", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		assert.equal("SwagBag — ilvl 279.4", W.frame.title.text)
+	end)
+
+	it("the item level in the title follows gear swaps while open, and is read again on open", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		A.avgIlvl = 281.06
+		SB.eventFrame:Fire("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+		assert.equal("SwagBag — ilvl 281.1", W.frame.title.text)
+		A.avgIlvl = 283
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 1)
+		assert.equal("SwagBag — ilvl 283.0", W.frame.title.text)
+		W.frame:Hide()
+		A.avgIlvl = 284.5
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 1)
+		assert.equal("SwagBag — ilvl 283.0", W.frame.title.text, "closed: nothing is read")
+		W.Open()
+		assert.equal("SwagBag — ilvl 284.5", W.frame.title.text)
+	end)
+
+	it("a flash keeps the title until it ends, then the item-level title comes back up to date", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		W.SetScale(0.5)
+		A.avgIlvl = 280.02
+		SB.eventFrame:Fire("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+		assert.equal("SwagBag 50%", W.frame.title.text, "the flash is not cut short")
+		A.Advance(1.5)
+		assert.equal("SwagBag — ilvl 280.0", W.frame.title.text)
+	end)
+
+	it("no item level from the client, or bags.showIlvl off: the plain title, no error", function()
+		A.avgIlvl = nil
+		W.Open()
+		assert.equal("SwagBag", W.frame.title.text)
+		SB.eventFrame:Fire("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+		assert.equal("SwagBag", W.frame.title.text)
+		assert.equal(0, #SB.ErrorTrap.Recent())
+		A.avgIlvl = 279.44
+		SB.Config.Set("bags.showIlvl", false)
+		W.RefreshTitle()
+		assert.equal("SwagBag", W.frame.title.text)
+	end)
+
 	it("Ctrl+wheel changes the scale and plain wheel scrolls", function()
 		A.sizes[0] = 160
 		W.Open()
