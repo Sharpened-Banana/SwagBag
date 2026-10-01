@@ -13,7 +13,7 @@
 --   isCraftingReagent boolean | nil (nil while loading)
 --   isBound, isWUE, isLocked, onCooldown, inEquipmentSet, hasUpgradeTrack,
 --   isUsable, isToy, isQuestItem, isKeystone, isCagedPet, isNew    booleans
---   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"
+--   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"|"guild"
 --   tab             bank tab number (1-based) | nil
 --   track           { track, level, max } upgrade track | nil (overlays)
 --   hasNoValue      boolean: a vendor pays nothing for it
@@ -82,6 +82,60 @@ function Items.Describe(bag, slot)
 		if inv then
 			inv.MarkPending(s.itemID)
 		end
+	end
+	return r
+end
+
+-- A record for an item that is not in a container slot (a guild bank slot), built from its
+-- link: info = Adapter.GuildSlot result { itemID, link, count, icon, quality, isLocked }.
+-- bag is the caller's slot key (guild tab N uses bag 100 + N); location is "guild". Guild
+-- bank items are never bound, never on cooldown and never new.
+function Items.DescribeLink(info, bag, slot, tab)
+	local A = SB.Adapter
+	local inst = A.GetItemInstant(info.itemID) or {}
+	local data = A.GetItemInfo(info.itemID)
+	local link = info.link or ""
+	local r = {
+		bag = bag,
+		slot = slot,
+		itemID = info.itemID,
+		link = info.link,
+		count = info.count or 1,
+		icon = info.icon,
+		quality = info.quality,
+		classID = inst.classID,
+		subclassID = inst.subclassID,
+		equipLoc = inst.equipLoc or "",
+		isBound = false,
+		isLocked = info.isLocked == true,
+		isWUE = false,
+		onCooldown = false,
+		inEquipmentSet = false,
+		hasUpgradeTrack = false,
+		track = A.UpgradeInfo(info.link),
+		hasNoValue = false,
+		isUsable = A.IsUsable(info.itemID),
+		isToy = A.IsToy(info.itemID),
+		isQuestItem = inst.classID == A.ITEM_CLASS.Questitem,
+		isKeystone = link:find("keystone:", 1, true) ~= nil,
+		isCagedPet = link:find("battlepet:", 1, true) ~= nil,
+		isNew = false,
+		location = "guild",
+		tab = tab,
+		pending = data == nil,
+	}
+	if data then
+		r.name = data.name
+		if r.quality == nil then
+			r.quality = data.quality
+		end
+		r.reqLevel = data.reqLevel
+		r.maxStack = data.maxStack
+		r.bind = data.bind
+		r.isCraftingReagent = data.isCraftingReagent
+		r.ilvl = A.GetLinkIlvl(info.link) or data.baseIlvl
+	else
+		A.RequestLoad(info.itemID)
 	end
 	return r
 end

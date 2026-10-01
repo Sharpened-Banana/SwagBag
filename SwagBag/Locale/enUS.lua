@@ -183,7 +183,7 @@ L.REPORT_BANK_LAYOUT = "Last bank layout: %.1f ms (%s)"
 L.GUILD_TITLE = "SwagBag guild bank"
 L.GUILD_TAB_N = "Tab %d"
 L.GUILD_DEPOSITS_TO = "Deposits go to %s - switch with the tabs on the right"
-L.GUILD_TAB_HEADER = "%s - %s"
+L.GUILD_TAB_LABEL = "%s %s (%d) - %s"
 L.GUILD_WITHDRAW_LEFT = "%d withdrawals left today"
 L.GUILD_WITHDRAW_UNLIMITED = "unlimited withdrawals"
 L.GUILD_WITHDRAW_NONE = "no withdrawals left today"
@@ -208,6 +208,8 @@ L.GUILD_ANYTAB_OFF = "Guild bank: a right-click withdraws only from the selected
 L.GUILD_ACTION_FAILED = "The guild bank did not accept that click. Try again, or use Blizzard guild bank."
 L.GUILD_MODE_SAVED_NEXT = "Guild bank: saved; it applies on your next guild bank visit."
 L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
+L.GUILD_VIEW_GRID = "SwagBag guild bank - grid view"
+L.GUILD_VIEW_SECTIONS = "SwagBag guild bank - category view"
 
 -- Snapshots (spec F13: captured now, shown offline in November)
 L.HELP_SNAPSHOT = "snapshot: show how old this character's saved bags, bank and warband bank are"

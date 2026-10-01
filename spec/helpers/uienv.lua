@@ -50,4 +50,17 @@ function Env.LoadBank(SB)
 	return SB.BankWindow
 end
 
+-- Load the guild bank window (and the UI files it uses) into SB. Fake.Install() must have run.
+function Env.LoadGuild(SB)
+	if not SB.BagsWindow then
+		Env.FakeBags(SB)
+	end
+	for _, path in ipairs({ "SwagBag/Engine/Snapshots.lua", "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua",
+		"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/GuildButtons.lua",
+		"SwagBag/UI/GuildBankWindow.lua" }) do
+		Loader.LoadFile(SB, path)
+	end
+	return SB.GuildBankWindow
+end
+
 return Env
