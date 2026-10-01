@@ -27,25 +27,38 @@ local function say(feedback)
 	end
 end
 
--- Dispatch runs inside SlashCmdList.SWAGBAG's ErrorTrap wrapper; callers must use the entry point.
-function Slash.Dispatch(msg)
+-- Run one command line ("free tile") the way the chat command would, but return its feedback
+-- instead of printing it: ok, feedback (a string, a list of strings, or nil for "Done."). The
+-- settings window uses this so a choice there does exactly what the command does (P2). The
+-- command runs under its own Safe Mode window (Register's window argument).
+function Slash.Run(line)
 	local L = SB.L
-	local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
+	local cmd, rest = (line or ""):match("^%s*(%S*)%s*(.-)%s*$")
 	cmd = cmd:lower()
-	if cmd == "" then
-		SB.Print(L.NO_SETTINGS_YET)
-		return
-	end
 	local c = Slash.commands[cmd]
 	if not c then
-		SB.Print(L.UNKNOWN_COMMAND:format(cmd))
-		return
+		return false, L.UNKNOWN_COMMAND:format(cmd)
 	end
 	local ok, feedback = SB.ErrorTrap.Run("slash:" .. cmd, c.window, c.fn, rest)
 	if not ok then
-		SB.Print(L.CMD_FAILED)
+		return false, L.CMD_FAILED
+	end
+	return true, feedback
+end
+
+-- Dispatch runs inside SlashCmdList.SWAGBAG's ErrorTrap wrapper; callers must use the entry point.
+-- A bare /swagbag runs Slash.onEmpty (the settings window) when one is set (spec 10.5). Every
+-- other line goes through Slash.Run, so the parse, lookup and trap logic exists once.
+function Slash.Dispatch(msg)
+	if (msg or ""):match("^%s*$") then
+		if Slash.onEmpty then
+			say(Slash.onEmpty())
+		else
+			SB.Print(SB.L.NO_SETTINGS_YET)
+		end
 		return
 	end
+	local _, feedback = Slash.Run(msg)
 	say(feedback)
 end
 

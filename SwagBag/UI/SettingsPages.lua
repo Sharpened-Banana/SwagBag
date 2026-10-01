@@ -1,0 +1,141 @@
+-- SwagBag settings pages: Bags, Bank & guild bank, Overlays (spec F15, AC15.2). Every row shows
+-- the opinionated default first and its alternative next to it (P1). A choice that has a chat
+-- command runs that command (SB.Slash.Run), so the window and the command can never disagree;
+-- the rest set their setting here. Every choice answers in the status line (P2), and refuses
+-- with L.SETTINGS_READONLY while the settings are read-only (a newer schema).
+local _, SB = ...
+
+local L = SB.L
+local SW = SB.SettingsWindow
+
+-- Run a chat command and hand back its feedback.
+local function run(line)
+	local ok, feedback = SB.Slash.Run(line)
+	if not ok then
+		return L.SETTINGS_FAILED -- recorded under the command's own label; the status line says so (W4-7)
+	end
+	return feedback
+end
+
+local function get(path)
+	return function()
+		return SB.Config.Get(path)
+	end
+end
+
+local function onOff(label, path, command)
+	return { kind = "choice", label = label, get = get(path),
+		choices = { { value = true, text = L.SET_ON }, { value = false, text = L.SET_OFF } },
+		apply = function(v)
+			return run(command .. (v and " on" or " off"))
+		end }
+end
+
+-- Bags --------------------------------------------------------------------
+local function bagsRows()
+	local W = SB.BagsWindow
+	return {
+		{ kind = "choice", label = L.SET_VIEW, get = function()
+			return W.View()
+		end, choices = { { value = "sections", text = L.VIEW_TO_SECTIONS }, { value = "grid", text = L.VIEW_TO_GRID } },
+		apply = function(v)
+			if SB.Config.readOnly then
+				return L.SETTINGS_READONLY
+			end
+			W.SetView(v)
+			return v == "grid" and L.VIEW_GRID or L.VIEW_SECTIONS
+		end },
+		{ kind = "choice", label = L.SET_COLUMNS, get = get("bags.columns"), width = 56,
+			choices = { { value = 12, text = tostring(12) }, { value = 10, text = tostring(10) },
+				{ value = 14, text = tostring(14) }, { value = 16, text = tostring(16) } },
+			apply = function(v)
+				if not SB.Config.Set("bags.columns", v) then
+					return L.SETTINGS_READONLY
+				end
+				W.RequestLayout("columns")
+				return L.SET_COLUMNS_DONE:format(v)
+			end },
+		{ kind = "choice", label = L.SET_SCALE, get = get("bags.scale"), width = 56,
+			choices = { { value = 1.0, text = L.SET_PERCENT:format(100) }, { value = 0.8, text = L.SET_PERCENT:format(80) },
+				{ value = 0.9, text = L.SET_PERCENT:format(90) }, { value = 1.1, text = L.SET_PERCENT:format(110) },
+				{ value = 1.25, text = L.SET_PERCENT:format(125) } },
+			apply = function(v)
+				if SB.Config.readOnly then
+					return L.SETTINGS_READONLY
+				end
+				W.SetScale(v)
+				return L.BAGS_SCALE:format(math.floor(v * 100 + 0.5))
+			end },
+		{ kind = "choice", label = L.SET_FREE, get = get("bags.freeTile"),
+			choices = { { value = true, text = L.SET_FREE_TILE }, { value = false, text = L.SET_FREE_ALL } },
+			apply = function(v)
+				return run(v and "free tile" or "free all")
+			end },
+		{ kind = "choice", label = L.SET_REAGENTS, get = get("bags.reagentSeparate"),
+			choices = { { value = false, text = L.SET_REAGENTS_MIXED }, { value = true, text = L.SET_REAGENTS_OWN } },
+			apply = function(v)
+				if not SB.Config.Set("bags.reagentSeparate", v) then
+					return L.SETTINGS_READONLY
+				end
+				SB.Categories.Load()
+				W.RequestLayout("reagents")
+				return v and L.SET_REAGENTS_OWN_DONE or L.SET_REAGENTS_MIXED_DONE
+			end },
+		onOff(L.SET_TITLE_ILVL, "bags.showIlvl", "overlays title"),
+	}
+end
+
+-- Bank and guild bank -----------------------------------------------------
+local function bankRows()
+	return {
+		{ kind = "choice", label = L.SET_BANK_FRAME, get = get("bank.blizzardFrame"),
+			choices = { { value = "tiny", text = L.SET_BANK_TINY }, { value = "beside", text = L.SET_BANK_BESIDE } },
+			apply = function(v)
+				return run("bank " .. v)
+			end },
+		{ kind = "choice", label = L.SET_GUILD_MODE, get = get("guildBank.mode"),
+			choices = { { value = "full", text = L.SET_GUILD_FULL }, { value = "view", text = L.SET_GUILD_VIEW } },
+			apply = function(v)
+				return run("guild " .. v)
+			end },
+		{ kind = "choice", label = L.SET_GUILD_ANYTAB, get = get("guildBank.withdrawAnyTab"),
+			choices = { { value = false, text = L.SET_GUILD_SELECTED }, { value = true, text = L.SET_GUILD_ANY } },
+			apply = function(v)
+				return run("guild anytab " .. (v and "on" or "off"))
+			end },
+		{ kind = "choice", label = L.SET_TOTALS, get = get("prices.headerTotals"),
+			choices = { { value = true, text = L.SET_SHOW }, { value = false, text = L.SET_HIDE } },
+			apply = function(v)
+				if not SB.Config.Set("prices.headerTotals", v) then
+					return L.SETTINGS_READONLY
+				end
+				SB.Emit("SB_PRICES_CHANGED") -- open windows re-read their header texts in place
+				return v and L.SET_TOTALS_ON or L.SET_TOTALS_OFF
+			end },
+		{ kind = "note", label = L.SET_BANK_NOTE },
+	}
+end
+
+-- Overlays ----------------------------------------------------------------
+local OVERLAYS = {
+	{ "ilvl", "overlays.ilvl", L.SET_OV_ILVL }, { "track", "overlays.track", L.SET_OV_TRACK },
+	{ "upgrade", "overlays.upgrade", L.SET_OV_UPGRADE }, { "keystone", "overlays.keystone", L.SET_OV_KEYSTONE },
+	{ "junk", "overlays.junk", L.SET_OV_JUNK }, { "bind", "overlays.bind", L.SET_OV_BIND },
+}
+
+local function overlayRows()
+	local rows = {}
+	for _, o in ipairs(OVERLAYS) do
+		rows[#rows + 1] = onOff(o[3], o[2], "overlays " .. o[1])
+	end
+	rows[#rows + 1] = { kind = "choice", label = L.SET_OV_PAWN, get = get("overlays.usePawn"),
+		choices = { { value = false, text = L.SET_PAWN_ILVL }, { value = true, text = L.SET_PAWN_PAWN } },
+		apply = function(v)
+			return run("overlays pawn " .. (v and "on" or "off"))
+		end }
+	return rows
+end
+
+SW.AddPage({ id = "bags", title = L.SET_PAGE_BAGS, rows = bagsRows })
+SW.AddPage({ id = "bank", title = L.SET_PAGE_BANK, rows = bankRows })
+SW.AddPage({ id = "overlays", title = L.SET_PAGE_OVERLAYS, rows = overlayRows })
