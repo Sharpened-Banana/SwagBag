@@ -4,7 +4,7 @@ local Fixtures = dofile("spec/fixtures/items.lua")
 
 -- Permissive fake frame; remembers text, shown state, scripts and hooks.
 local function newFake()
-	local f = { shown = true, text = "", hooks = {}, points = {} }
+	local f = { shown = true, text = "", hooks = {}, points = {}, calls = {} }
 	return setmetatable(f, {
 		__index = function(_, name)
 			if name == "SetText" then
@@ -29,9 +29,20 @@ local function newFake()
 			elseif name == "GetTextInsets" then
 				return function() return 16 end
 			elseif name == "CreateFontString" or name == "CreateTexture" then
-				return function() return newFake() end
+				return function(self)
+					local fs = newFake()
+					local list = rawget(self, "created")
+					if not list then
+						list = {}
+						rawset(self, "created", list)
+					end
+					list[#list + 1] = fs
+					return fs
+				end
 			end
-			return function() end
+			return function(self, ...)
+				self.calls[name] = { ... }
+			end
 		end,
 	})
 end
@@ -141,5 +152,16 @@ describe("SearchBox", function()
 		SB.Slash.Dispatch("search boom")
 		assert.equal(SB.L.SEARCH_EVAL_FAILED, printed[1])
 		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+	it("the search error line wraps to two lines instead of being cut off", function()
+		local errorLine
+		for _, fs in ipairs(window.frame.created) do
+			if fs.calls.SetWordWrap then
+				errorLine = fs
+			end
+		end
+		assert.truthy(errorLine)
+		assert.equal(true, errorLine.calls.SetWordWrap[1])
+		assert.equal(2, errorLine.calls.SetMaxLines[1])
 	end)
 end)
