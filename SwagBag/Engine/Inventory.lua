@@ -117,8 +117,8 @@ function Inv.Flush(source)
 			all[#all + 1] = c
 		end
 	end
-	Inv.lastFlush = source
 	if mask ~= 0 then
+		Inv.lastFlush = source
 		Inv.Notify(mask, all)
 	end
 end
@@ -196,8 +196,11 @@ function Inv.Iterate(kind)
 	end
 end
 
-local function onItemLoaded(_, itemID)
+local function onItemLoaded(_, itemID, success)
 	if not Inv.pending[itemID] then
+		return
+	end
+	if success == false then
 		return
 	end
 	Inv.pending[itemID] = nil
