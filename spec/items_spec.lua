@@ -89,6 +89,19 @@ describe("Items.Describe", function()
 		assert.same({ Fixtures.UNLOADED }, pending)
 	end)
 
+	it("RefreshVolatile re-reads cooldown, usability and new without a full describe", function()
+		local r = Items.Describe(0, 2)
+		assert.equal(true, r.onCooldown)
+		assert.equal(true, r.isUsable)
+		A.slots[0][2].onCooldown = false
+		A.items[Fixtures.FLASK].usable = false
+		SB.Inventory = { IsNew = function() return true end }
+		assert.equal(r, Items.RefreshVolatile(r))
+		assert.equal(false, r.onCooldown)
+		assert.equal(false, r.isUsable)
+		assert.equal(true, r.isNew)
+	end)
+
 	it("Key gives itemID for static, link+bound for instance, nil for volatile", function()
 		local r = Items.Describe(0, 4)
 		assert.equal(Fixtures.SOULBOUND_HELM, Items.Key(r, "static"))
