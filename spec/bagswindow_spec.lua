@@ -171,11 +171,12 @@ describe("BagsWindow", function()
 	end)
 
 	it("saves the position on drag stop and restores it", function()
-		W.frame.points = { { "TOPLEFT", UIParent, "TOPLEFT", 30, -40 } }
+		W.frame.GetLeft = function() return 30 end
+		W.frame.GetTop = function() return 700 end
 		W.frame.scripts.OnDragStop()
-		assert.same({ "TOPLEFT", "TOPLEFT", 30, -40 }, SB.Config.UI().positions.bags)
+		assert.same({ "TOPLEFT", "BOTTOMLEFT", 30, 700 }, SB.Config.UI().positions.bags)
 		W.RestorePosition()
-		assert.same({ "TOPLEFT", UIParent, "TOPLEFT", 30, -40 }, W.frame.points[1])
+		assert.same({ "TOPLEFT", UIParent, "BOTTOMLEFT", 30, 700 }, W.frame.points[1])
 	end)
 
 	it("emits SB_BAGS_UPDATED after a partial repaint while open", function()

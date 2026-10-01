@@ -115,9 +115,13 @@ function W.RestorePosition()
 	end
 end
 
+-- Saved as the top-left corner so a reopen lands where the window was. Old saved tables
+-- (a point plus offsets) are still accepted by RestorePosition as they are.
 local function savePosition()
-	local point, _, relPoint, x, y = frame:GetPoint(1)
-	SB.Config.UI().positions.bags = { point, relPoint, x, y }
+	local left, top = frame:GetLeft(), frame:GetTop()
+	if left and top then
+		SB.Config.UI().positions.bags = { "TOPLEFT", "BOTTOMLEFT", left, top }
+	end
 end
 
 frame:SetScript("OnDragStart", Guard("bags.dragStart", function()
@@ -129,12 +133,19 @@ frame:SetScript("OnDragStop", Guard("bags.dragStop", function()
 end, "bags"))
 
 -- Fit the window around content of width x height (scroll when taller than 75 % of the screen).
-local function sizeFrame(width, height)
+-- With keepTop the top-left corner stays put (every resize except open); otherwise the
+-- window grows around whatever anchor RestorePosition set.
+local function sizeFrame(width, height, keepTop)
+	local left, top = frame:GetLeft(), frame:GetTop()
 	W.size = { width, height }
 	child:SetSize(width, height)
 	local maxHeight = UIParent:GetHeight() * W.MAX_HEIGHT_FRACTION / frame:GetScale()
 	local viewHeight = math.min(height, maxHeight - W.HEADER - W.FOOTER)
 	frame:SetSize(width + 8, viewHeight + W.HEADER + W.FOOTER)
+	if keepTop and left and top then
+		frame:ClearAllPoints()
+		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+	end
 	W.ClampScroll()
 end
 
@@ -142,10 +153,16 @@ end
 function W.SetScale(scale)
 	scale = SB.GridLayout.ClampScale(scale)
 	SB.Config.Set("bags.scale", scale)
+	-- Offsets are in the frame's own scale, so keep the corner's screen position across the change.
+	local oldScale, left, top = frame:GetScale(), frame:GetLeft(), frame:GetTop()
 	frame:SetScale(scale)
+	if left and top and frame:IsShown() then
+		frame:ClearAllPoints()
+		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * oldScale / scale, top * oldScale / scale)
+	end
 	W.Flash(L.BAGS_SCALE:format(math.floor(scale * 100 + 0.5)))
 	if frame:IsShown() then
-		sizeFrame(W.size[1], W.size[2])
+		sizeFrame(W.size[1], W.size[2], true)
 	end
 end
 
@@ -333,7 +350,7 @@ function W.Layout(reason)
 	else
 		width, height = layoutSections(bags)
 	end
-	sizeFrame(width, height)
+	sizeFrame(width, height, reason ~= "open")
 	W.stats.lastLayoutMs = A.ProfileMs() - t0
 	W.stats.lastLayoutReason = reason
 	SB.Emit("SB_BAGS_LAYOUT", reason)
@@ -381,7 +398,8 @@ function W.Restack()
 		return false
 	end
 	W.pos = pos
-	sizeFrame(render())
+	local width, height = render()
+	sizeFrame(width, height, true)
 	SB.Emit("SB_BAGS_UPDATED")
 	return true
 end
@@ -608,7 +626,8 @@ function W.ApplyChanges(changes)
 	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore then
 		result.rendered = true
 		W.pos = SB.Layout.Position(st, positionOpts(), W.Collapsed())
-		sizeFrame(render())
+		local width, height = render()
+		sizeFrame(width, height, true)
 	end
 	if result.deferred > 0 then
 		SB.Debounce("bags.retry", W.RETRY, function()
