@@ -277,6 +277,12 @@ function M.New(SB)
 		return m.professions
 	end
 
+	-- On-screen lines (the consumables warning): m.screen = { text, ... }
+	m.screen = {}
+	function m.ScreenMessage(text)
+		m.screen[#m.screen + 1] = text
+	end
+
 	M.AddContainers(m)
 	return m
 end

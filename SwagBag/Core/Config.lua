@@ -56,6 +56,9 @@ Config.Defaults = {
 				fishing = "c_fish,c_cooking",
 				market = "c_junk,c_tradegoods,c_boe",
 			} },
+		-- The low-consumables warning (spec 6.6, F11). warn: on by default. watch: nil means the
+		-- default list (Engine/Consumables.lua); the user's edited list is stored here.
+		consumables = { warn = true },
 	},
 }
 
