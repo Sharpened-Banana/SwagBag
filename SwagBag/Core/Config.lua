@@ -27,7 +27,8 @@ Config.Defaults = {
 		-- mode: "full" (SwagBag's window replaces Blizzard's; spec F16) | "view" (read-only window
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
-		guildBank = { mode = "full", withdrawAnyTab = true },
+		-- Off until check G1 proves the client withdraws from the tab it is given (ruling W3-10).
+		guildBank = { mode = "full", withdrawAnyTab = false },
 	},
 }
 

@@ -12,7 +12,9 @@
 -- Blizzard's guild bank frame state (spec AC16.7): it reads the selected tab only.
 -- Every viewable tab is listed top to bottom with its daily withdrawals left (AC16.2).
 -- Tab contents load on demand (QueryGuildBankTab, one tab after another) and are kept for
--- the session, so a reopen shows them at once (AC16.4).
+-- the session, so a reopen shows them at once (AC16.4). Hiding SwagBag's window (Esc, the X)
+-- while the vault is open makes Blizzard's guild bank visible again; nothing re-shrinks it
+-- until the next visit.
 local _, SB = ...
 
 local L = SB.L
@@ -194,9 +196,12 @@ end
 -- GUILDBANKFRAME_OPENED, /swagbag guild, a reopen inside one fight), the visit stays full and
 -- only our own position is restored; it never flips to "view" (that would anchor us to the
 -- invisible frame). Out of combat a "view" request still hands Blizzard's frame back below.
+-- Fix round 1: only while SwagBag's window is shown and the bank is not in Safe Mode. A
+-- signal for a visit SwagBag is not showing (Safe Mode, or our window hidden) never shrinks
+-- Blizzard's guild bank: that would leave an invisible vault that takes bag right-clicks.
 function GW.ApplyMode()
 	local gf = blizzardGuildBank()
-	if not (gf and gf:IsShown()) then
+	if not (gf and gf:IsShown()) or not frame:IsShown() or SB.SafeMode.IsOn("bank") then
 		return
 	end
 	local tabFrames = SB.Adapter.GuildTabFrames()
@@ -396,7 +401,9 @@ function GW.ClickSlot(tab, slot, mouseButton)
 		return "view"
 	end
 	if mouseButton ~= "RightButton" then
-		A.GuildPickup(tab, slot)
+		if not A.GuildPickup(tab, slot) then
+			SB.Print(L.GUILD_ACTION_FAILED)
+		end
 		return "pickup"
 	end
 	if not info then
@@ -411,7 +418,9 @@ function GW.ClickSlot(tab, slot, mouseButton)
 		SB.Print(L.GUILD_SELECT_TAB_FIRST:format(tabName(tab)))
 		return "tab"
 	end
-	A.GuildWithdraw(tab, slot)
+	if not A.GuildWithdraw(tab, slot) then
+		SB.Print(L.GUILD_ACTION_FAILED)
+	end
 	return "withdraw"
 end
 
@@ -420,7 +429,9 @@ function GW.DragSlot(tab, slot)
 		SB.Print(L.GUILD_VIEW_ONLY)
 		return false
 	end
-	SB.Adapter.GuildPickup(tab, slot)
+	if not SB.Adapter.GuildPickup(tab, slot) then
+		SB.Print(L.GUILD_ACTION_FAILED)
+	end
 	return true
 end
 
@@ -463,6 +474,9 @@ frame:SetScript("OnHide", Guard("guild.hide", function(self)
 		return
 	end
 	GW.queue, GW.querying = {}, nil
+	if GW.interaction then -- the vault is still open: make Blizzard's guild bank visible again
+		host.Restore()
+	end
 	SB.Emit("SB_GUILD_CLOSED")
 end, "bank"))
 
@@ -595,6 +609,16 @@ end, "none")
 
 SB.Slash.Register("guild", L.HELP_GUILD, function(arg)
 	arg = (arg or ""):lower()
+	local anyTab = arg:match("^anytab%s*(.*)$")
+	if anyTab then -- ruling W3-10: off until check G1 proves the client honours the tab
+		if anyTab ~= "on" and anyTab ~= "off" then
+			return L.GUILD_ANYTAB_USAGE:format(SB.Config.Get("guildBank.withdrawAnyTab") and "on" or "off")
+		end
+		if not SB.Config.Set("guildBank.withdrawAnyTab", anyTab == "on") then
+			return L.SETTINGS_READONLY
+		end
+		return anyTab == "on" and L.GUILD_ANYTAB_ON or L.GUILD_ANYTAB_OFF
+	end
 	if arg ~= "full" and arg ~= "view" then
 		return L.GUILD_USAGE:format(GW.Mode())
 	end
