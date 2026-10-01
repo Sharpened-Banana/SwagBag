@@ -35,14 +35,25 @@ describe("Items.Describe", function()
 
 	it("DescribeLink builds a guild bank record from the link: location guild, never bound, cooldown or new", function()
 		local link = "|cffa335ee|Hitem:" .. Fixtures.BOE_RING .. "::::::::90:::::|h[Band of the Fallen]|h|r"
+		A.tracks[link] = { "Hero", 2, 6 }
 		local r = Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = link, count = 1, icon = 7, quality = 4 }, 102, 5, 2)
+		assert.same({ "Hero", 2, 6 }, r.track)
+		assert.equal(true, r.hasUpgradeTrack)
+		assert.equal(false, r.hasNoValue)
 		assert.same({ 102, 5, 2, "guild", "Band of the Fallen", 285, "equip", "INVTYPE_FINGER" },
 			{ r.bag, r.slot, r.tab, r.location, r.name, r.ilvl, r.bind, r.equipLoc })
 		assert.same({ false, false, false, false, false }, { r.isBound, r.isWUE, r.onCooldown, r.isNew, r.pending })
 		assert.equal(true, SB.Query.Eval(SB.Query.Compile("boe & ilvl>280"), r))
 		local p = Items.DescribeLink({ itemID = Fixtures.UNLOADED, link = "item:" .. Fixtures.UNLOADED, count = 1 }, 101, 1, 1)
 		assert.equal(true, p.pending)
+		assert.is_nil(p.track)
+		assert.equal(false, p.hasUpgradeTrack)
 		assert.same({ Fixtures.UNLOADED }, A.loadRequests)
+		local other = "item:" .. Fixtures.BOE_RING .. ":other"
+		A.upgradeLinks[other] = true -- a track the client gives no details for
+		local u = Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = other, count = 1 }, 102, 6, 2)
+		assert.is_nil(u.track)
+		assert.equal(true, u.hasUpgradeTrack)
 	end)
 
 	it("marks an unloaded item pending, keeps instant facts, and asks the client to load it", function()

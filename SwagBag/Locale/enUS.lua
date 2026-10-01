@@ -209,6 +209,8 @@ L.GUILD_ACTION_FAILED = "The guild bank did not accept that click. Try again, or
 L.GUILD_MODE_SAVED_NEXT = "Guild bank: saved; it applies on your next guild bank visit."
 L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
 L.GUILD_VIEW_GRID = "SwagBag guild bank - grid view"
+L.GUILD_TAB_STILL_LOADING = "Still loading %s - try again in a moment."
+L.GUILD_SLOT_CHANGED = "That guild bank slot just changed - check it and click again."
 L.GUILD_VIEW_SECTIONS = "SwagBag guild bank - category view"
 
 -- Snapshots (spec F13: captured now, shown offline in November)
