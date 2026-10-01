@@ -4,7 +4,8 @@ local Fixtures = dofile("spec/fixtures/items.lua")
 describe("Items.Describe", function()
 	local SB, A, Items
 	before_each(function()
-		SB = Loader.New({ "SwagBag/Engine/Items.lua" })
+		SB = Loader.New({ "SwagBag/Engine/Items.lua", "SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua",
+			"SwagBag/Engine/Query/Query.lua", "SwagBag/Engine/Keywords.lua" })
 		A, Items = SB.Adapter, SB.Items
 		Fixtures.SmallBags(A)
 	end)
@@ -30,6 +31,18 @@ describe("Items.Describe", function()
 		assert.is_nil(r.tab)
 		assert.equal(false, r.pending)
 		assert.equal(true, r.isUsable)
+	end)
+
+	it("DescribeLink builds a guild bank record from the link: location guild, never bound, cooldown or new", function()
+		local link = "|cffa335ee|Hitem:" .. Fixtures.BOE_RING .. "::::::::90:::::|h[Band of the Fallen]|h|r"
+		local r = Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = link, count = 1, icon = 7, quality = 4 }, 102, 5, 2)
+		assert.same({ 102, 5, 2, "guild", "Band of the Fallen", 285, "equip", "INVTYPE_FINGER" },
+			{ r.bag, r.slot, r.tab, r.location, r.name, r.ilvl, r.bind, r.equipLoc })
+		assert.same({ false, false, false, false, false }, { r.isBound, r.isWUE, r.onCooldown, r.isNew, r.pending })
+		assert.equal(true, SB.Query.Eval(SB.Query.Compile("boe & ilvl>280"), r))
+		local p = Items.DescribeLink({ itemID = Fixtures.UNLOADED, link = "item:" .. Fixtures.UNLOADED, count = 1 }, 101, 1, 1)
+		assert.equal(true, p.pending)
+		assert.same({ Fixtures.UNLOADED }, A.loadRequests)
 	end)
 
 	it("marks an unloaded item pending, keeps instant facts, and asks the client to load it", function()

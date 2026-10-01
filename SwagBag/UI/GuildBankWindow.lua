@@ -10,11 +10,17 @@
 -- permissions, tab purchase stay in Blizzard's frame; spec AC16.5). Setting:
 -- guildBank.mode (/swagbag guild full|view). SwagBag never selects a tab and never writes
 -- Blizzard's guild bank frame state (spec AC16.7): it reads the selected tab only.
--- Every viewable tab is listed top to bottom with its daily withdrawals left (AC16.2).
--- Tab contents load on demand (QueryGuildBankTab, one tab after another) and are kept for
--- the session, so a reopen shows them at once (AC16.4). Hiding SwagBag's window (Esc, the X)
--- while the vault is open makes Blizzard's guild bank visible again; nothing re-shrinks it
--- until the next visit.
+-- Contents (UI/GroupView.lua): every viewable tab is a group, top to bottom, with its daily
+-- withdrawals left in the header (AC16.2) and its own category sections or grid; the window
+-- has its own search box (AC16.1). Tab contents load on demand (QueryGuildBankTab, one tab
+-- after another) and are kept for the session, so a reopen shows them at once; a snapshot is
+-- saved per guild (AC16.4). Guild slot keys use bag 100 + tab.
+-- Queries go out one at a time: a GUILDBANKBAGSLOTS_CHANGED that arrives while tab T is being
+-- queried is T's answer. Only tabs that answered during this visit are read, so a tab whose
+-- answer is still on its way never looks empty. A tab that gets no answer in QUERY_GAP is
+-- asked once more at the end of the queue.
+-- Hiding SwagBag's window (Esc, the X) while the vault is open makes Blizzard's guild bank
+-- visible again; nothing re-shrinks it until the next visit.
 local _, SB = ...
 
 local L = SB.L
@@ -27,18 +33,14 @@ local GW = {
 	tabs = {}, -- [tab] = Adapter.GuildTabs entry (only tabs the guild owns)
 	order = {}, -- viewable tab numbers, ascending
 	cache = {}, -- [tab][slot] = Adapter.GuildSlot result, kept for the session
-	loaded = {}, -- [tab] = true once its contents arrived this session
 	queue = {}, -- tabs still to query this visit
-	asked = {}, -- [tab] = true once queried this visit
+	answered = {}, -- [tab] = true once its answer arrived this visit
+	retried = {}, -- [tab] = true once re-queued after a query got no answer
 	querying = nil,
+	BAG_BASE = 100, -- guild tab N is bag 100 + N in layout keys
 	QUERY_GAP = 0.3, -- seconds between two tab queries (and the wait if no answer comes)
-	SLOT = 37,
-	GAP = 4,
-	PAD = 4,
-	COLUMNS = 14,
-	TAB_HEADER = 20,
-	TAB_GAP = 8,
-	HEADER = 58,
+	SNAPSHOT_DELAY = 1,
+	HEADER = 80,
 	FOOTER = 6,
 	MAX_HEIGHT_FRACTION = 0.75,
 }
@@ -70,7 +72,7 @@ frame.title:SetPoint("TOPLEFT", 10, -8)
 frame.title:SetText(L.GUILD_TITLE)
 
 frame.deposit = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-frame.deposit:SetPoint("TOPLEFT", 10, -24)
+frame.deposit:SetPoint("TOPLEFT", 14, -58)
 frame.deposit:SetJustifyH("LEFT")
 
 local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -85,10 +87,14 @@ scroll:SetScrollChild(child)
 GW.scroll, GW.child = scroll, child
 SB.GuildButtons.SetParent(child)
 
+local function clampScroll()
+	scroll:SetVerticalScroll(SB.GridLayout.ClampOffset(scroll:GetVerticalScroll(), child:GetHeight(), scroll:GetHeight()))
+end
+
 scroll:EnableMouseWheel(true)
 scroll:SetScript("OnMouseWheel", Guard("guild.wheel", function(_, delta)
-	scroll:SetVerticalScroll(scroll:GetVerticalScroll() - delta * (GW.SLOT + GW.GAP) * 3)
-	scroll:SetVerticalScroll(SB.GridLayout.ClampOffset(scroll:GetVerticalScroll(), child:GetHeight(), scroll:GetHeight()))
+	scroll:SetVerticalScroll(scroll:GetVerticalScroll() - delta * (SB.GroupView.SLOT + SB.GroupView.GAP) * 3)
+	clampScroll()
 end, "bank"))
 
 local function blizzardGuildBank()
@@ -153,8 +159,8 @@ function GW.RefreshTarget()
 	local old = GW.target
 	GW.target = SB.Adapter.GuildCurrentTab()
 	frame.deposit:SetText(GW.target and L.GUILD_DEPOSITS_TO:format(tabName(GW.target)) or "")
-	if old ~= GW.target and frame:IsShown() then
-		GW.Render()
+	if old ~= GW.target and GW.view and GW.view.IsOpen() then
+		GW.view.Relabel()
 	end
 end
 
@@ -241,13 +247,18 @@ function GW.ToggleVisit()
 	return true
 end
 
-GW.blizzardButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-GW.blizzardButton:SetSize(140, 18)
-GW.blizzardButton:SetText(L.BTN_BLIZZARD_GUILD)
-GW.blizzardButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -5)
-GW.blizzardButton:SetScript("OnClick", Guard("guild.blizzardButton", function()
+local function titleButton(text, label, onClick, width)
+	local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+	b:SetSize(width or 72, 18)
+	b:SetText(text)
+	b:SetScript("OnClick", Guard(label, onClick, "bank"))
+	return b
+end
+
+GW.blizzardButton = titleButton(L.BTN_BLIZZARD_GUILD, "guild.blizzardButton", function()
 	GW.ToggleVisit()
-end, "bank"))
+end, 140)
+GW.blizzardButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -5)
 
 ---------------------------------------------------------------------------
 -- Tabs, queries and the session cache
@@ -263,30 +274,38 @@ function GW.ReadTabs()
 	table.sort(GW.order)
 end
 
--- Re-read every slot of a loaded tab into the cache.
-function GW.ReadTab(tab)
+-- Read every slot of a tab. Returns the new list (the cache is the caller's to update).
+local function readTab(tab)
 	local A, list = SB.Adapter, {}
 	for slot = 1, A.GUILD_SLOTS do
 		list[slot] = A.GuildSlot(tab, slot)
 	end
-	GW.cache[tab] = list
+	return list
 end
 
 -- Query the selected tab first, then the others, one at a time: the next query goes out when
 -- the previous answer arrives (GUILDBANKBAGSLOTS_CHANGED) or QUERY_GAP later.
+local function timedOut()
+	local tab = GW.querying
+	if tab and not GW.answered[tab] and not GW.retried[tab] then
+		GW.retried[tab] = true
+		GW.queue[#GW.queue + 1] = tab
+	end
+	GW.QueryNext()
+end
+
 function GW.QueryNext()
 	local tab = table.remove(GW.queue, 1)
 	GW.querying = tab
 	if not tab then
 		return
 	end
-	GW.asked[tab] = true
 	SB.Adapter.GuildQuery(tab)
-	SB.Debounce("guild.queryNext", GW.QUERY_GAP, GW.QueryNext, "bank")
+	SB.Debounce("guild.queryNext", GW.QUERY_GAP, timedOut, "bank")
 end
 
 function GW.QueryAll()
-	GW.queue, GW.asked = {}, {}
+	GW.queue, GW.answered, GW.retried = {}, {}, {}
 	local first = SB.Adapter.GuildCurrentTab()
 	if first and GW.tabs[first] and GW.tabs[first].viewable then
 		GW.queue[1] = first
@@ -299,11 +318,18 @@ function GW.QueryAll()
 	GW.QueryNext()
 end
 
----------------------------------------------------------------------------
--- Contents: each viewable tab as a header line and a grid of its 98 slots
----------------------------------------------------------------------------
-GW.labels = {}
+-- The tabs read this session, for the per-guild snapshot (AC16.4).
+function GW.SaveSnapshot()
+	local tabs = {}
+	for tab, slots in pairs(GW.cache) do
+		tabs[tab] = { name = tabName(tab), slots = slots }
+	end
+	return SB.Snapshots.SaveGuild(SB.Adapter.GuildKey(), tabs)
+end
 
+---------------------------------------------------------------------------
+-- Contents: one group per viewable tab
+---------------------------------------------------------------------------
 local function withdrawText(t)
 	if not t or t.withdrawals < 0 then
 		return L.GUILD_WITHDRAW_UNLIMITED
@@ -314,9 +340,13 @@ local function withdrawText(t)
 end
 GW.WithdrawText = withdrawText
 
-function GW.TabLabel(tab)
-	local text = L.GUILD_TAB_HEADER:format(tabName(tab), withdrawText(GW.tabs[tab]))
-	if not GW.loaded[tab] then
+local function tabOf(bag)
+	return bag - GW.BAG_BASE
+end
+
+function GW.TabLabel(tab, collapsed, count)
+	local text = L.GUILD_TAB_LABEL:format(collapsed and "+" or "-", tabName(tab), count or 0, withdrawText(GW.tabs[tab]))
+	if not GW.cache[tab] then
 		text = text .. L.GUILD_TAB_LOADING
 	end
 	if tab == GW.target then
@@ -325,62 +355,166 @@ function GW.TabLabel(tab)
 	return text
 end
 
-local function label(tab)
-	local fs = GW.labels[tab]
-	if not fs then
-		fs = child:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-		fs:SetJustifyH("LEFT")
-		GW.labels[tab] = fs
-	end
-	return fs
+function GW.View()
+	return SB.Config.Get("guildBank.view") == "grid" and "grid" or "sections"
 end
 
-function GW.Render()
-	local B, cols = SB.GuildButtons, GW.COLUMNS
-	local step = GW.SLOT + GW.GAP
-	local y = GW.PAD
-	local shown = {}
-	for _, tab in ipairs(GW.order) do
-		shown[tab] = true
-		local fs = label(tab)
-		fs:ClearAllPoints()
-		fs:SetPoint("TOPLEFT", child, "TOPLEFT", GW.PAD, -y)
-		fs:SetText(GW.TabLabel(tab))
-		if tab == GW.target then
-			fs:SetTextColor(0.3, 1, 0.3)
-		else
-			fs:SetTextColor(1, 0.82, 0)
-		end
-		fs:Show()
-		y = y + GW.TAB_HEADER
-		local cached = GW.cache[tab] or {}
-		for slot = 1, SB.Adapter.GUILD_SLOTS do
-			local b = B.Get(tab, slot)
-			if b then
-				b:ClearAllPoints()
-				b:SetPoint("TOPLEFT", child, "TOPLEFT", GW.PAD + ((slot - 1) % cols) * step,
-					-(y + math.floor((slot - 1) / cols) * step))
-				B.Paint(b, cached[slot])
-				b:Show()
-			end
-		end
-		y = y + math.ceil(SB.Adapter.GUILD_SLOTS / cols) * step + GW.TAB_GAP
+local function sizeFrame(width, height)
+	child:SetSize(width, height)
+	local maxHeight = UIParent:GetHeight() * GW.MAX_HEIGHT_FRACTION / frame:GetScale()
+	frame:SetSize(width + 8, math.min(height, maxHeight - GW.HEADER - GW.FOOTER) + GW.HEADER + GW.FOOTER)
+	clampScroll()
+end
+
+local function describe(bag, slot)
+	local tab = tabOf(bag)
+	local info = GW.cache[tab] and GW.cache[tab][slot]
+	local button = SB.GuildButtons.Get(tab, slot)
+	if button then
+		SB.GuildButtons.Paint(button, info)
 	end
-	for tab, fs in pairs(GW.labels) do
-		if not shown[tab] then
-			fs:Hide()
-			for slot = 1, SB.Adapter.GUILD_SLOTS do
-				local b = B.Get(tab, slot)
-				if b then
-					b:Hide()
+	return info and SB.Items.DescribeLink(info, bag, slot, tab) or nil
+end
+
+local searchBox
+
+GW.view = SB.GroupView.New({
+	key = "guild",
+	window = "bank",
+	child = child,
+	scroll = scroll,
+	button = function(bag, slot)
+		return SB.GuildButtons.Get(tabOf(bag), slot)
+	end,
+	describe = describe,
+	groups = function()
+		local out = {}
+		for _, tab in ipairs(GW.order) do
+			out[#out + 1] = { id = "tab" .. tab, bags = { { bag = GW.BAG_BASE + tab, size = SB.Adapter.GUILD_SLOTS } } }
+		end
+		return out
+	end,
+	groupLabel = function(id, collapsed, count)
+		return GW.TabLabel(tonumber(id:sub(4)), collapsed, count)
+	end,
+	groupTint = function(id)
+		return GW.target ~= nil and id == "tab" .. GW.target
+	end,
+	view = GW.View,
+	columns = function()
+		return SB.Config.Get("guildBank.columns")
+	end,
+	newRows = function()
+		return SB.Config.Get("bags.newRows")
+	end,
+	onResize = sizeFrame,
+	onUpdated = function()
+		searchBox.Apply()
+	end,
+})
+
+searchBox = SB.SearchBox.New({
+	parent = frame,
+	name = "SwagBagGuildSearchBox",
+	search = SB.SearchState.New(),
+	window = "bank",
+	debounceKey = "search.guild",
+	isOpen = function()
+		return GW.IsOpen()
+	end,
+	forEachSlot = function(fn)
+		return GW.view.ForEachSlot(fn)
+	end,
+	setDimmed = function(button, dimmed)
+		return SB.Buttons.SetDimmed(button, dimmed)
+	end,
+})
+GW.searchBox = searchBox
+
+function GW.Layout(reason)
+	GW.view.Layout(reason)
+	searchBox.Apply()
+end
+
+function GW.Reflow(reason)
+	if not frame:IsShown() then
+		return false
+	end
+	local done = GW.view.RequestLayout(reason or "reflow")
+	if done then
+		searchBox.Apply()
+	end
+	GW.Flash(done and L.REFLOW_DONE or L.REFLOW_WAITING)
+	return done
+end
+
+function GW.ToggleView()
+	local view = GW.View() == "grid" and "sections" or "grid"
+	SB.Config.Set("guildBank.view", view)
+	GW.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	GW.Flash(view == "grid" and L.GUILD_VIEW_GRID or L.GUILD_VIEW_SECTIONS)
+	if GW.view.RequestLayout("view") then
+		searchBox.Apply()
+	end
+end
+
+GW.viewButton = titleButton(L.VIEW_TO_GRID, "guild.viewButton", function()
+	GW.ToggleView()
+end)
+GW.viewButton:SetPoint("RIGHT", GW.blizzardButton, "LEFT", -4, 0)
+GW.reflowButton = titleButton(L.BTN_REFLOW, "guild.reflowButton", function()
+	GW.Reflow("reflow")
+end, 60)
+GW.reflowButton:SetPoint("RIGHT", GW.viewButton, "LEFT", -4, 0)
+
+-- Re-read the tabs that answered this visit (a query answer, or an item that moved). A tab
+-- read for the first time this session is laid out in full (held back while the mouse is
+-- over the items); otherwise slots whose item changed go through GroupView.Changes (spec
+-- 4.3) and the rest only repaint.
+function GW.Refresh()
+	local A, B = SB.Adapter, SB.GuildButtons
+	local first = false
+	local byTab = {}
+	for _, tab in ipairs(GW.order) do
+		if GW.answered[tab] then
+			first = first or GW.cache[tab] == nil
+			local old, new = GW.cache[tab] or {}, readTab(tab)
+			GW.cache[tab] = new
+			local bag = GW.BAG_BASE + tab
+			for slot = 1, A.GUILD_SLOTS do
+				local a, b = old[slot], new[slot]
+				if a ~= nil or b ~= nil then
+					local button = B.Get(tab, slot)
+					if button then
+						B.Paint(button, b)
+					end
+					if GW.view.IsOpen() then
+						GW.view.SetRecord(bag, slot, b and SB.Items.DescribeLink(b, bag, slot, tab) or nil)
+					end
+					if (a and a.itemID) ~= (b and b.itemID) then
+						byTab[tab] = byTab[tab] or {}
+						table.insert(byTab[tab], { bag = bag, slot = slot, kind = b and "arrived" or "left", icon = a and a.icon })
+					end
 				end
 			end
 		end
 	end
-	local width = GW.PAD * 2 + cols * GW.SLOT + (cols - 1) * GW.GAP
-	child:SetSize(width, y + GW.PAD)
-	local maxHeight = UIParent:GetHeight() * GW.MAX_HEIGHT_FRACTION
-	frame:SetSize(width + 8, math.min(y + GW.PAD, maxHeight - GW.HEADER - GW.FOOTER) + GW.HEADER + GW.FOOTER)
+	SB.Debounce("guild.snapshot", GW.SNAPSHOT_DELAY, GW.SaveSnapshot, "none")
+	if not GW.view.IsOpen() then
+		return
+	end
+	if first then
+		GW.view.RequestLayout("load")
+		searchBox.Apply()
+		return
+	end
+	for _, tab in ipairs(GW.order) do
+		if byTab[tab] then
+			GW.view.Changes("tab" .. tab, byTab[tab])
+		end
+	end
+	GW.view.Relabel()
+	searchBox.Apply()
 end
 
 ---------------------------------------------------------------------------
@@ -458,9 +592,10 @@ function GW.Open()
 		SB.Print(L.GUILD_COMBAT_WAIT)
 		return false
 	end
+	GW.viewButton:SetText(GW.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	frame:Show()
 	GW.ApplyMode()
-	GW.Render()
+	GW.Layout("open")
 	GW.QueryAll()
 	return true
 end
@@ -477,6 +612,7 @@ frame:SetScript("OnHide", Guard("guild.hide", function(self)
 	if GW.interaction then -- the vault is still open: make Blizzard's guild bank visible again
 		host.Restore()
 	end
+	GW.view.Clear()
 	SB.Emit("SB_GUILD_CLOSED")
 end, "bank"))
 
@@ -496,6 +632,9 @@ function GW.OnClosed()
 	GW.interaction, GW.visit = false, nil
 	frame:Hide()
 	host.Restore()
+	if next(GW.cache) then
+		GW.SaveSnapshot()
+	end
 end
 
 -- Blizzard's guild bank UI loads on demand; hook its OnShow once it exists.
@@ -544,30 +683,21 @@ SB.On("GUILDBANKFRAME_CLOSED", function()
 	GW.OnClosed()
 end, "bank")
 
--- A queried tab's contents arrived, or an item moved: re-read every tab asked for this visit
--- (an answer may come late, after the next query went out) and query the next tab. The tabs'
--- withdrawals left are re-read too: a withdrawal changes a slot first (ruling W3-5).
+-- A queried tab's contents arrived, or an item moved: query the next tab and re-read the
+-- tabs that answered. The tabs' withdrawals left are re-read too: a withdrawal changes a
+-- slot first (ruling W3-5).
 SB.On("GUILDBANKBAGSLOTS_CHANGED", function()
 	if not GW.interaction then
 		return
 	end
 	GW.ReadTabs()
-	SB.GuildButtons.Ensure(GW.order) -- a tab that became viewable; Render skips missing buttons
-	for tab in pairs(GW.asked) do
-		GW.loaded[tab] = true
-	end
+	SB.GuildButtons.Ensure(GW.order) -- a tab that became viewable; missing buttons are skipped
 	if GW.querying then
+		GW.answered[GW.querying] = true
 		SB.Debounce("guild.queryNext", 0.05, GW.QueryNext, "bank")
 	end
-	for _, tab in ipairs(GW.order) do
-		if GW.loaded[tab] then
-			GW.ReadTab(tab)
-		end
-	end
+	GW.Refresh()
 	GW.RefreshTarget()
-	if frame:IsShown() then
-		GW.Render()
-	end
 end, "bank")
 
 SB.On("GUILDBANK_UPDATE_TABS", function()
@@ -576,18 +706,14 @@ SB.On("GUILDBANK_UPDATE_TABS", function()
 	end
 	GW.ReadTabs()
 	if frame:IsShown() and SB.GuildButtons.Ensure(GW.order) then
-		GW.Render()
+		GW.view.RequestLayout("tabs")
+		searchBox.Apply()
 	end
 end, "bank")
 
 SB.On("GUILDBANK_ITEM_LOCK_CHANGED", function()
-	if GW.interaction and frame:IsShown() then
-		for _, tab in ipairs(GW.order) do
-			if GW.loaded[tab] then
-				GW.ReadTab(tab)
-			end
-		end
-		GW.Render()
+	if GW.interaction then
+		GW.Refresh()
 	end
 end, "bank")
 

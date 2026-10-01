@@ -285,6 +285,18 @@ function A.GetIlvl(bag, slot)
 	return nil
 end
 
+-- Item level of an item link (guild bank items have no bag slot), or nil.
+function A.GetLinkIlvl(link)
+	if type(link) ~= "string" or not (C_Item and C_Item.GetDetailedItemLevelInfo) then
+		return nil
+	end
+	local ok, v = pcall(C_Item.GetDetailedItemLevelInfo, link)
+	if ok and type(v) == "number" and not isSecret(v) then
+		return v
+	end
+	return nil
+end
+
 function A.IsWarboundUntilEquip(bag, slot)
 	if not (C_Item and C_Item.IsBoundToAccountUntilEquip) then
 		return false
@@ -656,6 +668,7 @@ A.CHECKS = {
 	{ path = "C_Item.IsUsableItem", window = "bags", required = false },
 	{ path = "C_Item.IsBoundToAccountUntilEquip", window = "bags", required = false },
 	{ path = "C_Item.GetItemUpgradeInfo", window = "bags", required = false },
+	{ path = "C_Item.GetDetailedItemLevelInfo", window = "bank", required = false },
 	{ path = "C_ToyBox.GetToyInfo", window = "bags", required = false },
 	{ path = "C_Timer.After", window = "bags", required = true },
 	{ path = "C_AddOns.IsAddOnLoaded", window = "bags", required = false },

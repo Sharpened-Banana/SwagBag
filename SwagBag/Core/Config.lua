@@ -33,7 +33,8 @@ Config.Defaults = {
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
 		-- Off until check G1 proves the client withdraws from the tab it is given (ruling W3-10).
-		guildBank = { mode = "full", withdrawAnyTab = false },
+		-- view / columns: as for the bank window.
+		guildBank = { mode = "full", withdrawAnyTab = false, view = "sections", columns = 14 },
 		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 			usePawn = false },

@@ -348,6 +348,13 @@ function M.AddContainers(m)
 		return s.ilvl or it.ilvl
 	end
 
+	-- Links in fixtures carry the itemID ("item:<id>..."); the item level is the fixture's.
+	function m.GetLinkIlvl(link)
+		local id = type(link) == "string" and tonumber(link:match("item:(%d+)"))
+		local it = id and m.items[id]
+		return it and not it.pending and it.ilvl or nil
+	end
+
 	-- Overlays: m.tracks[link] = { track, level, max }; m.dungeons[mapID] = name;
 	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
 	m.tracks, m.dungeons, m.equipped, m.cannotUse, m.pawn = {}, {}, {}, {}, nil

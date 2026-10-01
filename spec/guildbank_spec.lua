@@ -1,24 +1,12 @@
 -- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip
--- luacheck: globals SetItemButtonTexture SetItemButtonCount SetItemButtonQuality SetItemButtonDesaturated
--- The guild bank window (check G1): tiny mode, re-hosted tabs, withdraw / pickup / drop
--- through Blizzard's own guild bank functions, the read-only selected tab, view mode.
+-- The guild bank window (spec F16, check G1): tiny mode, re-hosted tabs, withdraw / pickup /
+-- drop through Blizzard's own guild bank functions, the read-only selected tab, view mode,
+-- one group per tab with its own sections, on-demand queries, the session cache, live
+-- changes, its own search, and the per-guild snapshot.
 local Loader = dofile("spec/helpers/loader.lua")
 local Fake = dofile("spec/helpers/fakeframe.lua")
+local Env = dofile("spec/helpers/uienv.lua")
 local Fixtures = dofile("spec/fixtures/items.lua")
-
-local FILES = { "SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua",
-	"SwagBag/Core/Config.lua", "SwagBag/Core/Slash.lua", "SwagBag/Engine/GridLayout.lua" }
-
-local function paintGlobals()
-	SetItemButtonTexture = function(b, icon) b.icon = icon end
-	SetItemButtonCount = function(b, n) b.count = n end
-	SetItemButtonQuality = function(b, q) b.quality = q end
-	SetItemButtonDesaturated = function(b, d) b.desaturated = d end
-end
-
-local function clearPaintGlobals()
-	SetItemButtonTexture, SetItemButtonCount, SetItemButtonQuality, SetItemButtonDesaturated = nil, nil, nil, nil
-end
 
 -- Blizzard's guild bank as Blizzard shows it, with two tab buttons on its right edge.
 -- All five frames are STRICT fakes (ruling W3-2): every method SwagBag calls on them is logged.
@@ -87,12 +75,12 @@ end
 describe("GuildBankWindow (check G1)", function()
 	local SB, A, GW, gf, tabs
 	before_each(function()
-		SB = Loader.New(FILES)
+		SB = Loader.New(Env.ENGINE)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
 		Fixtures.Install(A)
 		Fake.Install()
-		paintGlobals()
+		Env.PaintGlobals()
 		gf, tabs = blizzardGuildBank(A)
 		A.guild.tabs = {
 			{ tab = 1, name = "Mats", withdrawals = 5 },
@@ -102,16 +90,13 @@ describe("GuildBankWindow (check G1)", function()
 		A.guild.slots = { [1] = { [1] = { itemID = Fixtures.HERB, count = 20 }, [2] = { itemID = Fixtures.ORE, count = 5 } },
 			[2] = { [1] = { itemID = Fixtures.BOE_RING } } }
 		A.guild.current = 1
-		Loader.LoadFile(SB, "SwagBag/UI/TinyHost.lua")
-		Loader.LoadFile(SB, "SwagBag/UI/GuildButtons.lua")
-		Loader.LoadFile(SB, "SwagBag/UI/GuildBankWindow.lua")
-		GW = SB.GuildBankWindow
+		GW = Env.LoadGuild(SB)
 		SB.Emit("SB_LOGIN")
 	end)
 
 	after_each(function()
 		Fake.Uninstall()
-		clearPaintGlobals()
+		Env.ClearPaintGlobals()
 	end)
 
 	local function openVault()
@@ -132,6 +117,19 @@ describe("GuildBankWindow (check G1)", function()
 
 	local function button(tab, slot)
 		return SB.GuildButtons.Get(tab, slot)
+	end
+
+	local function header(id)
+		for _, h in ipairs(SB.SectionHeaders.inUse) do
+			if h.sectionId == id then
+				return h
+			end
+		end
+	end
+
+	local function at(b)
+		local p = b.points[#b.points]
+		return { p[4], p[5] }
 	end
 
 	it("opens at the vault; Blizzard's guild bank stays shown in the 0.001 parent, its tabs on our right edge", function()
@@ -270,10 +268,10 @@ describe("GuildBankWindow (check G1)", function()
 	it("withdrawals left are re-read on every guild slot change (W3-5)", function()
 		openVault()
 		answerQueries()
-		assert.equal("Mats - 5 withdrawals left today  - deposits go here", GW.labels[1].text)
+		assert.equal("- Mats (2) - 5 withdrawals left today  - deposits go here", header("#tab1").text.text)
 		A.guild.tabs[1].withdrawals = 4
 		SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED")
-		assert.equal("Mats - 4 withdrawals left today  - deposits go here", GW.labels[1].text)
+		assert.equal("- Mats (2) - 4 withdrawals left today  - deposits go here", header("#tab1").text.text)
 		A.guild.tabs[1].withdrawals = 0
 		SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED")
 		Fake.Fire(button(1, 1), "OnClick", "RightButton")
@@ -283,16 +281,25 @@ describe("GuildBankWindow (check G1)", function()
 
 	it("lists every viewable tab with its withdrawals left; a tab the player cannot view is left out", function()
 		openVault()
-		assert.same({ 1, 2 }, GW.order)
-		assert.equal("Mats - 5 withdrawals left today (loading...)  - deposits go here", GW.labels[1].text)
+		assert.equal("- Mats (0) - 5 withdrawals left today (loading...)  - deposits go here", header("#tab1").text.text)
 		answerQueries()
-		assert.equal("Mats - 5 withdrawals left today  - deposits go here", GW.labels[1].text)
-		assert.equal("Gear - no withdrawals left today", GW.labels[2].text)
-		assert.is_nil(GW.labels[3])
+		assert.equal("- Mats (2) - 5 withdrawals left today  - deposits go here", header("#tab1").text.text)
+		assert.equal("- Gear (1) - no withdrawals left today", header("#tab2").text.text)
+		assert.is_nil(header("#tab3"))
 		assert.is_nil(button(3, 1), "no buttons for a tab that is not shown")
 		A.guild.tabs[1].withdrawals = -1
 		SB.eventFrame:Fire("GUILDBANK_UPDATE_TABS")
-		assert.equal("Mats - unlimited withdrawals  - deposits go here", GW.labels[1].text)
+		assert.equal("- Mats (2) - unlimited withdrawals  - deposits go here", header("#tab1").text.text)
+	end)
+
+	it("each tab is a group with its own sections: the tab's items sit in their categories", function()
+		openVault()
+		answerQueries()
+		assert.truthy(header("tab1:c_herbs"))
+		assert.truthy(header("tab1:c_ore"))
+		assert.truthy(header("tab2:c_boe"))
+		assert.equal("load", GW.view.stats.lastLayoutReason)
+		assert.truthy(at(button(2, 1))[2] < at(button(1, 98))[2], "tab 2 below tab 1")
 	end)
 
 	it("queries the selected tab first, then the others one at a time, and shows what arrived", function()
@@ -310,20 +317,41 @@ describe("GuildBankWindow (check G1)", function()
 		assert.is_nil(rawget(button(1, 3), "icon"))
 	end)
 
-	it("a query that gets no answer moves on after QUERY_GAP", function()
+	it("a query that gets no answer moves on after QUERY_GAP and is asked once more at the end", function()
 		openVault()
 		A.Advance(GW.QUERY_GAP + 0.01)
 		assert.same({ 1, 2 }, A.guild.queried)
+		A.Advance(3 * GW.QUERY_GAP)
+		assert.same({ 1, 2, 1, 2 }, A.guild.queried)
+		A.Advance(5)
+		assert.equal(4, #A.guild.queried, "only once more")
 	end)
 
-	it("a reopen shows the session's cached contents at once, then asks again", function()
+	it("a reopen shows the session's cached contents at once; a tab whose answer is on its way is not read", function()
 		openVault()
 		answerQueries()
 		closeVault()
 		A.guild.queried = {}
+		A.guild.slots[2] = {} -- what the client returns for tab 2 before its new answer arrives
 		openVault()
 		assert.equal(Fixtures.HERB, button(1, 1).icon, "cached")
+		assert.equal(Fixtures.BOE_RING, button(2, 1).icon, "cached")
+		SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED") -- tab 1's answer
+		assert.equal(Fixtures.BOE_RING, button(2, 1).icon, "tab 2 has not answered yet: not read")
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
 		assert.same({ 1 }, A.guild.queried)
+	end)
+
+	it("while open, an item taken by someone else leaves a placeholder; a deposit goes to that tab's New", function()
+		openVault()
+		answerQueries()
+		local herbAt = at(button(1, 1))
+		A.guild.slots[1][1] = nil
+		A.guild.slots[1][7] = { itemID = Fixtures.FLASK, count = 3 }
+		SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED")
+		assert.equal(1, #SB.Buttons.placeholdersInUse)
+		assert.same(herbAt, { SB.Buttons.placeholdersInUse[1].points[1][4], SB.Buttons.placeholdersInUse[1].points[1][5] })
+		assert.equal(header("tab1:new").points[1][5] - 20, at(button(1, 7))[2], "the deposit is first in New")
 	end)
 
 	-- Ruling W3-10: off until check G1 proves the client withdraws from the tab it is given.
@@ -414,7 +442,7 @@ describe("GuildBankWindow (check G1)", function()
 		assert.is_nil(A.tooltip)
 	end)
 
-	it("deposits go to the tab Blizzard has selected, read on the frame after a tab click", function()
+	it("deposits go to the tab Blizzard has selected, read on the frame after a tab click; its header says so", function()
 		openVault()
 		answerQueries()
 		assert.equal("Deposits go to Mats - switch with the tabs on the right", GW.frame.deposit.text)
@@ -422,8 +450,33 @@ describe("GuildBankWindow (check G1)", function()
 		Fake.Fire(tabs[2].Button, "OnClick")
 		A.Advance(0)
 		assert.equal("Deposits go to Gear - switch with the tabs on the right", GW.frame.deposit.text)
-		assert.equal("Gear - no withdrawals left today  - deposits go here", GW.labels[2].text)
-		assert.equal("Mats - 5 withdrawals left today", GW.labels[1].text)
+		assert.equal("- Gear (1) - no withdrawals left today  - deposits go here", header("#tab2").text.text)
+		assert.equal("- Mats (2) - 5 withdrawals left today", header("#tab1").text.text)
+		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#tab2").bg.calls.SetColorTexture)
+	end)
+
+	it("the guild bank's search box dims guild slots only", function()
+		openVault()
+		answerQueries()
+		GW.searchBox.editBox:SetText("herb")
+		Fake.Fire(GW.searchBox.editBox, "OnTextChanged")
+		A.Advance(0.2)
+		assert.equal(1, button(1, 1).alpha)
+		assert.equal(SB.Buttons.DIM_ALPHA, button(1, 2).alpha)
+		assert.equal("", SB.Search.text)
+	end)
+
+	it("a snapshot of the tabs read is saved per guild after an answer and when the vault closes (AC16.4)", function()
+		openVault()
+		answerQueries()
+		A.Advance(1.1)
+		local g = SB.Config.db.guilds["Tidewatch-Argent Dawn"]
+		assert.same({ "Mats", "Gear" }, { g.tabs[1], g.tabs[2] })
+		assert.equal("1:item:" .. Fixtures.HERB .. ";20\n2:item:" .. Fixtures.ORE .. ";5\n", g.snapshot.containers[1].s)
+		A.guild.slots[1][3] = { itemID = Fixtures.JUNK, count = 2 }
+		SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED")
+		closeVault()
+		assert.truthy(g.snapshot.containers[1].s:find("3:item:" .. Fixtures.JUNK .. ";2", 1, true))
 	end)
 
 	it("view mode (the setting): Blizzard's guild bank stays as it is and ours is read-only beside it", function()
@@ -450,10 +503,13 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal(SB.TinyHost.Parent(), gf.parent)
 	end)
 
-	it("closing the vault puts Blizzard's frame and its tabs back exactly", function()
+	it("closing the vault puts Blizzard's frame and its tabs back exactly and forgets the layout", function()
 		openVault()
+		answerQueries()
 		closeVault()
 		assert.falsy(GW.IsOpen())
+		assert.falsy(GW.view.IsOpen())
+		assert.falsy(button(1, 1).shown)
 		assert.equal(UIParent, gf.parent)
 		assert.same({ { "TOPLEFT", UIParent, "TOPLEFT", 16, -116 } }, gf.points)
 		assert.equal(gf, tabs[2].parent)
@@ -464,7 +520,7 @@ describe("GuildBankWindow (check G1)", function()
 	-- right-clicks. Mutation: delete the host.Restore() in the OnHide handler.
 	it("Esc or the X hides SwagBag's window and makes Blizzard's guild bank visible again (visit still open)", function()
 		openVault()
-		assert.equal("SwagBagGuildBankWindow", UISpecialFrames[1])
+		assert.equal("SwagBagGuildBankWindow", UISpecialFrames[#UISpecialFrames])
 		GW.frame:Hide()
 		assert.equal(UIParent, gf.parent)
 		assert.equal(gf, tabs[1].parent)
@@ -508,6 +564,16 @@ describe("GuildBankWindow (check G1)", function()
 		gf:Show()
 		assert.equal(SB.TinyHost.Parent(), gf.parent)
 		assert.equal(1, #gf.hooks.OnShow)
+	end)
+
+	it("nothing moves while Blizzard's guild bank frame is still hidden; it is shrunk once Blizzard shows it", function()
+		gf.shown = false
+		SB.eventFrame:Fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "GuildBanker")
+		assert.truthy(GW.IsOpen())
+		assert.equal(UIParent, gf.parent)
+		assert.equal(gf, tabs[1].parent)
+		gf:Show()
+		assert.equal(SB.TinyHost.Parent(), gf.parent)
 	end)
 
 	it("a visit that starts in combat creates no buttons and leaves Blizzard's guild bank as it is", function()
@@ -561,13 +627,11 @@ end)
 
 describe("GuildBankWindow load order", function()
 	it("loads before Config.Init without touching Config", function()
-		local SB = Loader.New(FILES)
+		local SB = Loader.New(Env.ENGINE)
 		SB.Config.Get = function() error("Config.Get called while loading") end
 		SB.Config.UI = function() error("Config.UI called while loading") end
 		Fake.Install()
-		Loader.LoadFile(SB, "SwagBag/UI/TinyHost.lua")
-		Loader.LoadFile(SB, "SwagBag/UI/GuildButtons.lua")
-		local ok, err = pcall(Loader.LoadFile, SB, "SwagBag/UI/GuildBankWindow.lua")
+		local ok, err = pcall(Env.LoadGuild, SB)
 		Fake.Uninstall()
 		assert.truthy(ok, tostring(err))
 	end)
