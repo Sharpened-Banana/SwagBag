@@ -310,6 +310,15 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 		assert.equal(1, st.sections.new.overflow)
 	end)
 
+	it("an overflowed arrival that later finds room in New stops counting as overflow (I1)", function()
+		L.Apply(st, { change(0, 3, "arrived") }, nil, { new = true })
+		assert.equal("free#3", where(0, 3))
+		assert.equal(1, st.sections.new.overflow)
+		L.Apply(st, { change(0, 3, "arrived") }, nil, {}) -- New expanded again
+		assert.equal(0, st.sections.new.overflow)
+		assert.truthy(where(0, 3):match("^new#"), "the slot is in New")
+	end)
+
 	it("a bag that grows adds its new slots at the end of Free; a removed slot leaves a hole", function()
 		L.Apply(st, { change(2, 1, "added"), change(2, 2, "added"), change(1, 1, "removed") })
 		assert.equal("free#3", where(2, 1))

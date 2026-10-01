@@ -244,6 +244,7 @@ local function applyOne(st, ch, collapsed, result)
 				overflow(st, result, key)
 				return
 			end
+			clearOverflow(st, key) -- it found room in New: no longer counted as "more below"
 			local _, cell = take(st, key)
 			append(st, Layout.NEW, cell)
 		else
