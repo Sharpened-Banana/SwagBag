@@ -34,31 +34,51 @@ local function ilvlAt(equipped, slot)
 	return e and e.ilvl or 0
 end
 
+local function anyUnknown(equipped, slots)
+	for _, slot in ipairs(slots) do
+		if equipped[slot] and equipped[slot].unknown then
+			return true
+		end
+	end
+	return false
+end
+
+-- Eligible for any upgrade verdict: loaded, worn gear with an item level, usable by this character.
+function O.CanCompare(record, canUse)
+	local A = SB.Adapter
+	if not O.SLOTS[record.equipLoc or ""] or record.pending or type(record.ilvl) ~= "number" then
+		return false
+	end
+	if record.classID ~= A.ITEM_CLASS.Armor and record.classID ~= A.ITEM_CLASS.Weapon then
+		return false
+	end
+	return not (canUse and not canUse(record.itemID))
+end
+
 -- AC9.3: higher than the lowest-ilvl item equipped in the matching slot(s); an empty slot
 -- counts as 0. Rings and trinkets compare with both slots. A two-hander replaces the main and
 -- off hand, so it compares by summed item level (2 x its level against both). A one-hander
 -- also compares with the off hand when the off hand holds a one-hand weapon (dual wield).
 -- An off-hand item never beats a two-hander (it would leave the main hand empty).
 function O.IsUpgrade(record, equipped, canUse)
-	local A = SB.Adapter
 	local ilvl = record.ilvl
 	local slots = O.SLOTS[record.equipLoc or ""]
-	if not slots or record.pending or type(ilvl) ~= "number" then
-		return false
-	end
-	if record.classID ~= A.ITEM_CLASS.Armor and record.classID ~= A.ITEM_CLASS.Weapon then
-		return false
-	end
-	if canUse and not canUse(record.itemID) then
+	if not O.CanCompare(record, canUse) then
 		return false
 	end
 	local main, off = equipped[MAIN], equipped[OFF]
 	local mainIsTwoHand = main and TWO_HAND[main.equipLoc] or false
 	if TWO_HAND[record.equipLoc] then
-		if off then
-			return ilvl * 2 > ilvlAt(equipped, MAIN) + ilvlAt(equipped, OFF)
+		if anyUnknown(equipped, { MAIN, OFF }) then
+			return false
 		end
-		return ilvl > ilvlAt(equipped, MAIN)
+		if mainIsTwoHand then
+			return ilvl > ilvlAt(equipped, MAIN)
+		end
+		return ilvl * 2 > ilvlAt(equipped, MAIN) + ilvlAt(equipped, OFF)
+	end
+	if anyUnknown(equipped, slots) then
+		return false
 	end
 	if slots[1] == OFF then
 		if mainIsTwoHand then
@@ -71,6 +91,9 @@ function O.IsUpgrade(record, equipped, canUse)
 		lowest = math.min(lowest, ilvlAt(equipped, slot))
 	end
 	if record.equipLoc == "INVTYPE_WEAPON" and off and ONE_HAND_WEAPON[off.equipLoc] then
+		if off.unknown then
+			return false
+		end
 		lowest = math.min(lowest, ilvlAt(equipped, OFF))
 	end
 	return ilvl > lowest
@@ -84,8 +107,9 @@ function O.Short(name)
 		return nil
 	end
 	local words = {}
-	for w in name:gmatch("[^%s%-,:']+") do
-		if not SMALL[w:lower()] then
+	for raw in name:gmatch("[^%s%-,:]+") do
+		local w = raw:gsub("'s$", ""):gsub("'", "")
+		if w ~= "" and not SMALL[w:lower()] then
 			words[#words + 1] = w
 		end
 	end
@@ -135,11 +159,14 @@ function O.For(record, ctx)
 			out.bind = L.BADGE_BOE
 		end
 	end
-	local verdict = ctx.pawn and ctx.pawn(record)
-	if verdict ~= nil then
-		out.upgrade = verdict and true or false
-	else
-		out.upgrade = O.IsUpgrade(record, ctx.equipped or {}, ctx.canUse)
+	-- Pawn replaces only the item-level rule: eligibility (loading, unusable, not worn gear) comes first.
+	if O.CanCompare(record, ctx.canUse) then
+		local verdict = ctx.pawn and ctx.pawn(record)
+		if verdict ~= nil then
+			out.upgrade = verdict and true or false
+		else
+			out.upgrade = O.IsUpgrade(record, ctx.equipped or {}, ctx.canUse)
+		end
 	end
 	return out
 end

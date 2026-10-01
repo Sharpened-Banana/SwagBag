@@ -132,6 +132,13 @@ describe("Categories", function()
 		assert.same({}, SB.Config.db.categories)
 	end)
 
+	it("the Keystone & Crests default change keeps a user's stored query and gives others the new one", function()
+		assert.equal("keystone | crest", C.Get("c_keystone").query)
+		SB.Config.db.userEdits.c_keystone = { query = "keystone" }
+		C.Load()
+		assert.equal("keystone", C.Get("c_keystone").query)
+	end)
+
 	it("applies a stored diff over a built-in, and ResetBuiltin removes it", function()
 		SB.Config.db.userEdits.c_gear = { name = "My Gear", priority = 99 }
 		C.Load()

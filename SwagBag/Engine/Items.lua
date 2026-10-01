@@ -34,6 +34,7 @@ function Items.Describe(bag, slot)
 	local info = A.GetItemInfo(s.itemID)
 	local location, tab = A.BagKind(bag)
 	local link = s.link or ""
+	local track, hasTrack = A.UpgradeInfo(s.link, bag, slot)
 	local inv = SB.Inventory
 	local r = {
 		bag = bag,
@@ -52,8 +53,8 @@ function Items.Describe(bag, slot)
 		isWUE = A.IsWarboundUntilEquip(bag, slot),
 		onCooldown = A.IsOnCooldown(bag, slot),
 		inEquipmentSet = A.InEquipmentSet(bag, slot),
-		hasUpgradeTrack = A.HasUpgradeTrack(bag, slot),
-		track = A.UpgradeInfo(s.link),
+		hasUpgradeTrack = hasTrack,
+		track = track,
 		hasNoValue = s.hasNoValue == true,
 		isUsable = A.IsUsable(s.itemID),
 		isToy = A.IsToy(s.itemID),

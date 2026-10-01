@@ -264,37 +264,23 @@ function A.IsWarboundUntilEquip(bag, slot)
 	return ok and v == true
 end
 
--- True when the item has an upgrade track. Feature-detected; false when unknown.
-function A.HasUpgradeTrack(bag, slot)
-	if not (C_Item and C_Item.GetItemUpgradeInfo) then
-		return false
-	end
-	local okLink, link = pcall(C_Container.GetContainerItemLink, bag, slot)
-	if not okLink or type(link) ~= "string" then
-		return false
-	end
-	local ok, info = pcall(C_Item.GetItemUpgradeInfo, link)
-	if not ok or type(info) ~= "table" then
-		return false
-	end
-	return (info.maxLevel or info.maxUpgradeLevel or 0) > 0 or (info.trackString or "") ~= ""
-end
-
--- Upgrade track of an item link: { track = "Hero", level = 3, max = 6 }, or nil when the
--- item has none (or the API is missing). Real API only; no tooltip reading (spec P7).
+-- Upgrade track of an item link: returns { track = "Hero", level = 3, max = 6 } or nil, then
+-- hasTrack (true when the item has any upgrade track at all). One client call per item. Real API
+-- only; no tooltip reading (spec P7). Missing API: nil, false.
 function A.UpgradeInfo(link)
 	if type(link) ~= "string" or not (C_Item and C_Item.GetItemUpgradeInfo) then
-		return nil
+		return nil, false
 	end
 	local ok, info = pcall(C_Item.GetItemUpgradeInfo, link)
 	if not ok or type(info) ~= "table" then
-		return nil
+		return nil, false
 	end
 	local track, level, max = info.trackString, info.currentLevel, info.maxLevel or info.maxUpgradeLevel
+	local hasTrack = (max or 0) > 0 or (type(track) == "string" and track ~= "")
 	if type(track) ~= "string" or track == "" or isSecret(track) or type(level) ~= "number" or type(max) ~= "number" then
-		return nil
+		return nil, hasTrack
 	end
-	return { track = track, level = level, max = max }
+	return { track = track, level = level, max = max }, hasTrack
 end
 
 -- Name of a Mythic+ dungeon (keystone link map ID), or nil.
@@ -345,6 +331,7 @@ function A.PawnUpgrade(bag, slot)
 	if not ok then
 		return nil
 	end
+	-- Pawn's nil also means "not an upgrade", so it folds to false here.
 	return yes and true or false
 end
 
@@ -636,6 +623,8 @@ A.CHECKS = {
 	{ path = "C_ChallengeMode.IsChallengeModeActive", window = "bags", required = false },
 	{ path = "C_ChallengeMode.GetMapUIInfo", window = "bags", required = false },
 	{ path = "C_PlayerInfo.CanUseItem", window = "bags", required = false },
+	{ path = "C_Item.GetCurrentItemLevel", window = "bags", required = false },
+	{ path = "ItemLocation.CreateFromEquipmentSlot", window = "bags", required = false },
 	{ path = "GetInventoryItemLink", window = "bags", required = false },
 	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
 	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
