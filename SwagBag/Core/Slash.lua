@@ -27,6 +27,7 @@ local function say(feedback)
 	end
 end
 
+-- Dispatch runs inside SlashCmdList.SWAGBAG's ErrorTrap wrapper; callers must use the entry point.
 function Slash.Dispatch(msg)
 	local L = SB.L
 	local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
@@ -65,7 +66,7 @@ if SlashCmdList then
 			Slash.Dispatch(msg)
 		end)
 		if not ok then
-			SB.Print(SB.L.CMD_FAILED)
+			pcall(SB.Print, SB.L.CMD_FAILED)
 		end
 	end
 end

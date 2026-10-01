@@ -4,6 +4,9 @@ local FILES = {
 	"SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Events.lua", "SwagBag/Core/Slash.lua",
 }
 
+-- Ensure SlashCmdList exists for tests (not normally defined in test environment)
+SlashCmdList = SlashCmdList or {}
+
 describe("Slash", function()
 	local SB, A, Slash
 	before_each(function()
@@ -36,6 +39,7 @@ describe("Slash", function()
 		Slash.Dispatch("boom")
 		assert.same({ SB.L.CMD_FAILED }, A.Lines())
 		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.falsy(SB.SafeMode.IsOn("bank"))
 		assert.equal("slash:boom", SB.ErrorTrap.Recent()[1].label)
 	end)
 
@@ -53,12 +57,29 @@ describe("Slash", function()
 	end)
 
 	it("an error in the prologue is trapped and prints feedback", function()
-		-- To test prologue protection, we verify that Dispatch runs inside ErrorTrap
-		-- by checking that a command error is recorded, which proves all code paths are trapped
-		Slash.Register("test", "h", function() error("cmd error") end)
-		Slash.Dispatch("test")
-		assert.equal(1, #SB.ErrorTrap.Recent())
-		assert.equal("slash:test", SB.ErrorTrap.Recent()[1].label)
+		-- Call entry point with non-string msg to make prologue (:match call) error
+		SlashCmdList.SWAGBAG({})
+		-- Verify prologue error was trapped by dispatcher label
+		local recent = SB.ErrorTrap.Recent()
+		assert.equal(1, #recent)
+		assert.equal("slash:dispatcher", recent[1].label)
+		-- Verify user got feedback
 		assert.same({ SB.L.CMD_FAILED }, A.Lines())
+		-- Verify Safe Mode stays off for both windows
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.falsy(SB.SafeMode.IsOn("bank"))
+	end)
+
+	it("a Print error in the handler is contained and does not escape", function()
+		-- Stub Print to throw on every call
+		local Print_orig = SB.Print
+		SB.Print = function() error("Print failed") end
+		-- Call entry point with valid command - prologue succeeds, but Print throws
+		SlashCmdList.SWAGBAG("help")
+		-- Restore Print for assertions
+		SB.Print = Print_orig
+		-- Verify no error escaped (test would have crashed otherwise)
+		-- Note: the Print stub prevented normal feedback, but pcall contained the error
+		assert.truthy(true)  -- If we get here, the error was contained
 	end)
 end)
