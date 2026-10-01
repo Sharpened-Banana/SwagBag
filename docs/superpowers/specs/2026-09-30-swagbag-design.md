@@ -30,7 +30,7 @@
 
 - No auction-house or mailbox scanning of our own. Prices come from Auctionator, else vendor price.
 - No TSM integration in v1.x.
-- No guild bank frame replacement; no guild bank data in v1.0 (Syndicator provider may surface it later).
+- No guild bank *money* management UI (deposit/withdraw gold stays in Blizzard's frame) and no guild bank tab purchase/permission editing.
 - No "send to alt" feature (scrapped in the grilling).
 - No sandboxed Lua rule language. The visual rule builder plus the query grammar is the ceiling.
 - No importers for other addons' SavedVariables in v1.0. Paste-string import of Syndicator/Baganator-syntax category strings is sufficient because the grammar is compatible.
@@ -162,6 +162,15 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC15.1 Settings are account-wide; focus modes and professions-dependent settings can be overridden per character via "Use character-specific settings" on the relevant page.
 - AC15.2 Every setting has a default and shows its alternative(s) next to it.
 
+#### F16. Guild bank window (full replacement)
+- AC16.1 Opening a guild vault shows SwagBag's guild bank window instead of Blizzard's: all viewable tabs stacked as groups (or one tab at a time, option), with category sections or grid, search (full dim), and per-category AH value totals.
+- AC16.2 Withdraw: right-click (or drag) a guild bank item moves it to the bags, respecting Blizzard's withdraw limits; the remaining daily withdrawals per tab are shown in the tab header.
+- AC16.3 Deposit: right-click a bag item while the guild vault is open deposits it into the selected guild bank tab; the target tab is highlighted ("Deposits go to Tab 2").
+- AC16.4 Tab contents load on demand (`QueryGuildBankTab`), are cached for the session, and a snapshot is saved per guild for viewing away from the vault ("as of 3 days ago").
+- AC16.5 Gold deposit/withdraw, tab purchase, permissions and the log stay in Blizzard's frame, reachable by a "Blizzard guild bank" button on our window.
+- AC16.6 First in-dev check **G1** (§11.3) verifies withdraw, deposit, tab switching and Hearthstone use afterwards, with no blocked actions. If any of these fail, the fallback is **view + search**: SwagBag's window shows contents/search/totals read-only, and Blizzard's guild bank frame stays visible beside it for moving items. This fallback is a setting switch (`guildBank.mode = "full" | "view"`), not a redesign.
+- AC16.7 SwagBag never writes Blizzard's guild bank frame state; tab switching uses `SetCurrentGuildBankTab` only if G1 proves it untainted, otherwise via Blizzard's own tab buttons re-hosted on our window (the bank approach, §5.2).
+
 ### 2.2 v1.1 – v1.3 (roughly monthly)
 
 | Version | Contents |
@@ -172,7 +181,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 
 ### 2.3 Later (demand-driven)
 
-Per-bag view; freeform drag layout; i18n (localized keywords and UI strings); Wago distribution; TSM price source; guild bank snapshots via Syndicator.
+Per-bag view; freeform drag layout; i18n (localized keywords and UI strings); Wago distribution; TSM price source.
 
 ### 2.4 Publish bar
 
@@ -222,7 +231,7 @@ Rule: a module on the left may `require`/reference only other left modules and t
 | `Providers.Syndicator` (v1.2) | `Syndicator.API` behind `AltData` | — | AltData |
 | `Config` | Account DB + per-character overrides; defaults; schema version; migrations | `Get(path)`, `Set(path, v)`, `CharOverride(path, on)`, `Defaults` | — |
 | `Buttons` | One `ContainerFrameItemButtonTemplate` per physical slot; per-bag parent frames; placeholder pool | `Get(bag, slot)`, `EnsureCapacity(bag, n)`, `Place(button, x, y)`, `Placeholder()` | Adapter |
-| `Views.Bags`, `Views.Bank`, `Views.Offline` | Windows; sections and grid; search box; mode title; headers | `Open()`, `Close()`, `Refresh(reason)`, `SetMode(sections|grid)` | all |
+| `Views.Bags`, `Views.Bank`, `Views.GuildBank`, `Views.Offline` | Windows; sections and grid; search box; mode title; headers | `Open()`, `Close()`, `Refresh(reason)`, `SetMode(sections|grid)` | all |
 | `Overlays` | Per-button overlay widgets driven by item records | `Apply(button, record)`, `Clear(button)` | Items, Prices |
 | `Sort` | Display order as data; physical sort delegation | `DisplayOrder(records, spec)`, `Physical(kind)` | Adapter, Core |
 | `SafeMode` | Suppress/restore Blizzard frames; auto-fallback | `Enable(window)`, `Disable(window)`, `IsOn(window)` | Core |
@@ -706,6 +715,7 @@ Run through `/swagbag check` plus a scripted guide (reuse the spike's guide fram
 | V9 | Auto-fallback in combat | injected error (`/swagbag debug error`) flips to Blizzard bags mid-combat; item use works | — |
 | V10 | Snapshot sizes for the user's real characters | ≤ budget §8.4 | adjust budget or drop bank snapshots for low-level alts |
 | V11 | Consumables warning on key start and on portal use | one line, correct counts | — |
+| G1 | Guild bank: withdraw, deposit, tab switch, Hearthstone afterwards, at a guild vault | items move correctly; no blocked actions; hearth works | `guildBank.mode = "view"` (read-only window + Blizzard frame beside) |
 | V12 | No item moves while open: loot, use, vendor, split, drag to bank, sort | zero `noWrongItemInSection` violations | — |
 
 Each check is re-run before every release on a tagged "release checklist" guide. V1–V4 run in the first week of M1/M4 respectively.
@@ -725,22 +735,29 @@ GitHub Actions on push: luacheck, busted, forbidden-token grep. On tag `v*`: Big
 
 ## 12. Roadmap
 
-Sizing: S ≈ 2–4 evenings of in-game testing, M ≈ 1–2 weeks, L ≈ 3 weeks. Claude's coding time is not the bottleneck; the user's in-game testing (2–3 evenings/week, ~2 h each) and the feedback loop are. Estimates include one round of fixes per milestone.
+**Target set by the user (2026-09-30): a daily-driver build by 2026-10-31**, with the user testing in-game every day. Publishing on CurseForge follows in November after the rule builder, full wizard/tour and offline alt view land and the publish bar (§2.4) is met.
 
-| # | Milestone | Size | Contents | Exit criteria | Calendar (from 2026-10-06) |
-|---|---|---|---|---|---|
-| M0 | Foundations | S | Repo, TOC, Core, Locale, Adapter (Retail) + Checks, Config with schema v1, ErrorTrap + `/swagbag report`, luacheck + busted + CI, mock adapter | CI green; `/swagbag check` and `report` work in-game | Week 1 |
-| M1 | Pool + grid + Safe Mode | M | Buttons pool at login, Inventory model, Bags window grid view, search box (text only), Safe Mode hooks + auto-fallback, V3/V4/V9 checks | User can daily-drive grid bags; V1, V3, V4, V9 passed | Weeks 2–3 |
-| M2 | Query engine | M | Grammar, keywords, tri-state, Validate, Pretty; search with full dim; desk spike F | ≥ 150 busted cases; 20 Wago strings parse as expected | Week 4 (parallel with M1 testing) |
-| M3 | Categories + sections + layout | L | Categorizer, default set, Layout engine, placeholders, New/Free, collapse, drag-to-assign, Reflow, sort buttons | V12 passes; no item moves while open across a week of play | Weeks 5–7 |
-| M4 | Bank | M | Bank window with stacked groups, tiny mode, TabSystem re-host, deposit highlight, bank sort, V2 | V2 passes (or fallback chosen); Hearthstone after bank works | Weeks 8–9 |
-| M5 | Focus modes + consumables warning | M | Focus engine, Signals, 6 modes, peek/pin, merge/strict, custom modes, M+ warning, V5–V8, V11 | Mode switches correctly in a real key, a delve, a raid, fishing and gathering | Weeks 10–11 |
-| M6 | Overlays + Auctionator | M | ilvl, upgrade track, upgrade arrow, keystone, junk, BoE/Warbound, stack; Prices provider, per-category totals | Overlays correct on the user's gear; totals match Auctionator | Week 12 |
-| M7 | Wizard, tour, settings UI, rule builder | L | Settings pages (P1 layout), wizard, tour, rule builder with AST editing and paste import, themes hook (Blizzard-like only) | A friend sets up SwagBag with no instructions | Weeks 13–15 |
-| M8 | Snapshots + offline view + polish | M | Snapshots on bank visit/logout, offline window with character dropdown, tooltip counts, size management, V10 | Alt bank viewable offline with age stamp | Week 16 |
-| M9 | Beta → v1.0 | M | 2 weeks daily-driving incl. M+, friends/guild testing, patch-day drill, CurseForge listing | Publish bar met | Weeks 17–19 |
+### 12.1 October build (daily driver) — what is in and out
 
-**Honest calendar:** v1.0 on CurseForge around **mid-February 2027** (19 weeks, with holidays), realistically a range of **4–6 months**. Risks that stretch it: 12.1.5 landing mid-way (budget one extra week), the bank fallback path (one week), the rule builder (WoW has no tree widget; it is the largest UI build). What shortens it: the user testing more evenings in M3/M5, which are the testing-bound milestones. v1.1–v1.3 then follow roughly monthly.
+| In (by Oct 31) | Deferred to November (v1.0 publish) |
+|---|---|
+| F1 bags, F2 bank + warband, **F16 guild bank (full, with view fallback)**, F3 category + grid + collapse, F4 default categories + drag-to-assign, F5 search, F8 six core focus modes (+ pause), F9 overlays incl. upgrade arrow, F10 Auctionator totals, F11 consumables warning, F12 Safe Mode + report, F14 Blizzard look, F15 simple settings, a **one-screen quick setup** (playstyle → preset) | F6 visual rule builder (largest UI build), F7 full wizard + interactive tour, F13 offline alt bags/banks view and tooltip alt counts (bank snapshots are still *captured* in October so data exists when the view lands) |
+
+### 12.2 Schedule (daily testing; each week ends with a working build)
+
+| Week | Dates | Milestones | Daily in-game checks | Exit criteria |
+|---|---|---|---|---|
+| 1 | Oct 1–7 | M0 foundations (repo, CI, Adapter, Checks, Config, ErrorTrap, report) · M1 button pool + grid bags + Safe Mode · M2 query engine (busted, parallel) | V1, V3, V4, V9 | User plays with SwagBag grid bags + search all day; Safe Mode proven |
+| 2 | Oct 8–14 | M3 categorizer + default categories + sections layout + placeholders/New/Free + collapse + drag-to-assign + sort/reflow | V12 every day | Category view is the user's default bag; no item ever moves under the cursor |
+| 3 | Oct 15–21 | M4 bank + warband (V2 first day) · **M4G guild bank (G1 first day)** · M6 overlays + upgrade arrow + Auctionator totals | V2, G1, overlay spot-checks | Bank and guild bank used for real; fallback decided by day 2 if a check fails |
+| 4 | Oct 22–28 | M5 focus modes + signals + pause + consumables warning · quick setup screen · settings pages | V5–V8, V11 in real keys, delves, raid, fishing, gathering | Modes switch correctly in real play |
+| 5 | Oct 29–31 | Hardening: bug fixes from the month, perf pass (§9 budgets), patch-day drill | full checklist | **Daily driver: zero Lua errors for 3 consecutive days** |
+
+### 12.3 November → v1.0 on CurseForge
+
+M7 rule builder + full wizard + tour (≈2 weeks) · M8 offline alt view + tooltip counts (≈1 week) · M9 publish bar: 2 weeks daily-driving incl. M+ with zero errors + 3 friends/guild testers for a week (overlaps M7/M8 where possible). **Realistic publish: early-to-mid December 2026.**
+
+**Honest risk on the October date:** it holds only if the four first-day checks (V1–V4, V2, G1) pass or their fallbacks are accepted within a day, and if 12.1.5 does not land mid-month. Each failed check without a quick fallback costs about 2–3 days. Claude will report schedule slip at the end of each week, not at the end of the month.
 
 ---
 
@@ -762,6 +779,8 @@ Sizing: S ≈ 2–4 evenings of in-game testing, M ≈ 1–2 weeks, L ≈ 3 week
 | Other addons touching our buttons (CanIMogIt, Pawn, TSM) | Med / Low | Buttons are standard `ContainerFrameItemButtonTemplate`; we expose nothing special; overlays in our own frame level |
 | Secret values poison tooltip-derived collection overlays (v1.1+) | Med / Low | `issecretvalue()` → `nil`; overlay hidden |
 | Developer loop stalls (user availability) | Med / High | Milestones are testing-sized; Claude prepares scripted guides so each evening is productive |
+| Guild bank full replacement taints or breaks (12.1 changed guild bank opening; Bagnon reported breakage) | Med / Med | G1 on day one of week 3; `view` fallback is a setting; never write Blizzard guild bank state |
+| October date slips | Med / Med | Week-by-week exit criteria; slip reported weekly; deferrals already moved to November |
 | Blizzard ships native category bags | Low / High | Focus modes, gold features and setup ease remain differentiators |
 
 ### 13.2 Open items (to be resolved during the named milestone)
@@ -798,6 +817,8 @@ Sizing: S ≈ 2–4 evenings of in-game testing, M ≈ 1–2 weeks, L ≈ 3 week
 | Auctionator prices, per-category totals, worth-money rule (100 g default / top-X %), no own scanning; send-to-alt scrapped | §2.1 F10; §2.2 v1.1; §1.3 |
 | M+: consumables top, keystone level/dungeon, ilvl/track, crests, consumables warning on entry and portal | §6.3 M+; §6.6; §2.1 F9, F11 |
 | All overlays available, real APIs | §2.1 F9; §2.2; §1.4 P7 |
+| Guild bank: full window replacement in v1.0, view+search fallback | §2.1 F16; §11.3 G1; §12 |
+| Daily-driver by 2026-10-31, user tests daily; publish after (Nov) | §12 |
 | Upgrade arrow moved into v1.0 (spec review) | §2.1 AC9.1, AC9.3; §12 M6 |
 | Blizzard-like default look; themes later; ElvUI auto-detect | §2.1 F14; §2.2 v1.3 |
 | Account-wide settings with per-character overrides | §8.1, §2.1 F15 |
