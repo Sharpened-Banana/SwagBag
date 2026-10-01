@@ -154,6 +154,60 @@ function Buttons.SetDimmed(button, dimmed)
 	button:SetAlpha(dimmed and Buttons.DIM_ALPHA or 1)
 end
 
+---------------------------------------------------------------------------
+-- Placeholders (spec 4.1, 4.2 rule 3): pooled plain Frames showing the icon of an
+-- item that moved or was used. A placeholder never responds to item interaction: it
+-- has no click, drag or drop script; mouse-down only shows a tooltip (check V4).
+-- Plain frames, so creating one in combat is allowed (ruling P9).
+---------------------------------------------------------------------------
+Buttons.placeholderPool, Buttons.placeholdersInUse = {}, {}
+Buttons.PLACEHOLDER_ALPHA = 0.5
+
+local function placeholderTip(self)
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:SetText(SB.L.PLACEHOLDER_TIP, 1, 1, 1, 1, true)
+	GameTooltip:Show()
+end
+
+local function hideTip()
+	GameTooltip:Hide()
+end
+
+local function createPlaceholder(parent)
+	local Guard = SB.ErrorTrap.Guard
+	local p = CreateFrame("Frame", nil, parent)
+	p:EnableMouse(true)
+	p.icon = p:CreateTexture(nil, "ARTWORK")
+	p.icon:SetAllPoints(p)
+	p.icon:SetDesaturated(true)
+	p:SetAlpha(Buttons.PLACEHOLDER_ALPHA)
+	p:SetScript("OnEnter", Guard("placeholder.enter", placeholderTip, "bags"))
+	p:SetScript("OnMouseDown", Guard("placeholder.click", placeholderTip, "bags"))
+	p:SetScript("OnLeave", Guard("placeholder.leave", hideTip, "bags"))
+	return p
+end
+
+-- A shown placeholder of `size` at TOPLEFT offset (x, y) inside parent.
+function Buttons.AcquirePlaceholder(parent, icon, size, x, y)
+	local p = table.remove(Buttons.placeholderPool) or createPlaceholder(parent)
+	p:SetSize(size, size)
+	p.icon:SetTexture(icon)
+	p:ClearAllPoints()
+	p:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+	p:Show()
+	Buttons.placeholdersInUse[#Buttons.placeholdersInUse + 1] = p
+	return p
+end
+
+function Buttons.ReleasePlaceholders()
+	for i = #Buttons.placeholdersInUse, 1, -1 do
+		local p = Buttons.placeholdersInUse[i]
+		p:Hide()
+		Buttons.placeholdersInUse[i] = nil
+		Buttons.placeholderPool[#Buttons.placeholderPool + 1] = p
+	end
+end
+
 SB.On("SB_LOGIN", function()
 	Buttons.CreateAll()
 end, "bags")

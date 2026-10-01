@@ -316,6 +316,36 @@ function A.RequestLoad(itemID)
 end
 
 ---------------------------------------------------------------------------
+-- Cursor and sorting (week 2: drag onto a section header, sort button)
+---------------------------------------------------------------------------
+-- itemID, link of the item on the cursor; nil when the cursor holds no item.
+function A.CursorItem()
+	if not GetCursorInfo then
+		return nil
+	end
+	local ok, kind, itemID, link = pcall(GetCursorInfo)
+	if ok and kind == "item" and type(itemID) == "number" and not isSecret(itemID) then
+		return itemID, link
+	end
+	return nil
+end
+
+-- Puts a picked-up item back where it came from.
+function A.ClearCursor()
+	if ClearCursor then
+		pcall(ClearCursor)
+	end
+end
+
+-- Blizzard's own bag sort. Returns true if it was started.
+function A.SortBags()
+	if not (C_Container and C_Container.SortBags) then
+		return false
+	end
+	return (pcall(C_Container.SortBags))
+end
+
+---------------------------------------------------------------------------
 -- Feature checks (consumed by Core/Checks.lua). window: which Safe Mode
 -- flag a failed REQUIRED check turns on. value: exact value expected.
 ---------------------------------------------------------------------------
@@ -325,6 +355,10 @@ A.CHECKS = {
 	{ path = "C_Container.GetContainerItemCooldown", window = "bags", required = true },
 	{ path = "C_Container.GetContainerItemEquipmentSetInfo", window = "bags", required = false },
 	{ path = "C_Container.GetContainerItemQuestInfo", window = "bags", required = false },
+	{ path = "C_Container.SortBags", window = "bags", required = false },
+	{ path = "GetCursorInfo", window = "bags", required = false },
+	{ path = "ClearCursor", window = "bags", required = false },
+	{ path = "GameTooltip", window = "bags", required = false },
 	{ path = "C_Item.GetItemInfoInstant", window = "bags", required = true },
 	{ path = "C_Item.GetItemInfo", window = "bags", required = true },
 	{ path = "C_Item.GetCurrentItemLevel", window = "bags", required = true },

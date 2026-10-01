@@ -18,6 +18,7 @@ read_globals = {
 	"NUM_CONTAINER_FRAMES", "ContainerFrameCombinedBags",
 	"SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated",
 	"StaticPopup_Show", "YES", "NO",
+	"GetCursorInfo", "ClearCursor", "GameTooltip",
 }
 
 files["spec/"] = {
