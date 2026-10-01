@@ -100,5 +100,7 @@ describe("Items.Describe", function()
 		-- unbound record yields #u suffix
 		local unbound = Items.Describe(0, 1)
 		assert.equal("item:" .. Fixtures.HEALING_POTION .. "#u", Items.Key(unbound, "instance"))
+		assert.equal("12345#uw", Items.Key({ itemID = 12345, isBound = false, isWUE = true }, "instance"))
+		assert.equal("12345#b", Items.Key({ itemID = 12345, isBound = true, isWUE = true }, "instance"))
 	end)
 end)
