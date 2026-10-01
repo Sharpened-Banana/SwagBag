@@ -13,6 +13,8 @@
 Core/Init.lua
 Locale/enUS.lua
 Core/Adapter.lua
+Core/SafeMode.lua
+Core/ErrorTrap.lua
 
 # Engine
 
