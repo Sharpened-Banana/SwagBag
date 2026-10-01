@@ -203,6 +203,35 @@ describe("SearchBox", function()
 		assert.equal(2, errorLine.calls.SetMaxLines[1])
 	end)
 
+	it("another window's box has its own search: typing there never changes the bags window's", function()
+		open()
+		Box.editBox:SetText("potion")
+		SB.Adapter.Advance(0.2)
+		local bankFrame, bankDimmed, bankOpen = newFake(), {}, true
+		local bankSlots = { { button = "k1", record = slots[3].record }, { button = "k2", record = slots[1].record } }
+		local bank = Box.New({
+			parent = bankFrame, name = "SwagBagBankSearchBox", search = SB.SearchState.New(), window = "bank",
+			debounceKey = "search.bank",
+			isOpen = function() return bankOpen end,
+			forEachSlot = function(fn)
+				for _, s in ipairs(bankSlots) do
+					fn(s.button, s.record)
+				end
+			end,
+			setDimmed = function(button, d) bankDimmed[button] = d end,
+		})
+		bank.editBox:SetText("gear")
+		SB.Adapter.Advance(0.2)
+		assert.same({ k1 = false, k2 = true }, bankDimmed, "the ring matches gear, the potion does not")
+		assert.equal("potion", SB.Search.text, "the bags search is unchanged")
+		assert.equal("gear", bank.search.text)
+		assert.falsy(dimmed.k1, "the bags window never dimmed bank buttons")
+		bank.editBox:SetText("gear &")
+		SB.Adapter.Advance(0.2)
+		assert.truthy(bank.search.lastError)
+		assert.is_nil(SB.Search.lastError, "the error belongs to the bank box only")
+	end)
+
 	it("the error line is top-aligned right of the box and never stretches over the items", function()
 		local errorLine
 		for _, fs in ipairs(window.frame.created) do
