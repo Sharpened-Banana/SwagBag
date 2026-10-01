@@ -30,6 +30,7 @@ Engine/GridLayout.lua
 Engine/Query/Lexer.lua
 Engine/Query/Parser.lua
 Engine/Query/Query.lua
+Engine/Keywords.lua
 
 # UI
 UI/ReportBox.lua
