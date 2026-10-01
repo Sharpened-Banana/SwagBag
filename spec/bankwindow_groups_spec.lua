@@ -90,14 +90,20 @@ describe("BankWindow contents", function()
 		assert.equal("open", BW.view.stats.lastLayoutReason)
 	end)
 
+	-- Fix round 1: the click only relabels. Mutation: v.Relabel() -> v.Layout("target") in BW.RefreshTarget.
 	it("the group that receives deposits is tinted; a tab click moves the highlight to the other group", function()
 		openBank()
 		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#bank").bg.calls.SetColorTexture)
+		A.Put(6, 5, Fixtures.FLASK, 2) -- a deposit: one item in New
+		bankUpdate(6)
+		local before = { at(6, 1), at(6, 2), at(6, 5), at(12, 1), at(12, 2) }
 		A.activeBankType = "warband"
 		Fake.Fire(bf.TabSystem.tabs[2], "OnClick")
 		A.Advance(0)
+		assert.same(before, { at(6, 1), at(6, 2), at(6, 5), at(12, 1), at(12, 2) }, "a tab click moves nothing")
+		assert.equal("open", BW.view.stats.lastLayoutReason, "no layout ran")
+		assert.equal("- Character bank (3)", header("#bank").text.text)
 		assert.equal("- Warband bank (2)  - deposits go here", header("#warband").text.text)
-		assert.equal("- Character bank (2)", header("#bank").text.text)
 		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#warband").bg.calls.SetColorTexture)
 	end)
 
@@ -261,6 +267,42 @@ describe("BankWindow contents", function()
 		assert.equal(true, BW.view.Record(6, 5).isNew, "a deposit during the visit is new")
 	end)
 
+	-- Ruling W3-25. Mutation: drop the newSet clearing in Inv.ScanKind (visit = true).
+	it("a deposit made during one visit is not new at the next visit", function()
+		openBank()
+		A.Put(6, 5, Fixtures.FLASK, 1)
+		bankUpdate(6)
+		assert.equal(true, BW.view.Record(6, 5).isNew)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		openBank()
+		assert.equal(false, BW.view.Record(6, 5).isNew, "the last visit's deposit is just bank contents now")
+	end)
+
+	-- Ruling W3-25. Mutation: delete the Inventory.FlushKinds call in the BANK_TAB_SETTINGS_UPDATED handler.
+	it("a deposit still waiting on the flush when a bank tab changes stays new", function()
+		openBank()
+		A.Put(6, 5, Fixtures.FLASK, 1)
+		SB.eventFrame:Fire("BAG_UPDATE", 6) -- dirty; the 50 ms flush has not run yet
+		SB.eventFrame:Fire("BANK_TAB_SETTINGS_UPDATED")
+		assert.equal(true, BW.view.Record(6, 5).isNew, "a deposit during the visit is new")
+		assert.truthy(B.Get(6, 5).shown)
+	end)
+
+	-- Ruling W3-27. Mutation: delete the SB.OutOfCombat(... "bank.grownLayout" ...) call in bagsOf.
+	it("a bank tab bought in combat gets its buttons after combat and the bank is laid out again", function()
+		openBank()
+		A.combat = true
+		A.bagIDs.bank = { 6, 7 }
+		A.SetBagSize(7, 4)
+		A.Put(7, 1, Fixtures.JUNK, 2)
+		bankUpdate(7)
+		assert.equal(0, B.Count(7), "no buttons are created in combat")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal("grow", BW.view.stats.lastLayoutReason)
+		assert.truthy(B.Get(7, 1).shown)
+	end)
+
 	it("a bank tab bought during the visit gets its buttons and the bank is laid out again", function()
 		openBank()
 		A.bagIDs.bank = { 6, 7 }
@@ -352,10 +394,36 @@ describe("Bags and bank windows open together (Review Focus 1)", function()
 		A.Advance(0.06)
 		local bankPlaceholder = B.placeholdersInUse[1]
 		assert.truthy(bankPlaceholder and bankPlaceholder.shown)
+		assert.equal(BW.child, bankPlaceholder.parent, "the withdrawal's placeholder is the bank window's")
 		W.Reflow("reflow")
 		assert.equal(headers, bankHeaders(), "the bank's headers survived the bags regroup")
 		assert.truthy(bankPlaceholder.shown, "and so did its placeholder")
 		BW.Reflow("reflow")
 		assert.truthy(#SB.SectionHeaders.inUse > headers, "the bags window kept its headers too")
+	end)
+
+	-- Fix round 1, the reverse direction. Mutation: B.ReleasePlaceholders() (no parent) in GroupView's
+	-- renderExtras.
+	it("a bank redraw (Reflow) never takes the bags window's placeholders", function()
+		W.Open()
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		A.Clear(0, 1) -- a bags withdrawal (used or moved) leaves a placeholder in the bags window
+		SB.eventFrame:Fire("BAG_UPDATE", 0)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.06)
+		local bagsPlaceholder
+		for _, p in ipairs(B.placeholdersInUse) do
+			if p.parent == W.child then
+				bagsPlaceholder = p
+			end
+		end
+		assert.truthy(bagsPlaceholder and bagsPlaceholder.shown, "the bags window has a placeholder")
+		assert.truthy(BW.Reflow("reflow"))
+		assert.truthy(bagsPlaceholder.shown, "the bags placeholder survived the bank regroup")
+		local still = false
+		for _, p in ipairs(B.placeholdersInUse) do
+			still = still or p == bagsPlaceholder
+		end
+		assert.truthy(still, "and it is still in use")
 	end)
 end)

@@ -123,6 +123,35 @@ function Inv.Flush(source)
 	end
 end
 
+-- Flush now the dirty bags of these kinds only (listeners are notified as usual); other
+-- dirty bags keep waiting for their own flush.
+function Inv.FlushKinds(kinds, source)
+	local keep, any = {}, false
+	local wanted = {}
+	for _, kind in ipairs(kinds) do
+		for _, bag in ipairs(SB.Adapter.GetBagIDs(kind)) do
+			wanted[bag] = true
+		end
+	end
+	for bag in pairs(Inv.dirty) do
+		if wanted[bag] then
+			any = true
+		else
+			keep[bag] = true
+		end
+	end
+	if not any then
+		return
+	end
+	for bag in pairs(keep) do
+		Inv.dirty[bag] = nil
+	end
+	Inv.Flush(source)
+	for bag in pairs(keep) do
+		Inv.MarkDirty(bag) -- still waiting (this re-arms the failsafe the flush cancelled)
+	end
+end
+
 function Inv.MarkDirty(bag)
 	if type(bag) ~= "number" or SB.Adapter.IsSecret(bag) then
 		return
@@ -157,11 +186,21 @@ function Inv.TrackedBags()
 end
 
 -- Rescan every bag of a kind without marking anything "new". The character bank can only be
--- read at a banker (spec 5.7), so what is in it at a visit is not a new arrival.
-function Inv.ScanKind(kind)
+-- read at a banker (spec 5.7), so what is in it at a visit is not a new arrival. visit: true
+-- at the start of a bank visit, which also forgets what was new during an earlier visit
+-- (ruling W3-25); a rescan inside a visit keeps this visit's arrivals new.
+function Inv.ScanKind(kind, visit)
 	local was = Inv.scanned
 	Inv.scanned = false
 	for _, bag in ipairs(SB.Adapter.GetBagIDs(kind)) do
+		if visit then
+			local prefix = bag .. ":"
+			for k in pairs(Inv.newSet) do
+				if k:sub(1, #prefix) == prefix then
+					Inv.newSet[k] = nil
+				end
+			end
+		end
 		Inv.ScanBag(bag)
 		Inv.dirty[bag] = nil
 	end
@@ -267,6 +306,6 @@ SB.On("SB_LOGIN", function()
 end, "bags")
 
 SB.On("BANKFRAME_OPENED", function()
-	Inv.ScanKind("bank")
-	Inv.ScanKind("warband")
+	Inv.ScanKind("bank", true)
+	Inv.ScanKind("warband", true)
 end, "bank")

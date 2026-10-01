@@ -86,6 +86,18 @@ describe("BankWindow frames (check V2)", function()
 		SB.eventFrame:Fire("BANKFRAME_CLOSED")
 	end
 
+	-- Ruling W3-26. Mutation: delete the title's RIGHT anchor in BankWindow.lua.
+	it("the title ends left of the title buttons, on one line, so a long flash never runs under them", function()
+		local right
+		for _, p in ipairs(BW.frame.title.points) do
+			if p[1] == "RIGHT" then
+				right = p
+			end
+		end
+		assert.same({ "RIGHT", BW.sortBankButton, "LEFT", -6, 0 }, right)
+		assert.equal(false, BW.frame.title.calls.SetWordWrap[1])
+	end)
+
 	it("opens at the banker; Blizzard's bank stays shown inside the 0.001 parent, its tabs under our window", function()
 		openBank()
 		assert.truthy(BW.IsOpen())

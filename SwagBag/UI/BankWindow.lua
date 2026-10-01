@@ -253,13 +253,24 @@ function BW.View()
 	return SB.Config.Get("bank.view") == "grid" and "grid" or "sections"
 end
 
+local searchBox -- the bank's search box, built below the view
+
 local function bagsOf(kind)
 	local A, B, list = SB.Adapter, SB.Buttons, {}
 	for _, bag in ipairs(A.GetBagIDs(kind)) do
 		local n = A.NumSlots(bag)
 		if n > 0 then
 			if B.Count(bag) < n then
-				B.EnsureCapacity(bag, n) -- in combat this waits; the slots appear at the next layout
+				B.EnsureCapacity(bag, n)
+				if A.InCombat() then
+					-- Ruling W3-27: the growth waits for combat to end; then lay the bank out again
+					-- (this layout creates any buttons still missing, so queue order does not matter).
+					SB.OutOfCombat(function()
+						if frame:IsShown() and BW.view.IsOpen() and BW.view.RequestLayout("grow") then
+							searchBox.Apply()
+						end
+					end, "bank.grownLayout", "bank")
+				end
 			end
 			list[#list + 1] = { bag = bag, size = n }
 		end
@@ -291,7 +302,6 @@ local function sizeFrame(width, height)
 	clampScroll()
 end
 
-local searchBox
 
 BW.view = SB.GroupView.New({
 	key = "bank",
@@ -432,6 +442,11 @@ BW.sortBankButton = titleButton(L.BTN_SORT_BANK, "bank.sortBank", function()
 	BW.Sort("bank")
 end, 76)
 BW.sortBankButton:SetPoint("RIGHT", BW.sortWarbandButton, "LEFT", -4, 0)
+-- Ruling W3-26: the title (and its flashes) ends left of the leftmost title button; a long
+-- flash is cut short on one line instead of running under the buttons.
+frame.title:SetPoint("RIGHT", BW.sortBankButton, "LEFT", -6, 0)
+frame.title:SetJustifyH("LEFT")
+frame.title:SetWordWrap(false)
 
 -- Live updates while open (spec 4.3), for the bank tabs only: count, lock and loaded data
 -- repaint in place; an emptied slot or a different item goes to GroupView.Changes; a tab
@@ -593,6 +608,9 @@ SB.On("BANK_TAB_SETTINGS_UPDATED", function()
 	if not (frame:IsShown() and BW.view.IsOpen()) then
 		return
 	end
+	-- Ruling W3-25: a deposit still waiting on the 50 ms flush is notified (and marked new)
+	-- first; the rescan below would otherwise absorb it as "already there".
+	SB.Inventory.FlushKinds({ "bank", "warband" }, "tabs")
 	SB.Inventory.ScanKind("bank")
 	SB.Inventory.ScanKind("warband")
 	SB.Buttons.EnsureBankTabs()
