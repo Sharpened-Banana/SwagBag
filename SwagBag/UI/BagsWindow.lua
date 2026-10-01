@@ -29,6 +29,9 @@ frame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interfa
 frame:SetBackdropColor(0.06, 0.06, 0.08, 0.95)
 frame:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
 frame:Hide()
+if frame.SetDontSavePosition then
+	frame:SetDontSavePosition(true) -- SwagBag keeps its own saved position
+end
 W.frame = frame
 table.insert(UISpecialFrames, "SwagBagBagsWindow")
 

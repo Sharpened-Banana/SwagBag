@@ -75,4 +75,13 @@ describe("DebugV1", function()
 		strip.scripts.OnDragStop(strip)
 		assert.equal(2, SB.ErrorTrap.count)
 	end)
+
+	it("a drag error in the throwaway strip never puts the real windows in Safe Mode", function()
+		V1.Toggle()
+		local strip = created[1].frame
+		strip.StartMoving = function() error("boom", 0) end
+		strip.scripts.OnDragStart(strip)
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.falsy(SB.SafeMode.IsOn("bank"))
+	end)
 end)

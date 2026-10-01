@@ -38,6 +38,8 @@ local function newFake()
 				end
 			elseif name == "SetText" then
 				return function(self, s) self.text = s end
+			elseif name == "SetDontSavePosition" then
+				return function(self, v) self.dontSave = v end
 			elseif name == "CreateFontString" then
 				return function() return newFake() end
 			end
@@ -92,6 +94,10 @@ describe("BagsWindow", function()
 		A.sizes[0], A.sizes[1] = 16, 0
 		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
 		W = SB.BagsWindow
+	end)
+
+	it("opts out of the client's saved window position (SwagBag keeps its own)", function()
+		assert.equal(true, W.frame.dontSave)
 	end)
 
 	it("is registered for Esc", function()
