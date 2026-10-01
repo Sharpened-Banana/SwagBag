@@ -4,11 +4,17 @@
 -- combat is allowed (ruling P9). The window supplies the actions:
 --   Headers.onClick(sectionId)  left-click (collapse/expand, or drop the cursor item)
 --   Headers.onDrop(sectionId)   an item dragged onto the header (AC4.3)
+-- Those two are the bags window's. Another window passes its own { onClick, onDrop } as the
+-- owner of the headers it acquires, and releases only the headers inside its own frame.
 local _, SB = ...
 
 local L = SB.L
 local H = { pool = {}, inUse = {}, HEIGHT = 18 }
 SB.SectionHeaders = H
+
+-- [header] = the frame it was acquired in / its owner's { onClick, onDrop }. Kept beside the
+-- frames, not on them, so a field name can never clash with a frame method.
+local parents, owners = {}, {}
 
 -- Pure: the header text.
 function H.Label(name, count, collapsed, overflow)
@@ -32,23 +38,27 @@ local function create(parent)
 	h.text:SetPoint("LEFT", h, "LEFT", 4, 0)
 	h.text:SetJustifyH("LEFT")
 	h:SetScript("OnClick", Guard("header.click", function(self)
-		if H.onClick then
-			H.onClick(self.sectionId)
+		local o = owners[self] or H
+		if o.onClick then
+			o.onClick(self.sectionId)
 		end
 	end, "bags"))
 	h:SetScript("OnReceiveDrag", Guard("header.drop", function(self)
-		if H.onDrop then
-			H.onDrop(self.sectionId)
+		local o = owners[self] or H
+		if o.onDrop then
+			o.onDrop(self.sectionId)
 		end
 	end, "bags"))
 	return h
 end
 
--- A shown header for sectionId at (x, y) inside parent.
-function H.Acquire(parent, sectionId, label, x, y, width)
+-- A shown header for sectionId at (x, y) inside parent. owner: optional { onClick, onDrop }.
+function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	local h = table.remove(H.pool) or create(parent)
 	h:SetParent(parent)
+	parents[h], owners[h] = parent, owner
 	h.sectionId = sectionId
+	h.bg:SetColorTexture(1, 1, 1, 0.06)
 	h.text:SetText(label)
 	h:SetWidth(width)
 	h:ClearAllPoints()
@@ -58,12 +68,15 @@ function H.Acquire(parent, sectionId, label, x, y, width)
 	return h
 end
 
-function H.ReleaseAll()
+-- Release the headers inside parent; every header when parent is nil.
+function H.ReleaseAll(parent)
 	for i = #H.inUse, 1, -1 do
 		local h = H.inUse[i]
-		h:Hide()
-		h.sectionId = nil
-		H.inUse[i] = nil
-		H.pool[#H.pool + 1] = h
+		if parent == nil or parents[h] == parent then
+			h:Hide()
+			h.sectionId, parents[h], owners[h] = nil, nil, nil
+			table.remove(H.inUse, i)
+			H.pool[#H.pool + 1] = h
+		end
 	end
 end

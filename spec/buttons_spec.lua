@@ -152,6 +152,150 @@ describe("Section headers", function()
 	end)
 end)
 
+describe("Button pool growth, parents and bank tabs (week-1 ledger)", function()
+	local Fake = dofile("spec/helpers/fakeframe.lua")
+	local SB, A, B
+	before_each(function()
+		SB = Loader.New(FILES)
+		A = SB.Adapter
+		Fake.Install()
+		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
+		B = SB.Buttons
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	it("growth asked for during combat keeps the largest request, in either order", function()
+		A.combat = true
+		B.EnsureCapacity(0, 40)
+		B.EnsureCapacity(0, 20)
+		B.EnsureCapacity(1, 12)
+		B.EnsureCapacity(1, 30)
+		assert.equal(0, B.Count(0), "nothing is created in combat")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal(40, B.Count(0))
+		assert.equal(30, B.Count(1))
+	end)
+
+	it("a login that failed half-way creates the rest when bags Safe Mode is switched off", function()
+		A.SetBagSize(0, 16)
+		local made = 0
+		CreateFrame = function(kind, ...)
+			if kind == "ItemButton" then
+				made = made + 1
+				if made == 50 then
+					error("client hiccup")
+				end
+			end
+			return Fake.CreateFrame(kind, ...)
+		end
+		SB.Emit("SB_LOGIN")
+		assert.falsy(B.created)
+		assert.truthy(SB.SafeMode.IsOn("bags"))
+		CreateFrame = Fake.CreateFrame
+		SB.SafeMode.Disable("bags")
+		assert.truthy(B.created)
+		for bag = 0, 5 do
+			assert.equal(38, B.Count(bag), "bag " .. bag)
+		end
+	end)
+
+	it("SetParentFor moves bag frames made earlier onto the new parent; their buttons stay on them", function()
+		B.EnsureCapacity(6, 2)
+		B.EnsureCapacity(0, 1)
+		local holder, bagsParent = B.frames[6].parent, B.frames[0].parent
+		local child = Fake.New("Frame")
+		B.SetParentFor("bank", child)
+		assert.equal(child, B.frames[6].parent)
+		assert.equal(child, B.frames[6].allPoints)
+		assert.equal(B.frames[6], B.Get(6, 1).parent, "the item button was not reparented")
+		assert.equal(bagsParent, B.frames[0].parent, "other kinds are untouched")
+		assert.truthy(holder ~= child)
+	end)
+
+	it("SetParentFor in combat moves the bag frames when combat ends", function()
+		B.EnsureCapacity(12, 1)
+		local child = Fake.New("Frame")
+		A.combat = true
+		B.SetParentFor("warband", child)
+		assert.truthy(B.frames[12].parent ~= child)
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal(child, B.frames[12].parent)
+	end)
+
+	it("a bank tab bought after login gets its 98 buttons when the bank opens", function()
+		A.bagIDs.bank = { 6 }
+		SB.Emit("SB_LOGIN")
+		assert.equal(98, B.Count(6))
+		assert.equal(0, B.Count(7))
+		A.bagIDs.bank = { 6, 7 }
+		A.SetBagSize(7, 98)
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		assert.equal(98, B.Count(7))
+		assert.equal(98, B.Count(6), "nothing extra for the old tab")
+	end)
+
+	it("ReleasePlaceholders(parent) releases only the placeholders inside that parent", function()
+		local bagsChild, bankChild = Fake.New("Frame"), Fake.New("Frame")
+		local a = B.AcquirePlaceholder(bagsChild, 1, 37, 0, 0)
+		local b = B.AcquirePlaceholder(bankChild, 2, 37, 0, 0)
+		B.ReleasePlaceholders(bagsChild)
+		assert.falsy(a.shown)
+		assert.truthy(b.shown)
+		assert.same({ b }, B.placeholdersInUse)
+		B.ReleasePlaceholders()
+		assert.falsy(b.shown)
+	end)
+end)
+
+describe("Section headers per window", function()
+	local Fake = dofile("spec/helpers/fakeframe.lua")
+	local SB, H
+	before_each(function()
+		SB = Loader.New(FILES)
+		Fake.Install()
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		H = SB.SectionHeaders
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	it("an owner's onClick and onDrop handle its headers; headers without an owner use the bags window's", function()
+		local bagsClicks, bankClicks, bankDrops = {}, {}, {}
+		H.onClick = function(id) bagsClicks[#bagsClicks + 1] = id end
+		local owner = { onClick = function(id) bankClicks[#bankClicks + 1] = id end,
+			onDrop = function(id) bankDrops[#bankDrops + 1] = id end }
+		local mine = H.Acquire(Fake.New("Frame"), "bank:c_gear", "x", 0, 0, 10, owner)
+		local bags = H.Acquire(Fake.New("Frame"), "c_gear", "x", 0, 0, 10)
+		Fake.Fire(mine, "OnClick")
+		Fake.Fire(mine, "OnReceiveDrag")
+		Fake.Fire(bags, "OnClick")
+		assert.same({ "bank:c_gear" }, bankClicks)
+		assert.same({ "bank:c_gear" }, bankDrops)
+		assert.same({ "c_gear" }, bagsClicks)
+	end)
+
+	it("ReleaseAll(parent) releases only that window's headers, and a reused header forgets its owner", function()
+		local bagsChild, bankChild = Fake.New("Frame"), Fake.New("Frame")
+		local clicks = 0
+		local a = H.Acquire(bankChild, "x", "x", 0, 0, 10, { onClick = function() clicks = clicks + 1 end })
+		local b = H.Acquire(bagsChild, "y", "y", 0, 0, 10)
+		H.ReleaseAll(bankChild)
+		assert.falsy(a.shown)
+		assert.truthy(b.shown)
+		local reused = H.Acquire(bagsChild, "z", "z", 0, 0, 10)
+		assert.equal(a, reused)
+		Fake.Fire(reused, "OnClick")
+		assert.equal(0, clicks, "the old owner is gone")
+	end)
+end)
+
 describe("The free tile's number (plan D19)", function()
 	local SB
 	before_each(function()
