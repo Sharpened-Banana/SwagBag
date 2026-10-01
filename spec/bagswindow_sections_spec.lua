@@ -1233,7 +1233,7 @@ describe("BagsWindow focus modes (spec 6)", function()
 		local junk = B.Get(0, 6)
 		local offset = junk.y - header("c_junk").points[1][5]
 		local gear = B.Get(0, 4)
-		gear.mouseOver = true -- Gear does not move (everything above it stays open)
+		gear.mouseOver = true -- Keystone and Consumables collapse above it and Gear itself hides: it would move
 		F.SetSignal("merchantOpen", true) -- opens BoE gear, Trade Goods, Junk: Gear and Consumables collapse
 		local ring = B.Get(0, 3)
 		assert.equal("SwagBag — AH/Vendor/Bank", W.frame.title.text, "the title changes at once")
@@ -1286,6 +1286,61 @@ describe("BagsWindow focus modes (spec 6)", function()
 		keystone.mouseOver = false
 		A.Advance(0.3)
 		assert.equal("+ New (1)", header("new").text.text, "the collapse applied once the mouse left")
+	end)
+
+	-- Ruling W4-13: a switch the world starts (not the user's click) also waits while the mouse is
+	-- anywhere over the items (a header, a placeholder, a gap), so nothing slides under a right-click
+	-- at a merchant. Mutation: drop the scroll:IsMouseOver() area check from W.Restack.
+	it("a world-started switch waits while the mouse is anywhere over the items, then applies", function()
+		W.Open()
+		W.scroll.mouseOver = true -- over a header or a gap; no button is hovered
+		F.SetSignal("challengeMode", true)
+		assert.equal("SwagBag — M+", W.frame.title.text, "the title changes at once")
+		assert.truthy(B.Get(0, 3).shown, "held: the ring is still shown")
+		assert.equal("- BoE gear (1)", header("c_boe").text.text)
+		A.Advance(0.3)
+		assert.truthy(B.Get(0, 3).shown, "still held while the mouse stays over the items")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.falsy(B.Get(0, 3).shown, "applied once the mouse left")
+		assert.equal("+ BoE gear (1)", header("c_boe").text.text)
+	end)
+
+	it("a header click still re-stacks with the mouse over the items (only a button that would move holds it)",
+		function()
+		W.Open()
+		W.scroll.mouseOver = true -- the click is on a header, inside the items area
+		W.ToggleSection("c_junk")
+		assert.falsy(B.Get(0, 6).shown, "applied at once")
+	end)
+
+	-- Mutation: in W.Restack, `area = area == true or W.areaHeld` -> `area = area == true`.
+	it("a header click while a world-started switch waits does not draw it under the mouse", function()
+		W.Open()
+		W.scroll.mouseOver = true
+		F.SetSignal("challengeMode", true)
+		W.ToggleSection("c_consumables")
+		assert.truthy(B.Get(0, 3).shown, "the switch still waits")
+		assert.equal("- BoE gear (1)", header("c_boe").text.text)
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.falsy(B.Get(0, 3).shown, "applied once the mouse left")
+	end)
+
+	it("pause wins during a held switch: the retry draws the user's own view, titled Paused", function()
+		W.Open()
+		W.ToggleSection("c_junk") -- the user's own state
+		local ring = B.Get(0, 3)
+		ring.mouseOver = true
+		F.SetSignal("challengeMode", true)
+		assert.truthy(ring.shown, "held")
+		F.Pause()
+		ring.mouseOver = false
+		A.Advance(0.3)
+		assert.same({ "- New (0)", "- Keystone & Crests (1)", "- Consumables (2)", "- Gear (1)", "- BoE gear (1)",
+			"+ Junk (1)", "- Free (10)" }, headers())
+		assert.truthy(ring.shown)
+		assert.equal("SwagBag — Paused", W.frame.title.text)
 	end)
 
 	it("an item on the cursor holds the switch; it applies once the item is put down", function()
