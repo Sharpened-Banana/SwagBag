@@ -225,6 +225,25 @@ function M.New(SB)
 		return m.guildTabFrames
 	end
 
+	-- Auctionator: m.auctionator = { prices = { [link] = copper } } while "loaded"; nil otherwise.
+	m.auctionator = nil
+	m.auctionatorCalls = 0
+	function m.AuctionatorAvailable()
+		return m.auctionator ~= nil
+	end
+
+	function m.AuctionatorPrice(link)
+		m.auctionatorCalls = m.auctionatorCalls + 1
+		if m.auctionator and m.auctionator.fail then
+			error("Auctionator broke")
+		end
+		return m.auctionator and m.auctionator.prices[link] or nil
+	end
+
+	function m.AuctionatorOnUpdate(cb)
+		m.auctionatorCallback = cb
+	end
+
 	M.AddContainers(m)
 	return m
 end
@@ -329,7 +348,7 @@ function M.AddContainers(m)
 			baseIlvl = it.ilvl,
 			reqLevel = it.reqLevel or 0,
 			maxStack = it.maxStack or 1,
-			sellPrice = 0,
+			sellPrice = it.sellPrice or 0,
 			bind = it.bind or "none",
 			expansionID = 0,
 			isCraftingReagent = it.isCraftingReagent == true,

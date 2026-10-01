@@ -360,6 +360,19 @@ local function showAt(button, c)
 	end
 end
 
+-- Each section header's text, with its total value (spec F10) when that setting is on.
+local function headerLabels(pos)
+	local H = SB.SectionHeaders
+	local totals = H.Totals(W.state, function(bag, slot)
+		return W.records[bag] and W.records[bag][slot]
+	end) or {}
+	local vendor, labels = H.IsVendor(), {}
+	for i, h in ipairs(pos.headers) do
+		labels[i] = H.Label(SB.Categories.Name(h.id), h.count, h.collapsed, h.overflow, totals[h.id], vendor)
+	end
+	return labels
+end
+
 -- Placeholders and headers (a handful) are redrawn whole; they live in this window's child,
 -- so nothing another window drew is released.
 local function renderExtras(pos)
@@ -371,9 +384,18 @@ local function renderExtras(pos)
 		end
 	end
 	H.ReleaseAll(child)
-	for _, h in ipairs(pos.headers) do
-		H.Acquire(child, h.id, H.Label(SB.Categories.Name(h.id), h.count, h.collapsed, h.overflow), W.PAD, h.y,
-			pos.width - 2 * W.PAD)
+	local labels = headerLabels(pos)
+	for i, h in ipairs(pos.headers) do
+		H.Acquire(child, h.id, labels[i], W.PAD, h.y, pos.width - 2 * W.PAD)
+	end
+	W.headerSig = table.concat(labels, "\n")
+end
+
+-- A stack's count or an item's price can change a section's total with no button moving:
+-- redraw the headers (only) when their text would differ.
+function W.RefreshHeaders()
+	if W.state and W.pos and table.concat(headerLabels(W.pos), "\n") ~= W.headerSig then
+		renderExtras(W.pos)
 	end
 end
 
@@ -872,6 +894,7 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 		paintTiles(W.pos)
 	end
 	if touched then
+		W.RefreshHeaders()
 		SB.Emit("SB_BAGS_UPDATED")
 	end
 end, "bags"))

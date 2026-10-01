@@ -976,6 +976,16 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal(0, #SB.Buttons.placeholdersInUse)
 		assert.same({ 2 }, A.guild.queried, "asked again")
 	end)
+
+	it("guild section headers carry a value; a tab that is still loading keeps its group header text (F10)", function()
+		A.items[Fixtures.HERB].sellPrice = 1500
+		openVault()
+		assert.equal("- Mats (0) - 5 withdrawals left today (loading...)  - deposits go here", header("#tab1").text.text)
+		answerQueries()
+		assert.equal("- Herbs (1) - 3g vendor", header("tab1:c_herbs").text.text, "20 herbs, a record with isBound = false")
+		assert.equal("- Mats (2) - 5 withdrawals left today  - deposits go here", header("#tab1").text.text,
+			"group headers never show a value")
+	end)
 end)
 
 describe("GuildBankWindow load order", function()

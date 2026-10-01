@@ -129,6 +129,8 @@ L.CAT_OTHER = "Other"
 L.CAT_FREE = "Free"
 L.HEADER_LABEL = "%s %s (%d)"
 L.HEADER_OVERFLOW = "  +%d more below"
+L.HEADER_VALUE = " - %s"
+L.HEADER_VALUE_VENDOR = " - %s vendor"
 L.PLACEHOLDER_TIP = "This item moved or was used - items regroup when you close the bag."
 
 -- Search
@@ -227,6 +229,10 @@ L.AGE_MINUTES = "%d min ago"
 L.AGE_HOURS = "%d h ago"
 L.AGE_DAYS = "%d days ago"
 L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
+
+-- Prices (spec F10)
+L.PRICES_PROVIDER_OFF = "Price source %s stopped working and was switched off until /reload."
+L.REPORT_PRICES = "Prices: %s, %d cached"
 
 -- Overlays (spec F9)
 L.OVERLAY_TRACK = "%s%d/%d"

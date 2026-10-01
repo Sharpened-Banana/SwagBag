@@ -16,13 +16,30 @@ SB.SectionHeaders = H
 -- frames, not on them, so a field name can never clash with a frame method.
 local parents, owners = {}, {}
 
--- Pure: the header text.
-function H.Label(name, count, collapsed, overflow)
+-- Pure: the header text. value (copper, optional) is the section's total value (spec F10),
+-- shown when above 0; vendor = the value is the vendor price (no Auctionator).
+function H.Label(name, count, collapsed, overflow, value, vendor)
 	local text = L.HEADER_LABEL:format(collapsed and "+" or "-", name, count)
+	if value and value > 0 then
+		text = text .. (vendor and L.HEADER_VALUE_VENDOR or L.HEADER_VALUE):format(SB.Prices.Money(value))
+	end
 	if overflow and overflow > 0 then
 		text = text .. L.HEADER_OVERFLOW:format(overflow)
 	end
 	return text
+end
+
+-- Section totals for a layout state, or nil when header totals are switched off.
+-- recordOf(bag, slot) -> item record.
+function H.Totals(state, recordOf)
+	if not (state and SB.Prices and SB.Config.Get("prices.headerTotals")) then
+		return nil
+	end
+	return SB.Prices.SectionTotals(state, recordOf)
+end
+
+function H.IsVendor()
+	return SB.Prices ~= nil and SB.Prices.Source() == "Vendor"
 end
 
 local function create(parent)

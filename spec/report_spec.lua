@@ -90,6 +90,12 @@ describe("Report", function()
 		assert.truthy(SB.Report.Build():find("\nSnapshots: 3 characters, 1 guilds, 40 KB", 1, true))
 	end)
 
+	it("shows which price source answers and how many prices are cached (F10)", function()
+		SB.Checks.last = {}
+		SB.Prices = { Source = function() return "Auctionator" end, cached = 412 }
+		assert.truthy(SB.Report.Build():find("\nPrices: Auctionator, 412 cached", 1, true))
+	end)
+
 	it("Hash is stable, order-independent and changes with content", function()
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 		local h2 = SB.Report.Hash({ x = "a", bags = { columns = 12 } })
