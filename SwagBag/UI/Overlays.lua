@@ -64,7 +64,21 @@ local function regionsFor(button)
 	return r
 end
 
--- What the character wears and can use; kept until the equipment changes.
+local MAX_UNKNOWN_RETRIES = 10
+local unknownRetries = 0
+
+local function anyUnknown(equipped)
+	for _, e in pairs(equipped) do
+		if e.unknown then
+			return true
+		end
+	end
+	return false
+end
+
+-- What the character wears and can use; kept until the equipment changes. A context with a
+-- worn item whose level is unreadable (unknown) is never kept: it is re-read 1 s later, up to
+-- 10 times per episode (W3-19).
 function Ov.Context()
 	if not Ov.context then
 		local A = SB.Adapter
@@ -77,6 +91,17 @@ function Ov.Context()
 				return nil
 			end
 		end
+		if anyUnknown(ctx.equipped) then
+			if unknownRetries < MAX_UNKNOWN_RETRIES then
+				unknownRetries = unknownRetries + 1
+				SB.Debounce("overlays.unknown", 1, function()
+					Ov.context = nil
+					Ov.RefreshAll()
+				end, "none")
+			end
+			return ctx -- not stored
+		end
+		unknownRetries = 0
 		Ov.context = ctx
 	end
 	return Ov.context
@@ -150,7 +175,9 @@ end
 --                                  title: the item level in the bags window's title)
 SB.Slash.Register("overlays", L.HELP_OVERLAYS, function(arg)
 	local name, value = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
-	local names = { "ilvl", "track", "upgrade", "keystone", "junk", "bind", "pawn", "title" }
+	local names = { unpack(Ov.NAMES) }
+	names[#names + 1] = "pawn"
+	names[#names + 1] = "title"
 	if name == "" then
 		local parts = {}
 		for _, n in ipairs(names) do

@@ -1,4 +1,4 @@
--- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel
+-- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
 describe("Adapter cursor and sort helpers", function()
 	local A
@@ -85,5 +85,11 @@ describe("Adapter.EquippedItems (real adapter, stubbed globals)", function()
 		assert.is_nil(A.EquippedItemLevel())
 		GetAverageItemLevel = function() error("boom") end
 		assert.is_nil(A.EquippedItemLevel())
+		GetAverageItemLevel = function() return 1, "x" end
+		assert.is_nil(A.EquippedItemLevel(), "not a number")
+		GetAverageItemLevel = function() return 1, 279.4 end
+		issecretvalue = function(v) return v == 279.4 end
+		assert.is_nil(A.EquippedItemLevel(), "a secret value")
+		issecretvalue = nil
 	end)
 end)
