@@ -523,6 +523,7 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 		end
 	end
 	if touched then
+		v.RefreshTotals()
 		searchBox.Apply()
 	end
 end, "bank"))

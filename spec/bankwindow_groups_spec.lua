@@ -113,6 +113,25 @@ describe("BankWindow contents", function()
 		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#warband").bg.calls.SetColorTexture)
 	end)
 
+	it("bank section headers show each category's total value (F10)", function()
+		A.items[Fixtures.HERB].sellPrice = 1500
+		A.auctionator = { prices = { ["item:" .. Fixtures.ORE] = 9000 } }
+		SB.Prices.Invalidate()
+		openBank()
+		assert.equal("- Herbs (1) - 3g", header("bank:c_herbs").text.text, "20 herbs at the vendor price, no vendor label")
+		assert.equal("- Ore (1) - 9g", header("warband:c_ore").text.text, "10 ore at 90s")
+	end)
+
+	-- Mutation: delete the `v.RefreshTotals()` call in the bank's BAG_UPDATE handler.
+	it("a stack's count changing with nothing moving updates the bank header's total (F10)", function()
+		A.items[Fixtures.HERB].sellPrice = 1500
+		openBank()
+		assert.equal("- Herbs (1) - 3g vendor", header("bank:c_herbs").text.text)
+		A.Put(6, 2, Fixtures.HERB, 40)
+		bankUpdate(6)
+		assert.equal("- Herbs (1) - 6g vendor", header("bank:c_herbs").text.text)
+	end)
+
 	it("a deposit shows in that group's New; nothing else moves", function()
 		openBank()
 		local before = { at(6, 1), at(6, 2), at(12, 1), at(12, 2) }

@@ -35,6 +35,8 @@ Config.Defaults = {
 		-- Off until check G1 proves the client withdraws from the tab it is given (ruling W3-10).
 		-- view / columns: as for the bank window.
 		guildBank = { mode = "full", withdrawAnyTab = false, view = "sections", columns = 14 },
+		-- headerTotals: each section header shows its total value (spec F10).
+		prices = { headerTotals = true },
 		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 			usePawn = false },

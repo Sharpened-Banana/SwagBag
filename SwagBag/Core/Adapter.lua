@@ -646,6 +646,42 @@ function A.GuildTabFrames()
 end
 
 ---------------------------------------------------------------------------
+-- Auctionator (optional price source, spec F10). Only its public API v1 is used.
+---------------------------------------------------------------------------
+local function auctionator()
+	local api = A.Resolve("Auctionator.API.v1")
+	if type(api) == "table" and type(api.GetAuctionPriceByItemLink) == "function" then
+		return api
+	end
+	return nil
+end
+
+function A.AuctionatorAvailable()
+	return auctionator() ~= nil
+end
+
+-- Copper per unit, or nil when Auctionator has no price. Errors are the caller's to count.
+function A.AuctionatorPrice(link)
+	local api = auctionator()
+	if not api then
+		return nil
+	end
+	local v = api.GetAuctionPriceByItemLink("SwagBag", link)
+	if type(v) == "number" and not isSecret(v) then
+		return v
+	end
+	return nil
+end
+
+-- cb runs whenever Auctionator's price database changes (when the API offers that).
+function A.AuctionatorOnUpdate(cb)
+	local api = auctionator()
+	if api and type(api.RegisterForDBUpdate) == "function" then
+		pcall(api.RegisterForDBUpdate, "SwagBag", cb)
+	end
+end
+
+---------------------------------------------------------------------------
 -- Feature checks (consumed by Core/Checks.lua). window: which Safe Mode
 -- flag a failed REQUIRED check turns on. value: exact value expected.
 ---------------------------------------------------------------------------

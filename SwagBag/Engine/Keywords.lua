@@ -3,8 +3,7 @@
 -- Every keyword reads ONLY the item record from Engine/Items.lua.
 -- Aliases include Syndicator's English spellings used by published Baganator category
 -- strings (desk spike F, docs/research/2026-10-syndicator-grammar-diff.md).
--- Not yet registered (need later modules): expansion, gold/value, crafting quality,
--- collection.
+-- Not yet registered (need later modules): expansion, crafting quality, collection.
 local _, SB = ...
 
 local K = {}
@@ -236,6 +235,14 @@ function K.RegisterAll()
 	num("tab", "volatile", function(r)
 		return r.tab or false
 	end)
+	-- value>50: price per unit in gold (spec 7.3), from Engine/Prices.lua (AH, else vendor).
+	num("value", "volatile", function(r)
+		if r.pending then
+			return nil
+		end
+		local copper = SB.Prices and SB.Prices.Value(r.link, r.itemID, r.isBound)
+		return copper and copper / 10000 or false
+	end, { "gold" })
 
 	-- State (volatile) ---------------------------------------------------------
 	local function flag(field)

@@ -38,7 +38,11 @@ Engine/Categories.lua
 Engine/Categorizer.lua
 Engine/Layout.lua
 Engine/Snapshots.lua
+Engine/Prices.lua
 Engine/OverlayData.lua
+
+# Providers
+Providers/Auctionator.lua
 
 # UI
 UI/ReportBox.lua

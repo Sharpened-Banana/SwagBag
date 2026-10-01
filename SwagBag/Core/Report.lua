@@ -114,6 +114,9 @@ function Report.Build()
 			lines[#lines + 1] = L.REPORT_BANK_LAYOUT:format(bankStats.lastLayoutMs, tostring(bankStats.lastLayoutReason))
 		end
 	end
+	if SB.Prices then
+		lines[#lines + 1] = L.REPORT_PRICES:format(tostring(SB.Prices.Source() or L.REPORT_NONE), SB.Prices.cached)
+	end
 	if SB.Snapshots and SB.Config.db then -- spec 8.4 budgets, check V10
 		local chars, guilds = SB.Snapshots.Count()
 		lines[#lines + 1] = L.REPORT_SNAPSHOTS:format(chars, guilds, math.floor(SB.Snapshots.Bytes() / 1024 + 0.5))

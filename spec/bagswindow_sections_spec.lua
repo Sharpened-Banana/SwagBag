@@ -11,6 +11,7 @@ local FILES = {
 	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
 	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
+	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua",
 }
 
 -- Fake frame: shown state, scripts (Hide fires OnHide like the client), points, text, mouse-over.
@@ -476,6 +477,35 @@ describe("BagsWindow category view", function()
 		A.Advance(0.3)
 		assert.equal(0, #W.state.deferred)
 		assert.falsy(B.Get(1, 4).shown)
+	end)
+
+	it("section headers show each category's total value, marked vendor without Auctionator (F10)", function()
+		A.items[Fixtures.HEALING_POTION].sellPrice = 2500 -- 5 potions: 1g 25s at a vendor
+		A.items[Fixtures.FLASK].sellPrice = 60000 -- 2 flasks: 12g
+		W.Open()
+		assert.equal("- Consumables (2) - 13g vendor", header("c_consumables").text.text)
+		assert.equal("- Gear (1)", header("c_gear").text.text, "nothing worth anything: no value")
+		A.auctionator = { prices = { ["item:" .. Fixtures.FLASK] = 12400000 } } -- 1,240g each
+		SB.Prices.Invalidate()
+		W.Close()
+		W.Open()
+		assert.equal("- Consumables (2) - 2,481g", header("c_consumables").text.text, "AH flasks plus vendor potions")
+		SB.Config.Set("prices.headerTotals", false)
+		W.Close()
+		W.Open()
+		assert.equal("- Consumables (2)", header("c_consumables").text.text)
+	end)
+
+	-- Mutation: delete the `W.RefreshHeaders()` call in the BAG_UPDATE handler.
+	it("a stack's count changing with no button moving updates its section's total (F10)", function()
+		A.items[Fixtures.HEALING_POTION].sellPrice = 2500
+		W.Open()
+		assert.equal("- Consumables (2) - 1g vendor", header("c_consumables").text.text)
+		local oldPos = W.pos
+		A.Put(0, 1, Fixtures.HEALING_POTION, 9) -- 9 x 25s = 2g 25s
+		bagUpdate(0)
+		assert.equal(oldPos, W.pos, "no layout ran, nothing moved")
+		assert.equal("- Consumables (2) - 2g vendor", header("c_consumables").text.text)
 	end)
 
 	it("bag items get their overlays; an empty reagent-bag slot is tinted in Free", function()
