@@ -27,6 +27,7 @@ Core/Commands.lua
 Engine/Items.lua
 Engine/Inventory.lua
 Engine/GridLayout.lua
+Engine/Query/Lexer.lua
 
 # UI
 UI/ReportBox.lua
