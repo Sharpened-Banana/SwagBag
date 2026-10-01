@@ -46,6 +46,7 @@ end
 
 -- No error: show the applied search's soft warning (unknown #keyword), if any.
 function Box.ClearError()
+	errorLine:SetTextColor(1, 0.82, 0) -- soft yellow: a warning is not an error
 	errorLine:SetText(SB.Search.lastWarning or "")
 	underline:Hide()
 end
@@ -53,6 +54,7 @@ end
 -- Underline the offending characters (byte range from Search.ErrorSpan; for a
 -- trailing operator that is the token before the end of the text).
 function Box.ShowError(text, err)
+	errorLine:SetTextColor(1, 0.1, 0.1) -- red, as GameFontRedSmall
 	errorLine:SetText(SB.Query.FormatError(err))
 	local first, last = SB.Search.ErrorSpan(text, err)
 	if last < first then
@@ -73,6 +75,7 @@ function Box.Apply()
 	end
 	local matches, total, ms = SB.Search.Apply(W.ForEachSlot, SB.Buttons.SetDimmed)
 	if matches == nil then
+		errorLine:SetTextColor(1, 0.1, 0.1)
 		errorLine:SetText(L.SEARCH_EVAL_FAILED)
 		underline:Hide()
 	elseif SB.Search.lastError == nil then

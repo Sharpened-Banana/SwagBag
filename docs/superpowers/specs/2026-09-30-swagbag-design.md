@@ -465,7 +465,7 @@ text     := WORD | '"' chars '"'            -- item-name substring (case-insensi
 op       := "=" | "<" | "<=" | ">" | ">="
 ```
 
-Precedence: `!` > `&` > `|`; parentheses override. Whitespace around operators is ignored. A bare `WORD` is resolved as: registered keyword if one exists (keyword match), **else** name-text match. `#word` forces keyword. A quoted string is always text. The parser records the character span of every node for error display.
+Precedence: `!` > `&` > `|`; parentheses override. `~` is a synonym for `!` and `||` for `|` (Syndicator spellings). Whitespace around operators is ignored. A bare term is resolved in this order: a single all-digit word `N` or a single `N-M` word is an item-level test (`level`, `range`); otherwise a registered keyword if one exists (keyword match); **else** a name-text match. `#word` forces keyword. A quoted string is always text. The parser records the character span of every node for error display.
 
 Unknown-keyword policy: a bare word that is not a registered keyword is a text match (Syndicator behaviour); the rule builder shows a hint "matching item names containing 'potin' — did you mean `potion`?" when it is within edit distance 1 of a keyword.
 
