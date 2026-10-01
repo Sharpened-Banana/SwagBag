@@ -23,7 +23,7 @@ describe("Report", function()
 			" none",
 			"Blocked actions: none",
 			"Bag-related addons: Auctionator (not loaded), Syndicator (not loaded)",
-			"Settings hash: " .. SB.Report.Hash({}) .. "  Schema: 1  Buttons: 0 (0 ms)",
+			"Settings hash: " .. SB.Report.Hash({}) .. "  Schema: 2  Buttons: 0 (0 ms)",
 		}, "\n")
 		assert.equal(expected, SB.Report.Build())
 	end)

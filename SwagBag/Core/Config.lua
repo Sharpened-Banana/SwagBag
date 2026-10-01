@@ -7,14 +7,19 @@
 -- Schema rules (spec 8.5): a DB newer than CURRENT is never touched (read-only,
 -- Safe Mode); older DBs run migrations[n] (n-1 -> n) in order inside pcall; a
 -- failing migration keeps a backup under db.backups["v<old>"] and resets.
+-- Schema 2 (spec 8.2, 8.5): SwagBagDB.categories (user categories), .userEdits (diffs
+-- of built-in categories; built-ins themselves are never stored), .categoryOrder (nil =
+-- default order); SwagBagCharDB.ui.collapsed[window][sectionId] = true.
 local _, SB = ...
 
-local Config = { CURRENT = 1, migrations = {}, charMigrations = {} }
+local Config = { CURRENT = 2, migrations = {}, charMigrations = {} }
 SB.Config = Config
 
 Config.Defaults = {
 	settings = {
-		bags = { columns = 12, scale = 1.0 },
+		-- view: "sections" (category view) | "grid"; newRows: rows kept for New while open;
+		-- reagentSeparate: show the reagent bag as its own "Reagents" section (spec AC1.4).
+		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false },
 		safeMode = { bags = false, bank = false },
 	},
 }
@@ -32,11 +37,11 @@ end
 Config.Copy = copy
 
 local function newDB()
-	return { schemaVersion = Config.CURRENT, settings = {}, errors = {}, backups = {} }
+	return { schemaVersion = Config.CURRENT, settings = {}, errors = {}, backups = {}, categories = {}, userEdits = {} }
 end
 
 local function newCharDB()
-	return { schemaVersion = Config.CURRENT, overrides = {}, ui = { positions = {} }, backups = {} }
+	return { schemaVersion = Config.CURRENT, overrides = {}, ui = { positions = {}, collapsed = {} }, backups = {} }
 end
 
 local function tableOr(v)
@@ -55,6 +60,20 @@ Config.charMigrations[1] = function(c)
 	c.ui = tableOr(c.ui)
 	c.ui.positions = tableOr(c.ui.positions)
 	c.backups = tableOr(c.backups)
+end
+
+-- v1 -> v2: category storage (week 2). Nothing to convert; damaged values are dropped.
+Config.migrations[2] = function(db)
+	db.categories = tableOr(db.categories)
+	db.userEdits = tableOr(db.userEdits)
+	if type(db.categoryOrder) ~= "table" then
+		db.categoryOrder = nil
+	end
+end
+
+Config.charMigrations[2] = function(c)
+	c.ui = tableOr(c.ui)
+	c.ui.collapsed = tableOr(c.ui.collapsed)
 end
 
 -- Returns table, status, errorMessage

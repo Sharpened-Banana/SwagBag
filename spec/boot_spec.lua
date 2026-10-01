@@ -28,7 +28,7 @@ describe("Boot", function()
 
 	it("creates the saved tables and attaches the error ring", function()
 		SB.eventFrame:Fire("ADDON_LOADED", "SwagBag")
-		assert.equal(1, SwagBagDB.schemaVersion)
+		assert.equal(2, SwagBagDB.schemaVersion)
 		assert.equal(SwagBagDB.errors, SB.ErrorTrap.buffer)
 	end)
 
