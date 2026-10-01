@@ -79,6 +79,20 @@ function M.New(SB)
 		return (fmt:gsub("%%(%a)", DATE_PARTS))
 	end
 
+	m.epoch = 1791000000 -- seconds since the epoch at clock 0
+	m.charKey = "Swagger-Argent Dawn"
+	function m.Time()
+		return m.epoch + math.floor(m.clock)
+	end
+
+	function m.CharKey()
+		return m.charKey
+	end
+
+	function m.CharInfo()
+		return { class = "MAGE", level = 90 }
+	end
+
 	function m.BuildInfo()
 		return { version = "12.1.0", build = "69933", toc = 120100, locale = "enUS" }
 	end

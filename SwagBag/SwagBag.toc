@@ -37,6 +37,7 @@ Engine/CategoryDefaults.lua
 Engine/Categories.lua
 Engine/Categorizer.lua
 Engine/Layout.lua
+Engine/Snapshots.lua
 Engine/OverlayData.lua
 
 # UI
