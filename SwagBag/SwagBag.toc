@@ -24,6 +24,7 @@ Core/Slash.lua
 Core/Commands.lua
 
 # Engine
+Engine/Items.lua
 
 # UI
 UI/ReportBox.lua
