@@ -15,7 +15,7 @@ local _, SB = ...
 local L = SB.L
 
 SB.CategoryDefaults = {
-	{ id = "c_keystone", name = L.CAT_KEYSTONE, query = "keystone", priority = 95, displayOrder = 10 },
+	{ id = "c_keystone", name = L.CAT_KEYSTONE, query = "keystone | crest", priority = 95, displayOrder = 10 },
 	{ id = "c_consumables", name = L.CAT_CONSUMABLES, query = "consumable", priority = 65, displayOrder = 20 },
 	{ id = "c_gear", name = L.CAT_GEAR, query = "gear", priority = 70, displayOrder = 30 },
 	{ id = "c_boe", name = L.CAT_BOE, query = "gear & boe", priority = 75, displayOrder = 40 },

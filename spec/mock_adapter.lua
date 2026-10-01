@@ -283,7 +283,7 @@ function M.AddContainers(m)
 			isLocked = s.isLocked == true,
 			isBound = s.isBound == true,
 			name = (not it.pending) and it.name or nil,
-			hasNoValue = false,
+			hasNoValue = s.hasNoValue == true,
 		}
 	end
 
@@ -323,6 +323,36 @@ function M.AddContainers(m)
 			return nil
 		end
 		return s.ilvl or it.ilvl
+	end
+
+	-- Overlays: m.tracks[link] = { track, level, max }; m.dungeons[mapID] = name;
+	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
+	m.tracks, m.dungeons, m.equipped, m.cannotUse, m.pawn = {}, {}, {}, {}, nil
+	function m.UpgradeInfo(link)
+		return m.tracks[link]
+	end
+
+	function m.DungeonName(mapID)
+		return m.dungeons[mapID]
+	end
+
+	function m.EquippedItems()
+		local out = {}
+		for slot, e in pairs(m.equipped) do
+			out[slot] = { ilvl = e.ilvl, equipLoc = e.equipLoc }
+		end
+		return out
+	end
+
+	function m.CanUse(itemID)
+		return not m.cannotUse[itemID]
+	end
+
+	function m.PawnUpgrade(bag, slot)
+		if m.pawn == nil then
+			return nil
+		end
+		return m.pawn[bag .. ":" .. slot] == true
 	end
 
 	function m.IsWarboundUntilEquip(bag, slot)
