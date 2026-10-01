@@ -132,4 +132,67 @@ describe("Overlays (spec F9)", function()
 		assert.equal(1, refreshed)
 		assert.same({ "Overlay title is now off." }, A.Lines())
 	end)
+
+	it("a context with an unknown worn item level is never kept: it is read again 1 s later (W3-19)", function()
+		A.equipped[11] = { unknown = true, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		local b, r = draw(0, 3)
+		assert.falsy(r.arrow.shown, "unknown: no arrow")
+		local record = SB.Items.Describe(0, 3)
+		SB.BagsWindow = { IsOpen = function() return true end,
+			ForEachSlot = function(fn) fn(b, record, 0, 3) end }
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		Ov.Apply(b, record, 0)
+		assert.truthy(r.arrow.shown, "the unknown read was not kept: the next draw sees the known level")
+		r.arrow:Hide()
+		A.Advance(1)
+		assert.truthy(r.arrow.shown, "the retry also re-draws the open window")
+	end)
+
+	it("the unknown retry stops after 10 passes per episode, and a clean read resets the count", function()
+		A.equipped[11] = { unknown = true, equipLoc = "INVTYPE_FINGER" }
+		local b = draw(0, 3)
+		local record = SB.Items.Describe(0, 3)
+		local passes = 0
+		SB.BagsWindow = { IsOpen = function() return true end,
+			ForEachSlot = function(fn) passes = passes + 1 fn(b, record, 0, 3) end }
+		for _ = 1, 15 do
+			A.Advance(1)
+		end
+		assert.equal(10, passes)
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		Ov.context = nil
+		Ov.Context() -- a clean read: the counter starts again
+		Ov.context = nil
+		A.equipped[11] = { unknown = true, equipLoc = "INVTYPE_FINGER" }
+		passes = 0
+		Ov.Context()
+		for _ = 1, 3 do
+			A.Advance(1)
+		end
+		assert.truthy(passes >= 3, "a new episode retries again")
+	end)
+
+	it("a missing atlas falls back to a flat colour; a found atlas does not", function()
+		local function button(found)
+			local b = Fake.New("ItemButton")
+			b.CreateTexture = function(self)
+				local t = Fake.New("Texture", self)
+				t.SetAtlas = function() return found end
+				return t
+			end
+			return b
+		end
+		local missing, found = button(false), button(true)
+		Ov.Apply(missing, SB.Items.Describe(0, 3), 0)
+		Ov.Apply(found, SB.Items.Describe(0, 3), 0)
+		assert.truthy(Ov.regions[missing].arrow.calls.SetColorTexture)
+		assert.is_nil(Ov.regions[found].arrow.calls.SetColorTexture)
+	end)
+
+	it("/swagbag overlays says so when the saved settings are read-only", function()
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("overlays bind off")
+		assert.same({ SB.L.SETTINGS_READONLY }, A.Lines())
+	end)
 end)
