@@ -20,7 +20,8 @@
 -- Layout.Position(state, opts, collapsed) -> pos   pixel positions (TOPLEFT offsets, y down
 --   negative). Collapsing changes section offsets only, so expanding returns every item
 --   to the same cell (spec 6.4). New always shows its header and newRows reserved rows.
---   opts: { columns, size, gap, padding, header, sectionGap }
+--   opts: { columns, size, gap, padding, header, sectionGap, top }   top: y offset where the
+--   layout starts (a window that stacks several layouts, default 0); height includes it.
 --   pos = { cells = { {bag, slot, x, y, shown} } (display order), byKey = { [key] = cell },
 --           placeholders = { {bag, slot, icon, x, y, shown} }, headers = { {id, y, count,
 --           overflow, collapsed} }, width, height }
@@ -234,7 +235,7 @@ function Layout.Position(st, opts, collapsed)
 	local cols, size, gap, pad = opts.columns, opts.size, opts.gap, opts.padding
 	local step = size + gap
 	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {} }
-	local y = pad
+	local y = (opts.top or 0) + pad
 	for _, id in ipairs(st.order) do
 		local sec = st.sections[id]
 		local visible = id == Layout.NEW or (sec ~= nil and sec.size > 0)

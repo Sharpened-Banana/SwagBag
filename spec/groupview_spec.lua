@@ -1,0 +1,498 @@
+-- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip
+-- The group view (bank and guild bank contents) over the real engine with fake frames:
+-- stacked groups, per-group sections, collapse, spec 4.3 changes, the hover guard across
+-- groups, the grid view, and the 1,290-slot budget.
+local Loader = dofile("spec/helpers/loader.lua")
+local Fake = dofile("spec/helpers/fakeframe.lua")
+local Fixtures = dofile("spec/fixtures/items.lua")
+local Big = dofile("spec/fixtures/big.lua")
+
+local FILES = {
+	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
+	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Inventory.lua", "SwagBag/Engine/GridLayout.lua",
+	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
+	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/CategoryDefaults.lua", "SwagBag/Engine/Categories.lua",
+	"SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
+}
+
+-- A view over bank tab 6 ("bank") and warband tab 12 ("warband"), with fake buttons.
+local function newView(SB, opts)
+	opts = opts or {}
+	local child = Fake.New("Frame")
+	local scroll = Fake.New("ScrollFrame")
+	local buttons, gets, resized = {}, { n = 0 }, {}
+	local tint = {}
+	local cfg = {
+		key = "bank", window = "bank", child = child, scroll = scroll,
+		button = function(bag, slot)
+			gets.n = gets.n + 1
+			if slot > (opts.capacity or 98) then
+				return nil
+			end
+			buttons[bag] = buttons[bag] or {}
+			local b = buttons[bag][slot]
+			if not b then
+				b = Fake.New("ItemButton", child)
+				b.bag, b.slot = bag, slot
+				buttons[bag][slot] = b
+			end
+			return b
+		end,
+		describe = function(bag, slot)
+			return SB.Items.Describe(bag, slot)
+		end,
+		groups = function()
+			local out = {}
+			for _, def in ipairs(opts.groups or { { "bank", "bank" }, { "warband", "warband" } }) do
+				local bags = {}
+				for _, bag in ipairs(SB.Adapter.GetBagIDs(def[2])) do
+					bags[#bags + 1] = { bag = bag, size = SB.Adapter.NumSlots(bag) }
+				end
+				out[#out + 1] = { id = def[1], bags = bags }
+			end
+			return out
+		end,
+		groupLabel = function(id, collapsed, count)
+			return (collapsed and "+ " or "- ") .. id .. " (" .. count .. ")"
+		end,
+		groupTint = function(id) return tint[id] end,
+		view = function() return opts.view or "sections" end,
+		columns = function() return opts.columns or 4 end,
+		newRows = function() return 1 end,
+		freeTile = opts.freeTile and function() return true end or nil,
+		onResize = function(w, h, keepTop) resized[#resized + 1] = { w, h, keepTop } end,
+	}
+	local v = SB.GroupView.New(cfg)
+	return v, { buttons = buttons, gets = gets, child = child, scroll = scroll, resized = resized, tint = tint, cfg = cfg }
+end
+
+local function at(b)
+	local p = b.points[#b.points]
+	return { p[4], p[5] }
+end
+
+describe("GroupView", function()
+	local SB, A, v, f
+	before_each(function()
+		SB = Loader.New(FILES)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.Install(A)
+		Fake.Install()
+		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/GroupView.lua")
+		SB.Categories.Load()
+		A.bagIDs.bank, A.bagIDs.warband = { 6 }, { 12 }
+		A.SetBagSize(6, 8)
+		A.SetBagSize(12, 8)
+		A.Put(6, 1, Fixtures.HEALING_POTION, 5)
+		A.Put(6, 2, Fixtures.HERB, 20)
+		A.Put(6, 3, Fixtures.FLASK, 1)
+		A.Put(12, 1, Fixtures.ORE, 10)
+		A.Put(12, 2, Fixtures.BOE_RING, 1)
+		v, f = newView(SB)
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	local function labels()
+		local out = {}
+		for _, h in ipairs(SB.SectionHeaders.inUse) do
+			out[#out + 1] = h.sectionId .. "=" .. h.text.text
+		end
+		return out
+	end
+
+	local function header(id)
+		for _, h in ipairs(SB.SectionHeaders.inUse) do
+			if h.sectionId == id then
+				return h
+			end
+		end
+	end
+
+	local function btn(bag, slot)
+		return f.buttons[bag][slot]
+	end
+
+	it("stacks the groups top to bottom, each with its header and its own New, categories and Free", function()
+		v.Layout("open")
+		assert.same({
+			"#bank=- bank (3)", "#warband=- warband (2)",
+			"bank:new=- New (0)", "bank:c_consumables=- Consumables (2)", "bank:c_herbs=- Herbs (1)",
+			"bank:free=- Free (5)",
+			"warband:new=- New (0)", "warband:c_boe=- BoE gear (1)", "warband:c_ore=- Ore (1)",
+			"warband:free=- Free (6)",
+		}, labels())
+		assert.equal(0, header("#bank").points[1][5])
+		assert.truthy(header("#warband").points[1][5] < at(btn(6, 8))[2], "warband starts below bank's Free")
+		assert.equal(16, #v.cells)
+		assert.equal("open", v.stats.lastLayoutReason)
+		assert.same({ v.pos.width, v.pos.height, false }, f.resized[1])
+	end)
+
+	it("collapsing a group hides its slots and lifts the groups below; expanding restores every cell", function()
+		v.Layout("open")
+		local before = { at(btn(12, 1)), at(btn(12, 2)), at(btn(6, 1)) }
+		header("#bank").scripts.OnClick(header("#bank"))
+		assert.equal(true, SB.Config.UI().collapsed["bank:#"].bank)
+		assert.falsy(btn(6, 1).shown)
+		assert.equal("- bank (3)", header("#bank").text.text:gsub("^%+", "-"))
+		assert.truthy(at(btn(12, 1))[2] > before[1][2], "warband moved up")
+		assert.is_nil(header("bank:new"), "a collapsed group shows no section headers")
+		header("#bank").scripts.OnClick(header("#bank"))
+		assert.same(before, { at(btn(12, 1)), at(btn(12, 2)), at(btn(6, 1)) })
+		assert.truthy(btn(6, 1).shown)
+	end)
+
+	it("collapse state is kept per window, per group and per section", function()
+		v.Layout("open")
+		header("warband:c_ore").scripts.OnClick(header("warband:c_ore"))
+		assert.equal(true, SB.Config.UI().collapsed["bank:warband"].c_ore)
+		assert.is_nil(SB.Config.UI().collapsed["bank:bank"].c_ore)
+		assert.falsy(btn(12, 1).shown)
+		v.Clear()
+		v.Layout("open")
+		assert.falsy(btn(12, 1).shown, "still collapsed after a reopen")
+		assert.equal("+ Ore (1)", header("warband:c_ore").text.text)
+	end)
+
+	it("an item taken from a group leaves a placeholder; its button goes to that group's Free", function()
+		v.Layout("open")
+		local potionAt = at(btn(6, 1))
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = Fixtures.HEALING_POTION } })
+		assert.equal(1, #SB.Buttons.placeholdersInUse)
+		assert.truthy(at(btn(6, 1))[2] < potionAt[2], "moved down into Free")
+		assert.equal("bank:free=- Free (6)", labels()[6])
+	end)
+
+	it("a deposit goes to that group's New and nothing else moves", function()
+		v.Layout("open")
+		local before = {}
+		for slot = 1, 8 do
+			before[slot] = at(btn(12, slot))
+		end
+		A.Put(6, 5, Fixtures.JUNK, 1)
+		v.Changes("bank", { { bag = 6, slot = 5, kind = "arrived" } })
+		v.SetRecord(6, 5, SB.Items.Describe(6, 5))
+		assert.equal(header("bank:new").points[1][5] - 20, at(btn(6, 5))[2], "first cell of New")
+		for slot = 1, 8 do
+			assert.same(before[slot], at(btn(12, slot)), "warband slot " .. slot)
+		end
+	end)
+
+	it("a group that grows a row pushes the groups below, but not while one of them is under the mouse", function()
+		A.Put(6, 4, Fixtures.JUNK, 1) -- bank Free has 4 cells: one more starts a new row
+		v.Layout("open")
+		local ore = btn(12, 1)
+		local oreAt = at(ore)
+		ore.mouseOver = true
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = Fixtures.HEALING_POTION } })
+		assert.same(oreAt, at(ore), "held: the ore is under the mouse")
+		assert.equal(1, v.stats.heldRedraws)
+		A.Advance(0.3)
+		assert.same(oreAt, at(ore), "still under the mouse")
+		ore.mouseOver = false
+		A.Advance(0.3)
+		assert.truthy(at(ore)[2] < oreAt[2], "pushed down once the mouse left")
+		assert.equal(1, #SB.Buttons.placeholdersInUse)
+	end)
+
+	it("an item on the cursor holds every move and every push", function()
+		v.Layout("open")
+		local potionAt = at(btn(6, 1))
+		A.cursor = { itemID = Fixtures.FLASK }
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = Fixtures.HEALING_POTION } })
+		A.Advance(0.6)
+		assert.same(potionAt, at(btn(6, 1)))
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.truthy(at(btn(6, 1))[2] < potionAt[2])
+	end)
+
+	-- Plan D19 (Task 9 turns it on for the bank window). Mutations: drop `freeTile = ...` from
+	-- v.Layout's Build options; delete paintTiles(pos) in renderMoved.
+	it("with cfg.freeTile each group's Free is one tile with its number; a drop on it swaps after the mouse leaves",
+		function()
+			v, f = newView(SB, { freeTile = true })
+			v.Layout("open")
+			assert.same({ "bank:free=- Free (5)", "warband:free=- Free (6)" },
+				{ labels()[6], labels()[10] }, "Free's header still counts every free slot")
+			local fc = SB.Buttons.freeCounts
+			assert.same({ true, "5" }, { btn(6, 4).shown, tostring(fc[btn(6, 4)].text) })
+			assert.same({ true, "6" }, { btn(12, 3).shown, tostring(fc[btn(12, 3)].text) })
+			for slot = 5, 8 do
+				assert.falsy(btn(6, slot).shown, "bank slot " .. slot)
+			end
+			local tileAt = at(btn(6, 4))
+			btn(6, 4).mouseOver = true
+			A.Put(6, 4, Fixtures.ORE, 1)
+			v.SetRecord(6, 4, SB.Items.Describe(6, 4))
+			v.Changes("bank", { { bag = 6, slot = 4, kind = "arrived" } })
+			assert.same(tileAt, at(btn(6, 4)), "nothing moves under the mouse")
+			assert.falsy(btn(6, 5).shown)
+			btn(6, 4).mouseOver = false
+			A.Advance(0.3)
+			assert.same(tileAt, at(btn(6, 5)), "the next empty slot takes the tile's place")
+			assert.same({ true, "4" }, { btn(6, 5).shown, tostring(fc[btn(6, 5)].text) })
+			assert.falsy(fc[btn(6, 4)].shown, "the filled slot shows no number")
+		end)
+
+	it("the grid view shows each group's slots in physical order under its header", function()
+		v, f = newView(SB, { view = "grid" })
+		v.Layout("open")
+		assert.same({ "#bank=- bank (3)", "#warband=- warband (2)" }, labels())
+		assert.same({ 4, -26 }, at(btn(6, 1)))
+		assert.same({ 45, -26 }, at(btn(6, 2)))
+		assert.same({ 4, -67 }, at(btn(6, 5)))
+		assert.truthy(at(btn(12, 1))[2] < at(btn(6, 8))[2])
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left" } })
+		assert.same({ 4, -26 }, at(btn(6, 1)), "the grid never moves a button")
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+		v.ToggleGroup("bank")
+		assert.falsy(btn(6, 2).shown, "a collapsed group hides its grid")
+		assert.equal(-56, at(btn(12, 1))[2], "warband moved up: bank header, gap, warband header")
+	end)
+
+	it("dropping an item on a section header calls onDrop once; the click of the same press does not collapse", function()
+		local dropped = {}
+		f.cfg.onDrop = function(sid) dropped[#dropped + 1] = sid end
+		v.Layout("open")
+		A.cursor = { itemID = Fixtures.JUNK }
+		local h = header("bank:c_herbs")
+		h.scripts.OnReceiveDrag(h)
+		A.cursor = nil -- the drop put it in the category list and the item back in its slot
+		h.scripts.OnClick(h)
+		assert.same({ "c_herbs" }, dropped)
+		assert.is_nil(SB.Config.UI().collapsed["bank:bank"].c_herbs)
+		A.Advance(0.5)
+		h.scripts.OnClick(h)
+		assert.equal(true, SB.Config.UI().collapsed["bank:bank"].c_herbs, "a later click collapses")
+	end)
+
+	-- Ruling W3-22 (spec P6). Mutation: drop `window = window` from GroupView's owner.
+	it("an error in a group view header's drop is trapped as the view's window, not the bags", function()
+		f.cfg.onDrop = function() error("drop broke") end
+		v.Layout("open")
+		A.cursor = { itemID = Fixtures.JUNK }
+		local h = header("bank:c_herbs")
+		h.scripts.OnReceiveDrag(h)
+		A.cursor = nil
+		assert.truthy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	it("a view without cfg.window traps its header errors as the bank window's", function()
+		f.cfg.window = nil
+		v = SB.GroupView.New(f.cfg)
+		f.cfg.onDrop = function() error("drop broke") end
+		v.Layout("open")
+		local h = header("bank:c_herbs")
+		h.scripts.OnReceiveDrag(h)
+		assert.truthy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	it("Clear hides every button and releases only this view's placeholders and headers", function()
+		local other = Fake.New("Frame")
+		local foreign = SB.SectionHeaders.Acquire(other, "c_gear", "x", 0, 0, 10)
+		local foreignP = SB.Buttons.AcquirePlaceholder(other, 1, 37, 0, 0)
+		v.Layout("open")
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = 1 } })
+		v.Clear()
+		for slot = 1, 8 do
+			assert.falsy(btn(6, slot).shown)
+		end
+		assert.truthy(foreign.shown)
+		assert.truthy(foreignP.shown)
+		assert.same({ foreign }, SB.SectionHeaders.inUse)
+		assert.falsy(v.IsOpen())
+	end)
+
+	it("a full layout request waits while the mouse is over the items or an item is on the cursor", function()
+		v.Layout("open")
+		f.scroll.mouseOver = true
+		assert.falsy(v.RequestLayout("sort"))
+		A.Advance(0.3)
+		assert.equal("open", v.stats.lastLayoutReason)
+		f.scroll.mouseOver = false
+		A.cursor = { itemID = 1 }
+		A.Advance(0.3)
+		assert.equal("open", v.stats.lastLayoutReason)
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.equal("sort", v.stats.lastLayoutReason)
+	end)
+
+	it("the deposit target's group header is tinted", function()
+		f.tint.warband = true
+		v.Layout("open")
+		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#warband").bg.calls.SetColorTexture)
+		assert.same({ 1, 1, 1, 0.06 }, header("#bank").bg.calls.SetColorTexture)
+	end)
+
+	it("a group that disappears between layouts hides its buttons", function()
+		v.Layout("open")
+		f.cfg.groups = function()
+			return { { id = "bank", bags = { { bag = 6, size = 8 } } } }
+		end
+		v.Layout("reflow")
+		assert.falsy(btn(12, 1).shown)
+		assert.equal(8, #v.cells)
+	end)
+
+	it("1,290 slots: a full layout stays inside the first-bank-open budget; a live change touches a few buttons", function()
+		Big.Install(A)
+		v, f = newView(SB, { columns = 14 })
+		local t0 = os.clock()
+		v.Layout("open")
+		local ms = (os.clock() - t0) * 1000
+		assert.equal(1078, #v.cells)
+		assert.truthy(ms <= 80, ("layout of 1,078 bank slots took %.1f ms"):format(ms))
+		f.gets.n = 0
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = 1 } })
+		assert.equal(1, #SB.Buttons.placeholdersInUse)
+		assert.truthy(f.gets.n <= 4, "Buttons looked up " .. f.gets.n .. " times for one change")
+	end)
+end)
+
+describe("GroupView randomized (Park-Miller): hover holds across groups, section truth after every drain", function()
+	local SB, A
+	local POOL = { Fixtures.HEALING_POTION, Fixtures.FLASK, Fixtures.HERB, Fixtures.ORE, Fixtures.BOE_RING,
+		Fixtures.SOULBOUND_HELM, Fixtures.JUNK }
+
+	before_each(function()
+		SB = Loader.New(FILES)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.Install(A)
+		Fake.Install()
+		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/GroupView.lua")
+		SB.Categories.Load()
+		A.bagIDs.bank, A.bagIDs.warband = { 6 }, { 12 }
+		A.SetBagSize(6, 12)
+		A.SetBagSize(12, 12)
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	it("never moves a hovered button, and after each drain every category cell holds its own item", function()
+		local seed = 20261015
+		local function rand(n)
+			seed = seed * 16807 % 2147483647 -- Park-Miller, exact in doubles
+			return seed % n + 1
+		end
+		local count = { left = 0, arrived = 0, drains = 0, holds = 0, pushes = 0 }
+		for run = 1, 12 do
+			for _, bag in ipairs({ 6, 12 }) do
+				for slot = 1, 12 do
+					if rand(3) ~= 1 then
+						A.Put(bag, slot, POOL[rand(#POOL)], 1)
+					else
+						A.Clear(bag, slot)
+					end
+				end
+			end
+			local v, f = newView(SB, { columns = 4 })
+			v.Layout("open")
+			local function check(where)
+				local seen = {}
+				for _, g in ipairs(v.groups) do
+					for id, sec in pairs(g.state.sections) do
+						for i = 1, sec.size do
+							local cell = sec.cells[i]
+							if cell and not cell.placeholder and id ~= "new" and id ~= "free" then
+								local r = SB.Items.Describe(cell.bag, cell.slot)
+								assert.truthy(r and SB.Categorizer.Assign(r) == id,
+									where .. ": " .. cell.bag .. ":" .. cell.slot .. " is not a " .. id)
+							end
+						end
+					end
+				end
+				for _, c in ipairs(v.pos.cells) do
+					local b = f.buttons[c.bag][c.slot]
+					if c.shown then
+						assert.same({ c.x, c.y }, at(b), where .. ": drawn where the layout says")
+						local k = c.x .. "," .. c.y
+						assert.is_nil(seen[k], where .. ": two buttons at " .. k)
+						seen[k] = true
+					end
+				end
+				assert.falsy(v.redrawPending, where)
+			end
+			check("run " .. run .. " open")
+			for step = 1, 40 do
+				local where = ("run %d step %d"):format(run, step)
+				local hovered = {}
+				for _ = 1, rand(3) - 1 do
+					local b = f.buttons[rand(2) == 1 and 6 or 12][rand(12)]
+					if b.shown then
+						b.mouseOver = true
+						hovered[#hovered + 1] = { b, at(b) }
+					end
+				end
+				local bag, slot = rand(2) == 1 and 6 or 12, rand(12)
+				local had = A.slots[bag][slot]
+				local change
+				if had and rand(2) == 1 then
+					A.Clear(bag, slot)
+					change = { bag = bag, slot = slot, kind = "left", icon = had.itemID }
+					count.left = count.left + 1
+				else
+					local i = rand(#POOL)
+					local id = POOL[i]
+					if had and had.itemID == id then
+						id = POOL[i % #POOL + 1] -- a different item, so the slot really changes
+					end
+					A.Put(bag, slot, id, 1)
+					change = { bag = bag, slot = slot, kind = "arrived", icon = had and had.itemID }
+					count.arrived = count.arrived + 1
+				end
+				local held = v.stats.heldRedraws or 0
+				local warbandTop = v.pos.groupHeaders[2].y
+				v.SetRecord(bag, slot, SB.Items.Describe(bag, slot))
+				v.Changes(bag == 6 and "bank" or "warband", { change })
+				if (v.stats.heldRedraws or 0) > held then
+					count.holds = count.holds + 1
+				end
+				for _, h in ipairs(hovered) do
+					assert.same(h[2], at(h[1]), where .. ": a hovered button moved")
+				end
+				if v.pos.groupHeaders[2].y ~= warbandTop then
+					count.pushes = count.pushes + 1 -- the bank grew or shrank and the warband followed
+				end
+				if rand(4) == 1 or step == 40 then
+					for _, h in ipairs(hovered) do
+						h[1].mouseOver = false
+					end
+					A.Advance(1)
+					count.drains = count.drains + 1
+					check(where .. " drained")
+				else
+					for _, h in ipairs(hovered) do
+						h[1].mouseOver = false
+					end
+				end
+			end
+			v.Clear()
+		end
+		assert.truthy(count.left >= 150, "lefts " .. count.left)
+		assert.truthy(count.arrived >= 150, "arrivals " .. count.arrived)
+		assert.truthy(count.drains >= 100, "drains " .. count.drains)
+		assert.truthy(count.holds >= 5, "held pushes " .. count.holds)
+		assert.truthy(count.pushes >= 5, "warband pushed by the bank growing " .. count.pushes)
+	end)
+end)

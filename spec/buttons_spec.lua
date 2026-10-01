@@ -239,6 +239,49 @@ describe("Button pool growth, parents and bank tabs (week-1 ledger)", function()
 		assert.equal(98, B.Count(6), "nothing extra for the old tab")
 	end)
 
+	-- Ruling W3-22 (spec P6). Mutation: "bags" instead of the kind check in EnsureCapacity's
+	-- OutOfCombat call.
+	it("queued bank-tab growth that fails is trapped as the bank window's; the bags stay out of Safe Mode", function()
+		A.combat = true
+		B.EnsureCapacity(6, 2)
+		CreateFrame = function(kind, ...)
+			if kind == "ItemButton" then
+				error("client hiccup")
+			end
+			return Fake.CreateFrame(kind, ...)
+		end
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		CreateFrame = Fake.CreateFrame
+		assert.truthy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	it("queued bag growth that fails is still trapped as the bags window's", function()
+		A.combat = true
+		B.EnsureCapacity(1, 2)
+		CreateFrame = function(kind, ...)
+			if kind == "ItemButton" then
+				error("client hiccup")
+			end
+			return Fake.CreateFrame(kind, ...)
+		end
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		CreateFrame = Fake.CreateFrame
+		assert.truthy(SB.SafeMode.IsOn("bags"))
+		assert.falsy(SB.SafeMode.IsOn("bank"))
+	end)
+
+	-- Ruling W3-22. Mutation: "bags" instead of the kind check in SetParentFor's OutOfCombat call.
+	it("a bank or warband bag frame move that fails is trapped as the bank window's", function()
+		B.EnsureCapacity(12, 1)
+		B.frames[12].SetParent = function() error("no parent") end
+		B.SetParentFor("warband", Fake.New("Frame"))
+		assert.truthy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
 	it("ReleasePlaceholders(parent) releases only the placeholders inside that parent", function()
 		local bagsChild, bankChild = Fake.New("Frame"), Fake.New("Frame")
 		local a = B.AcquirePlaceholder(bagsChild, 1, 37, 0, 0)
@@ -279,6 +322,28 @@ describe("Section headers per window", function()
 		assert.same({ "bank:c_gear" }, bankClicks)
 		assert.same({ "bank:c_gear" }, bankDrops)
 		assert.same({ "c_gear" }, bagsClicks)
+	end)
+
+	-- Ruling W3-22 (spec P6). Mutation: "bags" instead of owner.window in either guard.
+	it("an error in a bank-owned header's click or drop is trapped as the bank window's", function()
+		local owner = { window = "bank", onClick = function() error("click broke") end }
+		local h = H.Acquire(Fake.New("Frame"), "bank:c_gear", "x", 0, 0, 10, owner)
+		Fake.Fire(h, "OnClick")
+		assert.truthy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"), "the bags window keeps working")
+		SB.SafeMode.Disable("bank")
+		owner.onDrop = function() error("drop broke") end
+		Fake.Fire(h, "OnReceiveDrag")
+		assert.truthy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	it("an error in a header without an owner window is trapped as the bags window's", function()
+		H.onClick = function() error("bags click broke") end
+		local h = H.Acquire(Fake.New("Frame"), "c_gear", "x", 0, 0, 10, { onClick = H.onClick })
+		Fake.Fire(h, "OnClick")
+		assert.truthy(SB.SafeMode.IsOn("bags"))
+		assert.falsy(SB.SafeMode.IsOn("bank"))
 	end)
 
 	it("ReleaseAll(parent) releases only that window's headers, and a reused header forgets its owner", function()

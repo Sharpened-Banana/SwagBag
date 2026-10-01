@@ -86,6 +86,22 @@ describe("Layout (build, position, collapse)", function()
 		assert.same(open, L.Position(st, OPTS, {}))
 	end)
 
+	it("opts.top shifts every header and cell down by top, and the height includes it", function()
+		local opts = {}
+		for k, val in pairs(OPTS) do
+			opts[k] = val
+		end
+		opts.top = 100
+		local base, shifted = L.Position(sample(), OPTS, {}), L.Position(sample(), opts, {})
+		for i, h in ipairs(base.headers) do
+			assert.equal(h.y - 100, shifted.headers[i].y)
+		end
+		for k, c in pairs(base.byKey) do
+			assert.same({ c.x, c.y - 100 }, { shifted.byKey[k].x, shifted.byKey[k].y })
+		end
+		assert.equal(base.height + 100, shifted.height)
+	end)
+
 	it("a collapsed New keeps only its header", function()
 		local pos = L.Position(sample(), OPTS, { new = true })
 		assert.equal(-1, pos.headers[1].y)
