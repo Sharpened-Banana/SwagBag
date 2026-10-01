@@ -4,23 +4,45 @@
 -- combat is allowed (ruling P9). The window supplies the actions:
 --   Headers.onClick(sectionId)  left-click (collapse/expand, or drop the cursor item)
 --   Headers.onDrop(sectionId)   an item dragged onto the header (AC4.3)
+-- Those two are the bags window's. Another window passes its own { onClick, onDrop, window } as the
+-- owner of the headers it acquires, and releases only the headers inside its own frame.
 local _, SB = ...
 
 local L = SB.L
 local H = { pool = {}, inUse = {}, HEIGHT = 18 }
 SB.SectionHeaders = H
 
--- Pure: the header text.
-function H.Label(name, count, collapsed, overflow)
+-- [header] = the frame it was acquired in / its owner's { onClick, onDrop, window }. Kept beside the
+-- frames, not on them, so a field name can never clash with a frame method.
+local parents, owners, labels = {}, {}, {}
+
+-- Pure: the header text. value (copper, optional) is the section's total value (spec F10),
+-- shown when above 0; vendor = the value is the vendor price (no Auctionator).
+function H.Label(name, count, collapsed, overflow, value, vendor)
 	local text = L.HEADER_LABEL:format(collapsed and "+" or "-", name, count)
+	if value and value > 0 then
+		text = text .. (vendor and L.HEADER_VALUE_VENDOR or L.HEADER_VALUE):format(SB.Prices.Money(value))
+	end
 	if overflow and overflow > 0 then
 		text = text .. L.HEADER_OVERFLOW:format(overflow)
 	end
 	return text
 end
 
+-- Section totals for a layout state, or nil when header totals are switched off.
+-- recordOf(bag, slot) -> item record.
+function H.Totals(state, recordOf)
+	if not (state and SB.Prices and SB.Config.Get("prices.headerTotals")) then
+		return nil
+	end
+	return SB.Prices.SectionTotals(state, recordOf)
+end
+
+function H.IsVendor()
+	return SB.Prices ~= nil and SB.Prices.Source() == "Vendor"
+end
+
 local function create(parent)
-	local Guard = SB.ErrorTrap.Guard
 	local h = CreateFrame("Button", nil, parent)
 	h:SetHeight(H.HEIGHT)
 	h:EnableMouse(true)
@@ -31,25 +53,39 @@ local function create(parent)
 	h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	h.text:SetPoint("LEFT", h, "LEFT", 4, 0)
 	h.text:SetJustifyH("LEFT")
-	h:SetScript("OnClick", Guard("header.click", function(self)
-		if H.onClick then
-			H.onClick(self.sectionId)
-		end
-	end, "bags"))
-	h:SetScript("OnReceiveDrag", Guard("header.drop", function(self)
-		if H.onDrop then
-			H.onDrop(self.sectionId)
-		end
-	end, "bags"))
+	-- The ErrorTrap window is the owner's (W3-22, spec P6): an error in a bank header puts the
+	-- bank window, not the bags window, in Safe Mode. No owner window: the bags window.
+	h:SetScript("OnClick", function(self)
+		local o = owners[self]
+		SB.ErrorTrap.Run("header.click", o and o.window or "bags", function()
+			o = o or H
+			if o.onClick then
+				o.onClick(self.sectionId)
+			end
+		end)
+	end)
+	h:SetScript("OnReceiveDrag", function(self)
+		local o = owners[self]
+		SB.ErrorTrap.Run("header.drop", o and o.window or "bags", function()
+			o = o or H
+			if o.onDrop then
+				o.onDrop(self.sectionId)
+			end
+		end)
+	end)
 	return h
 end
 
--- A shown header for sectionId at (x, y) inside parent.
-function H.Acquire(parent, sectionId, label, x, y, width)
+-- A shown header for sectionId at (x, y) inside parent. owner: optional { onClick, onDrop,
+-- window } (window: the ErrorTrap window of its scripts, default "bags").
+function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	local h = table.remove(H.pool) or create(parent)
 	h:SetParent(parent)
+	parents[h], owners[h] = parent, owner
 	h.sectionId = sectionId
+	h.bg:SetColorTexture(1, 1, 1, 0.06)
 	h.text:SetText(label)
+	labels[h] = label
 	h:SetWidth(width)
 	h:ClearAllPoints()
 	h:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -58,12 +94,34 @@ function H.Acquire(parent, sectionId, label, x, y, width)
 	return h
 end
 
-function H.ReleaseAll()
+-- Change the text of the header (parent, sectionId) in place, only when it differs. Group headers
+-- (ids starting with "#") are never touched. Nothing is released or acquired.
+function H.SetLabel(parent, sectionId, text)
+	if sectionId:sub(1, 1) == "#" then
+		return false
+	end
+	for _, h in ipairs(H.inUse) do
+		if parents[h] == parent and h.sectionId == sectionId then
+			if labels[h] ~= text then
+				labels[h] = text
+				h.text:SetText(text)
+				return true
+			end
+			return false
+		end
+	end
+	return false
+end
+
+-- Release the headers inside parent; every header when parent is nil.
+function H.ReleaseAll(parent)
 	for i = #H.inUse, 1, -1 do
 		local h = H.inUse[i]
-		h:Hide()
-		h.sectionId = nil
-		H.inUse[i] = nil
-		H.pool[#H.pool + 1] = h
+		if parent == nil or parents[h] == parent then
+			h:Hide()
+			h.sectionId, parents[h], owners[h], labels[h] = nil, nil, nil, nil
+			table.remove(H.inUse, i)
+			H.pool[#H.pool + 1] = h
+		end
 	end
 end

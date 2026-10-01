@@ -6,10 +6,12 @@ local Fixtures = dofile("spec/fixtures/items.lua")
 
 local FILES = {
 	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
+	"SwagBag/Core/Slash.lua", "SwagBag/Engine/OverlayData.lua",
 	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Inventory.lua", "SwagBag/Engine/GridLayout.lua",
 	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
 	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
+	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua",
 }
 
 -- Fake frame: shown state, scripts (Hide fires OnHide like the client), points, text, mouse-over.
@@ -85,7 +87,13 @@ local function fakeButtons()
 		button.x, button.y = x, y
 		button.placed = button.placed + 1
 	end
-	function B.Paint(button, info) button.itemID = info and info.itemID or nil end
+	function B.Paint(button, info)
+		button.itemID = info and info.itemID or nil
+		if info then -- like the real pool: a filled button never shows a free tile's number
+			button.freeCount = nil
+		end
+	end
+	function B.SetFreeCount(button, n) button.freeCount = n end
 	function B.KindOf(bag) return bag <= 5 and "bags" or "bank" end
 	function B.SetParentFor() end
 	function B.SetDimmed(button, d) button.dimmed = d end
@@ -117,6 +125,7 @@ describe("BagsWindow category view", function()
 		SB.Buttons = B
 		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
 		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/Overlays.lua")
 		W = SB.BagsWindow
 		SB.Emit("SB_LOGIN")
 	end)
@@ -133,6 +142,16 @@ describe("BagsWindow category view", function()
 		return out
 	end
 
+	-- Counts header Acquire/ReleaseAll calls from now on (the pool hands the same frames back, so
+	-- identity alone cannot tell a redraw from an in-place update).
+	local function countChurn()
+		local H, n = SB.SectionHeaders, { acquired = 0, released = 0 }
+		local acquire, release = H.Acquire, H.ReleaseAll
+		H.Acquire = function(...) n.acquired = n.acquired + 1 return acquire(...) end
+		H.ReleaseAll = function(...) n.released = n.released + 1 return release(...) end
+		return n
+	end
+
 	local function header(id)
 		for _, h in ipairs(SB.SectionHeaders.inUse) do
 			if h.sectionId == id then
@@ -144,6 +163,12 @@ describe("BagsWindow category view", function()
 	local function at(bag, slot)
 		local b = B.Get(bag, slot)
 		return { b.x, b.y }
+	end
+
+	-- The tests that pin Free's cells one by one show every free slot (bags.freeTile = false, the
+	-- alternative to the free tile, plan D19). The free tile has its own tests below.
+	local function everyFreeSlot()
+		SB.Config.Set("bags.freeTile", false)
 	end
 
 	it("opens in the category view: sections in display order, New reserved on top, Free last", function()
@@ -158,6 +183,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("shows every slot button exactly once, each at its own cell", function()
+		everyFreeSlot()
 		W.Open()
 		local seen = {}
 		for slot = 1, 16 do
@@ -251,6 +277,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("an ApplyChanges that adds a Free row keeps the top-left corner fixed (C1)", function()
+		everyFreeSlot()
 		SB.Config.UI().positions.bags = { "BOTTOMLEFT", "BOTTOMLEFT", 100, 200 }
 		W.Open()
 		local left, top, height = W.frame:GetLeft(), W.frame:GetTop(), W.frame.h
@@ -283,6 +310,43 @@ describe("BagsWindow category view", function()
 		assert.equal("TOPLEFT", p[1])
 		assert.truthy(math.abs(p[4] * 1.05 - 100) < 1e-6 and math.abs(p[5] * 1.05 - 900) < 1e-6,
 			"screen position unchanged after the scale change")
+	end)
+
+	it("a Ctrl+wheel scale change saves the new corner; a second notch from 120 % keeps it on screen", function()
+		SB.Config.Set("bags.scale", 1.2)
+		SB.Config.UI().positions.bags = { "TOPLEFT", "BOTTOMLEFT", 100, 900 }
+		W.Open()
+		IsControlKeyDown = function() return true end
+		W.scroll.scripts.OnMouseWheel(W.scroll, 1)
+		W.scroll.scripts.OnMouseWheel(W.scroll, 1)
+		assert.truthy(math.abs(SB.Config.Get("bags.scale") - 1.3) < 1e-9)
+		local saved = SB.Config.UI().positions.bags
+		assert.equal("TOPLEFT", saved[1])
+		assert.truthy(math.abs(saved[3] * 1.3 - 100 * 1.2) < 1e-6 and math.abs(saved[4] * 1.3 - 900 * 1.2) < 1e-6,
+			"the saved corner is the same screen spot, in the new scale")
+		W.Close()
+		W.Open()
+		local p = W.frame.points[1]
+		assert.same({ "TOPLEFT", "BOTTOMLEFT" }, { p[1], p[3] })
+		assert.truthy(math.abs(p[4] * 1.3 - 120) < 1e-6, "a reopen lands where the window was")
+	end)
+
+	it("while the window is dragged a scale change does not re-anchor it; the drop saves the corner", function()
+		SB.Config.UI().positions.bags = { "TOPLEFT", "BOTTOMLEFT", 100, 900 }
+		W.Open()
+		W.frame.scripts.OnDragStart(W.frame)
+		local setPoints, realSetPoint = 0, W.frame.SetPoint
+		W.frame.SetPoint = function(self, ...)
+			setPoints = setPoints + 1
+			return realSetPoint(self, ...)
+		end
+		IsControlKeyDown = function() return true end
+		W.scroll.scripts.OnMouseWheel(W.scroll, 1)
+		assert.equal(1.05, W.frame.scale)
+		assert.equal(0, setPoints, "no SetPoint during the drag")
+		W.frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 300, 700) -- where the client moved it
+		W.frame.scripts.OnDragStop(W.frame)
+		assert.same({ "TOPLEFT", "BOTTOMLEFT", 300, 700 }, SB.Config.UI().positions.bags)
 	end)
 
 	it("Ctrl+wheel scaling only resizes; it does not regroup", function()
@@ -344,6 +408,7 @@ describe("BagsWindow category view", function()
 	end
 
 	it("using up an item leaves a placeholder with its icon; its button goes to Free; nothing else moves", function()
+		everyFreeSlot()
 		W.Open()
 		local potionAt, counts = at(0, 1), placedCounts()
 		A.Clear(0, 1)
@@ -361,6 +426,7 @@ describe("BagsWindow category view", function()
 
 	it("a drag to an empty slot and a stack split in one update: one placeholder, both show in New (Review Focus 1)",
 		function()
+			everyFreeSlot()
 			W.Open()
 			local counts = placedCounts()
 			local ringAt = at(0, 3)
@@ -387,6 +453,253 @@ describe("BagsWindow category view", function()
 		assert.equal(0, #B.placeholders, "it came from Free: no placeholder")
 	end)
 
+	it("a live change touches only the moved button's frame, not every slot (incremental render)", function()
+		W.Open()
+		local gets, realGet = 0, B.Get
+		B.Get = function(bag, slot)
+			gets = gets + 1
+			return realGet(bag, slot)
+		end
+		A.Clear(0, 1)
+		bagUpdate()
+		B.Get = realGet
+		assert.equal(1, #B.placeholders)
+		-- the changed slot's repaint, its overlay, the one button that moved and the free tile's number
+		assert.truthy(gets <= 5, "Buttons.Get called " .. gets .. " times for one change in 16 slots")
+		assert.equal(16, #W.cells, "search still sees every slot")
+	end)
+
+	it("a slot past the bag's size is never shown again while its removal is held back", function()
+		everyFreeSlot() -- with the free tile, bag 1's empty slots would be hidden spares anyway
+		A.SetBagSize(1, 4)
+		SB.Inventory.ScanAll()
+		W.Open()
+		A.cursor = { itemID = Fixtures.FLASK } -- holds every move
+		A.SetBagSize(1, 0)
+		bagUpdate(1)
+		assert.equal(4, #W.state.deferred, "the removals wait")
+		W.Render()
+		for slot = 1, 4 do
+			assert.falsy(B.Get(1, slot).shown, "slot " .. slot)
+		end
+		assert.equal(16, #W.cells, "only the backpack is searchable")
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.equal(0, #W.state.deferred)
+		assert.falsy(B.Get(1, 4).shown)
+	end)
+
+	it("section headers show each category's total value, marked vendor without Auctionator (F10)", function()
+		A.items[Fixtures.HEALING_POTION].sellPrice = 2500 -- 5 potions: 1g 25s at a vendor
+		A.items[Fixtures.FLASK].sellPrice = 60000 -- 2 flasks: 12g
+		W.Open()
+		assert.equal("- Consumables (2) - 13g vendor", header("c_consumables").text.text)
+		assert.equal("- Gear (1)", header("c_gear").text.text, "nothing worth anything: no value")
+		A.auctionator = { prices = { ["item:" .. Fixtures.FLASK] = 12400000 } } -- 1,240g each
+		SB.Prices.Invalidate()
+		W.Close()
+		W.Open()
+		assert.equal("- Consumables (2) - 2,481g", header("c_consumables").text.text, "AH flasks plus vendor potions")
+		SB.Config.Set("prices.headerTotals", false)
+		W.Close()
+		W.Open()
+		assert.equal("- Consumables (2)", header("c_consumables").text.text)
+	end)
+
+	-- Mutation: delete the `W.RefreshHeaders()` call in the BAG_UPDATE handler.
+	it("a stack's count changing with no button moving updates its section's total (F10)", function()
+		A.items[Fixtures.HEALING_POTION].sellPrice = 2500
+		W.Open()
+		assert.equal("- Consumables (2) - 1g vendor", header("c_consumables").text.text)
+		local oldPos, frameBefore, pool = W.pos, header("c_consumables"), #SB.SectionHeaders.pool
+		local churn = countChurn()
+		A.Put(0, 1, Fixtures.HEALING_POTION, 9) -- 9 x 25s = 2g 25s
+		bagUpdate(0)
+		assert.equal(oldPos, W.pos, "no layout ran, nothing moved")
+		assert.equal("- Consumables (2) - 2g vendor", header("c_consumables").text.text)
+		assert.equal(frameBefore, header("c_consumables"), "the same header frame, set in place")
+		assert.equal(pool, #SB.SectionHeaders.pool, "nothing released or acquired")
+		assert.same({ acquired = 0, released = 0 }, churn)
+	end)
+
+	-- Mutation: make W.RefreshHeaders call renderExtras(W.pos) again.
+	it("new Auctionator prices update the open window's header totals in place (W3-36)", function()
+		A.items[Fixtures.FLASK].sellPrice = 60000
+		W.Open()
+		assert.equal("- Consumables (2) - 12g vendor", header("c_consumables").text.text)
+		local oldPos, frameBefore, pool = W.pos, header("c_consumables"), #SB.SectionHeaders.pool
+		local churn = countChurn()
+		A.auctionator = { prices = { ["item:" .. Fixtures.FLASK] = 12400000 } }
+		A.auctionatorCallback()
+		A.Advance(0.5)
+		assert.equal("- Consumables (2) - 2,480g", header("c_consumables").text.text)
+		assert.equal(oldPos, W.pos, "no layout ran")
+		assert.equal(frameBefore, header("c_consumables"))
+		assert.equal(pool, #SB.SectionHeaders.pool)
+		assert.same({ acquired = 0, released = 0 }, churn)
+	end)
+
+	it("a warbound-until-equipped item is worth its vendor price, like a bound one (W3-35)", function()
+		A.items[Fixtures.FLASK].sellPrice = 60000
+		A.auctionator = { prices = { ["item:" .. Fixtures.FLASK] = 12400000 } }
+		SB.Prices.Invalidate()
+		A.Put(0, 2, Fixtures.FLASK, 2, { onCooldown = true, isWUE = true })
+		W.Open()
+		assert.equal("- Consumables (2) - 12g", header("c_consumables").text.text, "2 flasks at vendor, Auctionator wins nothing")
+	end)
+
+	it("bag items get their overlays; an empty reagent-bag slot is tinted in Free", function()
+		A.SetBagSize(5, 2)
+		SB.Inventory.ScanAll()
+		W.Open()
+		local ring = SB.Overlays.regions[B.Get(0, 3)]
+		assert.same({ "285", "BoE" }, { ring.topLeft.text, ring.bind.text })
+		assert.truthy(SB.Overlays.regions[B.Get(5, 1)].reagent.shown)
+		assert.is_nil(SB.Overlays.regions[B.Get(0, 16)], "an ordinary empty slot gets nothing")
+		A.Clear(0, 3)
+		bagUpdate()
+		assert.equal("", ring.topLeft.text, "the emptied slot's overlays are cleared")
+	end)
+
+	it("an item whose data loads while open gets its overlays at once (it moves only on the next open)", function()
+		W.Open()
+		A.Put(0, 10, Fixtures.UNLOADED, 1)
+		bagUpdate()
+		assert.equal("", SB.Overlays.regions[B.Get(0, 10)].topLeft.text)
+		A.items[Fixtures.UNLOADED] = { name = "Robe", classID = A.ITEM_CLASS.Armor, subclassID = 0, quality = 3,
+			equipLoc = "INVTYPE_CHEST", ilvl = 280, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
+		assert.equal("280", SB.Overlays.regions[B.Get(0, 10)].topLeft.text)
+	end)
+
+	-- The free tile's number on a slot button (nil: none).
+	local function number(bag, slot)
+		return rawget(B.Get(bag, slot), "freeCount")
+	end
+
+	-- Plan D19 (the user's request W3-12): the free tile. Mutation: `freeTile = false` in
+	-- layoutSections' Build options.
+	it("Free shows one tile per bag family with its number of free slots; the other empty slots are hidden", function()
+		A.SetBagSize(5, 2)
+		SB.Inventory.ScanAll()
+		W.Open()
+		assert.equal("- Free (12)", header("free").text.text)
+		assert.same({ true, 10 }, { B.Get(0, 7).shown, number(0, 7) }, "the backpack's first empty slot")
+		assert.same({ true, 2 }, { B.Get(5, 1).shown, number(5, 1) }, "the reagent bag has its own tile")
+		for slot = 8, 16 do
+			assert.falsy(B.Get(0, slot).shown, "slot " .. slot)
+		end
+		assert.falsy(B.Get(5, 2).shown)
+		assert.equal(18, #W.cells, "search still sees every slot")
+		assert.truthy(SB.Overlays.regions[B.Get(5, 1)].reagent.shown, "the reagent tile keeps its green tint")
+	end)
+
+	-- Mutation: `if button and t.shown then` in paintTiles (no "really empty" check): the number
+	-- shows on the dropped item when another change redraws while the mouse is still on it.
+	it("a drop on the tile: the item stays under the mouse with no number; then the next empty slot takes its place",
+		function()
+			W.Open()
+			local tile, tileAt = B.Get(0, 7), at(0, 7)
+			tile.mouseOver = true
+			A.Put(0, 7, Fixtures.HERB, 5)
+			bagUpdate()
+			assert.same(tileAt, at(0, 7), "nothing moves under the mouse")
+			assert.is_nil(number(0, 7), "the item shows, not the number")
+			assert.falsy(B.Get(0, 8).shown)
+			A.Clear(0, 2) -- the flask is used meanwhile: a redraw while the drop still waits
+			bagUpdate()
+			assert.same(tileAt, at(0, 7))
+			assert.is_nil(number(0, 7))
+			tile.mouseOver = false
+			A.Advance(0.3)
+			assert.same({ 4, -24 }, at(0, 7), "the dropped item is first in New")
+			assert.same({ true, 10 }, { B.Get(0, 8).shown, number(0, 8) }, "10 - 1 + the flask's slot")
+			assert.same(tileAt, at(0, 8), "the next empty slot is where the tile was")
+			assert.equal("- Free (10)", header("free").text.text)
+		end)
+
+	it("with an item on the cursor the tile keeps its place and number until the item is put down", function()
+		W.Open()
+		local tileAt = at(0, 7)
+		A.cursor = { itemID = Fixtures.FLASK }
+		A.Clear(0, 1)
+		A.Put(0, 7, Fixtures.HEALING_POTION, 5) -- the potion stack dragged onto the tile
+		bagUpdate()
+		assert.same(tileAt, at(0, 7))
+		assert.truthy(B.Get(0, 1).shown, "the emptied potion slot waits too")
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.falsy(B.Get(0, 1).shown, "the emptied slot is a hidden free slot now")
+		assert.same(tileAt, at(0, 8))
+		assert.equal(10, number(0, 8))
+		assert.equal(1, #B.placeholders)
+	end)
+
+	-- Mutations: delete the SB_FREE_TILE_CHANGED handler; delete paintTiles(nil) in layoutGrid.
+	it("/swagbag free all regroups once the mouse leaves; the grid view never has a tile (AC3.6)", function()
+		W.Open()
+		SB.Config.Set("bags.freeTile", false)
+		W.scroll.mouseOver = true
+		SB.Emit("SB_FREE_TILE_CHANGED")
+		assert.falsy(B.Get(0, 8).shown, "waits while the mouse is over the items")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		for slot = 7, 16 do
+			assert.truthy(B.Get(0, slot).shown, "slot " .. slot)
+		end
+		assert.is_nil(number(0, 7))
+		SB.Config.Set("bags.freeTile", true)
+		SB.Emit("SB_FREE_TILE_CHANGED")
+		assert.equal(10, number(0, 7))
+		W.SetView("grid")
+		for slot = 7, 16 do
+			assert.truthy(B.Get(0, slot).shown, "grid: slot " .. slot)
+		end
+		assert.is_nil(number(0, 7), "the grid is the physical order: no tile")
+	end)
+
+	-- W3-21: a herb bag swapped for a plain bag of the same size changes no slot count, so only
+	-- BAG_CONTAINER_UPDATE tells the window. Mutation: delete the BAG_CONTAINER_UPDATE handler:
+	-- bag 1 keeps its own tile until the next full layout.
+	it("a bag swapped for another of the same size regroups Free once the mouse leaves (W3-21)", function()
+		local family = { [1] = "family8" }
+		A.BagFamily = function(bag) return family[bag] or (bag == 5 and "reagent" or "any") end
+		A.SetBagSize(1, 4)
+		SB.Inventory.ScanAll()
+		W.Open()
+		assert.same({ true, 4 }, { B.Get(1, 1).shown, number(1, 1) }, "the herb bag's own tile")
+		assert.equal(10, number(0, 7))
+		family[1] = "any" -- swapped for a plain bag with the same number of slots
+		W.scroll.mouseOver = true
+		SB.eventFrame:Fire("BAG_CONTAINER_UPDATE")
+		A.Advance(0.1)
+		assert.equal(4, number(1, 1), "waits while the mouse is over the items")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.same({ false, nil }, { B.Get(1, 1).shown, number(1, 1) }, "now a hidden free slot of the bags")
+		assert.equal(14, number(0, 7))
+	end)
+
+	-- Review fix 5: a drop on the tile that is picked back up while the mouse is still on it shows
+	-- the number again at once. Mutation: delete paintTiles(W.pos) in the inventory handler.
+	it("a held drop on the tile that is picked back up shows the number again under the mouse", function()
+		W.Open()
+		local tile, tileAt = B.Get(0, 7), at(0, 7)
+		tile.mouseOver = true
+		A.Put(0, 7, Fixtures.HERB, 5)
+		bagUpdate()
+		assert.is_nil(number(0, 7))
+		A.Clear(0, 7) -- picked back up
+		bagUpdate()
+		assert.same(tileAt, at(0, 7), "still nothing moves under the mouse")
+		assert.equal(10, number(0, 7), "the empty tile shows its number while the mouse is on it")
+		tile.mouseOver = false
+		A.Advance(0.3)
+		-- the held changes replay in order (arrived, then left): the next empty slot holds the cell
+		assert.same({ tileAt, 10 }, { at(0, 8), number(0, 8) })
+		assert.equal("- Free (10)", header("free").text.text)
+	end)
+
 	it("a stack count change only repaints", function()
 		W.Open()
 		local counts = placedCounts()
@@ -397,6 +710,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("a button under the mouse does not move; it moves 300 ms after the mouse leaves", function()
+		everyFreeSlot()
 		W.Open()
 		local potion = B.Get(0, 1)
 		local before = at(0, 1)
@@ -413,6 +727,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("an item on the cursor holds every move until it is put down", function()
+		everyFreeSlot()
 		W.Open()
 		A.cursor = { itemID = Fixtures.FLASK }
 		local before = at(0, 1)
@@ -491,6 +806,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("a bag equipped while open adds its slots at the end of Free", function()
+		everyFreeSlot()
 		W.Open()
 		local counts = placedCounts()
 		A.SetBagSize(1, 4)

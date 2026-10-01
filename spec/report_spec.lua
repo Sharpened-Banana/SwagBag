@@ -68,6 +68,34 @@ describe("Report", function()
 		assert.truthy(SB.Report.Build():find("\nLast bags layout: 12.3 ms (open)", 1, true))
 	end)
 
+	it("shows the bank setting, the last visit and the deposit target (check V2)", function()
+		SB.Checks.last = {}
+		SB.BankWindow = { Mode = function() return "tiny" end, lastVisit = "beside", target = "warband",
+			GroupName = function() return "Warband bank" end }
+		assert.truthy(SB.Report.Build():find("\nBank: setting tiny, last visit beside, last deposit target Warband bank",
+			1, true))
+		SB.BankWindow.view = { stats = { lastLayoutMs = 61.27, lastLayoutReason = "open" } }
+		assert.truthy(SB.Report.Build():find("\nLast bank layout: 61.3 ms (open)", 1, true), "spec 9: first bank open")
+	end)
+
+	it("shows the guild bank setting and the last visit (check G1)", function()
+		SB.Checks.last = {}
+		SB.GuildBankWindow = { Mode = function() return "full" end, lastVisit = "view" }
+		assert.truthy(SB.Report.Build():find("\nGuild bank: setting full, last visit view", 1, true))
+	end)
+
+	it("shows the snapshot counts and size, for the spec 8.4 budgets (check V10)", function()
+		SB.Checks.last = {}
+		SB.Snapshots = { Count = function() return 3, 1 end, Bytes = function() return 40 * 1024 end }
+		assert.truthy(SB.Report.Build():find("\nSnapshots: 3 characters, 1 guilds, 40 KB", 1, true))
+	end)
+
+	it("shows which price source answers and how many prices are cached (F10)", function()
+		SB.Checks.last = {}
+		SB.Prices = { Source = function() return "Auctionator" end, cached = 412 }
+		assert.truthy(SB.Report.Build():find("\nPrices: Auctionator, 412 cached", 1, true))
+	end)
+
 	it("Hash is stable, order-independent and changes with content", function()
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 		local h2 = SB.Report.Hash({ x = "a", bags = { columns = 12 } })

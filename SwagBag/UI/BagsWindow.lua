@@ -19,6 +19,7 @@ local W = {
 	state = nil, -- sections view: Layout state while open (nil when closed or in grid view)
 	pos = nil, -- sections view: last Layout.Position result
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
+	tiled = {}, -- [button] = true while it shows a free tile's number (plan D19)
 	size = { 100, 100 }, -- last content width, height
 	SLOT = 37,
 	GAP = 4,
@@ -82,9 +83,9 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 	if self:IsShown() then
 		return
 	end
-	W.state, W.pos, W.sortPending, W.sortSawUpdate = nil, nil, false, false
+	W.state, W.pos, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, false, false, false
 	W.ClearDropGuard()
-	SB.Buttons.ReleasePlaceholders()
+	SB.Buttons.ReleasePlaceholders(child)
 	SB.Emit("SB_BAGS_CLOSED")
 end, "bags"))
 
@@ -92,18 +93,51 @@ end, "bags"))
 -- Title feedback, position and scale
 ---------------------------------------------------------------------------
 local titleToken = 0
+local flashing = false
 
--- Show text in the title for 1.5 s (feedback for header buttons and scaling, P2).
+-- The title at rest: "SwagBag — ilvl 279.4" (the average item level the character wears,
+-- one decimal) while bags.showIlvl is on and the client answers; otherwise "SwagBag" (D18).
+function W.Title()
+	if SB.Config.Get("bags.showIlvl") then
+		local ilvl = SB.Adapter.EquippedItemLevel()
+		if ilvl then
+			return L.BAGS_TITLE_ILVL:format(ilvl)
+		end
+	end
+	return L.BAGS_TITLE
+end
+
+-- Shows the resting title, unless a flash is up (the flash puts the resting title back).
+function W.RefreshTitle()
+	if not flashing then
+		frame.title:SetText(W.Title())
+	end
+end
+
+-- Show text in the title for 1.5 s (feedback for header buttons and scaling, P2), then
+-- the resting title.
 function W.Flash(text)
 	titleToken = titleToken + 1
 	local token = titleToken
+	flashing = true
 	frame.title:SetText(text)
 	SB.Adapter.After(1.5, Guard("bags.flash", function()
 		if token == titleToken then
-			frame.title:SetText(L.BAGS_TITLE)
+			flashing = false
+			frame.title:SetText(W.Title())
 		end
 	end, "bags"))
 end
+
+-- A gear swap changes the item level in the title. SB.On skips an event the client does
+-- not know, so a missing PLAYER_AVG_ITEM_LEVEL_UPDATE costs nothing.
+local function itemLevelChanged()
+	if frame:IsShown() then
+		W.RefreshTitle()
+	end
+end
+SB.On("PLAYER_EQUIPMENT_CHANGED", itemLevelChanged, "bags")
+SB.On("PLAYER_AVG_ITEM_LEVEL_UPDATE", itemLevelChanged, "bags")
 
 function W.RestorePosition()
 	local p = SB.Config.UI().positions.bags
@@ -124,10 +158,14 @@ local function savePosition()
 	end
 end
 
+-- While the window is being dragged nothing re-anchors it (a scale change or a resize waits
+-- for the drop; the drop saves the new corner).
 frame:SetScript("OnDragStart", Guard("bags.dragStart", function()
+	W.dragging = true
 	frame:StartMoving()
 end, "bags"))
 frame:SetScript("OnDragStop", Guard("bags.dragStop", function()
+	W.dragging = false
 	frame:StopMovingOrSizing()
 	savePosition()
 end, "bags"))
@@ -142,23 +180,25 @@ local function sizeFrame(width, height, keepTop)
 	local maxHeight = UIParent:GetHeight() * W.MAX_HEIGHT_FRACTION / frame:GetScale()
 	local viewHeight = math.min(height, maxHeight - W.HEADER - W.FOOTER)
 	frame:SetSize(width + 8, viewHeight + W.HEADER + W.FOOTER)
-	if keepTop and left and top then
+	if keepTop and left and top and not W.dragging then
 		frame:ClearAllPoints()
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 	end
 	W.ClampScroll()
 end
 
--- Scaling only resizes the window; nothing is regrouped.
+-- Scaling only resizes the window; nothing is regrouped. The new corner is saved at once, so
+-- a reopen lands where the window is now (the saved offsets are in the new scale).
 function W.SetScale(scale)
 	scale = SB.GridLayout.ClampScale(scale)
 	SB.Config.Set("bags.scale", scale)
 	-- Offsets are in the frame's own scale, so keep the corner's screen position across the change.
 	local oldScale, left, top = frame:GetScale(), frame:GetLeft(), frame:GetTop()
 	frame:SetScale(scale)
-	if left and top and frame:IsShown() then
+	if left and top and frame:IsShown() and not W.dragging then
 		frame:ClearAllPoints()
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * oldScale / scale, top * oldScale / scale)
+		savePosition()
 	end
 	W.Flash(L.BAGS_SCALE:format(math.floor(scale * 100 + 0.5)))
 	if frame:IsShown() then
@@ -228,6 +268,13 @@ local function bagList()
 	return list
 end
 
+-- Overlays (spec F9) follow the record; an empty reagent-bag slot gets its Free cue.
+local function overlay(bag, slot)
+	if SB.Overlays then
+		SB.Overlays.Apply(SB.Buttons.Get(bag, slot), W.records[bag] and W.records[bag][slot], bag)
+	end
+end
+
 local function describe(bag, slot)
 	W.records[bag] = W.records[bag] or {}
 	local record = SB.Items.Describe(bag, slot)
@@ -235,6 +282,7 @@ local function describe(bag, slot)
 		record.icon = (SB.Adapter.GetItemInstant(record.itemID) or {}).icon
 	end
 	W.records[bag][slot] = record
+	overlay(bag, slot)
 	return record
 end
 
@@ -247,6 +295,7 @@ local function refreshRecord(bag, slot)
 	if old and fresh and fresh.itemID == old.itemID then
 		fresh.icon = fresh.icon or old.icon
 		W.records[bag][slot] = fresh
+		overlay(bag, slot)
 	end
 end
 
@@ -258,6 +307,27 @@ local function place(button, x, y)
 	end
 end
 
+-- The free tile's number (plan D19): each family's tile shows how many empty slots the family
+-- has, but only while the tile really is empty (a drop that waits under the mouse shows the
+-- item and no number). Every other button's number is cleared.
+local function paintTiles(pos)
+	local B, now = SB.Buttons, {}
+	for _, t in ipairs(pos and pos.tiles or {}) do
+		local button = B.Get(t.bag, t.slot)
+		if button and t.shown and not (W.records[t.bag] and W.records[t.bag][t.slot]) then
+			B.SetFreeCount(button, t.count)
+			now[button] = true
+		end
+	end
+	for button in pairs(W.tiled) do
+		if not now[button] then
+			B.SetFreeCount(button, nil)
+		end
+	end
+	W.tiled = now
+end
+
+-- The grid is the physical order (AC3.6): every empty slot is shown there, no tile.
 local function layoutGrid(bags)
 	local A, B = SB.Adapter, SB.Buttons
 	local g = SB.GridLayout.Compute(bags, { columns = columns(), size = W.SLOT, gap = W.GAP, padding = W.PAD })
@@ -271,39 +341,126 @@ local function layoutGrid(bags)
 			button:Show()
 		end
 	end
+	paintTiles(nil)
 	return g.width, g.height
 end
 
--- Put buttons, placeholders and headers where W.pos says. Returns width, height.
-local function render()
-	local B, H, pos = SB.Buttons, SB.SectionHeaders, W.pos
-	W.cells = {}
-	for _, c in ipairs(pos.cells) do
-		local button = B.Get(c.bag, c.slot)
-		if button then
-			if c.shown then
-				place(button, c.x, c.y)
-				button:Show()
-			else
-				button:Hide()
-			end
-			W.cells[#W.cells + 1] = c
-		end
+-- A cell whose slot is past the bag's current size (the bag shrank and the "removed" change
+-- is still held back) is never shown.
+local function inBag(c)
+	return c.slot <= (W.sizes[c.bag] or 0)
+end
+
+local function showAt(button, c)
+	if c.shown and inBag(c) then
+		place(button, c.x, c.y)
+		button:Show()
+	else
+		button:Hide()
 	end
-	B.ReleasePlaceholders()
+end
+
+-- Each section header's text, with its total value (spec F10) when that setting is on.
+local function headerLabels(pos)
+	local H = SB.SectionHeaders
+	local totals = H.Totals(W.state, function(bag, slot)
+		return W.records[bag] and W.records[bag][slot]
+	end) or {}
+	local vendor, labels = H.IsVendor(), {}
+	for i, h in ipairs(pos.headers) do
+		labels[i] = H.Label(SB.Categories.Name(h.id), h.count, h.collapsed, h.overflow, totals[h.id], vendor)
+	end
+	return labels
+end
+
+-- Placeholders and headers (a handful) are redrawn whole; they live in this window's child,
+-- so nothing another window drew is released.
+local function renderExtras(pos)
+	local B, H = SB.Buttons, SB.SectionHeaders
+	B.ReleasePlaceholders(child)
 	for _, p in ipairs(pos.placeholders) do
 		if p.shown then
 			B.AcquirePlaceholder(child, p.icon, W.SLOT, p.x, p.y)
 		end
 	end
-	H.ReleaseAll()
-	for _, h in ipairs(pos.headers) do
-		H.Acquire(child, h.id, H.Label(SB.Categories.Name(h.id), h.count, h.collapsed, h.overflow), W.PAD, h.y,
-			pos.width - 2 * W.PAD)
+	H.ReleaseAll(child)
+	local labels = headerLabels(pos)
+	for i, h in ipairs(pos.headers) do
+		H.Acquire(child, h.id, labels[i], W.PAD, h.y, pos.width - 2 * W.PAD)
 	end
+end
+
+-- A stack's count or an item's price can change a section's total with no button moving:
+-- set the header texts in place (only those that differ); nothing is released or acquired.
+function W.RefreshHeaders()
+	if not (W.state and W.pos and frame:IsShown()) then
+		return
+	end
+	local H = SB.SectionHeaders
+	local labels = headerLabels(W.pos)
+	for i, h in ipairs(W.pos.headers) do
+		H.SetLabel(child, h.id, labels[i])
+	end
+end
+
+SB.On("SB_PRICES_CHANGED", function()
+	W.RefreshHeaders()
+end, "bags")
+
+local function cellsOf(pos)
+	local cells = {}
+	for _, c in ipairs(pos.cells) do
+		if inBag(c) then
+			cells[#cells + 1] = c
+		end
+	end
+	return cells
+end
+
+-- Put buttons, placeholders and headers where W.pos says. Returns width, height.
+local function render()
+	local B, pos = SB.Buttons, W.pos
+	W.cells = {}
+	for _, c in ipairs(pos.cells) do
+		local button = B.Get(c.bag, c.slot)
+		if button then
+			showAt(button, c)
+			if inBag(c) then
+				W.cells[#W.cells + 1] = c
+			end
+		end
+	end
+	renderExtras(pos)
+	paintTiles(pos)
 	return pos.width, pos.height
 end
 W.Render = render
+
+-- After Layout.Apply only the buttons whose cell changed are touched (Layout.Moves), plus the
+-- placeholders, the headers and the free tiles' numbers: a few frame calls however many slots
+-- the window holds (spec 9).
+local function renderMoved(oldPos, newPos)
+	local B = SB.Buttons
+	for _, key in ipairs(SB.Layout.Moves(oldPos, newPos)) do
+		local c = newPos.byKey[key]
+		local button = B.Get(c.bag, c.slot)
+		if button then
+			showAt(button, c)
+		end
+	end
+	for key, c in pairs(oldPos.byKey) do
+		if not newPos.byKey[key] then -- a removed slot (the bag shrank)
+			local button = B.Get(c.bag, c.slot)
+			if button then
+				button:Hide()
+			end
+		end
+	end
+	W.cells = cellsOf(newPos)
+	renderExtras(newPos)
+	paintTiles(newPos)
+	return newPos.width, newPos.height
+end
 
 local function layoutSections(bags)
 	local A, B = SB.Adapter, SB.Buttons
@@ -318,7 +475,8 @@ local function layoutSections(bags)
 		end
 	end
 	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
-		{ columns = columns(), newRows = SB.Config.Get("bags.newRows") })
+		{ columns = columns(), newRows = SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
+			family = SB.Adapter.BagFamily })
 	W.pos = SB.Layout.Position(W.state, positionOpts(), W.Collapsed())
 	return render()
 end
@@ -342,8 +500,8 @@ function W.Layout(reason)
 		end
 	end
 	W.records, W.state, W.pos = {}, nil, nil
-	B.ReleasePlaceholders()
-	SB.SectionHeaders.ReleaseAll()
+	B.ReleasePlaceholders(child)
+	SB.SectionHeaders.ReleaseAll(child)
 	local width, height
 	if W.View() == "grid" then
 		width, height = layoutGrid(bags)
@@ -427,7 +585,10 @@ function W.RequestLayout(reason)
 end
 
 function W.SetView(view)
-	SB.Config.Set("bags.view", view)
+	if not SB.Config.Set("bags.view", view) then -- read-only settings: nothing changes
+		W.Flash(L.SETTINGS_READONLY)
+		return
+	end
 	W.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	W.Flash(view == "grid" and L.VIEW_GRID or L.VIEW_SECTIONS)
 	W.RequestLayout("view")
@@ -557,6 +718,17 @@ W.sortButton = titleButton(L.BTN_SORT, "bags.sortButton", function()
 end, 52)
 W.sortButton:SetPoint("RIGHT", W.reflowButton, "LEFT", -4, 0)
 
+-- W3-26 parity: the title (and its flashes) ends left of the leftmost SHOWN title button, on one
+-- line. leftmost: a button shown left of Sort ("Bank still open", BankWindow.lua), or nil.
+function W.BoundTitle(leftmost)
+	frame.title:ClearAllPoints()
+	frame.title:SetPoint("TOPLEFT", 10, -8)
+	frame.title:SetPoint("RIGHT", leftmost or W.sortButton, "LEFT", -6, 0)
+end
+frame.title:SetJustifyH("LEFT")
+frame.title:SetWordWrap(false)
+W.BoundTitle(nil)
+
 -- fn(button, record-or-nil, bag, slot) for every slot in the view (collapsed ones too).
 function W.ForEachSlot(fn)
 	local B = SB.Buttons
@@ -586,6 +758,7 @@ function W.Open()
 	frame:SetScale(SB.GridLayout.ClampScale(SB.Config.Get("bags.scale")))
 	W.sortPending, W.sortSawUpdate = false, false
 	W.viewButton:SetText(W.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	W.RefreshTitle()
 	frame:Show()
 	W.Layout("open")
 	return true
@@ -625,8 +798,9 @@ function W.ApplyChanges(changes)
 	-- New's "+N more below" can change with no button moving, so the headers redraw then too.
 	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore then
 		result.rendered = true
+		local oldPos = W.pos
 		W.pos = SB.Layout.Position(st, positionOpts(), W.Collapsed())
-		local width, height = render()
+		local width, height = renderMoved(oldPos, W.pos)
 		sizeFrame(width, height, true)
 	end
 	if result.deferred > 0 then
@@ -732,10 +906,36 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 			end
 		end
 	end
+	local applied
 	if W.state and (#moves > 0 or #W.state.deferred > 0) then
-		W.ApplyChanges(moves)
+		applied = W.ApplyChanges(moves)
+	end
+	if W.state and not (applied and applied.rendered) then
+		-- Repaint tiles: a held drop picked back up shows its number again at once (Paint hides
+		-- the number on a filled button but never restores it). A redraw already did it.
+		paintTiles(W.pos)
 	end
 	if touched then
+		W.RefreshHeaders()
 		SB.Emit("SB_BAGS_UPDATED")
 	end
 end, "bags"))
+
+-- /swagbag free tile|all (Core/Commands.lua): regroup now, or once the mouse leaves the items.
+SB.On("SB_FREE_TILE_CHANGED", function()
+	W.RequestLayout("free")
+end, "bags")
+
+-- A bag equipped, taken off or swapped (W3-21). A swap for a bag of the same size changes no
+-- slot count, but its empty slots may now be another family (a herb bag for a plain bag), so
+-- the window regroups: a full layout, guarded by rule 5 (it waits while the mouse is over the
+-- items or an item is on the cursor). Debounced so the bag's own updates land first. SB.On
+-- skips an event the client does not know.
+W.BAG_CHANGE_DELAY = 0.1
+SB.On("BAG_CONTAINER_UPDATE", function()
+	if frame:IsShown() then
+		SB.Debounce("bags.container", W.BAG_CHANGE_DELAY, function()
+			W.RequestLayout("bags")
+		end, "bags")
+	end
+end, "bags")

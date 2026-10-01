@@ -26,10 +26,20 @@ local function kindOf(bag)
 end
 Buttons.KindOf = kindOf
 
--- The bags window registers its scroll child here at load time. Bank kinds get a
--- hidden holder frame until the bank window exists (week 3).
+-- Each window registers its scroll child here at load time ("bags"; "bank" and "warband"
+-- share the bank window's). A kind without a window gets a hidden holder frame. Bag frames
+-- made before the call move to the new parent, out of combat; only the bag frames move,
+-- their item buttons stay parented to them (spec 4.1).
 function Buttons.SetParentFor(kind, frame)
 	Buttons.parents[kind] = frame
+	SB.OutOfCombat(function()
+		for bag, f in pairs(Buttons.frames) do
+			if kindOf(bag) == kind and f:GetParent() ~= frame then
+				f:SetParent(frame)
+				f:SetAllPoints(frame)
+			end
+		end
+	end, "buttons.parent." .. kind, kind == "bags" and "bags" or "bank")
 end
 
 local function parentFor(kind)
@@ -81,12 +91,19 @@ local function createButton(bag, slot)
 	return b
 end
 
--- Ensure `bag` has at least n buttons. In combat the growth is queued (policy).
+-- Ensure `bag` has at least n buttons. In combat the growth is queued (policy); several
+-- requests for one bag during combat keep the largest.
+Buttons.pendingGrow = {} -- [bag] = largest size asked for during combat
 function Buttons.EnsureCapacity(bag, n)
 	if SB.Adapter.InCombat() then
+		Buttons.pendingGrow[bag] = math.max(Buttons.pendingGrow[bag] or 0, n)
 		SB.OutOfCombat(function()
-			Buttons.EnsureCapacity(bag, n)
-		end, "buttons.grow." .. bag, "bags")
+			local want = Buttons.pendingGrow[bag]
+			Buttons.pendingGrow[bag] = nil
+			if want then
+				Buttons.EnsureCapacity(bag, want)
+			end
+		end, "buttons.grow." .. bag, kindOf(bag) == "bags" and "bags" or "bank")
 		return 0
 	end
 	bagFrame(bag)
@@ -113,14 +130,24 @@ function Buttons.CreateAll()
 	for _, bag in ipairs(A.GetBagIDs("bags")) do
 		Buttons.EnsureCapacity(bag, math.max(A.NumSlots(bag), A.BAG_CAPACITY))
 	end
-	for _, kind in ipairs({ "bank", "warband" }) do
-		for _, bag in ipairs(A.GetBagIDs(kind)) do
-			Buttons.EnsureCapacity(bag, math.max(A.NumSlots(bag), A.BANK_TAB_CAPACITY))
-		end
-	end
+	Buttons.EnsureBankTabs()
 	Buttons.stats.createMs = A.ProfileMs() - t0
 	Buttons.created = true
 	SB.Emit("SB_BUTTONS_READY")
+end
+
+-- Buttons for every purchased bank tab: max(size, 98) per tab (spec 4.1). Runs at login and
+-- whenever the bank opens, so a tab bought after login gets its buttons too.
+function Buttons.EnsureBankTabs()
+	local A = SB.Adapter
+	for _, kind in ipairs({ "bank", "warband" }) do
+		for _, bag in ipairs(A.GetBagIDs(kind)) do
+			local want = math.max(A.NumSlots(bag), A.BANK_TAB_CAPACITY)
+			if Buttons.Count(bag) < want then
+				Buttons.EnsureCapacity(bag, want)
+			end
+		end
+	end
 end
 
 function Buttons.Get(bag, slot)
@@ -138,8 +165,12 @@ function Buttons.Place(button, x, y)
 	button:SetPoint("TOPLEFT", button:GetParent(), "TOPLEFT", x, y)
 end
 
--- info: SB.Adapter.GetSlot(bag, slot) result, or nil for an empty slot.
+-- info: SB.Adapter.GetSlot(bag, slot) result, or nil for an empty slot. A filled button never
+-- shows a free tile's number (plan D19).
 function Buttons.Paint(button, info)
+	if info then
+		Buttons.SetFreeCount(button, nil)
+	end
 	SetItemButtonTexture(button, info and info.icon or nil)
 	SetItemButtonCount(button, info and info.count or 0)
 	SetItemButtonQuality(button, info and info.quality or nil, info and info.link or nil)
@@ -154,6 +185,28 @@ function Buttons.SetDimmed(button, dimmed)
 	button:SetAlpha(dimmed and Buttons.DIM_ALPHA or 1)
 end
 
+-- The free tile (plan D19): n in large white text in the middle of an empty slot button; nil
+-- hides it. A font string on the button itself, made the first time (no frame: allowed in
+-- combat), kept in a side table rather than a field on Blizzard's button.
+Buttons.freeCounts = setmetatable({}, { __mode = "k" })
+function Buttons.SetFreeCount(button, n)
+	local fs = Buttons.freeCounts[button]
+	if n == nil then
+		if fs then
+			fs:Hide()
+		end
+		return
+	end
+	if not fs then
+		fs = button:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+		fs:SetPoint("CENTER", button, "CENTER", 0, 0)
+		fs:SetTextColor(1, 1, 1)
+		Buttons.freeCounts[button] = fs
+	end
+	fs:SetText(n)
+	fs:Show()
+end
+
 ---------------------------------------------------------------------------
 -- Placeholders (spec 4.1, 4.2 rule 3): pooled plain Frames showing the icon of an
 -- item that moved or was used. A placeholder never responds to item interaction: it
@@ -161,6 +214,8 @@ end
 -- Plain frames, so creating one in combat is allowed (ruling P9).
 ---------------------------------------------------------------------------
 Buttons.placeholderPool, Buttons.placeholdersInUse = {}, {}
+local placeholderParent = {} -- [placeholder] = the frame it was acquired in
+local placeholderWindow = {} -- [placeholder] = the ErrorTrap window of its scripts (W3-23)
 Buttons.PLACEHOLDER_ALPHA = 0.5
 
 local function placeholderTip(self)
@@ -180,23 +235,30 @@ local function hideTip()
 end
 
 local function createPlaceholder(parent)
-	local Guard = SB.ErrorTrap.Guard
 	local p = CreateFrame("Frame", nil, parent)
 	p:EnableMouse(true)
 	p.icon = p:CreateTexture(nil, "ARTWORK")
 	p.icon:SetAllPoints(p)
 	p.icon:SetDesaturated(true)
 	p:SetAlpha(Buttons.PLACEHOLDER_ALPHA)
-	p:SetScript("OnEnter", Guard("placeholder.enter", placeholderTip, "bags"))
-	p:SetScript("OnMouseDown", Guard("placeholder.click", placeholderTip, "bags"))
-	p:SetScript("OnLeave", Guard("placeholder.leave", hideTip, "bags"))
+	-- Errors are trapped as the window that acquired the placeholder (W3-23, spec P6).
+	local function trap(label, fn)
+		return function(self)
+			SB.ErrorTrap.Run(label, placeholderWindow[self] or "bags", fn, self)
+		end
+	end
+	p:SetScript("OnEnter", trap("placeholder.enter", placeholderTip))
+	p:SetScript("OnMouseDown", trap("placeholder.click", placeholderTip))
+	p:SetScript("OnLeave", trap("placeholder.leave", hideTip))
 	return p
 end
 
--- A shown placeholder of `size` at TOPLEFT offset (x, y) inside parent.
-function Buttons.AcquirePlaceholder(parent, icon, size, x, y)
+-- A shown placeholder of `size` at TOPLEFT offset (x, y) inside parent. window: the ErrorTrap
+-- window of its scripts (default "bags").
+function Buttons.AcquirePlaceholder(parent, icon, size, x, y, window)
 	local p = table.remove(Buttons.placeholderPool) or createPlaceholder(parent)
 	p:SetParent(parent)
+	placeholderParent[p], placeholderWindow[p] = parent, window
 	p:SetSize(size, size)
 	p.icon:SetTexture(icon)
 	p:ClearAllPoints()
@@ -206,15 +268,32 @@ function Buttons.AcquirePlaceholder(parent, icon, size, x, y)
 	return p
 end
 
-function Buttons.ReleasePlaceholders()
+-- Release the placeholders inside parent; every placeholder when parent is nil. Windows pass
+-- their own scroll child, so the bags window never releases the bank window's placeholders.
+function Buttons.ReleasePlaceholders(parent)
 	for i = #Buttons.placeholdersInUse, 1, -1 do
 		local p = Buttons.placeholdersInUse[i]
-		p:Hide()
-		Buttons.placeholdersInUse[i] = nil
-		Buttons.placeholderPool[#Buttons.placeholderPool + 1] = p
+		if parent == nil or placeholderParent[p] == parent then
+			p:Hide()
+			placeholderParent[p], placeholderWindow[p] = nil, nil
+			table.remove(Buttons.placeholdersInUse, i)
+			Buttons.placeholderPool[#Buttons.placeholderPool + 1] = p
+		end
 	end
 end
 
 SB.On("SB_LOGIN", function()
 	Buttons.CreateAll()
 end, "bags")
+
+-- A login that failed half-way switched the bags to Safe Mode; switching it off tries again
+-- (EnsureCapacity carries on where it stopped).
+SB.On("SB_SAFEMODE_CHANGED", function(_, window, on)
+	if window == "bags" and not on and not Buttons.created then
+		Buttons.CreateAll()
+	end
+end, "bags")
+
+SB.On("BANKFRAME_OPENED", function()
+	Buttons.EnsureBankTabs()
+end, "bank")

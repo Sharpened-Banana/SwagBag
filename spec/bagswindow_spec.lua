@@ -109,6 +109,25 @@ describe("BagsWindow", function()
 		assert.equal(true, W.frame.dontSave)
 	end)
 
+	-- Final review M2 (W3-26 parity). Mutation: delete the title's RIGHT anchor in W.BoundTitle.
+	it("the title ends left of the leftmost shown title button; BoundTitle moves that end", function()
+		local function right()
+			for _, p in ipairs(W.frame.title.points) do
+				if p[1] == "RIGHT" then
+					return p
+				end
+			end
+		end
+		assert.same({ "RIGHT", W.sortButton, "LEFT", -6, 0 }, right())
+		local still = newFake()
+		W.BoundTitle(still) -- "Bank still open" shown left of Sort
+		assert.same({ "RIGHT", still, "LEFT", -6, 0 }, right())
+		assert.same({ "TOPLEFT", 10, -8 }, W.frame.title.points[1])
+		W.BoundTitle(nil)
+		assert.same({ "RIGHT", W.sortButton, "LEFT", -6, 0 }, right())
+		assert.same({ "TOPLEFT", 10, -8 }, W.frame.title.points[1])
+	end)
+
 	it("is registered for Esc", function()
 		assert.equal("SwagBagBagsWindow", UISpecialFrames[1])
 	end)
@@ -156,6 +175,53 @@ describe("BagsWindow", function()
 		assert.equal("SwagBag 50%", W.frame.title.text)
 		A.Advance(2)
 		assert.equal(SB.L.BAGS_TITLE, W.frame.title.text)
+	end)
+
+	it("the title shows the average equipped item level with one decimal (D18)", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		assert.equal("SwagBag — ilvl 279.4", W.frame.title.text)
+	end)
+
+	it("the item level in the title follows gear swaps while open, and is read again on open", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		A.avgIlvl = 281.06
+		SB.eventFrame:Fire("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+		assert.equal("SwagBag — ilvl 281.1", W.frame.title.text)
+		A.avgIlvl = 283
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 1)
+		assert.equal("SwagBag — ilvl 283.0", W.frame.title.text)
+		W.frame:Hide()
+		A.avgIlvl = 284.5
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 1)
+		assert.equal("SwagBag — ilvl 283.0", W.frame.title.text, "closed: nothing is read")
+		W.Open()
+		assert.equal("SwagBag — ilvl 284.5", W.frame.title.text)
+	end)
+
+	it("a flash keeps the title until it ends, then the item-level title comes back up to date", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		W.SetScale(0.5)
+		A.avgIlvl = 280.02
+		SB.eventFrame:Fire("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+		assert.equal("SwagBag 50%", W.frame.title.text, "the flash is not cut short")
+		A.Advance(1.5)
+		assert.equal("SwagBag — ilvl 280.0", W.frame.title.text)
+	end)
+
+	it("no item level from the client, or bags.showIlvl off: the plain title, no error", function()
+		A.avgIlvl = nil
+		W.Open()
+		assert.equal("SwagBag", W.frame.title.text)
+		SB.eventFrame:Fire("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+		assert.equal("SwagBag", W.frame.title.text)
+		assert.equal(0, #SB.ErrorTrap.Recent())
+		A.avgIlvl = 279.44
+		SB.Config.Set("bags.showIlvl", false)
+		W.RefreshTitle()
+		assert.equal("SwagBag", W.frame.title.text)
 	end)
 
 	it("Ctrl+wheel changes the scale and plain wheel scrolls", function()
