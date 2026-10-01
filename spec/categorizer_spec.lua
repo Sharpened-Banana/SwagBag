@@ -191,7 +191,11 @@ describe("Categorizer", function()
 	end)
 
 	it("a keyword that throws on every item is recorded once across many items and passes", function()
-		SB.Query.RegisterKeyword({ name = "boom", class = "volatile", eval = function() error("kaboom") end })
+		local calls = 0
+		SB.Query.RegisterKeyword({ name = "boom", class = "volatile", eval = function()
+			calls = calls + 1
+			error("kaboom")
+		end })
 		SB.Config.db.categories.u_boom = { name = "Boom", query = "boom", priority = 200 }
 		C.Load()
 		local before = #SB.ErrorTrap.Recent()
@@ -203,7 +207,9 @@ describe("Categorizer", function()
 			Z.AssignAll(records)
 		end
 		assert.equal(before + 1, #SB.ErrorTrap.Recent())
+		assert.equal(1, calls, "a failed category is skipped, not re-run")
 		assert.truthy(C.Get("u_boom").runtimeError)
+		assert.truthy(SB.ErrorTrap.Recent()[before + 1].stack ~= nil)
 		assert.equal("c_consumables", at(1))
 		assert.equal("c_boe", at(3))
 		assert.equal("c_junk", at(6))
@@ -241,14 +247,58 @@ describe("Categorizer", function()
 			SB.Config.db.categories = {}
 			for _, k in ipairs(order) do
 				local d = defs[k]
-				SB.Config.db.categories[d[1]] = { name = d[1], query = d[2], priority = 50 }
+				SB.Config.db.categories[d[1]] = { name = d[1], query = d[2], priority = 150 }
 			end
 			C.Load()
 			Z.Invalidate()
 			return at(6)
 		end
 		local first = run({ 1, 2, 3 })
+		assert.equal("u_a", first)
 		assert.equal(first, run({ 3, 1, 2 }))
 		assert.equal(first, run({ 2, 3, 1 }))
+	end)
+
+	it("resolves manual includes written straight into the saved data: priority, then lower id", function()
+		local item = Fixtures.HEALING_POTION
+		SB.Config.db.categories = {
+			u_b = { name = "B", query = "", priority = 100, itemList = { include = { [item] = true } } },
+			u_a = { name = "A", query = "", priority = 100, itemList = { include = { [item] = true } } },
+			u_hi = { name = "Hi", query = "", priority = 120 },
+		}
+		C.Load()
+		assert.equal("u_a", at(1), "equal priority: lower id")
+		SB.Config.db.categories.u_b.priority = 110
+		C.Load()
+		assert.equal("u_b", at(1), "higher priority wins")
+	end)
+
+	it("never memoizes a nil from a loaded record", function()
+		local s = counting("cnil", "static", 300, nil)
+		assert.same({ nil, "pending" }, { Z.Assign(SB.Items.Describe(0, 1)) })
+		assert.same({ nil, "pending" }, { Z.Assign(SB.Items.Describe(0, 1)) })
+		assert.equal(2, s.n)
+	end)
+
+	it("records a failure once even across Categories.Load, and re-arms when the query is edited", function()
+		local calls = 0
+		SB.Query.RegisterKeyword({ name = "boom", class = "volatile", eval = function()
+			calls = calls + 1
+			error("kaboom")
+		end })
+		SB.Config.db.categories.u_boom = { name = "Boom", query = "boom", priority = 200 }
+		C.Load()
+		local before = #SB.ErrorTrap.Recent()
+		at(1)
+		C.AddToList("c_junk", Fixtures.JUNK) -- unrelated change: Load runs
+		at(1)
+		at(1)
+		assert.equal(before + 1, #SB.ErrorTrap.Recent())
+		assert.equal(1, calls)
+		SB.Config.db.categories.u_boom.query = "boom | boom"
+		C.Load()
+		at(1)
+		assert.equal(2, calls, "an edited query is re-armed")
+		assert.equal(before + 2, #SB.ErrorTrap.Recent())
 	end)
 end)
