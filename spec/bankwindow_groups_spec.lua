@@ -410,6 +410,21 @@ describe("BankWindow contents", function()
 		assert.equal(1078, #BW.view.cells)
 		assert.truthy(ms <= 80, ("first bank open took %.1f ms"):format(ms))
 	end)
+
+	-- Spec 6.3: at the bank everything stays open. The bank window follows only the user's own
+	-- collapse state; no focus mode ever collapses it. Mutation: in GroupView's collapsedFor,
+	-- return SB.Focus.CollapsedView(set) when SB.Focus exists. (The guild bank window is the same
+	-- GroupView, so this pins it too.)
+	it("a focus mode never collapses the bank window's sections", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Focus.lua")
+		SB.Focus.SetSignal("challengeMode", true)
+		openBank()
+		local shown = labels()
+		assert.truthy(#shown > 0, "the bank window drew its sections")
+		for _, text in ipairs(shown) do
+			assert.equal("-", text:sub(1, 1), text)
+		end
+	end)
 end)
 
 describe("Bags and bank windows open together (Review Focus 1)", function()
