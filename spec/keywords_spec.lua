@@ -132,6 +132,44 @@ describe("Keywords (v1.0, week-1 families)", function()
 		assert.same({}, matching("new", ALL))
 	end)
 
+	it("Syndicator aliases used by published Baganator strings match like our own keywords (spike F)", function()
+		assert.same(matching("gear", ALL), matching("equipment", ALL))
+		assert.same(matching("boe", ALL), matching("#bwe", ALL))
+		assert.same(matching("tradeable", ALL), matching("#tradeable loot | #tradable loot", ALL))
+		assert.same(matching("tradegoods", ALL), matching("#tradeskill", ALL))
+		assert.same(matching("pet", ALL), matching("#battle pet | #battle pets", ALL))
+		assert.same(matching("junk", ALL), matching("trash", ALL))
+		assert.same(matching("wue", ALL), matching("warbound until equipped", ALL))
+		assert.same(matching("warbound", ALL), matching("account bound", ALL))
+		assert.same(matching("head", ALL), matching("helm", ALL))
+		assert.same({ 3, 14 }, matching("#gear & >280", ALL))
+		assert.same({ 4 }, matching("#gear&<280", ALL))
+		assert.same({ 3, 4, 14 }, matching("270-285", ALL))
+	end)
+
+	it("published Baganator category strings all compile; unknown #keywords only warn", function()
+		local strings = {
+			"#key", "#tradeable loot | #tradable loot", "#toy", "#gear & <536", "#gear&<80", "#armor", "#profession",
+			"#elemental", "#finishing reagents | #optional reagents | #crafting reagent | #reagent", "#food",
+			"!gear & (#leather | #leatherworking)", "#battle pet | #battle pets", "#open", "#cooking | #fish ",
+			"#boe | #bwe", "#herb | #alchemy | #inscription", "soulbound", "#tradeskill | #reagent", "#weapon | #off-hand",
+			"#tabard | #shirt", "hearthstone",
+		}
+		local clean = {
+			["#tradeable loot | #tradable loot"] = true, ["#gear & <536"] = true, ["#boe | #bwe"] = true,
+			["#battle pet | #battle pets"] = true, ["#tradeskill | #reagent"] = true, ["#weapon | #off-hand"] = true,
+			["#profession"] = true,
+		}
+		for _, s in ipairs(strings) do
+			local c = Q.Compile(s)
+			assert.same({}, c.errors, s)
+			assert.truthy(c.fn, s)
+			if clean[s] then
+				assert.same({}, c.warnings, s)
+			end
+		end
+	end)
+
 	it("location keywords and tab=N", function()
 		assert.same({ 1 }, matching("backpack & potion", { 1 }))
 		assert.same({ 1 }, matching("reagentbag", { 1 }, 5))

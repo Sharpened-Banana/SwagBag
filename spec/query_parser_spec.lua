@@ -17,10 +17,11 @@ end
 local function W(v) return { type = "word", value = v } end
 
 describe("Query parser", function()
-	local P
+	local P, Lexer
 	before_each(function()
 		local SB = Loader.New({ "SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua" })
 		P = SB.QueryParser
+		Lexer = SB.QueryLexer
 	end)
 
 	local function parse(text)
@@ -39,6 +40,44 @@ describe("Query parser", function()
 		assert.same({ type = "text", value = "Healing Potion" }, parse("\"Healing Potion\""))
 		assert.same({ type = "exact", value = "rune" }, parse("#rune"))
 		assert.same({ type = "num", name = "ilvl", op = ">=", value = 250, raw = "250" }, parse("ilvl >= 250"))
+	end)
+
+	it("reads Syndicator-style bare item levels: <N and >N include N, =N and N are equal", function()
+		assert.same({ type = "num", name = "ilvl", op = "<=", value = 536, raw = "536" }, parse("<536"))
+		assert.same({ type = "num", name = "ilvl", op = ">=", value = 150, raw = "150" }, parse("> 150"))
+		assert.same({ type = "num", name = "ilvl", op = "=", value = 536, raw = "536" }, parse("=536"))
+		assert.same({ type = "num", name = "ilvl", op = "=", value = 536, raw = "536" }, parse("536"))
+		assert.same({ type = "num", name = "ilvl", op = "<=", value = 80, raw = "80" }, parse("<=80"))
+		assert.same({ type = "num", name = "ilvl", op = "<=", value = 536, s = 1, e = 4, raw = "536" }, P.Parse("<536"))
+	end)
+
+	it("reads N-M as an inclusive item-level range, in either order", function()
+		local range = { type = "and", items = {
+			{ type = "num", name = "ilvl", op = ">=", value = 400, raw = "400" },
+			{ type = "num", name = "ilvl", op = "<=", value = 450, raw = "450" } } }
+		assert.same(range, parse("400-450"))
+		assert.same(range, parse("450-400"))
+	end)
+
+	it("keeps numbers inside phrases and other hyphenated words as name text", function()
+		assert.same({ type = "word", value = "potion 2" }, parse("potion 2"))
+		assert.same({ type = "word", value = "Ara-Kara" }, parse("Ara-Kara"))
+		assert.same({ type = "word", value = "1-2-3" }, parse("1-2-3"))
+	end)
+
+	it("combines bare levels with keywords, ~ and || as published Baganator strings do", function()
+		assert.same({ type = "and", items = { { type = "exact", value = "gear" },
+			{ type = "num", name = "ilvl", op = "<=", value = 536, raw = "536" } } }, parse("#gear&<536"))
+		assert.same({ type = "or", items = { { type = "not", item = W("a") }, W("b") } }, parse("~a || b"))
+		assert.same({ type = "and", items = { { type = "word", value = "a b" },
+			{ type = "num", name = "ilvl", op = ">=", value = 5, raw = "5" } } }, parse("a b & >5"))
+	end)
+
+	it("reports a bare comparison without a number", function()
+		local _, err = P.Parse("<")
+		assert.same({ position = 2, expected = "NUMBER", got = "", after = "<" }, err)
+		_, err = P.Parse("#gear & >x")
+		assert.same({ position = 10, expected = "NUMBER", got = "x", after = ">" }, err)
 	end)
 
 	it("gives & precedence over |", function()
@@ -139,6 +178,41 @@ describe("Query parser", function()
 		assert.is_nil(ast)
 		assert.truthy(err)
 		assert.equal("SHALLOWER", err.expected)
+	end)
+
+	it("applies the depth limit to ~ chains and mixed ~/! chains like ! chains", function()
+		local ast, err = P.Parse(string.rep("~", 1000) .. "a")
+		assert.is_nil(ast)
+		assert.equal("SHALLOWER", err.expected)
+		ast, err = P.Parse(string.rep("~!", 500) .. "a")
+		assert.is_nil(ast)
+		assert.equal("SHALLOWER", err.expected)
+		assert.truthy(P.Parse(string.rep("~", 100) .. "a"))
+		local ast101, err101 = P.Parse(string.rep("~", 101) .. "a")
+		assert.is_nil(ast101)
+		assert.equal("SHALLOWER", err101.expected)
+	end)
+
+	it("never throws on any mix of the new syntax (~ || bare levels ranges)", function()
+		local pieces = { "~", "||", "|", "&", "!", "<", ">", "<=", ">=", "=", "1", "99999999999999999999", "5-9", "-", "9-", "-9",
+			"0x10", "1e3", "a", "#", "#x", "(", ")", "\"", "a b", " " }
+		local seed = 12345
+		local function rnd(n)
+			seed = (seed * 1103515245 + 12345) % 2147483648
+			return seed % n + 1
+		end
+		for _ = 1, 2000 do
+			local parts = {}
+			for i = 1, rnd(8) do
+				parts[i] = pieces[rnd(#pieces)]
+			end
+			local text = table.concat(parts, rnd(2) == 1 and " " or "")
+			local ok = pcall(function()
+				assert.truthy(Lexer.Tokenize(text))
+				return P.Parse(text)
+			end)
+			assert.truthy(ok, text)
+		end
 	end)
 
 	it("allows exactly 100 levels of nesting", function()

@@ -1,17 +1,20 @@
 -- SwagBag query tokenizer (spec 7.2). Pure Lua.
 -- Token: { type, value, s, e } with 1-based character span s..e.
 -- Spans are byte offsets, not UTF-8 character positions.
--- Types: WORD, STRING, OP (= < <= > >=), AND (&), OR (|), NOT (!), LPAREN, RPAREN,
---        HASH (#), EOF. A WORD is any run of characters that are not whitespace
---        and not one of  & | ! ( ) # " = < >
+-- Types: WORD, STRING, OP (= < <= > >=), AND (&), OR (| or ||), NOT (! or ~),
+--        LPAREN, RPAREN, HASH (#), EOF. A WORD is any run of characters that are
+--        not whitespace and not one of  & | ! ~ ( ) # " = < >
+-- `~` (NOT) and `||` (OR) are Syndicator spellings (spec 7.5 #2).
 -- Errors are returned as { position, expected, got } (expected is a code, see Query.FormatError).
 local _, SB = ...
 
 local Lexer = {}
 SB.QueryLexer = Lexer
 
-local SINGLE = { ["&"] = "AND", ["|"] = "OR", ["!"] = "NOT", ["("] = "LPAREN", [")"] = "RPAREN", ["#"] = "HASH" }
-local STOP = "[%s&|!()#\"=<>]"
+local SINGLE = {
+	["&"] = "AND", ["|"] = "OR", ["!"] = "NOT", ["~"] = "NOT", ["("] = "LPAREN", [")"] = "RPAREN", ["#"] = "HASH",
+}
+local STOP = "[%s&|!~()#\"=<>]"
 
 function Lexer.Tokenize(text)
 	text = text or ""
@@ -20,6 +23,9 @@ function Lexer.Tokenize(text)
 		local c = text:sub(i, i)
 		if c:find("%s") then
 			i = i + 1
+		elseif c == "|" and text:sub(i + 1, i + 1) == "|" then
+			tokens[#tokens + 1] = { type = "OR", value = "||", s = i, e = i + 1 }
+			i = i + 2
 		elseif SINGLE[c] then
 			tokens[#tokens + 1] = { type = SINGLE[c], value = c, s = i, e = i }
 			i = i + 1

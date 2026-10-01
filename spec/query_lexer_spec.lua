@@ -31,6 +31,11 @@ describe("Query lexer", function()
 			"RPAREN:)@12-12", "EOF:@13-13" }, brief(Lexer.Tokenize("!(#rune | x)")))
 	end)
 
+	it("reads ~ as NOT and || as one OR (Syndicator spellings)", function()
+		assert.same({ "NOT:~@1-1", "WORD:a@2-2", "OR:||@4-5", "WORD:b@7-7", "EOF:@8-8" }, brief(Lexer.Tokenize("~a || b")))
+		assert.same({ "WORD:a@1-1", "OR:||@2-3", "OR:|@4-4", "WORD:b@5-5", "EOF:@6-6" }, brief(Lexer.Tokenize("a|||b")))
+	end)
+
 	it("reads a quoted string as one STRING token spanning its quotes", function()
 		assert.same({ "STRING:Healing Potion@1-16", "EOF:@17-17" }, brief(Lexer.Tokenize("\"Healing Potion\"")))
 	end)

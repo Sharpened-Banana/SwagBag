@@ -69,12 +69,28 @@ describe("Query compile and eval", function()
 		assert.equal(false, run("\"potion\"", { kind = "potion", name = "Flask" }))
 	end)
 
-	it("#word forces a keyword and an unknown #word is a positioned error", function()
+	it("#word forces a keyword; an unknown #word is a warning that matches nothing (spec 7.5 #3)", function()
 		assert.equal(true, run("#potion", POTION))
 		local c = Q.Compile("boe | #potin")
-		assert.is_nil(c.fn)
-		assert.same({ { position = 7, expected = "KEYWORD", got = "potin" } }, c.errors)
-		assert.is_nil(Q.Eval(c, POTION))
+		assert.truthy(c.fn)
+		assert.same({}, c.errors)
+		assert.same({ { kind = "unknown_keyword", value = "potin", position = 7 } }, c.warnings)
+		assert.equal(false, Q.Eval(c, POTION))
+		assert.equal(true, Q.Eval(c, RING))
+		assert.equal("Unknown keyword \"#potin\" matches nothing (character 7)", Q.FormatWarning(c.warnings[1]))
+		assert.same(c.warnings, Q.Validate(c).warnings)
+	end)
+
+	it("bare item levels compare like Syndicator: < and > include the number, N-M is inclusive", function()
+		assert.equal(true, run("<285", RING))
+		assert.equal(true, run(">285", RING))
+		assert.equal(false, run("<284", RING))
+		assert.equal(true, run("285", RING))
+		assert.equal(true, run("280-290", RING))
+		assert.equal(true, run("285-285", RING))
+		assert.equal(false, run("290-300", RING))
+		assert.equal(false, run("<300", POTION), "no item level: false")
+		assert.is_nil(run("<300", LOADING), "not loaded yet: nil")
 	end)
 
 	it("compares numbers with = < <= > >=", function()
@@ -223,7 +239,7 @@ describe("Query errors, Validate, Pretty, registry", function()
 		assert.equal("Expected a number after \">\" at character 6", Q.FormatError(Q.Compile("ilvl>").errors[1]))
 		assert.equal("Expected a closing ) after \"boe\" at character 5", Q.FormatError(Q.Compile("(boe").errors[1]))
 		assert.equal("Expected & or | but found \")\" at character 4", Q.FormatError(Q.Compile("boe)").errors[1]))
-		assert.equal("Expected a known keyword but found \"potin\" at character 1", Q.FormatError(Q.Compile("#potin").errors[1]))
+		assert.equal("Expected a known keyword but found \"&\" at character 3", Q.FormatError(Q.Compile("# & boe").errors[1]))
 	end)
 
 	it("Validate accepts a good query and warns about name-text words", function()
@@ -262,7 +278,7 @@ describe("Query errors, Validate, Pretty, registry", function()
 		local queries = {
 			"gear & ilvl>280 & !bound", "(potion | flask | food) & lvl>=80", "keystone | crest",
 			"junk | (gray & !quest)", "\"Healing Potion\"", "#rune", "a & (b | (c & !d)) | e",
-			"!(a | b) & !c", "trade goods & count<=5 | tab=2",
+			"!(a | b) & !c", "trade goods & count<=5 | tab=2", "#gear & <536", "400-450 | ~boe", "a || b",
 		}
 		for _, q in ipairs(queries) do
 			local ast = Q.Compile(q).ast
@@ -299,6 +315,33 @@ describe("Query errors, Validate, Pretty, registry", function()
 			Q.FormatError(tooDeep.errors[1]))
 		assert.equal("Put & between a name and a comparison (at character 1)",
 			Q.FormatError(Q.Compile("a b ilvl>5").errors[1]))
+	end)
+
+	it("Compile and Eval never throw on the new syntax, and ~ obeys the depth limit", function()
+		local pieces = { "~", "||", "|", "&", "!", "<", ">", "=", "1", "99999999999999999999", "5-9", "-", "0x10", "boe",
+			"#", "#x", "#potion", "(", ")", "a b", "ilvl>3" }
+		local seed = 777
+		local function rnd(n)
+			seed = (seed * 1103515245 + 12345) % 2147483648
+			return seed % n + 1
+		end
+		for _ = 1, 2000 do
+			local parts = {}
+			for i = 1, rnd(8) do
+				parts[i] = pieces[rnd(#pieces)]
+			end
+			local text = table.concat(parts, " ")
+			local ok = pcall(function()
+				local c = Q.Compile(text)
+				Q.Eval(c, RING)
+				Q.Validate(c)
+			end)
+			assert.truthy(ok, text)
+		end
+		local deep = Q.Compile(string.rep("~", 101) .. "a")
+		assert.is_nil(deep.fn)
+		assert.equal("SHALLOWER", deep.errors[1].expected)
+		assert.truthy(Q.Compile(string.rep("~", 100) .. "boe").fn)
 	end)
 
 	it("RegisterKeyword rejects bad definitions", function()

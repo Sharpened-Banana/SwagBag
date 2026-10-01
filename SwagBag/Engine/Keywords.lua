@@ -1,6 +1,8 @@
 -- SwagBag v1.0 keyword table, week-1 families (spec 7.3): type, slot, quality,
 -- binding, numeric (ilvl, lvl/level, gear, count, stack, tab), state, location.
 -- Every keyword reads ONLY the item record from Engine/Items.lua.
+-- Aliases include Syndicator's English spellings used by published Baganator category
+-- strings (desk spike F, docs/research/2026-10-syndicator-grammar-diff.md).
 -- Not yet registered (need later modules): expansion, gold/value, crafting quality,
 -- collection, crest / upgrade currency.
 local _, SB = ...
@@ -55,6 +57,7 @@ function K.RegisterAll()
 		class = "instance",
 		eval = isGear,
 		value = itemLevel, -- gear<210: equippable gear under an item level
+		aliases = { "equipment" },
 	})
 	kw("consumable", "static", classIs(C.Consumable))
 	kw("potion", "static", subIs(C.Consumable, CS.Potion))
@@ -71,7 +74,7 @@ function K.RegisterAll()
 		end
 		return r.isCraftingReagent == true
 	end)
-	kw("tradegoods", "static", classIs(C.Tradegoods), { "trade goods" })
+	kw("tradegoods", "static", classIs(C.Tradegoods), { "trade goods", "tradeskill" })
 	kw("herb", "static", subIs(C.Tradegoods, TS.Herb))
 	kw("ore", "static", subIs(C.Tradegoods, TS.MetalStone))
 	kw("leather", "static", subIs(C.Tradegoods, TS.Leather))
@@ -90,7 +93,7 @@ function K.RegisterAll()
 	kw("pet", "instance", function(r)
 		return r.isCagedPet == true or r.classID == C.Battlepet
 			or (r.classID == C.Miscellaneous and r.subclassID == MS.CompanionPet)
-	end)
+	end, { "battle pet", "battle pets" })
 	kw("mount", "static", subIs(C.Miscellaneous, MS.Mount))
 	kw("toy", "static", function(r)
 		return r.isToy == true
@@ -104,13 +107,14 @@ function K.RegisterAll()
 			return nil
 		end
 		return r.quality == 0
-	end)
+	end, { "trash" })
 	kw("profession tool", "static", function(r)
 		return r.equipLoc == "INVTYPE_PROFESSION_TOOL"
 	end)
 	kw("profession gear", "static", function(r)
 		return r.equipLoc == "INVTYPE_PROFESSION_GEAR"
-	end)
+	end, { "profession equipment" })
+	kw("profession", "static", classIs(C.Profession))
 
 	-- Slot (static, equip location) -------------------------------------------
 	local SLOTS = {
@@ -122,12 +126,18 @@ function K.RegisterAll()
 		offhand = { "INVTYPE_WEAPONOFFHAND", "INVTYPE_SHIELD", "INVTYPE_HOLDABLE" },
 		twohand = { "INVTYPE_2HWEAPON" }, ranged = { "INVTYPE_RANGED", "INVTYPE_RANGEDRIGHT" },
 		shirt = { "INVTYPE_BODY" }, tabard = { "INVTYPE_TABARD" }, bag = { "INVTYPE_BAG" },
+		["one-hand"] = { "INVTYPE_WEAPON" },
+	}
+	local SLOT_ALIASES = {
+		head = { "helm" }, back = { "cloak" }, wrist = { "bracers" }, hands = { "gloves" }, waist = { "belt" },
+		feet = { "boots" }, mainhand = { "main hand" }, offhand = { "off-hand", "off hand", "held in off-hand" },
+		twohand = { "two-hand" },
 	}
 	for name, locs in pairs(SLOTS) do
 		local set = has(locs)
 		kw(name, "static", function(r)
 			return set[r.equipLoc] == true
-		end)
+		end, SLOT_ALIASES[name])
 	end
 
 	-- Quality (instance, from the link) ---------------------------------------
@@ -158,16 +168,16 @@ function K.RegisterAll()
 	end
 	kw("boe", "instance", bindKnown(function(r)
 		return not r.isBound and not r.isWUE and r.bind == "equip"
-	end))
+	end), { "bwe" })
 	kw("bop", "instance", bindKnown(function(r)
 		return r.bind == "pickup"
 	end))
 	kw("warbound", "instance", bindKnown(function(r)
 		return ACCOUNT[r.bind] == true or (r.isWUE == true and not r.isBound)
-	end), { "boa" })
+	end), { "boa", "account bound" })
 	kw("wue", "instance", function(r)
 		return r.isWUE == true or (r.bind == "wue" and not r.isBound)
-	end)
+	end, { "warbound until equipped" })
 	kw("bound", "instance", function(r)
 		return r.isBound == true
 	end)
@@ -184,7 +194,7 @@ function K.RegisterAll()
 			return nil
 		end
 		return not (ACCOUNT[r.bind] or r.bind == "wue" or r.bind == "quest")
-	end)
+	end, { "tradeable loot", "tradable loot" })
 
 	-- Numeric -------------------------------------------------------------------
 	num("ilvl", "instance", itemLevel)

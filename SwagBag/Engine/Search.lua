@@ -5,7 +5,8 @@
 -- stays and the search is reported as invalid (lastEvalError).
 local _, SB = ...
 
-local S = { active = nil, text = "", lastError = nil, lastEvalError = nil, stats = {} }
+-- lastWarning: a soft message for an applied search (an unknown #keyword matches nothing).
+local S = { active = nil, text = "", lastError = nil, lastWarning = nil, lastEvalError = nil, stats = {} }
 SB.Search = S
 
 -- Returns true, or false + formatted error message.
@@ -21,6 +22,8 @@ function S.SetText(text)
 		return false, SB.Query.FormatError(S.lastError)
 	end
 	S.active, S.text, S.lastError = compiled, text, nil
+	local w = compiled.warnings and compiled.warnings[1]
+	S.lastWarning = w and SB.Query.FormatWarning(w) or nil
 	return true
 end
 
