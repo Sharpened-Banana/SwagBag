@@ -817,6 +817,15 @@ function A.GatheringProfessions()
 	return out
 end
 
+-- One line in the middle of the screen (where "Not enough rage" shows), for the consumables
+-- warning. Without UIErrorsFrame nothing shows there; chat still gets the line.
+function A.ScreenMessage(text)
+	local f = _G.UIErrorsFrame
+	if f and f.AddMessage then
+		pcall(f.AddMessage, f, text, 1.0, 0.82, 0.0)
+	end
+end
+
 ---------------------------------------------------------------------------
 -- Feature checks (consumed by Core/Checks.lua). window: which Safe Mode
 -- flag a failed REQUIRED check turns on. value: exact value expected.
@@ -894,4 +903,5 @@ A.CHECKS = {
 	{ path = "GetLootSourceInfo", window = "bags", required = false },
 	{ path = "GetProfessions", window = "bags", required = false },
 	{ path = "GetProfessionInfo", window = "bags", required = false },
+	{ path = "UIErrorsFrame", window = "bags", required = false },
 }

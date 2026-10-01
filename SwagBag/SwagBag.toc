@@ -43,6 +43,7 @@ Engine/OverlayData.lua
 Engine/Focus.lua
 Engine/FocusData.lua
 Engine/Signals.lua
+Engine/Consumables.lua
 
 # Providers
 Providers/Auctionator.lua
