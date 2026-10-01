@@ -12,7 +12,7 @@ local L = SB.L
 local H = { pool = {}, inUse = {}, HEIGHT = 18 }
 SB.SectionHeaders = H
 
--- [header] = the frame it was acquired in / its owner's { onClick, onDrop }. Kept beside the
+-- [header] = the frame it was acquired in / its owner's { onClick, onDrop, window }. Kept beside the
 -- frames, not on them, so a field name can never clash with a frame method.
 local parents, owners = {}, {}
 
