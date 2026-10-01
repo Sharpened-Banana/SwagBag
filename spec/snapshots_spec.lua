@@ -236,4 +236,200 @@ describe("Snapshots (spec 8.3 format, 5.7 timing, 8.4 budget)", function()
 		A.Advance(2)
 		assert.equal(4, SB.Config.db.chars["Swagger-Argent Dawn"].bank.containers[6].size)
 	end)
+
+	local function me()
+		return SB.Config.db.chars["Swagger-Argent Dawn"]
+	end
+
+	it("W3-28: a bank visit opened and closed in combat is written at logout, before regen", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.combat = true
+		A.Advance(0.5)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		A.SetBagSize(6, 0)
+		SB.Inventory.ScanBag(6)
+		assert.is_nil(SB.Config.db.chars)
+		SB.eventFrame:Fire("PLAYER_LOGOUT") -- also /reload; MUTATION: drop the pending flush
+		assert.equal(4, me().bank.containers[6].size)
+		assert.equal("item:" .. Fixtures.HERB, Snap.Deserialize(me().bank.containers[6])[2].link)
+		assert.equal("item:" .. Fixtures.ORE, Snap.Deserialize(SB.Config.db.warband.containers[12])[1].link)
+	end)
+
+	it("W3-28: a bank still open at logout in combat is captured and written", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.combat = true
+		SB.eventFrame:Fire("PLAYER_LOGOUT")
+		assert.equal("item:" .. Fixtures.HERB, Snap.Deserialize(me().bank.containers[6])[2].link)
+	end)
+
+	it("W3-28: a guild save queued in combat is written at logout", function()
+		A.combat = true
+		Snap.SaveGuild("Tidewatch-Argent Dawn", { [1] = { name = "Gear", slots = { [3] = { link = "item:9", count = 2 } } } })
+		assert.is_nil(SB.Config.db.guilds)
+		SB.eventFrame:Fire("PLAYER_LOGOUT")
+		assert.equal("3:item:9;2\n", SB.Config.db.guilds["Tidewatch-Argent Dawn"].snapshot.containers[1].s)
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal(0, SB.OutOfCombatPending())
+	end)
+
+	it("W3-29: a 0-slot read while the bank is open never blanks a saved bank", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.Advance(0.5)
+		A.SetBagSize(6, 0)
+		A.SetBagSize(12, 0)
+		SB.eventFrame:Fire("BAG_UPDATE", 6)
+		SB.eventFrame:Fire("BAG_UPDATE", 12)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.1)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED") -- MUTATION: remove the 0-slot guard in store
+		assert.equal(4, me().bank.containers[6].size)
+		assert.equal("item:" .. Fixtures.HERB, Snap.Deserialize(me().bank.containers[6])[2].link)
+		assert.equal("item:" .. Fixtures.ORE, Snap.Deserialize(SB.Config.db.warband.containers[12])[1].link)
+	end)
+
+	it("W3-29: the 1 s update debounce firing on a blank model keeps the saved bank", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.Advance(0.5)
+		A.SetBagSize(6, 0)
+		A.SetBagSize(12, 0)
+		SB.eventFrame:Fire("BAG_UPDATE", 6)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(2)
+		assert.equal(4, me().bank.containers[6].size)
+		assert.equal(4, SB.Config.db.warband.containers[12].size)
+	end)
+
+	it("W3-29: one blank container keeps its old copy while the others update", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.Advance(0.5)
+		A.SetBagSize(12, 0)
+		A.Put(6, 3, Fixtures.FLASK, 2)
+		SB.eventFrame:Fire("BAG_UPDATE", 6)
+		SB.eventFrame:Fire("BAG_UPDATE", 12)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(2)
+		assert.equal(2, Snap.Deserialize(me().bank.containers[6])[3].count)
+		assert.equal(4, SB.Config.db.warband.containers[12].size)
+	end)
+
+	it("after the close no bank debounce is scheduled by a bank update (outer bankOpen check)", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.Advance(0.5)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		local keys, real = {}, SB.Debounce
+		SB.Debounce = function(key, ...)
+			keys[#keys + 1] = key
+			return real(key, ...)
+		end
+		A.Put(6, 3, Fixtures.FLASK, 2)
+		SB.eventFrame:Fire("BAG_UPDATE", 6)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(2)
+		SB.Debounce = real
+		for _, k in ipairs(keys) do
+			assert.falsy(k == "snapshot.bank", "no bank save is scheduled away from a banker")
+		end
+	end)
+
+	it("an update debounce that fires after the close saves nothing more (inner bankOpen check)", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.Advance(0.5)
+		A.Put(6, 3, Fixtures.FLASK, 2)
+		SB.eventFrame:Fire("BAG_UPDATE", 6)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.06)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		A.Put(6, 4, Fixtures.JUNK, 1)
+		SB.Inventory.ScanBag(6)
+		A.Advance(2)
+		assert.is_nil(Snap.Deserialize(me().bank.containers[6])[4])
+	end)
+
+	it("store refuses a newer schema even for a write queued before it was known (store's own guard)", function()
+		SB.Inventory.ScanAll()
+		A.combat = true
+		Snap.Save("bags")
+		SB.Config.readOnly = true
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.is_nil(SB.Config.db.chars)
+	end)
+
+	it("a guild write queued before a newer schema was known is refused (storeGuild's guard)", function()
+		A.combat = true
+		Snap.SaveGuild("Tidewatch-Argent Dawn", { [1] = { name = "Gear", slots = {} } })
+		SB.Config.readOnly = true
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.is_nil(SB.Config.db.guilds)
+	end)
+
+	it("logout in read-only mode writes nothing, including a pending capture", function()
+		SB.Inventory.ScanAll()
+		A.combat = true
+		Snap.Save("bags")
+		SB.Config.readOnly = true
+		SB.eventFrame:Fire("PLAYER_LOGOUT")
+		assert.is_nil(SB.Config.db.chars)
+	end)
+
+	it("SaveGuild serializes at once: the caller changing its tabs in combat does not alter what is written", function()
+		local tabs = { [1] = { name = "Gear", slots = { [3] = { link = "item:9", count = 2 } } } }
+		A.combat = true
+		Snap.SaveGuild("Tidewatch-Argent Dawn", tabs)
+		tabs[1].slots[3].count = 99
+		tabs[1].slots[4] = { link = "item:10", count = 1 }
+		tabs[1].name = "Changed"
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		local g = SB.Config.db.guilds["Tidewatch-Argent Dawn"]
+		assert.equal("3:item:9;2\n", g.snapshot.containers[1].s)
+		assert.equal("Gear", g.tabs[1])
+	end)
+
+	it("two guilds saved in combat are both written (queue keyed per guild)", function()
+		A.combat = true
+		Snap.SaveGuild("A-Realm", { [1] = { name = "x", slots = {} } })
+		Snap.SaveGuild("B-Realm", { [1] = { name = "y", slots = {} } })
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.same({ 2 }, { select(2, Snap.Count()) })
+	end)
+
+	it("W3-29: with two bank bags, a bag read as 0 slots keeps its old copy while the other updates", function()
+		A.bagIDs.bank = { 6, 7 }
+		A.SetBagSize(7, 4)
+		A.Put(7, 1, Fixtures.ORE, 3)
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.Advance(0.5)
+		A.SetBagSize(7, 0)
+		A.Put(6, 3, Fixtures.FLASK, 2)
+		SB.eventFrame:Fire("BAG_UPDATE", 6)
+		SB.eventFrame:Fire("BAG_UPDATE", 7)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(2)
+		assert.equal(2, Snap.Deserialize(me().bank.containers[6])[3].count)
+		assert.equal(4, me().bank.containers[7].size)
+		assert.equal("item:" .. Fixtures.ORE, Snap.Deserialize(me().bank.containers[7])[1].link)
+	end)
+
+	it("W3-29: an all-empty first read (0 slots everywhere) writes no bank snapshot at all", function()
+		SB.Inventory.ScanAll()
+		A.SetBagSize(6, 0)
+		A.SetBagSize(12, 0)
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		A.Advance(0.5)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		assert.is_nil(SB.Config.db.chars)
+		assert.is_nil(SB.Config.db.warband)
+	end)
 end)
