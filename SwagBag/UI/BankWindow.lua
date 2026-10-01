@@ -290,6 +290,9 @@ local function describe(bag, slot)
 	if record and not record.icon then
 		record.icon = (A.GetItemInstant(record.itemID) or {}).icon
 	end
+	if SB.Overlays then
+		SB.Overlays.Apply(button, record, bag)
+	end
 	return record
 end
 
@@ -497,6 +500,9 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 				if old and fresh and fresh.itemID == old.itemID then
 					fresh.icon = fresh.icon or old.icon
 					v.SetRecord(c.bag, c.slot, fresh)
+					if SB.Overlays then
+						SB.Overlays.Apply(button, fresh, c.bag)
+					end
 				end
 			else
 				local record = describe(c.bag, c.slot)

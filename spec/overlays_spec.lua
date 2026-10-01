@@ -211,4 +211,32 @@ describe("Overlays (spec F9)", function()
 		SB.Slash.Dispatch("overlays bind off")
 		assert.same({ SB.L.SETTINGS_READONLY }, A.Lines())
 	end)
+
+	it("a gear change re-draws the open bank and guild bank windows too", function()
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		local bankButton, bank = draw(0, 3)
+		local guildButton, guild = draw(0, 3)
+		local record = SB.Items.Describe(0, 3)
+		local function window(button)
+			return { IsOpen = function() return true end,
+				view = { ForEachSlot = function(fn) fn(button, record, 0, 3) end } }
+		end
+		SB.BankWindow, SB.GuildBankWindow = window(bankButton), window(guildButton)
+		A.equipped[11] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 11)
+		A.Advance(0.1)
+		assert.same({ false, false }, { bank.arrow.shown, guild.arrow.shown })
+	end)
+
+	it("Use Pawn never asks Pawn about a guild bank slot; the item-level rule decides there", function()
+		A.equipped[11] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		A.pawn = { ["101:3"] = true }
+		SB.Config.Set("overlays.usePawn", true)
+		local g = Fake.New("ItemButton")
+		Ov.Apply(g, SB.Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = "item:" .. Fixtures.BOE_RING, count = 1 },
+			101, 3, 1), 101)
+		assert.falsy(Ov.regions[g].arrow.shown, "285 does not beat 300")
+	end)
 end)
