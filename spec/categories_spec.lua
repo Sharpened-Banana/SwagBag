@@ -66,19 +66,56 @@ describe("Categories", function()
 		assert.same({ "c_reagents", "c_keystone", "c_junk", "c_quest", "c_tools", "c_boe", "c_gear", "c_consumables" },
 			{ unpack(p, 1, 8) })
 		assert.equal("c_other", p[#p])
-		-- Gear is defined before BoE, but "c_boe" < "c_gear": the id tie-break must decide.
-		SB.Config.db.userEdits.c_gear = { priority = 75 }
-		C.Load()
-		p = ids(C.ByPriority())
-		local boe, gear
-		for i, id in ipairs(p) do
-			if id == "c_boe" then
-				boe = i
-			elseif id == "c_gear" then
-				gear = i
-			end
+		-- Five rules tie at 55; their id order is the opposite of definition order for several.
+		-- Shuffle the definition order too, so the result cannot depend on input order.
+		local tied = { "c_ore", "c_herbs", "c_cooking", "c_enchanting", "c_leathercloth" }
+		local want = { "c_cooking", "c_enchanting", "c_herbs", "c_leathercloth", "c_ore" }
+		local orig = {}
+		for i, d in ipairs(SB.CategoryDefaults) do
+			orig[i] = d
 		end
-		assert.equal(boe + 1, gear, "tie: c_boe before c_gear")
+		local shuffles = {
+			function(n, i) return n - i + 1 end,
+			function(n, i) return (i * 7) % n + 1 end,
+			function(n, i) return ((i + 5) % n) + 1 end,
+		}
+		for _, shuffle in ipairs(shuffles) do
+			local n = #orig
+			local seen, perm = {}, {}
+			for i = 1, n do
+				local j = shuffle(n, i)
+				if not seen[j] then
+					seen[j] = true
+					perm[#perm + 1] = orig[j]
+				end
+			end
+			for i = 1, n do
+				if not seen[i] then
+					perm[#perm + 1] = orig[i]
+				end
+			end
+			assert.equal(n, #perm)
+			for i = 1, n do
+				SB.CategoryDefaults[i] = perm[i]
+			end
+			SB.Config.db.userEdits = {}
+			for _, id in ipairs(tied) do
+				SB.Config.db.userEdits[id] = { priority = 55 }
+			end
+			C.Load()
+			local got = {}
+			for _, id in ipairs(ids(C.ByPriority())) do
+				for _, t in ipairs(tied) do
+					if id == t then
+						got[#got + 1] = id
+					end
+				end
+			end
+			assert.same(want, got, "ties by id under every input order")
+		end
+		for i = 1, #orig do
+			SB.CategoryDefaults[i] = orig[i]
+		end
 	end)
 
 	it("Reagents exists only while the reagent bag is shown separately (AC1.4)", function()
