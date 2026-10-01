@@ -121,6 +121,21 @@ function Report.Build()
 		local chars, guilds = SB.Snapshots.Count()
 		lines[#lines + 1] = L.REPORT_SNAPSHOTS:format(chars, guilds, math.floor(SB.Snapshots.Bytes() / 1024 + 0.5))
 	end
+	local F, S = SB.Focus, SB.Signals
+	if F and S and SB.Config.db then -- checks V5-V8: what the signals said, and the spells before loot
+		local s = F.signals
+		local function yes(v)
+			return v and L.REPORT_YES or L.REPORT_NO
+		end
+		lines[#lines + 1] = L.REPORT_FOCUS:format(F.Label() or L.FOCUS_NONE, tostring(SB.Config.Get("focus.resolve")),
+			tostring(s.instanceType or L.REPORT_NONE), tostring(F.Expanded() and L.REPORT_YES or L.REPORT_NO),
+			yes(s.challengeMode), yes(s.keystone), yes(s.delve), yes(s.fishing), yes(s.gathering))
+		local spells = {}
+		for i, id in ipairs(S.recent) do
+			spells[i] = tostring(id)
+		end
+		lines[#lines + 1] = L.REPORT_SPELLS:format(#spells > 0 and table.concat(spells, ", ") or L.REPORT_NONE)
+	end
 	local guild = SB.GuildBankWindow
 	if guild then
 		lines[#lines + 1] = L.REPORT_GUILD:format(guild.Mode(), tostring(guild.lastVisit or L.REPORT_NONE))

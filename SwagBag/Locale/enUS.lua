@@ -267,6 +267,10 @@ L.MODE_MARKET = "AH/Vendor/Bank"
 L.FOCUS_PAUSED = "Paused"
 L.FOCUS_NONE = "no mode"
 L.FOCUS_ANNOUNCE = "Focus mode: %s"
+L.REPORT_FOCUS = "Focus: %s (%s); zone %s, collapsing %s; M+ %s, keystone %s, delve %s, fishing %s, gathering %s"
+L.REPORT_SPELLS = "Spells before loot (last 5): %s"
+L.REPORT_YES = "yes"
+L.REPORT_NO = "no"
 
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
