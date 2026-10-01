@@ -294,7 +294,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 | Event at (bag, slot) | Out of combat | In combat |
 |---|---|---|
 | **Item leaves** (used, vendored, moved) and the button is in a category section | Placeholder is placed at the button's position with the old icon; the button moves to the next cell of Free. `needsReflow = true`. | Same (verified legal). |
-| **Item leaves** and the button is in Free or New | Repaint only. | Same. |
+| **Item leaves** and the button is in Free or New | Repaint only. With the free tile on (default, D19 / W3-13), a button emptied in New joins Free instead (as its family's hidden spare, or as the tile when the family had none), so the tile's number is always the real free count. | Same. |
 | **Different item arrives** in a slot whose button is in a section | Placeholder at old position; button moves to the next cell of **New**. | Same. |
 | **Item arrives** in a Free slot | Button moves to New. | Same. |
 | **Count changes** | Repaint (`COUNT` reason). | Same. |
@@ -328,9 +328,9 @@ One SwagBag bank window, opened on `BANKFRAME_OPENED`, closed on `BANKFRAME_CLOS
 On `BANKFRAME_OPENED`, out of combat:
 1. `BankFrame:SetParent(tinyParent)` where `tinyParent` is a 1×1 frame at `SetScale(0.001)`. `BankFrame` stays **shown**, so `BankFrame:GetActiveBankType()` keeps returning a value (it returns nil when `BankPanel` is hidden — verified from Blizzard source).
 2. `BankFrame.TabSystem` is reparented onto SwagBag's bank window header and re-anchored there. These are Blizzard's real tab buttons; a click runs Blizzard's own secure code. SwagBag only reads the result.
-3. On `BANKFRAME_CLOSED`, both reparents are restored (deferred to out of combat if needed).
+3. On `BANKFRAME_CLOSED`, both reparents are restored (deferred to out of combat if needed). Only `BankFrame`'s **parent** is saved and restored, never its anchors (W3 Task 1 review: restoring anchors could leave it invisible); anchors are set only on the re-hosted TabSystem.
 
-Deposit target: SwagBag never chooses it. Right-click on a bag item runs Blizzard's handler, which uses `BankFrame:GetActiveBankType()`. SwagBag reads the same value (read-only) to highlight the receiving group and to label the header ("Deposits go to Warband bank — switch with the tabs above"). Verified in the spike: deposit followed the active tab in normal mode with zero writes.
+Deposit target: SwagBag never chooses it. Right-click on a bag item runs Blizzard's handler, which uses `BankFrame:GetActiveBankType()`. SwagBag reads the same value (read-only) to highlight the receiving group and to label the header ("Deposits go to Warband bank - switch with the tabs below"; the re-hosted tabs sit under the title row). Verified in the spike: deposit followed the active tab in normal mode with zero writes.
 
 ### 5.3 Taint rules (enforced by CI grep + luacheck)
 
@@ -340,7 +340,7 @@ Also: no `PreClick`/`PostClick` scripts on slot buttons; no insecure wrappers ar
 
 ### 5.4 Fallback
 
-The first in-dev check V2 (§11.3) is "deposit lands in the active bank type while Blizzard's bank is in tiny mode, and a Hearthstone works afterwards". If it fails on the first run, the setting `bank.blizzardFrame = "beside"` becomes the shipped default: Blizzard's bank frame stays visible, anchored to the right of SwagBag's window, with its own tabs; SwagBag's window still shows both groups and highlights the receiving one. The user can choose either in Settings → Bank ("Hide Blizzard's bank (tiny) / Show it beside SwagBag").
+The first in-dev check V2 (§11.3) is "deposit lands in the active bank type while Blizzard's bank is in tiny mode, and a Hearthstone works afterwards". If it fails on the first run, the setting `bank.blizzardFrame = "beside"` becomes the shipped default: Blizzard's bank frame stays visible exactly where Blizzard puts it, with its own tabs, and SwagBag's window positions itself beside it (SwagBag never moves Blizzard's frame); SwagBag's window still shows both groups and highlights the receiving one. The user can choose either in Settings → Bank ("Hide Blizzard's bank (tiny) / Show it beside SwagBag").
 
 ### 5.5 Sorting at the bank
 
@@ -348,7 +348,7 @@ Sort buttons call `C_Container.SortBank(Enum.BankType.Character)` / `(Enum.BankT
 
 ### 5.6 ESC
 
-SwagBag's windows are in `UISpecialFrames`. ESC hides SwagBag's bank window and does nothing else; Blizzard's own ESC handling closes the bank interaction (verified: `escClosesBankInteraction`). If the interaction is still open after SwagBag's window is hidden (user hit ESC on another frame first), the title bar of the bag window shows "Bank still open" with a button that calls nothing but shows SwagBag's bank window again.
+SwagBag's windows are in `UISpecialFrames`. ESC hides SwagBag's bank window and does nothing else; Blizzard's own ESC handling closes the bank interaction (verified: `escClosesBankInteraction`). Whenever SwagBag's bank or guild bank window hides while the interaction is still live (ESC, the X, Safe Mode), Blizzard's frame is restored and visible (W3-11): an invisible open bank or vault would swallow bag right-clicks, so this is an item-safety rule. If the interaction is still open after SwagBag's window is hidden (user hit ESC on another frame first), the title bar of the bag window shows "Bank still open" with a button that calls nothing but shows SwagBag's bank window again.
 
 ### 5.7 Snapshots
 
