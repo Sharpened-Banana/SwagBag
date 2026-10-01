@@ -21,6 +21,9 @@ Config.Defaults = {
 		-- reagentSeparate: show the reagent bag as its own "Reagents" section (spec AC1.4).
 		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false },
 		safeMode = { bags = false, bank = false },
+		-- blizzardFrame: "tiny" (Blizzard's bank invisible, its tabs on SwagBag's window) |
+		-- "beside" (Blizzard's bank visible, SwagBag's window next to it; spec 5.4, check V2).
+		bank = { blizzardFrame = "tiny" },
 	},
 }
 

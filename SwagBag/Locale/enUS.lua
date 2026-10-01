@@ -152,6 +152,24 @@ L.QUERY_ERR_AND_BEFORE_COMPARISON = "Put & between a name and a comparison (at c
 L.QUERY_FOUND_END = "the end of the search"
 L.QUERY_WARN_UNKNOWN_KEYWORD = "Unknown keyword \"#%s\" matches nothing (character %d)"
 
+-- Bank window (spec F2, section 5)
+L.BANK_TITLE = "SwagBag bank"
+L.BANK_GROUP_BANK = "Character bank"
+L.BANK_GROUP_WARBAND = "Warband bank"
+L.BANK_DEPOSITS_TO = "Deposits go to %s - switch with the tabs below"
+L.BTN_BLIZZARD_BANK = "Blizzard bank"
+L.BANK_SHOWING_BLIZZARD = "Blizzard's bank is shown for this visit"
+L.BANK_HIDING_BLIZZARD = "Blizzard's bank is hidden again"
+L.BANK_COMBAT_BESIDE = "In combat: Blizzard's bank stays visible for this visit"
+L.BANK_NOT_IN_COMBAT = "Leave combat first"
+L.BANK_STILL_OPEN = "Bank still open"
+L.HELP_BANK = "bank tiny|beside: hide Blizzard's bank (tiny) or show it beside SwagBag's"
+L.BANK_USAGE = "Use /swagbag bank tiny or /swagbag bank beside (now: %s)."
+L.BANK_MODE_TINY = "Bank: Blizzard's bank is hidden; its tabs are under SwagBag's bank window."
+L.BANK_MODE_BESIDE = "Bank: Blizzard's bank is shown, with SwagBag's bank window beside it."
+L.SETTINGS_READONLY = "SwagBag's saved settings are read-only, so nothing was changed."
+L.REPORT_BANK = "Bank: setting %s, last visit %s, last deposit target %s"
+
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
 L.V1_SHOWN = "V1 strip shown with %d usable items. Enter combat, right-click them 3 times, then /swagbag report."

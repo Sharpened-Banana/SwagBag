@@ -346,6 +346,35 @@ function A.SortBags()
 end
 
 ---------------------------------------------------------------------------
+-- Blizzard frames and the bank (week 3). SwagBag only READS Blizzard's bank state
+-- (spec 5.2, 5.3): it never selects a tab or a bank type and never closes the bank.
+---------------------------------------------------------------------------
+-- A Blizzard frame by its global name (BankFrame, GuildBankFrame, ...), or nil.
+function A.Frame(name)
+	return _G[name]
+end
+
+-- "bank" (character bank) | "warband" | nil: the bank type Blizzard's bank frame has
+-- selected, which is where a right-clicked bag item goes. Read only.
+function A.ActiveBankType()
+	local f = _G.BankFrame
+	if not (f and f.GetActiveBankType) then
+		return nil
+	end
+	local ok, bankType = pcall(f.GetActiveBankType, f)
+	local BT = Enum and Enum.BankType
+	if not ok or bankType == nil or isSecret(bankType) or not BT then
+		return nil
+	end
+	if bankType == BT.Character then
+		return "bank"
+	elseif bankType == BT.Account then
+		return "warband"
+	end
+	return nil
+end
+
+---------------------------------------------------------------------------
 -- Feature checks (consumed by Core/Checks.lua). window: which Safe Mode
 -- flag a failed REQUIRED check turns on. value: exact value expected.
 ---------------------------------------------------------------------------
