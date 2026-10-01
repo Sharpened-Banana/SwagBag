@@ -7,7 +7,9 @@
 -- in and out of combat. We never CALL any Blizzard bag-opening function.
 local _, SB = ...
 
-local Hooks = { installed = false, lastToggle = -1 }
+-- autoOpenedBy: set when the game's OpenAllBags (vendor, mailbox, ...) opened our window,
+-- so only the matching CloseAllBags(frame) closes it again; a window the user opened stays.
+local Hooks = { installed = false, lastToggle = -1, autoOpenedBy = nil }
 SB.SafeModeHooks = Hooks
 
 function Hooks.IsActive()
@@ -38,6 +40,7 @@ end
 
 -- One key press can run several hooked bag functions in the same frame; act once.
 local function onBagKey()
+	Hooks.autoOpenedBy = nil
 	if not Hooks.IsActive() then
 		return
 	end
@@ -57,14 +60,32 @@ function Hooks.Install()
 	local Guard = SB.ErrorTrap.Guard
 	hooksecurefunc("ToggleAllBags", Guard("hook:ToggleAllBags", onBagKey, "bags"))
 	hooksecurefunc("ToggleBackpack", Guard("hook:ToggleBackpack", onBagKey, "bags"))
-	hooksecurefunc("OpenAllBags", Guard("hook:OpenAllBags", function()
-		if Hooks.IsActive() then
-			SB.BagsWindow.Open()
+	if ToggleBag then
+		hooksecurefunc("ToggleBag", Guard("hook:ToggleBag", function(id)
+			if SB.Buttons.KindOf(id) == "bags" then
+				onBagKey()
+			end
+		end, "bags"))
+	end
+	hooksecurefunc("OpenAllBags", Guard("hook:OpenAllBags", function(frame)
+		if not Hooks.IsActive() or SB.BagsWindow.IsOpen() then
+			return
+		end
+		if SB.BagsWindow.Open() then
+			Hooks.autoOpenedBy = (frame and frame.GetName and frame:GetName()) or true
 		end
 	end, "bags"))
-	hooksecurefunc("CloseAllBags", Guard("hook:CloseAllBags", function()
-		if Hooks.IsActive() then
+	hooksecurefunc("CloseAllBags", Guard("hook:CloseAllBags", function(frame)
+		if not Hooks.IsActive() then
+			return
+		end
+		local by = Hooks.autoOpenedBy
+		if frame == nil then
 			SB.BagsWindow.Close()
+			Hooks.autoOpenedBy = nil
+		elseif by and (by == true or (frame.GetName and frame:GetName() == by)) then
+			SB.BagsWindow.Close()
+			Hooks.autoOpenedBy = nil
 		end
 	end, "bags"))
 	for _, f in ipairs(blizzardBagFrames()) do

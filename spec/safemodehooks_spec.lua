@@ -16,7 +16,7 @@ local function fakeBlizzardFrame()
 end
 
 describe("SafeModeHooks", function()
-	local SB, A, hooks, toggles, closes
+	local SB, A, hooks, toggles, closes, windowOpen
 	before_each(function()
 		SB = Loader.New(FILES)
 		A = SB.Adapter
@@ -25,18 +25,27 @@ describe("SafeModeHooks", function()
 		NUM_CONTAINER_FRAMES = 2
 		ContainerFrame1, ContainerFrame2 = fakeBlizzardFrame(), fakeBlizzardFrame()
 		ContainerFrameCombinedBags = fakeBlizzardFrame()
-		SB.Buttons = { created = true }
+		ToggleBag = function() end
+		SB.Buttons = { created = true, KindOf = function(id) return id <= 5 and "bags" or "bank" end }
+		windowOpen = false
 		SB.BagsWindow = {
+			IsOpen = function() return windowOpen end,
 			Toggle = function() toggles = toggles + 1 end,
-			Open = function() end,
-			Close = function() closes = closes + 1 end,
+			Open = function()
+				windowOpen = true
+				return true
+			end,
+			Close = function()
+				windowOpen = false
+				closes = closes + 1
+			end,
 		}
 		Loader.LoadFile(SB, "SwagBag/UI/SafeModeHooks.lua")
 		SB.Emit("SB_LOGIN")
 	end)
 
 	after_each(function()
-		hooksecurefunc, NUM_CONTAINER_FRAMES = nil, nil
+		hooksecurefunc, NUM_CONTAINER_FRAMES, ToggleBag = nil, nil, nil
 		ContainerFrame1, ContainerFrame2, ContainerFrameCombinedBags = nil, nil, nil
 	end)
 
@@ -92,5 +101,59 @@ describe("SafeModeHooks", function()
 		hooks.ToggleAllBags()
 		assert.truthy(SB.SafeMode.IsOn("bags"))
 		assert.equal("hook:ToggleAllBags", SB.ErrorTrap.Recent()[1].label)
+	end)
+	local function named(name)
+		return { GetName = function() return name end }
+	end
+
+	it("a window the user opened stays open when a vendor frame closes (CloseAllBags(frame))", function()
+		windowOpen = true -- opened with B before talking to the vendor
+		hooks.OpenAllBags(named("MerchantFrame"))
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.truthy(windowOpen)
+		assert.equal(0, closes)
+	end)
+
+	it("a window the game opened for a frame closes with that frame", function()
+		hooks.OpenAllBags(named("MerchantFrame"))
+		assert.truthy(windowOpen)
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.falsy(windowOpen)
+	end)
+
+	it("a window opened for one frame is not closed by another frame", function()
+		hooks.OpenAllBags(named("MerchantFrame"))
+		hooks.CloseAllBags(named("MailFrame"))
+		assert.truthy(windowOpen)
+	end)
+
+	it("CloseAllBags() with no frame always closes", function()
+		windowOpen = true
+		hooks.CloseAllBags()
+		assert.falsy(windowOpen)
+	end)
+
+	it("pressing the bag key forgets that the game opened the window", function()
+		hooks.OpenAllBags(named("MerchantFrame"))
+		hooks.ToggleAllBags()
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.truthy(windowOpen)
+	end)
+
+	it("clicking a bag-bar icon (ToggleBag of a bag id) toggles once", function()
+		hooks.ToggleBag(1)
+		assert.equal(1, toggles)
+	end)
+
+	it("ToggleBag of a bank or warband id does nothing", function()
+		hooks.ToggleBag(6)
+		hooks.ToggleBag(12)
+		assert.equal(0, toggles)
+	end)
+
+	it("ToggleBag and ToggleBackpack in the same frame toggle once", function()
+		hooks.ToggleBag(1)
+		hooks.ToggleBackpack()
+		assert.equal(1, toggles)
 	end)
 end)

@@ -343,6 +343,7 @@ A.CHECKS = {
 	{ path = "SetItemButtonDesaturated", window = "bags", required = true },
 	{ path = "ToggleAllBags", window = "bags", required = true },
 	{ path = "ToggleBackpack", window = "bags", required = true },
+	{ path = "ToggleBag", window = "bags", required = false },
 	{ path = "OpenAllBags", window = "bags", required = true },
 	{ path = "CloseAllBags", window = "bags", required = true },
 	{ path = "ContainerFrame1", window = "bags", required = true },

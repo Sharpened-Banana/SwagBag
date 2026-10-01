@@ -14,7 +14,7 @@ read_globals = {
 	"C_AddOns", "C_Bank", "C_Container", "C_Item", "C_Timer", "C_ToyBox", "Enum", "ItemLocation",
 	"CreateFrame", "UIParent", "UISpecialFrames", "DEFAULT_CHAT_FRAME", "ChatFontNormal",
 	"GetTime", "debugprofilestop", "debugstack", "date", "GetBuildInfo", "GetLocale",
-	"InCombatLockdown", "issecretvalue", "hooksecurefunc", "IsControlKeyDown",
+	"InCombatLockdown", "issecretvalue", "hooksecurefunc", "IsControlKeyDown", "ToggleBag",
 	"NUM_CONTAINER_FRAMES", "ContainerFrameCombinedBags",
 	"SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated",
 	"StaticPopup_Show", "YES", "NO",
@@ -24,7 +24,7 @@ files["spec/"] = {
 	std = "+busted",
 	globals = {
 		"CreateFrame", "SwagBagDB", "SwagBagCharDB", "hooksecurefunc", "NUM_CONTAINER_FRAMES",
-		"ContainerFrame1", "ContainerFrame2", "ContainerFrameCombinedBags",
+		"ContainerFrame1", "ContainerFrame2", "ContainerFrameCombinedBags", "ToggleBag",
 	},
 }
 files["spec/runner.lua"] = {
