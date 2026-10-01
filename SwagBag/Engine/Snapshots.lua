@@ -16,7 +16,17 @@
 -- ago are dropped first (never the current character's), with one chat line per session.
 local _, SB = ...
 
-local Snap = { HARD_CAP = 1.5 * 1024 * 1024, BAGS_DELAY = 5, BANK_DELAY = 1, OPEN_DELAY = 0.3, trimmedSaid = false }
+-- HARD_CAP is the spec 8.4 limit. Enforce trims from TRIGGER (1.45 MB) instead, because Bytes()
+-- is an estimate (strings plus a small per-container overhead) and the real file must stay
+-- under the cap, not merely the estimate.
+local Snap = {
+	HARD_CAP = 1.5 * 1024 * 1024,
+	TRIGGER = 1.45 * 1024 * 1024,
+	BAGS_DELAY = 5,
+	BANK_DELAY = 1,
+	OPEN_DELAY = 0.3,
+	trimmedSaid = false,
+}
 SB.Snapshots = Snap
 
 ---------------------------------------------------------------------------
@@ -91,10 +101,40 @@ function Snap.Capture(kind)
 	return snap
 end
 
--- Write an already captured snapshot (never when the schema is newer, spec 8.5).
+-- Captures and serialized guild tabs whose write is waiting for combat to end. A save at logout
+-- or /reload must not lose them (W3-28), so PLAYER_LOGOUT flushes them.
+local pending, pendingGuild = {}, {}
+
+-- Write an already captured snapshot (never when the schema is newer, spec 8.5). A bank read
+-- that comes back empty (the client reports 0 slots away from a banker or mid-close) never
+-- replaces a saved container that had slots, and an all-empty capture writes nothing (W3-29).
 local function store(kind, snap)
 	if SB.Config.readOnly then
 		return
+	end
+	if kind == "bank" or kind == "warband" then
+		local total = 0
+		for _, c in pairs(snap.containers) do
+			total = total + (c.size or 0)
+		end
+		if total == 0 then
+			return
+		end
+		local old
+		if kind == "warband" then
+			old = Snap.DB().warband
+		else
+			local oc = Snap.DB().chars[SB.Adapter.CharKey()]
+			old = type(oc) == "table" and oc.bank or nil
+		end
+		if type(old) == "table" and type(old.containers) == "table" then
+			for bag, c in pairs(snap.containers) do
+				local o = old.containers[bag]
+				if (c.size or 0) == 0 and type(o) == "table" and (o.size or 0) > 0 then
+					snap.containers[bag] = o
+				end
+			end
+		end
 	end
 	if kind == "warband" then
 		Snap.DB().warband = snap
@@ -108,38 +148,53 @@ end
 -- Capture now (W3-9), write now or, in combat, as soon as combat ends (no snapshot writes in
 -- combat, spec 9). The queue is keyed per kind, so the newest capture wins. Returns true if written.
 function Snap.Save(kind)
-	if SB.Config.readOnly then
-		return false
-	end
-	local snap = Snap.Capture(kind)
+	pending[kind] = Snap.Capture(kind)
 	return SB.OutOfCombat(function()
-		store(kind, snap)
+		local snap = pending[kind]
+		pending[kind] = nil
+		if snap then
+			store(kind, snap)
+		end
 	end, "snapshot." .. kind, "none")
 end
 
+local function storeGuild(guildKey, ser)
+	if SB.Config.readOnly then
+		return
+	end
+	local db = Snap.DB()
+	local g = tableOr(db.guilds[guildKey])
+	db.guilds[guildKey] = g
+	g.lastSeen = SB.Adapter.Time()
+	g.tabs = tableOr(g.tabs)
+	g.snapshot = type(g.snapshot) == "table" and g.snapshot or { v = 1, containers = {} }
+	g.snapshot.containers = tableOr(g.snapshot.containers)
+	g.snapshot.at = g.lastSeen
+	for tab, t in pairs(ser) do
+		g.tabs[tab] = t.name
+		g.snapshot.containers[tab] = t.container
+	end
+	Snap.Enforce()
+end
+
 -- tabs[tab] = { name, slots = { [slot] = { link, count } } } for the tabs read this visit.
+-- Serialized now (W3-9), so the caller may reuse its tables; only the strings wait for combat.
 function Snap.SaveGuild(guildKey, tabs)
 	if not guildKey then
 		return false
 	end
+	local ser = {}
+	for tab, t in pairs(tabs) do
+		ser[tab] = { name = t.name, container = Snap.Serialize(t.slots or {}, SB.Adapter.GUILD_SLOTS) }
+	end
+	pendingGuild[guildKey] = ser
 	return SB.OutOfCombat(function()
-		if SB.Config.readOnly then
-			return
+		local q = pendingGuild[guildKey]
+		pendingGuild[guildKey] = nil
+		if q then
+			storeGuild(guildKey, q)
 		end
-		local db = Snap.DB()
-		local g = tableOr(db.guilds[guildKey])
-		db.guilds[guildKey] = g
-		g.lastSeen = SB.Adapter.Time()
-		g.tabs = tableOr(g.tabs)
-		g.snapshot = type(g.snapshot) == "table" and g.snapshot or { v = 1, containers = {} }
-		g.snapshot.containers = tableOr(g.snapshot.containers)
-		g.snapshot.at = g.lastSeen
-		for tab, t in pairs(tabs) do
-			g.tabs[tab] = t.name
-			g.snapshot.containers[tab] = Snap.Serialize(t.slots or {}, SB.Adapter.GUILD_SLOTS)
-		end
-		Snap.Enforce()
-	end, "snapshot.guild", "none")
+	end, "snapshot.guild." .. guildKey, "none")
 end
 
 ---------------------------------------------------------------------------
@@ -178,7 +233,7 @@ end
 -- order), until under the cap. Returns the names dropped.
 function Snap.Enforce()
 	local dropped = {}
-	if Snap.Bytes() <= Snap.HARD_CAP then
+	if Snap.Bytes() <= Snap.TRIGGER then
 		return dropped
 	end
 	local db, me = Snap.DB(), SB.Adapter.CharKey()
@@ -195,7 +250,7 @@ function Snap.Enforce()
 		return a.key < b.key
 	end)
 	for _, e in ipairs(list) do
-		if Snap.Bytes() <= Snap.HARD_CAP then
+		if Snap.Bytes() <= Snap.TRIGGER then
 			break
 		end
 		db.chars[e.key].bank = nil
@@ -263,11 +318,23 @@ end
 ---------------------------------------------------------------------------
 local bankOpen = false
 
--- The game is closing: there is no later, so this one writes even in combat.
+-- The game is closing (or reloading): there is no later, so this writes even in combat. First
+-- what was captured in combat and is still waiting (W3-28), then a visit still open, then bags.
+-- store and storeGuild refuse a newer schema themselves.
 SB.On("PLAYER_LOGOUT", function()
-	if not SB.Config.readOnly then
-		store("bags", Snap.Capture("bags"))
+	for kind, snap in pairs(pending) do
+		pending[kind] = nil
+		store(kind, snap)
 	end
+	for key, ser in pairs(pendingGuild) do
+		pendingGuild[key] = nil
+		storeGuild(key, ser)
+	end
+	if bankOpen then
+		store("bank", Snap.Capture("bank"))
+		store("warband", Snap.Capture("warband"))
+	end
+	store("bags", Snap.Capture("bags"))
 end, "none")
 
 SB.On("BANKFRAME_OPENED", function()
