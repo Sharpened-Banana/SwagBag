@@ -19,6 +19,7 @@ local W = {
 	state = nil, -- sections view: Layout state while open (nil when closed or in grid view)
 	pos = nil, -- sections view: last Layout.Position result
 	view = nil, -- sections view: the collapsed lookup W.pos was built with (what is drawn, W4-1)
+	areaHeld = false, -- a world-started re-stack is waiting for the mouse to leave the items (W4-13)
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
 	tiled = {}, -- [button] = true while it shows a free tile's number (plan D19)
 	size = { 100, 100 }, -- last content width, height
@@ -85,6 +86,7 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 		return
 	end
 	W.state, W.pos, W.view, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, nil, false, false, false
+	W.areaHeld = false
 	W.ClearDropGuard()
 	SB.Buttons.ReleasePlaceholders(child)
 	SB.Emit("SB_BAGS_CLOSED")
@@ -528,7 +530,7 @@ function W.Layout(reason)
 			B.Get(bag, slot):Hide()
 		end
 	end
-	W.records, W.state, W.pos, W.view = {}, nil, nil, nil
+	W.records, W.state, W.pos, W.view, W.areaHeld = {}, nil, nil, nil, false
 	B.ReleasePlaceholders(child)
 	SB.SectionHeaders.ReleaseAll(child)
 	local width, height
@@ -580,18 +582,27 @@ end
 -- every 300 ms. A focus-mode switch comes here too: whichever state is current when the retry
 -- runs is the one drawn (a switch that waits is never queued behind another). Only a re-stack
 -- that runs switches W.view, the lookup ApplyChanges lays out with (ruling W4-1).
-function W.Restack()
+-- area = true (a switch the world started, not the user's click): it also waits while the mouse
+-- is anywhere over the items, a header, a placeholder or a gap, so no item slides under the
+-- pointer (ruling W4-13). While such a switch waits, every re-stack waits the same way, so a
+-- header click cannot draw it under the mouse; the click applies with it once the mouse leaves.
+function W.Restack(area)
 	if not W.state then
 		return true
 	end
+	area = area == true or W.areaHeld
 	local view = snapshot(W.state, W.EffectiveCollapsed())
 	local pos = SB.Layout.Position(W.state, positionOpts(), view)
-	if anyBusy(SB.Layout.Moves(W.pos, pos)) then
-		SB.Debounce("bags.restack", W.RETRY, W.Restack, "bags")
+	local moves = SB.Layout.Moves(W.pos, pos)
+	if (area and (scroll:IsMouseOver() or SB.Adapter.CursorItem())) or anyBusy(moves) then
+		W.areaHeld = area
+		SB.Debounce("bags.restack", W.RETRY, function()
+			W.Restack(area)
+		end, "bags")
 		return false
 	end
 	local oldPos = W.pos
-	W.pos, W.view = pos, view
+	W.pos, W.view, W.areaHeld = pos, view, false
 	local width, height = renderMoved(oldPos, pos)
 	sizeFrame(width, height, true)
 	SB.Emit("SB_BAGS_UPDATED")
@@ -966,7 +977,7 @@ end, "bags"))
 SB.On("SB_FOCUS_CHANGED", function()
 	W.RefreshTitle()
 	if frame:IsShown() and W.state then
-		W.Restack()
+		W.Restack(true)
 	end
 end, "bags")
 
