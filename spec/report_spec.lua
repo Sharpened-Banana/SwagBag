@@ -68,6 +68,14 @@ describe("Report", function()
 		assert.truthy(SB.Report.Build():find("\nLast bags layout: 12.3 ms (open)", 1, true))
 	end)
 
+	it("shows the bank setting, the last visit and the deposit target (check V2)", function()
+		SB.Checks.last = {}
+		SB.BankWindow = { Mode = function() return "tiny" end, lastVisit = "beside", target = "warband",
+			GroupName = function() return "Warband bank" end }
+		assert.truthy(SB.Report.Build():find("\nBank: setting tiny, last visit beside, last deposit target Warband bank",
+			1, true))
+	end)
+
 	it("Hash is stable, order-independent and changes with content", function()
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 		local h2 = SB.Report.Hash({ x = "a", bags = { columns = 12 } })

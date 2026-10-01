@@ -126,6 +126,17 @@ function M.New(SB)
 		return true
 	end
 
+	-- Blizzard frames by global name, and Blizzard's selected bank type (week 3).
+	m.frames = {}
+	m.activeBankType = nil
+	function m.Frame(name)
+		return m.frames[name]
+	end
+
+	function m.ActiveBankType()
+		return m.activeBankType
+	end
+
 	M.AddContainers(m)
 	return m
 end
