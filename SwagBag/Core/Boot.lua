@@ -36,4 +36,4 @@ SB.On("PLAYER_LOGIN", function()
 	end
 	SB.Print(L.LOADED:format(SB.VERSION))
 	SB.Emit("SB_LOGIN")
-end, "none")
+end)
