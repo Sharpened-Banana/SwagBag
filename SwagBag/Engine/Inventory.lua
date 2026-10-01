@@ -189,22 +189,29 @@ end
 -- read at a banker (spec 5.7), so what is in it at a visit is not a new arrival. visit: true
 -- at the start of a bank visit, which also forgets what was new during an earlier visit
 -- (ruling W3-25); a rescan inside a visit keeps this visit's arrivals new.
+-- Inv.scanned is put back even when a scan errors; the error is raised again for the caller's
+-- trap.
 function Inv.ScanKind(kind, visit)
 	local was = Inv.scanned
 	Inv.scanned = false
-	for _, bag in ipairs(SB.Adapter.GetBagIDs(kind)) do
-		if visit then
-			local prefix = bag .. ":"
-			for k in pairs(Inv.newSet) do
-				if k:sub(1, #prefix) == prefix then
-					Inv.newSet[k] = nil
+	local ok, err = pcall(function()
+		for _, bag in ipairs(SB.Adapter.GetBagIDs(kind)) do
+			if visit then
+				local prefix = bag .. ":"
+				for k in pairs(Inv.newSet) do
+					if k:sub(1, #prefix) == prefix then
+						Inv.newSet[k] = nil
+					end
 				end
 			end
+			Inv.ScanBag(bag)
+			Inv.dirty[bag] = nil
 		end
-		Inv.ScanBag(bag)
-		Inv.dirty[bag] = nil
-	end
+	end)
 	Inv.scanned = was
+	if not ok then
+		error(err, 0)
+	end
 end
 
 -- Initial full scan (no "new" marking). Called on SB_LOGIN.

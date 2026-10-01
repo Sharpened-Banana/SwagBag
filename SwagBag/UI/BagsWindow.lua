@@ -585,7 +585,10 @@ function W.RequestLayout(reason)
 end
 
 function W.SetView(view)
-	SB.Config.Set("bags.view", view)
+	if not SB.Config.Set("bags.view", view) then -- read-only settings: nothing changes
+		W.Flash(L.SETTINGS_READONLY)
+		return
+	end
 	W.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	W.Flash(view == "grid" and L.VIEW_GRID or L.VIEW_SECTIONS)
 	W.RequestLayout("view")
@@ -714,6 +717,17 @@ W.sortButton = titleButton(L.BTN_SORT, "bags.sortButton", function()
 	W.Sort()
 end, 52)
 W.sortButton:SetPoint("RIGHT", W.reflowButton, "LEFT", -4, 0)
+
+-- W3-26 parity: the title (and its flashes) ends left of the leftmost SHOWN title button, on one
+-- line. leftmost: a button shown left of Sort ("Bank still open", BankWindow.lua), or nil.
+function W.BoundTitle(leftmost)
+	frame.title:ClearAllPoints()
+	frame.title:SetPoint("TOPLEFT", 10, -8)
+	frame.title:SetPoint("RIGHT", leftmost or W.sortButton, "LEFT", -6, 0)
+end
+frame.title:SetJustifyH("LEFT")
+frame.title:SetWordWrap(false)
+W.BoundTitle(nil)
 
 -- fn(button, record-or-nil, bag, slot) for every slot in the view (collapsed ones too).
 function W.ForEachSlot(fn)

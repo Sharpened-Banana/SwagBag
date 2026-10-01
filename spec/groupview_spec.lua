@@ -432,19 +432,51 @@ describe("GroupView", function()
 		assert.falsy(v.IsOpen())
 	end)
 
-	it("a full layout request waits while the mouse is over the items or an item is on the cursor", function()
+	-- W3-38: the same guard as a redraw or a re-stack. Mutation: in v.RequestLayout, hold on
+	-- `cfg.scroll:IsMouseOver()` instead of on the buttons that would move (the next test fails).
+	it("a full layout request waits while a button that would move is under the mouse or an item is on the cursor", function()
 		v.Layout("open")
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = 1 } })
 		f.scroll.mouseOver = true
+		btn(6, 1).mouseOver = true -- in Free's end now; the full layout puts it back in order
 		assert.falsy(v.RequestLayout("sort"))
 		A.Advance(0.3)
 		assert.equal("open", v.stats.lastLayoutReason)
-		f.scroll.mouseOver = false
+		btn(6, 1).mouseOver = false
 		A.cursor = { itemID = 1 }
 		A.Advance(0.3)
 		assert.equal("open", v.stats.lastLayoutReason)
 		A.cursor = nil
 		A.Advance(0.3)
 		assert.equal("sort", v.stats.lastLayoutReason)
+	end)
+
+	it("W3-38: the mouse over the items but over no button that would move does not hold a full layout", function()
+		v.Layout("open")
+		f.scroll.mouseOver = true
+		btn(6, 2).mouseOver = true -- nothing changed: no button moves
+		assert.truthy(v.RequestLayout("sort"))
+		assert.equal("sort", v.stats.lastLayoutReason)
+	end)
+
+	-- W3-38: a held full layout draws nothing and keeps the old records until it runs.
+	it("W3-38: a held full layout leaves the drawn layout and the records as they were", function()
+		v.Layout("open")
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = 1 } })
+		local before = at(btn(6, 1))
+		local resizes = #f.resized
+		btn(6, 1).mouseOver = true
+		A.Put(6, 4, Fixtures.ORE, 3)
+		assert.falsy(v.RequestLayout("sort"))
+		assert.same(before, at(btn(6, 1)))
+		assert.is_nil(v.Record(6, 4))
+		assert.equal(resizes, #f.resized)
+		btn(6, 1).mouseOver = false
+		A.Advance(0.3)
+		assert.equal("sort", v.stats.lastLayoutReason)
+		assert.truthy(v.Record(6, 4))
 	end)
 
 	it("the deposit target's group header is tinted", function()

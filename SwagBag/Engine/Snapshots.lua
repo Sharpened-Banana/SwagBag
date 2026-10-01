@@ -107,19 +107,20 @@ local pending, pendingGuild = {}, {}
 
 -- Write an already captured snapshot (never when the schema is newer, spec 8.5). A bank read
 -- that comes back empty (the client reports 0 slots away from a banker or mid-close) never
--- replaces a saved container that had slots, and an all-empty capture writes nothing (W3-29).
+-- replaces a saved container that had slots, and an all-empty capture writes nothing (W3-29;
+-- for the bags too: a model never scanned reads 0 slots everywhere).
 local function store(kind, snap)
 	if SB.Config.readOnly then
 		return
 	end
+	local total = 0
+	for _, c in pairs(snap.containers) do
+		total = total + (c.size or 0)
+	end
+	if total == 0 then
+		return
+	end
 	if kind == "bank" or kind == "warband" then
-		local total = 0
-		for _, c in pairs(snap.containers) do
-			total = total + (c.size or 0)
-		end
-		if total == 0 then
-			return
-		end
 		local old
 		if kind == "warband" then
 			old = Snap.DB().warband
@@ -352,6 +353,8 @@ end, "none")
 SB.On("BANKFRAME_CLOSED", function()
 	if bankOpen then
 		bankOpen = false
+		-- a deposit still inside Inventory's 50 ms flush debounce belongs in the close capture
+		SB.Inventory.FlushKinds({ "bank", "warband" }, "close")
 		Snap.Save("bank")
 		Snap.Save("warband")
 	end

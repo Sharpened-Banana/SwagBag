@@ -142,6 +142,19 @@ describe("GuildBankWindow (check G1)", function()
 		assert.same({ "TOPLEFT", tabs[1], "BOTTOMLEFT", 0, -6 }, tabs[2].points[1])
 	end)
 
+	-- Final review M1 (W3-26 parity). Mutation: delete the title's RIGHT anchor in GuildBankWindow.lua.
+	it("the title ends left of the title buttons, on one line, so a long flash never runs under them", function()
+		local right
+		for _, p in ipairs(GW.frame.title.points) do
+			if p[1] == "RIGHT" then
+				right = p
+			end
+		end
+		assert.same({ "RIGHT", GW.reflowButton, "LEFT", -6, 0 }, right)
+		assert.equal("LEFT", GW.frame.title.calls.SetJustifyH[1])
+		assert.equal(false, GW.frame.title.calls.SetWordWrap[1])
+	end)
+
 	-- Ruling W3-2: the STRICT fakes log every call, modelled or not (SetScript, SetAlpha, Show,
 	-- Hide, SetShown, SetID, ...). Mutations: add gf:UpdateTabs() (an unmodelled method) or
 	-- gf:SetAlpha(1) (a modelled one) before `if host.Shrink(gf) then` in GW.ApplyMode.
@@ -857,19 +870,33 @@ describe("GuildBankWindow (check G1)", function()
 		assert.same({ SB.L.GUILD_ACTION_FAILED }, A.Lines())
 	end)
 
-	-- Spec 4.3 rule 5 / D17. Mutation: GW.view.RequestLayout("load") -> GW.view.Layout("load") in GW.Refresh.
-	it("a tab read for the first time is laid out only once the mouse has left the items (300 ms retry)", function()
+	-- Spec 4.3 rule 5 / D17 / W3-38. Mutation: GW.view.RequestLayout("load") -> GW.view.Layout("load") in GW.Refresh.
+	it("a tab read for the first time is laid out only once the mouse has left a button that would move (300 ms retry)", function()
 		openVault()
 		GW.scroll.mouseOver = true
+		button(1, 2).mouseOver = true -- the ore's button: the first answer moves it to its section
 		fire() -- tab 1's answer
 		assert.equal("open", GW.view.stats.lastLayoutReason)
 		assert.is_nil(header("tab1:c_herbs"))
 		A.Advance(0.29)
 		assert.equal("open", GW.view.stats.lastLayoutReason, "held while the mouse is over")
-		GW.scroll.mouseOver = false
+		button(1, 2).mouseOver = false
 		A.Advance(0.02)
 		assert.equal("load", GW.view.stats.lastLayoutReason)
 		assert.truthy(header("tab1:c_herbs"))
+	end)
+
+	-- Ruling W3-38 (final review: items sat in Free under "(0)" headers while the mouse was
+	-- anywhere over the window). Mutation: in GroupView v.RequestLayout, restore the hold on
+	-- `cfg.scroll:IsMouseOver()`.
+	it("W3-38: a tab's first answer with the mouse over the window but over no moving button is laid out at once", function()
+		openVault()
+		GW.scroll.mouseOver = true
+		fire() -- tab 1's answer
+		assert.equal("load", GW.view.stats.lastLayoutReason)
+		assert.truthy(header("tab1:c_herbs"))
+		assert.truthy(header("#tab1").text.text:find("(2)", 1, true), header("#tab1").text.text)
+		assert.truthy(header("tab1:c_herbs").text.text:find("(1)", 1, true), header("tab1:c_herbs").text.text)
 	end)
 
 	-- Fix round 2.
@@ -985,6 +1012,21 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal("- Herbs (1) - 3g vendor", header("tab1:c_herbs").text.text, "20 herbs, a record with isBound = false")
 		assert.equal("- Mats (2) - 5 withdrawals left today  - deposits go here", header("#tab1").text.text,
 			"group headers never show a value")
+	end)
+
+	-- Ruling W3-40. Mutation: in GroupView owner.onClick, drop the `and cfg.onDrop` test (the
+	-- click becomes a drop that does nothing).
+	it("W3-40: a section header click with an item on the cursor collapses the section (no drop target here)", function()
+		openVault()
+		answerQueries()
+		local h = header("tab1:c_herbs")
+		assert.truthy(h)
+		A.cursor = { itemID = Fixtures.ORE }
+		h.scripts.OnClick(h, "LeftButton")
+		assert.truthy(GW.view.Collapsed("tab1").c_herbs)
+		A.cursor = nil -- the re-stack waits while the item is on the cursor (spec 4.2 rule 5)
+		A.Advance(0.3)
+		assert.truthy(header("tab1:c_herbs").text.text:find("+", 1, true), header("tab1:c_herbs").text.text)
 	end)
 end)
 

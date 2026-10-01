@@ -35,6 +35,7 @@ function Env.FakeBags(SB)
 	function bags.IsOpen() return false end
 	function bags.ForEachSlot() end
 	function bags.DropOnSection(id) bags.dropped[#bags.dropped + 1] = id end
+	function bags.BoundTitle(button) bags.titleBound = button or false end
 	SB.BagsWindow = bags
 	return bags
 end

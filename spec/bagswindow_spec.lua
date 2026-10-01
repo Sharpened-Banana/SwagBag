@@ -109,6 +109,25 @@ describe("BagsWindow", function()
 		assert.equal(true, W.frame.dontSave)
 	end)
 
+	-- Final review M2 (W3-26 parity). Mutation: delete the title's RIGHT anchor in W.BoundTitle.
+	it("the title ends left of the leftmost shown title button; BoundTitle moves that end", function()
+		local function right()
+			for _, p in ipairs(W.frame.title.points) do
+				if p[1] == "RIGHT" then
+					return p
+				end
+			end
+		end
+		assert.same({ "RIGHT", W.sortButton, "LEFT", -6, 0 }, right())
+		local still = newFake()
+		W.BoundTitle(still) -- "Bank still open" shown left of Sort
+		assert.same({ "RIGHT", still, "LEFT", -6, 0 }, right())
+		assert.same({ "TOPLEFT", 10, -8 }, W.frame.title.points[1])
+		W.BoundTitle(nil)
+		assert.same({ "RIGHT", W.sortButton, "LEFT", -6, 0 }, right())
+		assert.same({ "TOPLEFT", 10, -8 }, W.frame.title.points[1])
+	end)
+
 	it("is registered for Esc", function()
 		assert.equal("SwagBagBagsWindow", UISpecialFrames[1])
 	end)

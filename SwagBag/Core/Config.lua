@@ -229,6 +229,9 @@ function Config.UI()
 	return Config.charDB.ui
 end
 
+-- The account DB's saved snapshots (Engine/Snapshots.lua): kept by Reset (ruling W3-39).
+local SNAPSHOT_KEYS = { "chars", "warband", "guilds" }
+
 -- Wipe both DBs after keeping a copy of the saved data. Returns the new tables,
 -- which the caller assigns to SwagBagDB / SwagBagCharDB.
 function Config.Reset()
@@ -251,7 +254,14 @@ function Config.Reset()
 		Config.status = "ok"
 		return Config.db, Config.charDB
 	end
-	-- When not read-only, back up the LIVE tables and preserve existing backups
+	-- When not read-only, back up the LIVE tables and preserve existing backups. The saved
+	-- snapshots are not settings: they move to the new DB as they are and stay out of the
+	-- backup (ruling W3-39).
+	local kept = {}
+	for _, k in ipairs(SNAPSHOT_KEYS) do
+		kept[k] = Config.db[k]
+		Config.db[k] = nil
+	end
 	local oldDB = copy(Config.db)
 	local oldChar = copy(Config.charDB)
 	local existingDBBackups = oldDB.backups or {}
@@ -259,6 +269,9 @@ function Config.Reset()
 	oldDB.backups = nil
 	oldChar.backups = nil
 	Config.db, Config.charDB = newDB(), newCharDB()
+	for _, k in ipairs(SNAPSHOT_KEYS) do
+		Config.db[k] = kept[k]
+	end
 	-- Carry over existing backups (e.g., v<N> from failed migrations)
 	for k, v in pairs(existingDBBackups) do
 		Config.db.backups[k] = v

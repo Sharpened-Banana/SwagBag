@@ -277,4 +277,20 @@ describe("Config", function()
 		assert.equal(2, charDB.schemaVersion)
 		assert.equal(9, db.backups.reset.settings.bags.columns)
 	end)
+	-- Ruling W3-39. Mutation: delete the loop that carries the snapshot tables in Config.Reset.
+	it("W3-39: Reset keeps the saved snapshots (chars, warband, guilds) and leaves them out of the backup", function()
+		local saved = { schemaVersion = 2, settings = { bags = { columns = 7 } }, errors = {}, backups = {},
+			categories = {}, userEdits = {},
+			chars = { ["Me-Realm"] = { bags = { s = "bags" } } }, warband = { s = "wb" }, guilds = { g = { s = "gb" } } }
+		Config.Init(saved, nil)
+		local db = Config.Reset()
+		assert.same({ ["Me-Realm"] = { bags = { s = "bags" } } }, db.chars)
+		assert.same({ s = "wb" }, db.warband)
+		assert.same({ g = { s = "gb" } }, db.guilds)
+		assert.equal(7, db.backups.reset.settings.bags.columns)
+		assert.is_nil(db.backups.reset.chars)
+		assert.is_nil(db.backups.reset.warband)
+		assert.is_nil(db.backups.reset.guilds)
+		assert.is_nil(db.settings.bags, "settings still start fresh")
+	end)
 end)

@@ -13,7 +13,7 @@
 --   local v = SB.GroupView.New(cfg)
 --   v.Layout(reason) -> width, height   full layout (open, Reflow, sort, view toggle)
 --   v.RequestLayout(reason) -> bool     the same, held back while an item is on the cursor
---                                       or the mouse is over the items (spec 4.3 rule 5)
+--                                       or a button that would move is under the mouse (4.3)
 --   v.Changes(groupId, list)            live changes { { bag, slot, kind, icon } }, kind
 --                                       "left" | "arrived" | "added" | "removed" (Layout.Apply)
 --   v.Restack() -> bool                 redraw after a collapse or expand (held back like a move)
@@ -84,12 +84,14 @@ function GV.New(cfg)
 	-- Pixel positions of every group, stacked top to bottom. Combined result:
 	-- { cells, byKey, placeholders, headers = { { group, id, y, count, overflow, collapsed } },
 	--   groupHeaders = { { id, y, count, collapsed } }, tiles = { free tile cells }, width, height }
-	local function positionAll()
+	-- groups/records default to the view's own (a full layout positions a candidate first).
+	local function positionAll(groups, records)
+		groups, records = groups or v.groups, records or v.records
 		local cols = cfg.columns()
 		local all = { cells = {}, byKey = {}, placeholders = {}, headers = {}, groupHeaders = {}, tiles = {},
 			width = GV.PAD * 2 + cols * GV.SLOT + (cols - 1) * GV.GAP }
 		local y = 0
-		for _, g in ipairs(v.groups) do
+		for _, g in ipairs(groups) do
 			local closed = groupClosed(g.id)
 			local header = { id = g.id, y = -y, count = 0, collapsed = closed }
 			all.groupHeaders[#all.groupHeaders + 1] = header
@@ -111,7 +113,7 @@ function GV.New(cfg)
 				c.shown = c.shown and not closed
 				all.cells[#all.cells + 1] = c
 				all.byKey[keyOf(c.bag, c.slot)] = c
-				if v.records[keyOf(c.bag, c.slot)] then
+				if records[keyOf(c.bag, c.slot)] then
 					header.count = header.count + 1
 				end
 			end
@@ -194,7 +196,9 @@ function GV.New(cfg)
 			return
 		end
 		local gid, sid = parseId(id)
-		if sid and SB.Adapter.CursorItem() then -- a group header is not a drop target (W3-24)
+		-- a group header is not a drop target (W3-24), nor a section header in a view with no
+		-- onDrop (the guild bank): the click collapses or expands as a plain click (W3-40)
+		if sid and cfg.onDrop and SB.Adapter.CursorItem() then
 			drop(id)
 			return
 		end
@@ -358,23 +362,21 @@ function GV.New(cfg)
 	---------------------------------------------------------------------------
 	-- Full layout
 	---------------------------------------------------------------------------
-	function v.Layout(reason)
-		local A = SB.Adapter
-		local t0 = A.ProfileMs()
-		local old = v.pos
-		v.groups, v.byId, v.records, v.sizes, v.groupOf, v.redrawPending = {}, {}, {}, {}, {}, false
+	-- Read every slot into a fresh candidate (groups, records, sizes); nothing is drawn.
+	local function build()
+		local b = { groups = {}, byId = {}, records = {}, sizes = {}, groupOf = {} }
 		local sections = cfg.view() ~= "grid"
 		local order = sections and SB.Categories.SectionOrder() or nil
 		for _, def in ipairs(cfg.groups()) do
 			local g = { id = def.id, bags = def.bags }
 			local slots = {}
-			for _, b in ipairs(def.bags) do
-				v.sizes[b.bag], v.groupOf[b.bag] = b.size, def.id
-				for slot = 1, b.size do
-					if cfg.button(b.bag, slot) then
-						local record = cfg.describe(b.bag, slot)
-						v.records[keyOf(b.bag, slot)] = record
-						slots[#slots + 1] = { bag = b.bag, slot = slot, record = record }
+			for _, bag in ipairs(def.bags) do
+				b.sizes[bag.bag], b.groupOf[bag.bag] = bag.size, def.id
+				for slot = 1, bag.size do
+					if cfg.button(bag.bag, slot) then
+						local record = cfg.describe(bag.bag, slot)
+						b.records[keyOf(bag.bag, slot)] = record
+						slots[#slots + 1] = { bag = bag.bag, slot = slot, record = record }
 					end
 				end
 			end
@@ -383,31 +385,55 @@ function GV.New(cfg)
 					newRows = cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile() or nil,
 					family = SB.Adapter.BagFamily })
 			end
-			v.groups[#v.groups + 1] = g
-			v.byId[g.id] = g
+			b.groups[#b.groups + 1] = g
+			b.byId[g.id] = g
 		end
-		local pos = positionAll()
+		return b
+	end
+
+	-- Make a candidate the view's layout and draw it at pos.
+	local function commit(b, pos, reason, t0)
+		local old = v.pos
+		v.groups, v.byId, v.records, v.sizes, v.groupOf, v.redrawPending = b.groups, b.byId, b.records, b.sizes,
+			b.groupOf, false
 		if old then
 			hideGone(old, pos)
 		end
 		render(pos)
 		cfg.onResize(pos.width, pos.height, reason ~= "open")
-		v.stats.lastLayoutMs = A.ProfileMs() - t0
+		v.stats.lastLayoutMs = SB.Adapter.ProfileMs() - t0
 		v.stats.lastLayoutReason = reason
 		return pos.width, pos.height
 	end
 
+	function v.Layout(reason)
+		local t0 = SB.Adapter.ProfileMs()
+		local b = build()
+		return commit(b, positionAll(b.groups, b.records), reason, t0)
+	end
+
+	-- A full layout while open (Reflow, sort, view toggle, a tab's first answer): held back,
+	-- retrying every 300 ms, only while an item is on the cursor or a button that would move
+	-- is under the mouse -- the same guard as a redraw or a re-stack (W3-38, spec 4.2 rule 5).
 	function v.RequestLayout(reason)
 		if not v.pos then
 			return false
 		end
-		if SB.Adapter.CursorItem() or (cfg.scroll and cfg.scroll:IsMouseOver()) then
+		local t0 = SB.Adapter.ProfileMs()
+		local held = SB.Adapter.CursorItem() ~= nil
+		local b, pos
+		if not held then
+			b = build()
+			pos = positionAll(b.groups, b.records)
+			held = anyBusy(SB.Layout.Moves(v.pos, pos))
+		end
+		if held then
 			SB.Debounce(cfg.key .. ".layout", GV.RETRY, function()
 				v.RequestLayout(reason)
 			end, window)
 			return false
 		end
-		v.Layout(reason)
+		commit(b, pos, reason, t0)
 		return true
 	end
 
