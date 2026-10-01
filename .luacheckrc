@@ -19,6 +19,9 @@ read_globals = {
 	"SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated",
 	"StaticPopup_Show", "YES", "NO",
 	"GetCursorInfo", "ClearCursor", "GameTooltip",
+	"GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink", "QueryGuildBankTab",
+	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
+	"IsModifiedClick", "HandleModifiedItemClick",
 }
 
 files["spec/"] = {

@@ -375,6 +375,146 @@ function A.ActiveBankType()
 end
 
 ---------------------------------------------------------------------------
+-- Guild bank (week 3, spec F16). Blizzard's guild bank functions are plain globals; the
+-- guild bank UI (GuildBankFrame) is load-on-demand, so nothing here may assume it exists.
+-- SwagBag never selects a guild bank tab: Blizzard's own tab buttons do (spec AC16.7).
+---------------------------------------------------------------------------
+A.GUILD_SLOTS = 98 -- slots per guild bank tab
+
+-- { { tab, name, icon, viewable, canDeposit, withdrawals } } for each tab the guild owns.
+-- withdrawals: stacks the player may still take from that tab today; -1 = unlimited.
+function A.GuildTabs()
+	if not (GetNumGuildBankTabs and GetGuildBankTabInfo) then
+		return {}
+	end
+	local okN, n = pcall(GetNumGuildBankTabs)
+	if not okN or type(n) ~= "number" or isSecret(n) then
+		return {}
+	end
+	local out = {}
+	for tab = 1, n do
+		local ok, name, icon, viewable, canDeposit, _, remaining = pcall(GetGuildBankTabInfo, tab)
+		if ok and not isSecret(name) then
+			out[#out + 1] = { tab = tab, name = name, icon = icon, viewable = viewable == true,
+				canDeposit = canDeposit == true,
+				withdrawals = (type(remaining) == "number" and not isSecret(remaining)) and remaining or 0 }
+		end
+	end
+	return out
+end
+
+-- Normalized guild slot { itemID, link, count, icon, quality, isLocked }, or nil when empty
+-- (or not loaded yet: QueryGuildBankTab loads a tab).
+function A.GuildSlot(tab, slot)
+	local ok, icon, count, locked, _, quality = pcall(GetGuildBankItemInfo, tab, slot)
+	if not ok or icon == nil or isSecret(icon) then
+		return nil
+	end
+	local okL, link = pcall(GetGuildBankItemLink, tab, slot)
+	if not okL or type(link) ~= "string" or isSecret(link) then
+		return nil
+	end
+	local inst = A.GetItemInstant(link)
+	if not inst then
+		return nil
+	end
+	return { itemID = inst.itemID, link = link, count = count or 1, icon = icon, quality = quality,
+		isLocked = locked == true }
+end
+
+function A.GuildQuery(tab)
+	if QueryGuildBankTab then
+		pcall(QueryGuildBankTab, tab)
+	end
+end
+
+-- The tab Blizzard's guild bank has selected (where a right-clicked bag item goes). Read only.
+function A.GuildCurrentTab()
+	if not GetCurrentGuildBankTab then
+		return nil
+	end
+	local ok, tab = pcall(GetCurrentGuildBankTab)
+	if ok and type(tab) == "number" and not isSecret(tab) then
+		return tab
+	end
+	return nil
+end
+
+-- Withdraw a stack to the bags (what a right-click does in Blizzard's guild bank).
+function A.GuildWithdraw(tab, slot)
+	return pcall(AutoStoreGuildBankItem, tab, slot)
+end
+
+-- Pick up the stack, or put the cursor's item into that slot (deposit or move).
+function A.GuildPickup(tab, slot)
+	return pcall(PickupGuildBankItem, tab, slot)
+end
+
+-- "Guild Name-Realm" for the player's guild, or nil without a guild.
+function A.GuildKey()
+	if not GetGuildInfo then
+		return nil
+	end
+	local ok, name, _, _, realm = pcall(GetGuildInfo, "player")
+	if not ok or type(name) ~= "string" or isSecret(name) then
+		return nil
+	end
+	return name .. "-" .. tostring(realm or (GetRealmName and GetRealmName()) or "")
+end
+
+function A.GuildTooltip(owner, tab, slot)
+	if not GameTooltip then
+		return
+	end
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	pcall(GameTooltip.SetGuildBankItem, GameTooltip, tab, slot)
+	GameTooltip:Show()
+end
+
+function A.HideTooltip()
+	if GameTooltip then
+		GameTooltip:Hide()
+	end
+end
+
+-- Shift/Ctrl-click on an item link (chat link, dressing room). True when Blizzard handled it.
+function A.ModifiedClick(link)
+	if not (IsModifiedClick and HandleModifiedItemClick) or not IsModifiedClick() then
+		return false
+	end
+	local ok, handled = pcall(HandleModifiedItemClick, link)
+	return ok and handled ~= false
+end
+
+-- True for the guild vault in PLAYER_INTERACTION_MANAGER_FRAME_SHOW / _HIDE.
+function A.IsGuildBanker(interactionType)
+	local PIT = Enum and Enum.PlayerInteractionType
+	return PIT ~= nil and PIT.GuildBanker ~= nil and interactionType == PIT.GuildBanker
+end
+
+-- Blizzard's guild bank tab buttons (to re-host on SwagBag's window), top to bottom.
+function A.GuildTabFrames()
+	local gf = _G.GuildBankFrame
+	local list = {}
+	if not gf then
+		return list
+	end
+	if type(gf.BankTabs) == "table" then
+		for i, t in ipairs(gf.BankTabs) do
+			list[i] = t
+		end
+	else
+		for i = 1, 8 do
+			local t = _G["GuildBankTab" .. i]
+			if t then
+				list[#list + 1] = t
+			end
+		end
+	end
+	return list
+end
+
+---------------------------------------------------------------------------
 -- Feature checks (consumed by Core/Checks.lua). window: which Safe Mode
 -- flag a failed REQUIRED check turns on. value: exact value expected.
 ---------------------------------------------------------------------------
@@ -427,4 +567,11 @@ A.CHECKS = {
 	{ path = "Enum.AddOnRestrictionType", window = "bags", required = false },
 	{ path = "C_ChallengeMode.IsChallengeModeActive", window = "bags", required = false },
 	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
+	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
+	{ path = "GetGuildBankItemLink", window = "bank", required = false },
+	{ path = "GetGuildBankTabInfo", window = "bank", required = false },
+	{ path = "QueryGuildBankTab", window = "bank", required = false },
+	{ path = "AutoStoreGuildBankItem", window = "bank", required = false },
+	{ path = "PickupGuildBankItem", window = "bank", required = false },
+	{ path = "Enum.PlayerInteractionType.GuildBanker", window = "bank", required = false },
 }

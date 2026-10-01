@@ -76,6 +76,12 @@ describe("Report", function()
 			1, true))
 	end)
 
+	it("shows the guild bank setting and the last visit (check G1)", function()
+		SB.Checks.last = {}
+		SB.GuildBankWindow = { Mode = function() return "full" end, lastVisit = "view" }
+		assert.truthy(SB.Report.Build():find("\nGuild bank: setting full, last visit view", 1, true))
+	end)
+
 	it("Hash is stable, order-independent and changes with content", function()
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 		local h2 = SB.Report.Hash({ x = "a", bags = { columns = 12 } })

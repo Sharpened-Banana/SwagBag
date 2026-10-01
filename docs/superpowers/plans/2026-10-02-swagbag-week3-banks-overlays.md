@@ -2979,31 +2979,39 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 - [ ] **Step 7: In-game session G1 (the user does this on Oct 15; about 10 minutes)**
 
-Give the user this checklist exactly. You need:
+Give the user this checklist exactly.
+
+You need:
 - a guild vault;
-- a tab you may deposit into;
-- a tab you may withdraw from (at least one withdrawal left today), and ideally a second one;
+- a guild bank tab you may both deposit into and withdraw from (at least two withdrawals left today);
+- ideally a second tab you may withdraw from (for step 7);
 - one cheap item you do not mind putting in the guild bank;
-- your Hearthstone.
+- your Hearthstone in your bags;
+- your Hearthstone is not on cooldown.
 
-1. Quit the game completely and start it again (new files need a full restart). Log in. Chat shows `SwagBag: v0.3.0 loaded. Type /swagbag help for commands.`
-2. Open the guild vault. Blizzard's guild bank does **not** appear. A window titled `SwagBag guild bank` appears instead, with Blizzard's tab icons along its right edge. Each tab you may view has a line like `Mats - 5 withdrawals left today (loading...)` (or `unlimited withdrawals`). Within a few seconds `(loading...)` goes away and the tab's items appear in a grid under its line.
+The guild bank tabs are Blizzard's own tab buttons, not SwagBag's: small square buttons, each showing the picture your guild chose for that tab, stacked top to bottom. Hover one to see the tab's name. In this session they sit along the right edge of the SwagBag guild bank window instead of Blizzard's guild bank window. (Their exact look in 12.1 is not yet confirmed: if they look different, tell Claude what you see.)
+
+1. Quit the game completely and restart it. This task adds new files, so `/reload` is not enough. Log in. Chat shows `SwagBag: v0.3.0 loaded. Type /swagbag help for commands.`
+2. Open the guild vault. Blizzard's guild bank window does **not** appear. A dark window titled `SwagBag guild bank` appears instead, with a `Blizzard guild bank` button at its top right and Blizzard's square tab buttons down its right edge. Each tab you may view has a gold line such as `Mats - 5 withdrawals left today (loading...)` (or `Mats - unlimited withdrawals (loading...)`, or `Mats - no withdrawals left today (loading...)`). Within a few seconds `(loading...)` goes away and the tab's items appear in a grid under its line.
 3. The window's second line says `Deposits go to <tab name> - switch with the tabs on the right`. That tab's line ends with `- deposits go here` and is green.
-4. Click a different tab icon on the right (one you may deposit into). The second line and the green line follow it.
-5. In your SwagBag bags, right-click the cheap item. It goes into the tab named on the second line: within a second it shows in that tab's grid.
-6. In the SwagBag guild bank window, right-click that item. It comes back to your bags. If the tab is not unlimited, its `withdrawals left today` number goes down by one. Move the mouse off it.
-7. If you may withdraw from a tab that is **not** the selected one, right-click an item there. It moves to your bags. (If nothing happens, tell Claude the tab's name.)
-8. Drag an item from the guild bank window onto an empty slot of your SwagBag bags: it moves there. Drag it back onto an empty slot of the guild bank window: it moves back.
-9. Press **Enter** to open the chat box, then shift-click an item in the guild bank window. Its link appears in the chat box. Press **Esc** to clear the chat box.
-10. Click `Blizzard guild bank`. The title says `Blizzard's guild bank is shown for this visit (gold, log, permissions)` for a moment, and Blizzard's guild bank appears with the SwagBag window to its right. Right-click an item in the SwagBag window: chat says `SwagBag's guild bank is view-only now: move items in Blizzard's guild bank window.` Nothing moves.
-11. Click `Blizzard guild bank` again. Blizzard's guild bank disappears, and the title says `Blizzard's guild bank is hidden again` for a moment.
+4. Click the square tab button on the right for the tab you may deposit into and withdraw from (hover the buttons to find it by name). The second line now names that tab, and that tab's line is the green one ending with `- deposits go here`.
+5. In your SwagBag bags, right-click the cheap item, then move the mouse off it. It leaves your bags, and no red error message appears at the top of the screen. Within a second it shows in the grid under the tab named on the second line.
+6. In the SwagBag guild bank window, right-click that item, then move the mouse off it. It comes back to your bags, and no red error message appears at the top of the screen. If the tab is not unlimited, its `withdrawals left today` number goes down by one.
+7. If you may withdraw from a tab that is **not** the green one, right-click an item in that tab's grid, then move the mouse off it. It moves to your bags, and no red error message appears at the top of the screen. (If nothing happens, or chat says something, tell Claude the tab's name and what chat said.)
+8. Drag an item from the SwagBag guild bank window onto an empty slot of your SwagBag bags, then move the mouse off it: it is in your bags, and no red error message appears at the top of the screen. Drag it back onto an empty slot in the green tab's grid of the SwagBag guild bank window, then move the mouse off it: it is back in the guild bank, and no red error message appears at the top of the screen.
+9. Press **Enter** to open the chat box, then shift-click an item in the SwagBag guild bank window, then move the mouse off it. The item's link appears in the chat box. Press **Esc** to clear the chat box.
+10. Click `Blizzard guild bank`. The SwagBag guild bank window's title says `Blizzard's guild bank is shown for this visit (gold, log, permissions)` for a moment, and Blizzard's guild bank window appears, with the SwagBag guild bank window to its right. Right-click an item in the SwagBag guild bank window, then move the mouse off it: chat says `SwagBag's guild bank is view-only now: move items in Blizzard's guild bank window.` Nothing moves.
+11. Click `Blizzard guild bank` again. Blizzard's guild bank window disappears, the title says `Blizzard's guild bank is hidden again` for a moment, and the square tab buttons are back on the right edge of the SwagBag guild bank window.
 12. Press **Esc** once. The SwagBag guild bank window closes.
-13. Walk away from the vault. Right-click your Hearthstone in the SwagBag bags: the cast bar appears, with **no** red `Interface action failed because of an AddOn` message. Move to cancel it.
-14. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks `Blocked actions: none`, no new errors, and a line `Guild bank: setting full, last visit full`.
+13. Walk a few steps away from the vault. Right-click your Hearthstone in the SwagBag bags, then move the mouse off it. The cast bar appears. There is **no** red error message at the top of the screen; Blizzard's message would read: Interface action failed because of an AddOn. Move to cancel the cast if you want to stay.
+14. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks:
+    - the first line starts `SwagBag 0.3.0`;
+    - `Blocked actions: none` and no new errors;
+    - a line `Guild bank: setting full, last visit full`.
 
-Pass: steps 5, 6 and 8 moved the items as described, step 13 cast with no red message, and the report is clean.
+Pass: steps 5, 6 and 8 moved the items as described with no red error message, step 13 cast with no red message, and the report is clean.
 
-If it fails: tell Claude which step. If step 5, 6 or 8 failed, or the report lists a blocked action, type `/swagbag guild view`. SwagBag's window then only shows the guild bank, and you move items in Blizzard's window. On Oct 16 Claude makes "view" the default (spec AC16.6): one line in `SwagBag/Core/Config.lua`, `guildBank = { mode = "view", … }`. If only step 7 failed, Claude makes `withdrawAnyTab = false` the default instead: a right-click in another tab then says `Click the <tab> tab on the right first, then right-click the item again.`
+If it fails: tell Claude which step. If step 5, 6 or 8 failed, or the report lists a blocked action, type `/swagbag guild view`. Chat says `Guild bank: Blizzard's window is shown; SwagBag's window beside it is view-only.` SwagBag's window then only shows the guild bank, and you move items in Blizzard's window. On Oct 16 Claude makes "view" the default (spec AC16.6): one line in `SwagBag/Core/Config.lua`, `guildBank = { mode = "view", … }`, plus the matching expectations in `spec/guildbank_spec.lua`. If only step 7 failed, Claude makes `withdrawAnyTab = false` the default instead: a right-click in a tab that is not selected then says `Click the <tab> tab on the right first, then right-click the item again.`
 
 ---
 ### Task 3: Overlay data and the upgrade arrow (AC9.3); the crest keyword and data file

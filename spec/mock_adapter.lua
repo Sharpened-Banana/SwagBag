@@ -137,6 +137,74 @@ function M.New(SB)
 		return m.activeBankType
 	end
 
+	-- Guild bank: m.guild.tabs = { { tab, name, viewable, canDeposit, withdrawals } },
+	-- m.guild.slots[tab][slot] = { itemID, count, link?, isLocked? }; calls are recorded.
+	m.guild = { tabs = {}, slots = {}, current = 1, key = "Tidewatch-Argent Dawn", queried = {}, withdrawn = {},
+		picked = {} }
+	m.modified = false
+	m.tooltip = nil
+	m.guildTabFrames = {}
+	function m.GuildTabs()
+		local out = {}
+		for i, t in ipairs(m.guild.tabs) do
+			out[i] = { tab = t.tab, name = t.name, icon = t.icon, viewable = t.viewable ~= false,
+				canDeposit = t.canDeposit ~= false, withdrawals = t.withdrawals or -1 }
+		end
+		return out
+	end
+
+	function m.GuildSlot(tab, slot)
+		local s = m.guild.slots[tab] and m.guild.slots[tab][slot]
+		if not s then
+			return nil
+		end
+		local it = m.items[s.itemID] or {}
+		return { itemID = s.itemID, link = s.link or ("item:" .. s.itemID), count = s.count or 1, icon = s.itemID,
+			quality = it.quality, isLocked = s.isLocked == true }
+	end
+
+	function m.GuildQuery(tab)
+		m.guild.queried[#m.guild.queried + 1] = tab
+	end
+
+	function m.GuildCurrentTab()
+		return m.guild.current
+	end
+
+	function m.GuildWithdraw(tab, slot)
+		m.guild.withdrawn[#m.guild.withdrawn + 1] = { tab, slot }
+		return true
+	end
+
+	function m.GuildPickup(tab, slot)
+		m.guild.picked[#m.guild.picked + 1] = { tab, slot }
+		return true
+	end
+
+	function m.GuildKey()
+		return m.guild.key
+	end
+
+	function m.GuildTooltip(owner, tab, slot)
+		m.tooltip = { owner = owner, tab = tab, slot = slot }
+	end
+
+	function m.HideTooltip()
+		m.tooltip = nil
+	end
+
+	function m.ModifiedClick()
+		return m.modified
+	end
+
+	function m.IsGuildBanker(interactionType)
+		return interactionType == "GuildBanker"
+	end
+
+	function m.GuildTabFrames()
+		return m.guildTabFrames
+	end
+
 	M.AddContainers(m)
 	return m
 end
