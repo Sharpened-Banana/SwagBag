@@ -153,7 +153,7 @@ local function viewKeyOf(active)
 			local keys = {}
 			for k, v in pairs(Focus.signals.professions) do
 				if v then
-					keys[#keys + 1] = k
+					keys[#keys + 1] = tostring(k)
 				end
 			end
 			table.sort(keys)
@@ -340,7 +340,8 @@ function Focus.Resume()
 	return true
 end
 
--- Settings writes. Each returns true, or false plus "unknown" (no such mode) or "readonly" (a newer
+-- Settings writes. Config.Set emits SB_CONFIG_CHANGED; the listener below refreshes.
+-- Each returns true, or false plus "unknown" (no such mode) or "readonly" (a newer
 -- schema: nothing is written).
 local function refuse(id)
 	if not byId[id] then
@@ -358,7 +359,6 @@ function Focus.SetEnabled(id, on)
 	if not SB.Config.Set("focus.on." .. id, on and true or false) then
 		return false, "readonly"
 	end
-	Focus.Refresh("settings")
 	return true
 end
 
@@ -370,7 +370,6 @@ function Focus.SetSections(id, list)
 	if not SB.Config.Set("focus.sections." .. id, table.concat(list, ",")) then
 		return false, "readonly"
 	end
-	Focus.Refresh("settings")
 	return true
 end
 
@@ -389,6 +388,13 @@ function Focus.ResetSections(id)
 	if not SB.Config.Set(path, value) then
 		return false, "readonly"
 	end
-	Focus.Refresh("settings")
 	return true
 end
+
+-- Any focus setting changed, by a writer above, a character override, a reset or a new Init: the
+-- cached view is stale. Refresh never writes settings, so this cannot loop.
+SB.On("SB_CONFIG_CHANGED", function(_, path)
+	if path == nil or path:sub(1, 6) == "focus." then
+		Focus.Refresh("settings")
+	end
+end, "bags")
