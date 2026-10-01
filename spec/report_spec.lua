@@ -62,6 +62,12 @@ describe("Report", function()
 		assert.falsy(text:find("CastSpellByName", 1, true))
 	end)
 
+	it("shows the last bags layout time, for the spec 9 open budgets", function()
+		SB.Checks.last = {}
+		SB.BagsWindow = { stats = { lastLayoutMs = 12.34, lastLayoutReason = "open" } }
+		assert.truthy(SB.Report.Build():find("\nLast bags layout: 12.3 ms (open)", 1, true))
+	end)
+
 	it("Hash is stable, order-independent and changes with content", function()
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 		local h2 = SB.Report.Hash({ x = "a", bags = { columns = 12 } })

@@ -1,4 +1,6 @@
 -- luacheck: globals UIParent UISpecialFrames IsControlKeyDown
+-- The bags window's GRID view and window basics. The category view is covered by
+-- spec/bagswindow_sections_spec.lua.
 local Loader = dofile("spec/helpers/loader.lua")
 
 -- A permissive fake frame: remembers the few things the window logic depends on,
@@ -69,6 +71,7 @@ describe("BagsWindow", function()
 		})
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("bags.view", "grid")
 		fake = { pools = {}, changed = nil }
 		CreateFrame = function() return newFake() end
 		UIParent = newFake()
@@ -87,13 +90,19 @@ describe("BagsWindow", function()
 			Place = function() end,
 			Paint = function() end,
 			KindOf = function() return "bags" end,
+			ReleasePlaceholders = function() end,
 		}
+		SB.SectionHeaders = { ReleaseAll = function() end }
 		SB.Inventory = { R = { SIZE = 1, COOLDOWN = 2 }, Has = function() return false end }
 		SB.Inventory.OnChanged = function(cb) fake.changed = cb end
 		SB.Items = { Describe = function(bag, slot) return { bag = bag, slot = slot } end }
 		A.sizes[0], A.sizes[1] = 16, 0
 		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
 		W = SB.BagsWindow
+	end)
+
+	after_each(function() -- do not leak WoW globals into other spec files
+		UIParent, UISpecialFrames, IsControlKeyDown = nil, nil, nil
 	end)
 
 	it("opts out of the client's saved window position (SwagBag keeps its own)", function()

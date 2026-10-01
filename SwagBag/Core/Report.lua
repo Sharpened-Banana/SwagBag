@@ -101,5 +101,9 @@ function Report.Build()
 		local total, edited, broken = SB.Categories.Counts()
 		lines[#lines + 1] = L.REPORT_CATEGORIES:format(total, edited, #broken > 0 and table.concat(broken, ", ") or L.REPORT_NONE)
 	end
+	local bags = SB.BagsWindow and SB.BagsWindow.stats
+	if bags and bags.lastLayoutMs then -- spec 9: first open <= 25 ms, warm open <= 10 ms
+		lines[#lines + 1] = L.REPORT_LAYOUT:format(bags.lastLayoutMs, tostring(bags.lastLayoutReason))
+	end
 	return table.concat(lines, "\n")
 end
