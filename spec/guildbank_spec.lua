@@ -623,6 +623,233 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal(UIParent, gf.parent)
 		assert.equal(gf, tabs[1].parent)
 	end)
+
+	-- Fix round 1 (rulings W3-30 .. W3-34, controller items 6-8).
+	local KEY = "Tidewatch-Argent Dawn"
+	local function fire()
+		SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED")
+	end
+
+	local function loadingText(id)
+		return header(id).text.text:find(SB.L.GUILD_TAB_LOADING, 1, true) ~= nil
+	end
+
+	-- Ruling W3-30. Mutation: in GW.OnQueryEvent, mark the tab answered on every event
+	-- (`if true then GW.answered[tab] = true`).
+	it("W3-30: a foreign event while tab 2 is queried, tab 2 still reading empty, is not tab 2's answer", function()
+		local gear = A.guild.slots[2]
+		A.guild.slots[2] = {}
+		openVault()
+		fire() -- tab 1's answer
+		A.Advance(0.06)
+		assert.same({ 1, 2 }, A.guild.queried)
+		fire() -- someone else's change; tab 2's answer is still on its way
+		assert.truthy(loadingText("#tab2"), "tab 2 still says loading")
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+		GW.SaveSnapshot()
+		local g = SB.Config.db.guilds[KEY]
+		assert.truthy(g.snapshot.containers[1])
+		assert.is_nil(g.snapshot.containers[2], "nothing saved for tab 2")
+		A.guild.slots[2] = gear
+		fire() -- tab 2's real answer
+		assert.falsy(loadingText("#tab2"))
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+		assert.equal(header("tab2:c_boe").points[1][5] - 20, at(button(2, 1))[2], "the ring sits in its category")
+		assert.equal("- New (0)", header("tab2:new").text.text, "not in New")
+	end)
+
+	-- Mutation: in GW.OnQueryEvent, never accept an empty read (`elseif false then`).
+	it("W3-30: a truly empty tab is known empty once its own retry reads empty too", function()
+		A.guild.slots[2] = {}
+		openVault()
+		fire()
+		A.Advance(0.06)
+		fire() -- tab 2's answer: empty, not believed yet
+		assert.truthy(loadingText("#tab2"))
+		A.Advance(GW.QUERY_GAP)
+		assert.same({ 1, 2, 2 }, A.guild.queried, "asked once more")
+		fire() -- the retry's answer: empty again
+		assert.equal("- Gear (0) - no withdrawals left today", header("#tab2").text.text)
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+	end)
+
+	-- Ruling W3-31. Mutation: in GW.OnQueryEvent, believe the first empty read
+	-- (`elseif true then` for the known-empty branch).
+	it("W3-31: an unconfirmed empty read never replaces a cached tab with items, nor its saved snapshot", function()
+		openVault()
+		answerQueries()
+		closeVault()
+		local g = SB.Config.db.guilds[KEY]
+		local saved = g.snapshot.containers[2].s
+		assert.truthy(saved:find("item:" .. Fixtures.BOE_RING, 1, true))
+		A.guild.slots[2] = {}
+		openVault()
+		fire()
+		A.Advance(0.06)
+		fire() -- tab 2 reads empty: unconfirmed
+		assert.equal(Fixtures.BOE_RING, button(2, 1).icon)
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+		closeVault()
+		A.Advance(2)
+		assert.equal(saved, g.snapshot.containers[2].s)
+	end)
+
+	-- Mutation: delete the `new and not hasItem(new) and hasItem(GW.cache[tab]) ...` guard in GW.Refresh.
+	it("W3-31: a tab that answered and later reads empty is asked again; only a confirmed empty read empties it", function()
+		openVault()
+		answerQueries()
+		A.guild.queried = {}
+		A.guild.slots[2] = {}
+		fire()
+		assert.equal(Fixtures.BOE_RING, button(2, 1).icon, "kept")
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+		assert.same({ 2 }, A.guild.queried, "asked again")
+		fire() -- its answer: empty, not believed yet
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+		A.Advance(GW.QUERY_GAP)
+		assert.same({ 2, 2 }, A.guild.queried)
+		fire() -- the retry reads empty too: the ring really left
+		assert.equal(1, #SB.Buttons.placeholdersInUse)
+	end)
+
+	-- Ruling W3-32. Mutations: delete the `key ~= GW.cacheKey` clear in GW.Open; or save under
+	-- SB.Adapter.GuildKey() instead of GW.cacheKey in GW.SaveSnapshot.
+	it("W3-32: after a guild switch nothing of the old guild is shown or saved under the new one", function()
+		openVault()
+		answerQueries()
+		closeVault()
+		A.guild.key = "Other-Realm"
+		A.Advance(2) -- the snapshot timer of the old visit runs out after the switch
+		assert.is_nil(SB.Config.db.guilds["Other-Realm"], "the old guild's tabs are not saved under the new one")
+		A.guild.slots = { [1] = { [3] = { itemID = Fixtures.JUNK, count = 2 } }, [2] = { [4] = { itemID = Fixtures.FLASK } } }
+		openVault()
+		for _, b in ipairs({ button(1, 1), button(1, 2), button(2, 1) }) do
+			assert.is_nil(rawget(b, "icon"))
+		end
+		assert.truthy(loadingText("#tab1"))
+		answerQueries()
+		assert.equal(Fixtures.JUNK, button(1, 3).icon)
+		assert.is_nil(rawget(button(1, 1), "icon"))
+		closeVault()
+		A.Advance(2)
+		local other = SB.Config.db.guilds["Other-Realm"]
+		assert.truthy(other.snapshot.containers[1].s:find("item:" .. Fixtures.JUNK, 1, true))
+		for _, c in pairs(other.snapshot.containers) do
+			for _, id in ipairs({ Fixtures.HERB, Fixtures.ORE, Fixtures.BOE_RING }) do
+				assert.falsy(c.s:find("item:" .. id .. ";", 1, true))
+			end
+		end
+	end)
+
+	-- Mutation: delete the PLAYER_GUILD_UPDATE handler's GW.ClearCache(nil) while closed.
+	it("W3-32: PLAYER_GUILD_UPDATE forgets the cached contents", function()
+		openVault()
+		answerQueries()
+		closeVault()
+		SB.eventFrame:Fire("PLAYER_GUILD_UPDATE")
+		openVault()
+		assert.is_nil(rawget(button(1, 1), "icon"))
+		assert.truthy(loadingText("#tab1"))
+	end)
+
+	-- Ruling W3-33. Mutation: make `loading(tab)` return false.
+	it("W3-33: right-click, left-click, drag and drop on a tab that has not answered refuse with a chat line", function()
+		openVault() -- tab 1 is asked; no answer yet
+		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		Fake.Fire(button(1, 1), "OnClick", "LeftButton")
+		Fake.Fire(button(1, 2), "OnDragStart")
+		Fake.Fire(button(1, 9), "OnReceiveDrag")
+		assert.same({}, A.guild.withdrawn)
+		assert.same({}, A.guild.picked)
+		local line = "Still loading Mats - try again in a moment."
+		assert.same({ line, line, line, line }, A.Lines())
+	end)
+
+	it("W3-33: a reopened tab that shows cached items refuses a withdraw until its answer arrives", function()
+		A.guild.tabs[2].withdrawals = 3
+		SB.Slash.Dispatch("guild anytab on")
+		openVault()
+		answerQueries()
+		closeVault()
+		openVault()
+		assert.equal(Fixtures.BOE_RING, button(2, 1).icon, "cached")
+		local n = #A.Lines()
+		Fake.Fire(button(2, 1), "OnClick", "RightButton")
+		assert.same({}, A.guild.withdrawn)
+		assert.equal("Still loading Gear - try again in a moment.", A.Lines()[n + 1])
+		answerQueries()
+		Fake.Fire(button(2, 1), "OnClick", "RightButton")
+		assert.same({ { 2, 1 } }, A.guild.withdrawn)
+	end)
+
+	-- Mutation: delete the `not sameItem(info, A.GuildSlot(tab, slot))` check in GW.ClickSlot.
+	it("W3-33: a right-click withdraws only if the slot still holds what is shown; else it refreshes and says so", function()
+		openVault()
+		answerQueries()
+		A.guild.slots[1][1] = { itemID = Fixtures.ORE, count = 1 } -- changed; its event has not arrived
+		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		assert.same({}, A.guild.withdrawn)
+		assert.same({ SB.L.GUILD_SLOT_CHANGED }, A.Lines())
+		assert.equal(Fixtures.ORE, button(1, 1).icon, "refreshed")
+		A.guild.slots[1][2] = nil -- taken; its event has not arrived
+		Fake.Fire(button(1, 2), "OnClick", "RightButton")
+		assert.same({}, A.guild.withdrawn)
+		assert.same({ SB.L.GUILD_SLOT_CHANGED, SB.L.GUILD_SLOT_CHANGED }, A.Lines())
+		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		assert.same({ { 1, 1 } }, A.guild.withdrawn, "it matches what is shown now")
+	end)
+
+	-- Ruling W3-34. Mutation: iterate `pairs(GW.cache)` in GW.SaveSnapshot with no answered / order test.
+	it("W3-34: a tab that did not answer this visit keeps its saved snapshot", function()
+		openVault()
+		answerQueries()
+		closeVault()
+		local g = SB.Config.db.guilds[KEY]
+		g.snapshot.containers[2] = { s = "earlier" }
+		openVault()
+		fire() -- tab 1 only
+		closeVault()
+		A.Advance(2)
+		assert.equal("earlier", g.snapshot.containers[2].s)
+		assert.truthy(g.snapshot.containers[1].s:find("item:" .. Fixtures.HERB, 1, true))
+	end)
+
+	it("W3-34: a tab that is no longer viewable is left out of the snapshot", function()
+		openVault()
+		answerQueries()
+		GW.SaveSnapshot()
+		local g = SB.Config.db.guilds[KEY]
+		g.snapshot.containers[2] = { s = "earlier" }
+		A.guild.tabs[2].viewable = false
+		SB.eventFrame:Fire("GUILDBANK_UPDATE_TABS")
+		closeVault()
+		A.Advance(2)
+		assert.equal("earlier", g.snapshot.containers[2].s)
+	end)
+
+	-- Mutation: delete the A.GuildPickup result check in GW.ClickSlot (the left-click path).
+	it("a left-click pickup the client refuses says so in chat (P2)", function()
+		openVault()
+		answerQueries()
+		A.GuildPickup = function() return false end
+		Fake.Fire(button(1, 2), "OnClick", "LeftButton")
+		assert.same({ SB.L.GUILD_ACTION_FAILED }, A.Lines())
+	end)
+
+	-- Spec 4.3 rule 5 / D17. Mutation: GW.view.RequestLayout("load") -> GW.view.Layout("load") in GW.Refresh.
+	it("a tab read for the first time is laid out only once the mouse has left the items (300 ms retry)", function()
+		openVault()
+		GW.scroll.mouseOver = true
+		fire() -- tab 1's answer
+		assert.equal("open", GW.view.stats.lastLayoutReason)
+		assert.is_nil(header("tab1:c_herbs"))
+		A.Advance(0.29)
+		assert.equal("open", GW.view.stats.lastLayoutReason, "held while the mouse is over")
+		GW.scroll.mouseOver = false
+		A.Advance(0.02)
+		assert.equal("load", GW.view.stats.lastLayoutReason)
+		assert.truthy(header("tab1:c_herbs"))
+	end)
 end)
 
 describe("GuildBankWindow load order", function()

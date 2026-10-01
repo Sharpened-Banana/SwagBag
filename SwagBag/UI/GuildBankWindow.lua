@@ -16,9 +16,15 @@
 -- after another) and are kept for the session, so a reopen shows them at once; a snapshot is
 -- saved per guild (AC16.4). Guild slot keys use bag 100 + tab.
 -- Queries go out one at a time: a GUILDBANKBAGSLOTS_CHANGED that arrives while tab T is being
--- queried is T's answer. Only tabs that answered during this visit are read, so a tab whose
--- answer is still on its way never looks empty. A tab that gets no answer in QUERY_GAP is
--- asked once more at the end of the queue.
+-- queried is T's answer if T then reads at least one item (ruling W3-30). An empty read is
+-- only believed once T's own retry reads empty too ("known empty"); until then T stays
+-- unanswered and its timeout moves the queue on. Only tabs that answered during this visit
+-- are read, so a tab whose answer is still on its way never looks empty, and an unconfirmed
+-- empty read never replaces a tab that had items (W3-31). A tab that gets no answer in
+-- QUERY_GAP is asked once more at the end of the queue.
+-- The cache belongs to one guild (GuildKey, W3-32). Slot actions wait until their tab has
+-- answered this visit, and a withdraw first re-reads the slot (W3-33). The snapshot holds
+-- only tabs answered this visit that are still viewable (W3-34).
 -- Hiding SwagBag's window (Esc, the X) while the vault is open makes Blizzard's guild bank
 -- visible again; nothing re-shrinks it until the next visit.
 local _, SB = ...
@@ -32,10 +38,13 @@ local GW = {
 	lastVisit = nil,
 	tabs = {}, -- [tab] = Adapter.GuildTabs entry (only tabs the guild owns)
 	order = {}, -- viewable tab numbers, ascending
-	cache = {}, -- [tab][slot] = Adapter.GuildSlot result, kept for the session
+	cache = {}, -- [tab][slot] = Adapter.GuildSlot result, kept for the session (one guild)
+	cacheKey = nil, -- the Adapter.GuildKey() the cache belongs to (ruling W3-32)
 	queue = {}, -- tabs still to query this visit
 	answered = {}, -- [tab] = true once its answer arrived this visit
 	retried = {}, -- [tab] = true once re-queued after a query got no answer
+	emptySeen = {}, -- [tab] = true once a read during its first query found no item (W3-30)
+	confirmedEmpty = {}, -- [tab] = true: its retry read empty too, an empty read may replace the cache
 	querying = nil,
 	BAG_BASE = 100, -- guild tab N is bag 100 + N in layout keys
 	QUERY_GAP = 0.3, -- seconds between two tab queries (and the wait if no answer comes)
@@ -283,6 +292,10 @@ local function readTab(tab)
 	return list
 end
 
+local function hasItem(list)
+	return type(list) == "table" and next(list) ~= nil
+end
+
 -- Query the selected tab first, then the others, one at a time: the next query goes out when
 -- the previous answer arrives (GUILDBANKBAGSLOTS_CHANGED) or QUERY_GAP later.
 local function timedOut()
@@ -292,6 +305,44 @@ local function timedOut()
 		GW.queue[#GW.queue + 1] = tab
 	end
 	GW.QueryNext()
+end
+
+-- Ruling W3-30: a GUILDBANKBAGSLOTS_CHANGED while tab is being queried. It is tab's answer
+-- only if tab now reads at least one item, or if this is tab's retry and its first query read
+-- empty too (known empty). Otherwise the tab stays unanswered and timedOut moves on.
+function GW.OnQueryEvent(tab)
+	if GW.answered[tab] then
+		return
+	end
+	if hasItem(readTab(tab)) then
+		GW.answered[tab] = true
+	elseif GW.retried[tab] and GW.emptySeen[tab] then
+		GW.answered[tab] = true
+		GW.confirmedEmpty[tab] = true
+	else
+		if not GW.retried[tab] then
+			GW.emptySeen[tab] = true
+		end
+		return
+	end
+	SB.Debounce("guild.queryNext", 0.05, GW.QueryNext, "bank")
+end
+
+-- Ask a tab again (it answered, but now reads empty while the cache has items: W3-31).
+function GW.Requery(tab)
+	GW.answered[tab], GW.retried[tab], GW.emptySeen[tab], GW.confirmedEmpty[tab] = nil, nil, nil, nil
+	if GW.querying == tab then
+		return
+	end
+	for _, t in ipairs(GW.queue) do
+		if t == tab then
+			return
+		end
+	end
+	GW.queue[#GW.queue + 1] = tab
+	if not GW.querying then
+		GW.QueryNext()
+	end
 end
 
 function GW.QueryNext()
@@ -305,7 +356,7 @@ function GW.QueryNext()
 end
 
 function GW.QueryAll()
-	GW.queue, GW.answered, GW.retried = {}, {}, {}
+	GW.queue, GW.answered, GW.retried, GW.emptySeen, GW.confirmedEmpty = {}, {}, {}, {}, {}
 	local first = SB.Adapter.GuildCurrentTab()
 	if first and GW.tabs[first] and GW.tabs[first].viewable then
 		GW.queue[1] = first
@@ -318,13 +369,26 @@ function GW.QueryAll()
 	GW.QueryNext()
 end
 
--- The tabs read this session, for the per-guild snapshot (AC16.4).
+-- The per-guild snapshot (AC16.4): only tabs that answered this visit and are still viewable
+-- (ruling W3-34), saved under the guild the cache belongs to (W3-32). A tab left out keeps
+-- its saved snapshot.
 function GW.SaveSnapshot()
-	local tabs = {}
-	for tab, slots in pairs(GW.cache) do
-		tabs[tab] = { name = tabName(tab), slots = slots }
+	local tabs, any = {}, false
+	for _, tab in ipairs(GW.order) do
+		if GW.answered[tab] and GW.cache[tab] then
+			tabs[tab] = { name = tabName(tab), slots = GW.cache[tab] }
+			any = true
+		end
 	end
-	return SB.Snapshots.SaveGuild(SB.Adapter.GuildKey(), tabs)
+	if not (any and GW.cacheKey) then
+		return false
+	end
+	return SB.Snapshots.SaveGuild(GW.cacheKey, tabs)
+end
+
+-- Forget the cached contents (another guild, or a guild change: ruling W3-32).
+function GW.ClearCache(key)
+	GW.cache, GW.cacheKey = {}, key
 end
 
 ---------------------------------------------------------------------------
@@ -476,9 +540,15 @@ function GW.Refresh()
 	local first = false
 	local byTab = {}
 	for _, tab in ipairs(GW.order) do
-		if GW.answered[tab] then
+		local new = GW.answered[tab] and readTab(tab)
+		if new and not hasItem(new) and hasItem(GW.cache[tab]) and not GW.confirmedEmpty[tab] then
+			GW.Requery(tab) -- an unconfirmed empty read never replaces a tab with items (W3-31)
+			new = nil
+		end
+		if new then
+			GW.confirmedEmpty[tab] = nil
 			first = first or GW.cache[tab] == nil
-			local old, new = GW.cache[tab] or {}, readTab(tab)
+			local old = GW.cache[tab] or {}
 			GW.cache[tab] = new
 			local bag = GW.BAG_BASE + tab
 			for slot = 1, A.GUILD_SLOTS do
@@ -524,7 +594,21 @@ local function slotInfo(tab, slot)
 	return GW.cache[tab] and GW.cache[tab][slot]
 end
 
--- Returns what happened: "link" | "view" | "empty" | "limit" | "tab" | "withdraw" | "pickup".
+-- Ruling W3-33: no action on a tab whose answer has not arrived this visit.
+local function loading(tab)
+	if GW.answered[tab] then
+		return false
+	end
+	SB.Print(L.GUILD_TAB_STILL_LOADING:format(tabName(tab)))
+	return true
+end
+
+local function sameItem(a, b)
+	return a ~= nil and b ~= nil and a.itemID == b.itemID and a.link == b.link
+end
+
+-- Returns what happened: "link" | "view" | "loading" | "empty" | "limit" | "tab" | "changed"
+-- | "withdraw" | "pickup".
 function GW.ClickSlot(tab, slot, mouseButton)
 	local A, info = SB.Adapter, slotInfo(tab, slot)
 	if info and A.ModifiedClick(info.link) then
@@ -533,6 +617,9 @@ function GW.ClickSlot(tab, slot, mouseButton)
 	if GW.VisitMode() == "view" then
 		SB.Print(L.GUILD_VIEW_ONLY)
 		return "view"
+	end
+	if loading(tab) then
+		return "loading"
 	end
 	if mouseButton ~= "RightButton" then
 		if not A.GuildPickup(tab, slot) then
@@ -552,6 +639,11 @@ function GW.ClickSlot(tab, slot, mouseButton)
 		SB.Print(L.GUILD_SELECT_TAB_FIRST:format(tabName(tab)))
 		return "tab"
 	end
+	if not sameItem(info, A.GuildSlot(tab, slot)) then -- W3-33: the slot changed under us
+		GW.Refresh()
+		SB.Print(L.GUILD_SLOT_CHANGED)
+		return "changed"
+	end
 	if not A.GuildWithdraw(tab, slot) then
 		SB.Print(L.GUILD_ACTION_FAILED)
 	end
@@ -561,6 +653,9 @@ end
 function GW.DragSlot(tab, slot)
 	if GW.VisitMode() == "view" then
 		SB.Print(L.GUILD_VIEW_ONLY)
+		return false
+	end
+	if loading(tab) then
 		return false
 	end
 	if not SB.Adapter.GuildPickup(tab, slot) then
@@ -591,6 +686,10 @@ function GW.Open()
 	if not SB.GuildButtons.Ensure(GW.order) then
 		SB.Print(L.GUILD_COMBAT_WAIT)
 		return false
+	end
+	local key = SB.Adapter.GuildKey()
+	if key ~= GW.cacheKey then -- another guild's contents are never shown (W3-32)
+		GW.ClearCache(key)
 	end
 	GW.viewButton:SetText(GW.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	frame:Show()
@@ -632,9 +731,7 @@ function GW.OnClosed()
 	GW.interaction, GW.visit = false, nil
 	frame:Hide()
 	host.Restore()
-	if next(GW.cache) then
-		GW.SaveSnapshot()
-	end
+	GW.SaveSnapshot()
 end
 
 -- Blizzard's guild bank UI loads on demand; hook its OnShow once it exists.
@@ -693,8 +790,7 @@ SB.On("GUILDBANKBAGSLOTS_CHANGED", function()
 	GW.ReadTabs()
 	SB.GuildButtons.Ensure(GW.order) -- a tab that became viewable; missing buttons are skipped
 	if GW.querying then
-		GW.answered[GW.querying] = true
-		SB.Debounce("guild.queryNext", 0.05, GW.QueryNext, "bank")
+		GW.OnQueryEvent(GW.querying)
 	end
 	GW.Refresh()
 	GW.RefreshTarget()
@@ -719,6 +815,24 @@ end, "bank")
 
 SB.On("PLAYER_LOGOUT", function()
 	host.Restore()
+end, "bank")
+
+-- The player joined, left or changed guild: forget the cached contents (ruling W3-32). The
+-- event also fires for other guild updates: during an open visit the cache is dropped only
+-- if the guild is no longer the one it belongs to, and the visit then queries again.
+SB.On("PLAYER_GUILD_UPDATE", function()
+	if not (GW.interaction and frame:IsShown()) then
+		GW.ClearCache(nil)
+		GW.answered = {}
+		return
+	end
+	local key = SB.Adapter.GuildKey()
+	if key ~= GW.cacheKey then
+		GW.ClearCache(key)
+		GW.answered = {}
+		GW.view.RequestLayout("guild")
+		GW.QueryAll()
+	end
 end, "bank")
 
 SB.On("SB_SAFEMODE_CHANGED", function(_, window, on)

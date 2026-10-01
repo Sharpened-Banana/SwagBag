@@ -95,6 +95,7 @@ function Items.DescribeLink(info, bag, slot, tab)
 	local inst = A.GetItemInstant(info.itemID) or {}
 	local data = A.GetItemInfo(info.itemID)
 	local link = info.link or ""
+	local track, hasTrack = A.UpgradeInfo(info.link)
 	local r = {
 		bag = bag,
 		slot = slot,
@@ -111,8 +112,8 @@ function Items.DescribeLink(info, bag, slot, tab)
 		isWUE = false,
 		onCooldown = false,
 		inEquipmentSet = false,
-		hasUpgradeTrack = false,
-		track = A.UpgradeInfo(info.link),
+		hasUpgradeTrack = hasTrack == true,
+		track = track,
 		hasNoValue = false,
 		isUsable = A.IsUsable(info.itemID),
 		isToy = A.IsToy(info.itemID),
