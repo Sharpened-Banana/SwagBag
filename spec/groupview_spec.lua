@@ -347,6 +347,18 @@ describe("GroupView", function()
 		assert.falsy(btn(6, 1).shown, "collapsed once the cursor was empty")
 	end)
 
+	-- W3-24 through the right-button path (headers take right-clicks since week 4, a11).
+	it("a right-click with an item on the cursor on a group header collapses it, never drops", function()
+		local dropped = {}
+		f.cfg.onDrop = function(sid) dropped[#dropped + 1] = sid end
+		v.Layout("open")
+		A.cursor = { itemID = Fixtures.JUNK }
+		local h = header("#bank")
+		h.scripts.OnClick(h, "RightButton")
+		assert.equal(true, SB.Config.UI().collapsed["bank:#"].bank)
+		assert.same({}, dropped)
+	end)
+
 	-- Ruling W3-23. Mutation: drop `window` from GroupView's AcquirePlaceholder call.
 	it("an error in a group view placeholder's tooltip is trapped as the view's window", function()
 		v.Layout("open")

@@ -635,15 +635,26 @@ function W.Restack(area)
 	return true
 end
 
--- The user's own collapse/expand, saved per character (no focus mode applies).
-function W.ToggleSection(id)
-	local set = W.Collapsed()
-	set[id] = not set[id] or nil
-	W.Restack()
+local function flashSection(text, id)
+	W.Flash(text:format(SB.Categories.Name(id)))
 end
 
-local function flashSection(key, id)
-	W.Flash(L[key]:format(SB.Categories.Name(id)))
+-- The user's own collapse/expand, saved per character (no focus mode applies, or paused). It
+-- flips what is DRAWN (W.view), not the saved set: while a mode exit or a pause waits under the
+-- mouse, the drawn header is still the mode's, and the user answers what they see (W4-16).
+-- Outside such a hold W.view equals the saved set. A held re-stack answers in the title (P2).
+function W.ToggleSection(id)
+	local set = W.Collapsed()
+	local drawn
+	if W.view then
+		drawn = W.view[id] == true
+	else
+		drawn = set[id] == true
+	end
+	set[id] = (not drawn) or nil
+	if not W.Restack() then
+		flashSection(drawn and L.HEADER_FLASH_OPEN or L.HEADER_FLASH_COLLAPSED, id)
+	end
 end
 
 -- A left-click on a header. While a focus mode applies it peeks a section drawn collapsed, or
@@ -661,11 +672,11 @@ function W.ClickSection(id)
 	end
 	W.Restack(id)
 	if result == "close" then
-		flashSection("HEADER_FLASH_CLOSED", id)
+		flashSection(L.HEADER_FLASH_CLOSED, id)
 	elseif F.OverrideOf(id) == "pin" then
-		flashSection("HEADER_FLASH_KEPT", id)
+		flashSection(L.HEADER_FLASH_KEPT, id)
 	else
-		flashSection("HEADER_FLASH_PEEK", id)
+		flashSection(L.HEADER_FLASH_PEEK, id)
 	end
 end
 
@@ -679,7 +690,7 @@ function W.PinSection(id)
 		return
 	end
 	W.Restack(id)
-	flashSection(result == "pin" and "HEADER_FLASH_KEPT" or "HEADER_FLASH_UNPINNED", id)
+	flashSection(result == "pin" and L.HEADER_FLASH_KEPT or L.HEADER_FLASH_UNPINNED, id)
 end
 
 -- A full layout moves many buttons, so it waits while an item is on the cursor or the

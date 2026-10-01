@@ -300,6 +300,16 @@ describe("BankWindow contents", function()
 		assert.equal(10, #labels())
 	end)
 
+	-- Preflight a11: headers take right-clicks for focus pins; the bank view ignores the button, so a
+	-- right-click is a plain click there. Mutation: GroupView owner.onClick returns on "RightButton".
+	it("a right-click on a bank section header collapses it like a left-click (a11)", function()
+		openBank()
+		header("bank:c_herbs").scripts.OnClick(header("bank:c_herbs"), "RightButton")
+		assert.equal("+ Herbs (1)", header("bank:c_herbs").text.text)
+		header("bank:c_herbs").scripts.OnClick(header("bank:c_herbs"), "RightButton")
+		assert.equal("- Herbs (1)", header("bank:c_herbs").text.text)
+	end)
+
 	it("closing the bank forgets the layout; the next visit rebuilds it and keeps collapse state", function()
 		openBank()
 		header("bank:c_herbs").scripts.OnClick(header("bank:c_herbs"))

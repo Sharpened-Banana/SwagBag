@@ -1028,6 +1028,16 @@ describe("GuildBankWindow (check G1)", function()
 		A.Advance(0.3)
 		assert.truthy(header("tab1:c_herbs").text.text:find("+", 1, true), header("tab1:c_herbs").text.text)
 	end)
+
+	-- Preflight a11: a right-click on a guild bank header is a plain click (collapse/expand).
+	it("a11: a right-click on a guild bank section header collapses it", function()
+		openVault()
+		answerQueries()
+		local h = header("tab1:c_herbs")
+		h.scripts.OnClick(h, "RightButton")
+		assert.truthy(GW.view.Collapsed("tab1").c_herbs)
+		assert.truthy(header("tab1:c_herbs").text.text:find("+", 1, true), header("tab1:c_herbs").text.text)
+	end)
 end)
 
 describe("GuildBankWindow load order", function()

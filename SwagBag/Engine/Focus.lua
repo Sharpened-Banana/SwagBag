@@ -426,7 +426,11 @@ SB.Slash.Register("mode", SB.L.HELP_MODE, function(arg)
 	elseif arg == "list" then
 		return Focus.ListLines()
 	end
-	return L.MODE_STATUS:format(Focus.Label() or L.FOCUS_NONE)
+	local status = L.MODE_STATUS:format(Focus.Label() or L.FOCUS_NONE)
+	if arg ~= "" then
+		return { status, L.MODE_USAGE } -- an unknown word: the status, and how to type it (P2)
+	end
+	return status
 end, "bags")
 
 -- Any focus setting changed, by a writer above, a character override, a reset or a new Init: the

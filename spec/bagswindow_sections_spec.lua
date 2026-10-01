@@ -1558,6 +1558,52 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.equal("- Consumables (2)  (peek - right-click keeps it open)", header("c_consumables").text.text)
 	end)
 
+	-- Ruling W4-16. Mutation: in W.ToggleSection, `set[id] = (not drawn) or nil` -> `not set[id] or nil`.
+	it("mode ends while held; a click on a header drawn '+' saves it open", function()
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		assert.equal("+ Junk (1)", header("c_junk").text.text)
+		W.scroll.mouseOver = true
+		F.SetSignal("challengeMode", false) -- the user's own (all open) state waits for the mouse
+		assert.equal("+ Junk (1)", header("c_junk").text.text, "held")
+		click("c_junk")
+		assert.same({}, SB.Config.UI().collapsed.bags, "drawn '+': the click opens it")
+		assert.equal(SB.L.HEADER_FLASH_OPEN:format("Junk"), W.frame.title.text, "a held click answers")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("- Junk (1)", header("c_junk").text.text)
+	end)
+
+	it("pause while held; a click on a header drawn '-' saves it collapsed and answers", function()
+		W.Open()
+		local ring = B.Get(0, 3)
+		ring.mouseOver = true
+		F.SetSignal("challengeMode", true) -- held
+		F.Pause() -- still held: the drawn view is the user's own, all open
+		click("c_gear")
+		assert.same({ c_gear = true }, SB.Config.UI().collapsed.bags)
+		assert.equal(SB.L.HEADER_FLASH_COLLAPSED:format("Gear"), W.frame.title.text)
+		ring.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("+ Gear (1)", header("c_gear").text.text)
+	end)
+
+	it("a left-click while paused writes the user's own saved set", function()
+		F.SetSignal("challengeMode", true)
+		F.Pause()
+		W.Open()
+		click("c_junk")
+		assert.equal("+ Junk (1)", header("c_junk").text.text)
+		assert.same({ c_junk = true }, SB.Config.UI().collapsed.bags)
+		assert.is_nil(F.OverrideOf("c_junk"))
+	end)
+
+	it("/swagbag mode with an unknown word answers with the status and the usage", function()
+		F.SetSignal("challengeMode", true)
+		SB.Slash.Dispatch("mode fly")
+		assert.same({ "Focus mode now: M+. Type /swagbag mode pause, resume or list.", SB.L.MODE_USAGE }, A.Lines())
+	end)
+
 	it("AC8.5: the title names the mode, before the item level", function()
 		A.avgIlvl = 279.44
 		F.SetSignal("fishing", true)
