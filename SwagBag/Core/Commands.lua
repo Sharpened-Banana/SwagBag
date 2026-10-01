@@ -1,5 +1,5 @@
 -- SwagBag week-1 slash commands: safe, report, check, reset, debug.
--- (help lives in Core/Slash.lua; search is registered by UI/Search.lua.)
+-- (help lives in Core/Slash.lua; search is registered by UI/SearchBox.lua.)
 local _, SB = ...
 
 local L = SB.L

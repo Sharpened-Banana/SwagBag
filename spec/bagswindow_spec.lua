@@ -180,6 +180,14 @@ describe("BagsWindow", function()
 		assert.equal(1, updated)
 	end)
 
+	it("hiding the window (Esc, X or Close) emits SB_BAGS_CLOSED", function()
+		local closed = 0
+		SB.On("SB_BAGS_CLOSED", function() closed = closed + 1 end)
+		W.Open()
+		W.frame.scripts.OnHide(W.frame)
+		assert.equal(1, closed)
+	end)
+
 	it("runs its handlers inside the error trap", function()
 		W.Open()
 		SB.Items.Describe = function() error("boom") end

@@ -35,6 +35,11 @@ end
 W.frame = frame
 table.insert(UISpecialFrames, "SwagBagBagsWindow")
 
+-- Esc, the X button and W.Close() all hide the frame; listeners forget per-open state.
+frame:SetScript("OnHide", SB.ErrorTrap.Guard("bags.hide", function()
+	SB.Emit("SB_BAGS_CLOSED")
+end, "bags"))
+
 frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 frame.title:SetPoint("TOPLEFT", 10, -8)
 frame.title:SetText(L.BAGS_TITLE)
