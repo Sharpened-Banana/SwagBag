@@ -110,5 +110,9 @@ function Report.Build()
 		lines[#lines + 1] = L.REPORT_BANK:format(bank.Mode(), tostring(bank.lastVisit or L.REPORT_NONE),
 			bank.target and bank.GroupName(bank.target) or L.REPORT_NONE)
 	end
+	local guild = SB.GuildBankWindow
+	if guild then
+		lines[#lines + 1] = L.REPORT_GUILD:format(guild.Mode(), tostring(guild.lastVisit or L.REPORT_NONE))
+	end
 	return table.concat(lines, "\n")
 end

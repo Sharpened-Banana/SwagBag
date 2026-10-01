@@ -46,6 +46,8 @@ UI/SafeModeHooks.lua
 UI/SearchBox.lua
 UI/TinyHost.lua
 UI/BankWindow.lua
+UI/GuildButtons.lua
+UI/GuildBankWindow.lua
 UI/DebugV1.lua
 
 # Start-up (keep last)
