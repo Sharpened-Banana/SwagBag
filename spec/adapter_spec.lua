@@ -32,4 +32,11 @@ describe("Adapter cursor and sort helpers", function()
 		assert.truthy(A.SortBags())
 		assert.same({ 1, 1 }, { cleared, sorted })
 	end)
+
+	it("SortBags returns false and the error when the game call throws", function()
+		C_Container = { SortBags = function() error("boom") end }
+		local ok, err = A.SortBags()
+		assert.equal(false, ok)
+		assert.truthy(err)
+	end)
 end)

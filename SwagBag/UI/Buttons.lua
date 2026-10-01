@@ -164,12 +164,18 @@ Buttons.placeholderPool, Buttons.placeholdersInUse = {}, {}
 Buttons.PLACEHOLDER_ALPHA = 0.5
 
 local function placeholderTip(self)
+	if not GameTooltip then
+		return
+	end
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 	GameTooltip:SetText(SB.L.PLACEHOLDER_TIP, 1, 1, 1, 1, true)
 	GameTooltip:Show()
 end
 
 local function hideTip()
+	if not GameTooltip then
+		return
+	end
 	GameTooltip:Hide()
 end
 
@@ -190,6 +196,7 @@ end
 -- A shown placeholder of `size` at TOPLEFT offset (x, y) inside parent.
 function Buttons.AcquirePlaceholder(parent, icon, size, x, y)
 	local p = table.remove(Buttons.placeholderPool) or createPlaceholder(parent)
+	p:SetParent(parent)
 	p:SetSize(size, size)
 	p.icon:SetTexture(icon)
 	p:ClearAllPoints()

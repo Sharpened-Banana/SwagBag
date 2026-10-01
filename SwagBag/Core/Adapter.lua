@@ -337,12 +337,12 @@ function A.ClearCursor()
 	end
 end
 
--- Blizzard's own bag sort. Returns true if it was started.
+-- Blizzard's own bag sort. Returns ok, err: ok is true if the call did not throw.
 function A.SortBags()
 	if not (C_Container and C_Container.SortBags) then
 		return false
 	end
-	return (pcall(C_Container.SortBags))
+	return pcall(C_Container.SortBags)
 end
 
 ---------------------------------------------------------------------------

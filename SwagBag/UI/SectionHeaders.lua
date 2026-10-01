@@ -47,6 +47,7 @@ end
 -- A shown header for sectionId at (x, y) inside parent.
 function H.Acquire(parent, sectionId, label, x, y, width)
 	local h = table.remove(H.pool) or create(parent)
+	h:SetParent(parent)
 	h.sectionId = sectionId
 	h.text:SetText(label)
 	h:SetWidth(width)
