@@ -21,6 +21,8 @@ local function clean(err)
 	return tostring(err)
 end
 
+ET.Clean = clean
+
 function ET.Trim()
 	while #ET.buffer > ET.MAX do
 		table.remove(ET.buffer, 1)

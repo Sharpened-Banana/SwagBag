@@ -59,11 +59,21 @@ local function remember(id, key, value)
 	queueId[tail], queueKey[tail] = id, key
 end
 
-local function fail(c, err)
-	local message = tostring(err)
+local function fail(c, message, stack)
 	if SB.Categories.MarkFailed(c.id, message) then
-		pcall(SB.ErrorTrap.OnError, "category:" .. c.id, "none", message, "")
+		pcall(SB.ErrorTrap.OnError, "category:" .. c.id, "none", message, stack or "")
 	end
+end
+
+local caught
+local function handler(err)
+	local okS, st = pcall(SB.Adapter.Stack)
+	caught = { message = SB.ErrorTrap.Clean(err), stack = okS and st or "" }
+	return caught
+end
+
+local function evalCompiled(compiled, record)
+	return SB.Query.Eval(compiled, record)
 end
 
 -- One category's rule for one record: true | false | nil. Never throws.
@@ -82,9 +92,10 @@ local function rule(c, record)
 		end
 	end
 	Z.stats.misses = Z.stats.misses + 1
-	local ok, v = pcall(SB.Query.Eval, c.compiled, record)
+	local ok, v = xpcall(evalCompiled, handler, c.compiled, record)
 	if not ok then
-		fail(c, v)
+		v = v or caught or { message = "error in error handler", stack = "" }
+		fail(c, v.message, v.stack)
 		return false
 	end
 	if key ~= nil and v ~= nil then

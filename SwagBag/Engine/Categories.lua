@@ -94,6 +94,12 @@ function C.Load()
 	local db = SB.Config.db or {}
 	local edits = type(db.userEdits) == "table" and db.userEdits or {}
 	local users = type(db.categories) == "table" and db.categories or {}
+	local failed = {}
+	for id, old in pairs(C.byId) do
+		if old.runtimeError then
+			failed[id] = { query = old.query, runtimeError = old.runtimeError }
+		end
+	end
 	C.list, C.byId = {}, {}
 	for _, def in ipairs(SB.CategoryDefaults) do
 		local c = build(def, edits[def.id], true)
@@ -116,6 +122,13 @@ function C.Load()
 		local c = build(def, nil, false)
 		C.list[#C.list + 1] = c
 		C.byId[id] = c
+	end
+	-- A rule that threw stays failed (recorded once) until its query text changes.
+	for id, f in pairs(failed) do
+		local c = C.byId[id]
+		if c and c.query == f.query then
+			c.runtimeError = f.runtimeError
+		end
 	end
 	C.byPriority = {}
 	for i, c in ipairs(C.list) do
