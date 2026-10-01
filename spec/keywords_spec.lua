@@ -247,4 +247,26 @@ describe("Keywords (v1.0, week-1 families)", function()
 			end
 		end
 	end)
+
+	it("crest: the season's item IDs, else a crest or valorstone name, never gear, never 'unknown'", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Crests.lua")
+		local A = SB.Adapter
+		A.AddItem(500001, { name = "Gilded Harbinger Crest", classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0,
+			quality = 4, maxStack = 99, bind = "pickup" })
+		A.AddItem(500002, { name = "Crest of the Tides", classID = A.ITEM_CLASS.Armor, subclassID = 1,
+			equipLoc = "INVTYPE_CLOAK", quality = 3, ilvl = 280, maxStack = 1, bind = "equip" })
+		A.AddItem(500003, { name = "Shiny Token", classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0, quality = 3 })
+		A.AddItem(500004, { classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0, pending = true })
+		SB.Crests.ids[500003] = true
+		A.SetBagSize(1, 4)
+		for i = 1, 4 do
+			A.Put(1, i, 500000 + i, 1)
+		end
+		local q = Q.Compile("crest")
+		local function at(slot)
+			return Q.Eval(q, SB.Items.Describe(1, slot))
+		end
+		assert.same({ true, false, true, false }, { at(1), at(2), at(3), at(4) })
+		assert.equal(true, Q.Eval(Q.Compile("upgrade currency"), SB.Items.Describe(1, 1)))
+	end)
 end)

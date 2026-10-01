@@ -201,6 +201,11 @@ L.GUILD_ACTION_FAILED = "The guild bank did not accept that click. Try again, or
 L.GUILD_MODE_SAVED_NEXT = "Guild bank: saved; it applies on your next guild bank visit."
 L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
 
+-- Overlays (spec F9)
+L.OVERLAY_TRACK = "%s%d/%d"
+L.BADGE_BOE = "BoE"
+L.BADGE_WUE = "WuE"
+
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
 L.V1_SHOWN = "V1 strip shown with %d usable items. Enter combat, right-click them 3 times, then /swagbag report."

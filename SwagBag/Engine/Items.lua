@@ -15,6 +15,8 @@
 --   isUsable, isToy, isQuestItem, isKeystone, isCagedPet, isNew    booleans
 --   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"
 --   tab             bank tab number (1-based) | nil
+--   track           { track, level, max } upgrade track | nil (overlays)
+--   hasNoValue      boolean: a vendor pays nothing for it
 --   pending         true while the item's data has not loaded
 -- }
 local _, SB = ...
@@ -51,6 +53,8 @@ function Items.Describe(bag, slot)
 		onCooldown = A.IsOnCooldown(bag, slot),
 		inEquipmentSet = A.InEquipmentSet(bag, slot),
 		hasUpgradeTrack = A.HasUpgradeTrack(bag, slot),
+		track = A.UpgradeInfo(s.link),
+		hasNoValue = s.hasNoValue == true,
 		isUsable = A.IsUsable(s.itemID),
 		isToy = A.IsToy(s.itemID),
 		isQuestItem = A.IsQuestItem(bag, slot) or inst.classID == A.ITEM_CLASS.Questitem,

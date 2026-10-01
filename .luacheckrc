@@ -22,6 +22,7 @@ read_globals = {
 	"GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink", "QueryGuildBankTab",
 	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
 	"IsModifiedClick", "HandleModifiedItemClick",
+	"C_ChallengeMode", "C_PlayerInfo", "GetInventoryItemLink",
 }
 
 files["spec/"] = {

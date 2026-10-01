@@ -4,7 +4,7 @@
 -- Aliases include Syndicator's English spellings used by published Baganator category
 -- strings (desk spike F, docs/research/2026-10-syndicator-grammar-diff.md).
 -- Not yet registered (need later modules): expansion, gold/value, crafting quality,
--- collection, crest / upgrade currency.
+-- collection.
 local _, SB = ...
 
 local K = {}
@@ -90,6 +90,26 @@ function K.RegisterAll()
 	kw("keystone", "instance", function(r)
 		return r.isKeystone == true
 	end)
+	-- Crests and other upgrade currency items (spec 7.3): the season's item IDs, else a name
+	-- word from the data file (Engine/Crests.lua). Gear is never a crest. A loading item with an
+	-- unknown ID is "not a crest" rather than "unknown": the rule sits in Keystone & Crests
+	-- (priority 95), and an unknown there would hold every loading item in New (spec 7.7 D3).
+	kw("crest", "static", function(r)
+		local list = SB.Crests or { ids = {}, words = {} }
+		if list.ids[r.itemID] then
+			return true
+		end
+		if isGear(r) or r.name == nil then
+			return false
+		end
+		local name = r.name:lower()
+		for _, word in ipairs(list.words) do
+			if name:find(word, 1, true) then
+				return true
+			end
+		end
+		return false
+	end, { "upgrade currency" })
 	kw("pet", "instance", function(r)
 		return r.isCagedPet == true or r.classID == C.Battlepet
 			or (r.classID == C.Miscellaneous and r.subclassID == MS.CompanionPet)

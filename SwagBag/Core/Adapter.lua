@@ -280,6 +280,74 @@ function A.HasUpgradeTrack(bag, slot)
 	return (info.maxLevel or info.maxUpgradeLevel or 0) > 0 or (info.trackString or "") ~= ""
 end
 
+-- Upgrade track of an item link: { track = "Hero", level = 3, max = 6 }, or nil when the
+-- item has none (or the API is missing). Real API only; no tooltip reading (spec P7).
+function A.UpgradeInfo(link)
+	if type(link) ~= "string" or not (C_Item and C_Item.GetItemUpgradeInfo) then
+		return nil
+	end
+	local ok, info = pcall(C_Item.GetItemUpgradeInfo, link)
+	if not ok or type(info) ~= "table" then
+		return nil
+	end
+	local track, level, max = info.trackString, info.currentLevel, info.maxLevel or info.maxUpgradeLevel
+	if type(track) ~= "string" or track == "" or isSecret(track) or type(level) ~= "number" or type(max) ~= "number" then
+		return nil
+	end
+	return { track = track, level = level, max = max }
+end
+
+-- Name of a Mythic+ dungeon (keystone link map ID), or nil.
+function A.DungeonName(mapID)
+	if not (C_ChallengeMode and C_ChallengeMode.GetMapUIInfo) then
+		return nil
+	end
+	local ok, name = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
+	if ok and type(name) == "string" and not isSecret(name) then
+		return name
+	end
+	return nil
+end
+
+-- What the character wears: [inventory slot 1-17] = { ilvl, equipLoc } (nil = empty slot).
+function A.EquippedItems()
+	local out = {}
+	for slot = 1, 17 do
+		local okL, link = pcall(GetInventoryItemLink, "player", slot)
+		if okL and type(link) == "string" and not isSecret(link) then
+			local inst = A.GetItemInstant(link)
+			local okI, ilvl = pcall(function()
+				return C_Item.GetCurrentItemLevel(ItemLocation:CreateFromEquipmentSlot(slot))
+			end)
+			out[slot] = { ilvl = (okI and type(ilvl) == "number" and not isSecret(ilvl)) and ilvl or 0,
+				equipLoc = inst and inst.equipLoc or "" }
+		end
+	end
+	return out
+end
+
+-- True unless the client says this character cannot use the item (feature-detected).
+function A.CanUse(itemID)
+	if not (C_PlayerInfo and C_PlayerInfo.CanUseItem) then
+		return true
+	end
+	local ok, yes = pcall(C_PlayerInfo.CanUseItem, itemID)
+	return not ok or yes ~= false
+end
+
+-- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
+function A.PawnUpgrade(bag, slot)
+	local fn = _G.PawnIsContainerItemAnUpgrade
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, yes = pcall(fn, bag, slot)
+	if not ok then
+		return nil
+	end
+	return yes and true or false
+end
+
 function A.IsOnCooldown(bag, slot)
 	local ok, start, duration, enable = pcall(C_Container.GetContainerItemCooldown, bag, slot)
 	if not ok or isSecret(start) or isSecret(duration) then
@@ -566,6 +634,9 @@ A.CHECKS = {
 	{ path = "Enum.ItemBind", window = "bags", required = false },
 	{ path = "Enum.AddOnRestrictionType", window = "bags", required = false },
 	{ path = "C_ChallengeMode.IsChallengeModeActive", window = "bags", required = false },
+	{ path = "C_ChallengeMode.GetMapUIInfo", window = "bags", required = false },
+	{ path = "C_PlayerInfo.CanUseItem", window = "bags", required = false },
+	{ path = "GetInventoryItemLink", window = "bags", required = false },
 	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
 	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
 	{ path = "GetGuildBankItemLink", window = "bank", required = false },
