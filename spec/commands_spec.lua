@@ -91,6 +91,15 @@ describe("Commands", function()
 		assert.same({ SB.L.RESET_DONE }, A.Lines())
 	end)
 
+	it("DoReset reloads the categories from the fresh tables and closes the bags window (M1)", function()
+		local loads, closes = 0, 0
+		SB.Categories = { Load = function() loads = loads + 1 end }
+		SB.BagsWindow = { Close = function() closes = closes + 1 end }
+		SB.Commands.DoReset()
+		assert.equal(1, loads)
+		assert.equal(1, closes)
+	end)
+
 	it("DoReset on a newer schema replaces the saved tables with a backup-carrying fresh pair", function()
 		local newer = { schemaVersion = 7 }
 		SB.Config.Init(newer, nil)

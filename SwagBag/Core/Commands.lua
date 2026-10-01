@@ -53,6 +53,12 @@ end)
 function Commands.DoReset()
 	SwagBagDB, SwagBagCharDB = SB.Config.Reset()
 	SB.ErrorTrap.Attach(SwagBagDB.errors)
+	if SB.Categories then
+		SB.Categories.Load()
+	end
+	if SB.BagsWindow and SB.BagsWindow.Close then
+		SB.BagsWindow.Close()
+	end
 	SB.Print(L.RESET_DONE)
 end
 
