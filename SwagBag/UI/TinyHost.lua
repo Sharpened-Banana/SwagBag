@@ -3,9 +3,11 @@
 -- right-clicked bag item goes) only exists while it is shown. So SwagBag parents it to a
 -- 1x1 frame at scale 0.001: still shown, but invisible. Blizzard's own tab buttons are
 -- moved onto SwagBag's window, so a tab click still runs Blizzard's own code.
--- SwagBag changes only parents and anchors, and Restore puts every frame back exactly as
--- it was (parent and every anchor point). Parents change out of combat only: Shrink and
--- Rehost refuse in combat; Restore waits for combat to end (spec 13.2 item 5).
+-- SwagBag changes only parents and anchors. Shrink changes the PARENT only, and Restore gives
+-- back only that parent: Blizzard keeps (and may change) its own frame's anchors. Rehost also
+-- re-anchors, so Restore puts a re-hosted frame's parent and every anchor point back exactly.
+-- Parents change out of combat only: Shrink and Rehost refuse in combat; Restore waits for
+-- combat to end (spec 13.2 item 5).
 --   local host = SB.TinyHost.New(label, window)
 --   host.Shrink(frame) -> true | false     keep frame shown but invisible
 --   host.Rehost(frame, onto, place) -> true | false   move frame onto `onto`, place(frame) anchors it
@@ -51,11 +53,16 @@ function TinyHost.New(label, window)
 	local h = { entries = {}, byFrame = {}, gen = 0 }
 
 	-- Remember where a frame lives, once (a second move must not save SwagBag's own parent).
-	local function remember(frame)
-		if not h.byFrame[frame] then
-			local e = { frame = frame, parent = frame:GetParent(), points = savePoints(frame) }
+	-- withPoints: also save its anchors (Rehost only; a shrunk frame's anchors are Blizzard's).
+	local function remember(frame, withPoints)
+		local e = h.byFrame[frame]
+		if not e then
+			e = { frame = frame, parent = frame:GetParent() }
 			h.entries[#h.entries + 1] = e
 			h.byFrame[frame] = e
+		end
+		if withPoints and not e.points then
+			e.points = savePoints(frame)
 		end
 	end
 
@@ -74,7 +81,7 @@ function TinyHost.New(label, window)
 		if not frame or SB.Adapter.InCombat() then
 			return false
 		end
-		remember(frame)
+		remember(frame, true)
 		frame:SetParent(onto)
 		frame:ClearAllPoints()
 		place(frame)
@@ -100,7 +107,9 @@ function TinyHost.New(label, window)
 			for i = #h.entries, 1, -1 do
 				local e = h.entries[i]
 				e.frame:SetParent(e.parent)
-				restorePoints(e.frame, e.points)
+				if e.points then
+					restorePoints(e.frame, e.points)
+				end
 				h.entries[i] = nil
 				h.byFrame[e.frame] = nil
 			end

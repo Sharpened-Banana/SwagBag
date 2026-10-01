@@ -1408,32 +1408,38 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 - [ ] **Step 7: In-game session V2 (the user does this on Oct 15; about 10 minutes)**
 
-Give the user this checklist exactly. You need:
+Give the user this checklist exactly.
+
+You need:
 - a banker nearby;
 - two cheap gray (junk) items in your bags that you do not mind moving;
 - your Hearthstone in your bags;
+- your Hearthstone is not on cooldown;
 - not to be in a group.
 
-1. Quit the game completely and start it again (new files need a full restart, not `/reload`). Log in. Chat shows `SwagBag: v0.3.0 loaded. Type /swagbag help for commands.`
+Blizzard's bank tabs carry Blizzard's own labels, not SwagBag's: the character bank tab is labelled Bank and the warband tab is labelled Warband Bank.
+
+1. Quit the game completely and restart it. This task adds new files, so `/reload` is not enough. Log in. Chat shows `SwagBag: v0.3.0 loaded. Type /swagbag help for commands.`
 2. Talk to the banker. Blizzard's bank window does **not** appear. A small dark window titled `SwagBag bank` appears instead, with a `Blizzard bank` button at its top right. It is empty for now (the bank's items come later this week). Blizzard's own bank tabs hang under its bottom edge, and your SwagBag bags open too.
 3. The second line of the SwagBag bank window says `Deposits go to Character bank - switch with the tabs below` (or `Deposits go to Warband bank - switch with the tabs below` if the warband tab was selected last time).
-4. Click the warband tab under the SwagBag bank window. The line now says `Deposits go to Warband bank - switch with the tabs below`.
-5. In your SwagBag bags, right-click one gray item. It leaves your bags (a faded copy stays where it was). Move the mouse off it.
+4. Click the tab labelled Warband Bank under the SwagBag bank window. The line now says `Deposits go to Warband bank - switch with the tabs below`.
+5. In your SwagBag bags, right-click one gray item. It leaves your bags (a faded copy stays where it was), and no red error message appears at the top of the screen. Move the mouse off it.
 6. Click `Blizzard bank`. The SwagBag bank window's title says `Blizzard's bank is shown for this visit` for a moment, and Blizzard's bank window appears, open on the warband bank. **The gray item is in the warband bank.**
-7. Click `Blizzard bank` again. Blizzard's bank window disappears, the title says `Blizzard's bank is hidden again` for a moment, and the tabs are back under the SwagBag bank window.
-8. Click the character bank tab. The line says `Deposits go to Character bank - switch with the tabs below`. Right-click the second gray item in your bags, then move the mouse off it.
-9. Click `Blizzard bank`. **The second gray item is in the character bank.** Click `Blizzard bank` again.
-10. Click the **X** of the SwagBag bank window. Only that window closes. Your bags window now shows a `Bank still open` button in its title row. Click it: the SwagBag bank window comes back.
-11. Press **Esc** once. The SwagBag bank window closes. Press **B**: your bags window has **no** `Bank still open` button (the Esc ended the bank visit).
-12. Walk a few steps away from the banker. Right-click your Hearthstone in the SwagBag bags. The cast bar appears, and there is **no** red message `Interface action failed because of an AddOn`. Move to cancel the cast if you want to stay.
-13. Type `/swagbag bank beside`. Chat says `Bank: Blizzard's bank is shown, with SwagBag's bank window beside it.` Talk to the banker: Blizzard's bank appears as usual, and the SwagBag bank window sits to its right. Press **Esc**.
-14. Type `/swagbag bank tiny`. Chat says `Bank: Blizzard's bank is hidden; its tabs are under SwagBag's bank window.`
-15. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks:
+7. Blizzard's bank window is still showing. At the bottom of Blizzard's bank window, click the tab labelled Bank. Blizzard's bank switches to the character bank, and the second line of the SwagBag bank window now says `Deposits go to Character bank - switch with the tabs below`. Click the tab labelled Warband Bank: the line says `Deposits go to Warband bank - switch with the tabs below` again.
+8. Click `Blizzard bank` again. Blizzard's bank window disappears, the title says `Blizzard's bank is hidden again` for a moment, and the tabs are back under the SwagBag bank window.
+9. Click the tab labelled Bank under the SwagBag bank window. The line says `Deposits go to Character bank - switch with the tabs below`. Right-click the second gray item in your bags. It leaves your bags, and no red error message appears at the top of the screen. Move the mouse off it.
+10. Click `Blizzard bank`. **The second gray item is in the character bank.** Click `Blizzard bank` again.
+11. Click the **X** of the SwagBag bank window. Only that window closes. Your bags window now shows a `Bank still open` button in its title row. Click it: the SwagBag bank window comes back.
+12. Press **Esc** once. The SwagBag bank window closes. Press **B**: your bags window has **no** `Bank still open` button (the Esc ended the bank visit).
+13. Walk a few steps away from the banker. Right-click your Hearthstone in the SwagBag bags, then move the mouse off it. The cast bar appears. There is **no** red error message at the top of the screen; Blizzard's message would read: Interface action failed because of an AddOn. Move to cancel the cast if you want to stay.
+14. Type `/swagbag bank beside`. Chat says `Bank: Blizzard's bank is shown, with SwagBag's bank window beside it.` Talk to the banker: Blizzard's bank appears as usual, and the SwagBag bank window sits to its right. Press **Esc**.
+15. Type `/swagbag bank tiny`. Chat says `Bank: Blizzard's bank is hidden; its tabs are under SwagBag's bank window.`
+16. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks:
     - the first line starts `SwagBag 0.3.0`;
     - `Blocked actions: none` and no new errors;
     - a line `Bank: setting tiny, last visit beside, last deposit target …`.
 
-Pass: in steps 6 and 9 each item landed in the bank that the line named, step 12 cast with no red message, and the report is clean.
+Pass: in steps 6 and 10 each item landed in the bank that the line named, step 7 updated the line from Blizzard's own tabs, step 13 cast with no red message, and the report is clean.
 
 If it fails: tell Claude which step. Until it is fixed, type `/swagbag bank beside`: Blizzard's bank stays visible and deposits are Blizzard's own. If the failure is the deposit landing in the wrong bank or the Hearthstone being blocked, then on Oct 16 Claude makes "beside" the default (spec AC2.6). That is one line in `SwagBag/Core/Config.lua`, `bank = { blizzardFrame = "beside", … }`, plus the matching expectations in `spec/bankwindow_spec.lua`. Nothing else changes.
 
