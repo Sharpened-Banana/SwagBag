@@ -2,7 +2,8 @@
 -- in; Apply dims every slot that is not a definite match. Search never moves items.
 -- A text with errors is rejected and the previous valid search stays applied (AC5.3).
 -- A keyword that fails while evaluating is trapped per pass: the previous dimming
--- stays and the search is reported as invalid (lastEvalError).
+-- stays and the search is reported as invalid (lastEvalError). The error ring gets ONE
+-- entry per failing query (failedId), not one per keystroke or bag update.
 local _, SB = ...
 
 -- lastWarning: a soft message for an applied search (an unknown #keyword matches nothing).
@@ -29,6 +30,23 @@ end
 
 function S.IsActive()
 	return S.active ~= nil and not S.active.empty
+end
+
+-- Keywords whose answer changes with no bag update (a cooldown starts or ends, an item
+-- becomes usable). The bags window re-reads those fields on BAG_UPDATE_COOLDOWN, but only
+-- while the active search uses one of them (spec 9: cooldown events never rescan).
+S.VOLATILE_REFRESH = { cooldown = true, usable = true }
+
+function S.NeedsVolatileRefresh()
+	if not S.IsActive() then
+		return false
+	end
+	for _, name in ipairs(S.active.keywords) do
+		if S.VOLATILE_REFRESH[name] then
+			return true
+		end
+	end
+	return false
 end
 
 -- Byte range (first, last) of the characters to underline for a parse error.
@@ -62,7 +80,7 @@ function S.Apply(forEach, setDimmed)
 	local t0 = A.ProfileMs()
 	local c = S.IsActive() and S.active or nil
 	local results, count, matches = {}, 0, 0
-	local ok = SB.ErrorTrap.Run("search.eval", "none", function()
+	local function pass()
 		forEach(function(button, record)
 			count = count + 1
 			local match = c == nil or (record ~= nil and SB.Query.Eval(c, record) == true)
@@ -71,7 +89,16 @@ function S.Apply(forEach, setDimmed)
 			end
 			results[count] = { button, match }
 		end)
-	end)
+	end
+	local ok
+	if c and S.failedId == c.id then
+		ok = pcall(pass) -- this query already failed and was recorded once
+	else
+		ok = SB.ErrorTrap.Run("search.eval", "none", pass)
+		if not ok and c then
+			S.failedId = c.id
+		end
+	end
 	local ms = A.ProfileMs() - t0
 	S.stats.lastMs = ms
 	if not ok then

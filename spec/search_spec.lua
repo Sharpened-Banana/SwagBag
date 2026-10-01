@@ -135,6 +135,66 @@ describe("Search", function()
 		assert.is_nil(S.lastEvalError)
 	end)
 
+	it("a failing query is recorded once, not on every pass", function()
+		SB.Query.RegisterKeyword({ name = "boom", class = "volatile", eval = function() error("keyword exploded") end })
+		S.SetText("boom")
+		for _ = 1, 3 do
+			S.Apply(forEach, setDimmed)
+		end
+		assert.equal(1, #SB.ErrorTrap.Recent())
+		S.SetText("boom & potion") -- a different query that fails too: one more entry
+		S.Apply(forEach, setDimmed)
+		S.Apply(forEach, setDimmed)
+		assert.equal(2, #SB.ErrorTrap.Recent())
+	end)
+
+	it("asks for a cooldown/usable refresh only while the search uses those keywords", function()
+		S.SetText("")
+		assert.falsy(S.NeedsVolatileRefresh())
+		S.SetText("potion")
+		assert.falsy(S.NeedsVolatileRefresh())
+		S.SetText("cooldown")
+		assert.truthy(S.NeedsVolatileRefresh())
+		S.SetText("potion & !usable")
+		assert.truthy(S.NeedsVolatileRefresh())
+	end)
+
+	it("a BAG_UPDATE_COOLDOWN-style handler does zero refresh work unless the search needs it", function()
+		local calls = 0
+		local real = SB.Items.RefreshVolatile
+		SB.Items.RefreshVolatile = function(r)
+			calls = calls + 1
+			return real(r)
+		end
+		local function onCooldownEvent() -- the gate the bags window uses (Task 10)
+			if S.NeedsVolatileRefresh() then
+				for _, s in ipairs(slots) do
+					if s.record then
+						SB.Items.RefreshVolatile(s.record)
+					end
+				end
+			end
+		end
+		onCooldownEvent() -- no search active
+		S.SetText("potion")
+		onCooldownEvent() -- search without cooldown/usable
+		S.SetText("")
+		onCooldownEvent() -- search cleared again
+		assert.equal(0, calls)
+		S.SetText("cooldown")
+		onCooldownEvent()
+		assert.truthy(calls > 0)
+	end)
+
+	it("has no OnUpdate: refresh is event-driven only", function()
+		for _, path in ipairs({ "SwagBag/Engine/Search.lua", "SwagBag/Engine/Items.lua" }) do
+			local f = assert(io.open(path))
+			local src = f:read("*a")
+			f:close()
+			assert.is_nil(src:find("OnUpdate", 1, true), path)
+		end
+	end)
+
 	describe("ErrorSpan (byte offsets, never past the end)", function()
 		it("underlines the offending token", function()
 			local err = { position = 6, expected = "NUMERIC", got = "foo" }

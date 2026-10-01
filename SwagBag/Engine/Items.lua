@@ -81,6 +81,17 @@ function Items.Describe(bag, slot)
 	return r
 end
 
+-- Re-read the facts that change without a bag update: cooldown, usability, "new".
+-- Three cheap lookups, no item-info calls. Returns the same record.
+function Items.RefreshVolatile(record)
+	local A = SB.Adapter
+	record.onCooldown = A.IsOnCooldown(record.bag, record.slot)
+	record.isUsable = A.IsUsable(record.itemID)
+	local inv = SB.Inventory
+	record.isNew = inv ~= nil and inv.IsNew(record.bag, record.slot) or false
+	return record
+end
+
 -- Memo key for a record by cache class (spec 7.8):
 --   static -> itemID; instance -> full link + bound/WuE suffix (#b, #uw, #u); volatile -> nil (never memoized)
 function Items.Key(record, class)
