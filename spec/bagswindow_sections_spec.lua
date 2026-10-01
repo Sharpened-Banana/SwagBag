@@ -1195,6 +1195,11 @@ describe("BagsWindow focus modes (spec 6)", function()
 	local M_PLUS = { "- New (0)", "- Keystone & Crests (1)", "- Consumables (2)", "- Gear (1)", "+ BoE gear (1)",
 		"+ Junk (1)", "+ Free (10)" }
 
+	local function click(id, mouseButton)
+		header(id).scripts.OnClick(header(id), mouseButton or "LeftButton")
+	end
+
+
 	-- Mutation: return own (the saved set) from W.EffectiveCollapsed.
 	it("a key starting while the bag is open collapses all but the M+ sections; leaving restores the user's own", function()
 		W.Open()
@@ -1374,11 +1379,207 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.truthy(B.Get(0, 6).shown)
 	end)
 
+	-- Mutation: make Focus.Pause leave the overrides and the paused flag alone (no-op).
+	it("pausing while a switch waits under the mouse: the retry draws the paused state, never the mode", function()
+		W.Open()
+		local ring = B.Get(0, 3)
+		ring.mouseOver = true
+		F.SetSignal("challengeMode", true) -- would hide the ring: held
+		assert.truthy(ring.shown)
+		W.modeButton.scripts.OnClick(W.modeButton)
+		ring.mouseOver = false
+		A.Advance(0.3)
+		assert.truthy(ring.shown, "paused: the user's own (all open) state")
+		assert.equal("SwagBag — Paused", W.frame.title.text)
+	end)
+
+	-- Mutation: in W.ToggleSection, always toggle the saved set.
+	it("AC8.3: a click on a collapsed header peeks it until the bag closes; the saved set is untouched", function()
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		click("c_junk")
+		assert.equal("- Junk (1)  (peek - right-click keeps it open)", header("c_junk").text.text)
+		assert.truthy(B.Get(0, 6).shown)
+		assert.same({}, SB.Config.UI().collapsed.bags)
+		W.Close()
+		W.Open()
+		assert.equal("+ Junk (1)", header("c_junk").text.text)
+	end)
+
+	-- Mutation: in SectionHeaders' OnClick, drop the mouseButton argument.
+	it("a right-click keeps a section open until the mode changes; it survives closing the bag", function()
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		click("c_junk", "RightButton")
+		assert.equal("- Junk (1)  (kept open)", header("c_junk").text.text)
+		assert.same({}, SB.Config.UI().collapsed.bags, "a pin never writes the saved set")
+		W.Close()
+		W.Open()
+		assert.equal("- Junk (1)  (kept open)", header("c_junk").text.text)
+		F.SetSignal("merchantOpen", true)
+		assert.equal("- Junk (1)", header("c_junk").text.text, "the mode set changed: the pin is gone")
+	end)
+
+	it("a click on an open section in a mode closes it for this opening only", function()
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		click("c_gear")
+		assert.equal("+ Gear (1)", header("c_gear").text.text)
+		assert.same({}, SB.Config.UI().collapsed.bags, "a close never writes the saved set")
+		W.Close()
+		W.Open()
+		assert.equal("- Gear (1)", header("c_gear").text.text)
+	end)
+
+	it("without a mode a right-click collapses like a left-click", function()
+		W.Open()
+		click("c_gear", "RightButton")
+		assert.equal("+ Gear (1)", header("c_gear").text.text)
+		assert.same({ c_gear = true }, SB.Config.UI().collapsed.bags)
+	end)
+
+	it("an item on the cursor dropped on a header in a mode is still a drop (AC4.3), not a peek", function()
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		A.cursor = { itemID = Fixtures.FLASK, link = "item:212283" }
+		click("c_junk")
+		assert.equal("+ Junk (1)", header("c_junk").text.text)
+		assert.truthy(SB.Categories.Get("c_junk").itemList.include[Fixtures.FLASK])
+	end)
+
+	it("the Pause button: one click pauses (chat, title, button), the next resumes", function()
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		assert.equal("Pause", W.modeButton.text)
+		W.modeButton.scripts.OnClick(W.modeButton)
+		assert.equal("Resume", W.modeButton.text)
+		assert.equal("SwagBag — Paused", W.frame.title.text)
+		assert.equal("- Junk (1)", header("c_junk").text.text)
+		assert.equal(SB.L.MODE_PAUSED, A.Lines()[#A.Lines()])
+		W.modeButton.scripts.OnClick(W.modeButton)
+		assert.equal("Pause", W.modeButton.text)
+		assert.equal("SwagBag — M+", W.frame.title.text)
+		assert.equal("+ Junk (1)", header("c_junk").text.text)
+		assert.equal(SB.L.MODE_RESUMED, A.Lines()[#A.Lines()])
+	end)
+
+	-- Ruling (Task 3 review, g-v): every header click in a mode answers in the title (P2), also
+	-- when its re-stack waits. Mutation: delete the W.Flash call in W.ClickSection.
+	it("every header click in a mode answers with a title flash (peek, close, pin, unpin)", function()
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		click("c_junk")
+		assert.equal(SB.L.HEADER_FLASH_PEEK:format("Junk"), W.frame.title.text)
+		click("c_gear")
+		assert.equal(SB.L.HEADER_FLASH_CLOSED:format("Gear"), W.frame.title.text)
+		click("c_boe", "RightButton")
+		assert.equal(SB.L.HEADER_FLASH_KEPT:format("BoE gear"), W.frame.title.text)
+		click("c_boe", "RightButton")
+		assert.equal(SB.L.HEADER_FLASH_UNPINNED:format("BoE gear"), W.frame.title.text)
+		A.Advance(1.5)
+		assert.equal("SwagBag — M+", W.frame.title.text)
+	end)
+
+	it("with \"Keep open until the mode changes\" a left-click on a collapsed header pins at once", function()
+		SB.Config.Set("focus.peek", "keep")
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		click("c_junk")
+		assert.equal("- Junk (1)  (kept open)", header("c_junk").text.text)
+		assert.equal(SB.L.HEADER_FLASH_KEPT:format("Junk"), W.frame.title.text)
+	end)
+
+	-- Ruling (Task 3 review, g-iii): "collapsed now" is what is drawn. While a world-started switch
+	-- waits, the drawn view is the old one: a click on a header drawn open closes it (it does not
+	-- peek it because the waiting mode would collapse it). Mutation: compute collapsedNow from
+	-- W.EffectiveCollapsed()[id] instead of W.view[id].
+	it("a click decides peek or close from the drawn header, not from a switch still waiting", function()
+		W.Open()
+		W.scroll.mouseOver = true
+		F.SetSignal("challengeMode", true) -- Junk would collapse; held, still drawn open
+		assert.equal("- Junk (1)", header("c_junk").text.text)
+		click("c_junk")
+		assert.equal("closed", F.OverrideOf("c_junk"), "drawn open: the click closes it")
+		assert.equal(SB.L.HEADER_FLASH_CLOSED:format("Junk"), W.frame.title.text)
+	end)
+
+	-- Ruling W4-1 for a peek: the user's peek waits while a button that would move is under the
+	-- mouse; loot in that time is laid out with the view that is drawn, so nothing moves under the
+	-- mouse. Mutation: ApplyChanges uses W.EffectiveCollapsed() for Layout.Position.
+	it("loot during a held peek moves nothing under the mouse; the peek applies once the mouse leaves", function()
+		F.SetSignal("merchantOpen", true) -- Consumables collapse; BoE gear and Junk open below them
+		W.Open()
+		assert.equal("+ Consumables (2)", header("c_consumables").text.text)
+		local ring = B.Get(0, 3)
+		local x, y = ring.x, ring.y
+		ring.mouseOver = true -- below Consumables: a peek would move it down
+		click("c_consumables")
+		assert.equal("+ Consumables (2)", header("c_consumables").text.text, "held")
+		assert.equal(SB.L.HEADER_FLASH_PEEK:format("Consumables"), W.frame.title.text, "the click answered")
+		A.Put(0, 10, Fixtures.HERB, 20) -- an arrival: ApplyChanges runs
+		bagUpdate()
+		assert.equal("- New (1)", header("new").text.text, "the arrival was drawn")
+		assert.same({ x, y }, { ring.x, ring.y }, "the hovered ring has not moved")
+		assert.equal("+ Consumables (2)", header("c_consumables").text.text, "the peek still waits")
+		assert.same({}, SB.Config.UI().collapsed.bags, "the saved set is untouched")
+		ring.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("- Consumables (2)  (peek - right-click keeps it open)", header("c_consumables").text.text)
+		assert.truthy(B.Get(0, 1).shown)
+	end)
+
+	-- Ruling (Task 3 review, g-vii): a peek or pin re-stack holds like a world-started switch (mouse
+	-- anywhere over the items) only when the clicked header itself would move, here because an
+	-- earlier peek above it still waits. Mutation: in W.ClickSection, call W.Restack() instead of
+	-- W.Restack(id).
+	it("a peek whose own header would move waits while the mouse is over the items", function()
+		F.SetSignal("merchantOpen", true)
+		W.Open()
+		local ring = B.Get(0, 3)
+		ring.mouseOver = true
+		click("c_consumables") -- held: the ring would move
+		ring.mouseOver = false
+		W.scroll.mouseOver = true -- now on the Gear header, below Consumables
+		local gearY = header("c_gear").points[1][5]
+		click("c_gear") -- its header would move down with the waiting peek above it
+		assert.equal(gearY, header("c_gear").points[1][5], "the clicked header did not move under the mouse")
+		assert.equal("+ Consumables (2)", header("c_consumables").text.text, "still waiting")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("- Consumables (2)  (peek - right-click keeps it open)", header("c_consumables").text.text)
+		assert.equal("- Gear (1)  (peek - right-click keeps it open)", header("c_gear").text.text)
+	end)
+
+	it("a peek whose own header does not move applies at once with the mouse over the items", function()
+		F.SetSignal("merchantOpen", true)
+		W.Open()
+		W.scroll.mouseOver = true -- the click is on a header, inside the items area
+		click("c_consumables")
+		assert.equal("- Consumables (2)  (peek - right-click keeps it open)", header("c_consumables").text.text)
+	end)
+
 	it("AC8.5: the title names the mode, before the item level", function()
 		A.avgIlvl = 279.44
 		F.SetSignal("fishing", true)
 		W.Open()
 		assert.equal("SwagBag — Fishing — ilvl 279.4", W.frame.title.text)
+	end)
+
+	it("/swagbag mode answers every form (P2)", function()
+		SB.Categories.Load()
+		F.SetSignal("challengeMode", true)
+		SB.Slash.Dispatch("mode")
+		SB.Slash.Dispatch("mode pause")
+		SB.Slash.Dispatch("mode pause")
+		SB.Slash.Dispatch("mode resume")
+		SB.Slash.Dispatch("mode resume")
+		local lines = A.Lines()
+		assert.same({ "Focus mode now: M+. Type /swagbag mode pause, resume or list.", SB.L.MODE_PAUSED,
+			SB.L.MODE_ALREADY_PAUSED, SB.L.MODE_RESUMED, SB.L.MODE_NOT_PAUSED }, lines)
+		SB.Slash.Dispatch("mode list")
+		lines = A.Lines()
+		assert.equal("M+: on, active now - opens Consumables, Keystone & Crests, Gear", lines[6])
+		assert.equal("AH/Vendor/Bank: on - opens Junk, Trade Goods, BoE gear", lines[11])
 	end)
 
 	it("a flash is not cut short by a mode switch, and ends on the mode title", function()
