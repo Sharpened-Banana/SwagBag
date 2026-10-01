@@ -8,6 +8,16 @@ local FILES = {
 	"SwagBag/Engine/CategoryDefaults.lua", "SwagBag/Engine/Categories.lua",
 }
 
+-- A misspelled keyword silently becomes a name search, so check the keywords really used.
+-- c_fish (name search by design), c_other (fallback) are exempt; c_tools also has an item list.
+local EXPECTED = {
+	c_keystone = { "keystone" }, c_consumables = { "consumable" }, c_gear = { "gear" },
+	c_boe = { "boe", "gear" }, c_tradegoods = { "reagent", "tradegoods" }, c_herbs = { "herb" }, c_ore = { "ore" },
+	c_leathercloth = { "cloth", "leather" }, c_enchanting = { "enchanting" }, c_cooking = { "cooking" },
+	c_quest = { "questitem" }, c_housing = { "housing" }, c_collect = { "mount", "pet", "toy" },
+	c_tools = { "profession gear", "profession tool" }, c_reagents = { "reagentbag" }, c_junk = { "junk" },
+}
+
 describe("Categories", function()
 	local SB, C
 	before_each(function()
@@ -39,6 +49,14 @@ describe("Categories", function()
 			assert.is_nil(c.error, c.id)
 			assert.same({}, c.compiled.warnings, c.id)
 		end
+		for _, c in ipairs(C.list) do
+			local want = EXPECTED[c.id]
+			if want then
+				local got = { unpack(c.compiled.keywords) }
+				table.sort(got)
+				assert.same(want, got, c.id .. " uses the intended keywords")
+			end
+		end
 		assert.falsy(C.Get("c_other").hasRule, "Other has no rule; it is the fallback")
 		assert.truthy(C.Get("c_gear").hasRule)
 	end)
@@ -48,18 +66,19 @@ describe("Categories", function()
 		assert.same({ "c_reagents", "c_keystone", "c_junk", "c_quest", "c_tools", "c_boe", "c_gear", "c_consumables" },
 			{ unpack(p, 1, 8) })
 		assert.equal("c_other", p[#p])
-		SB.Config.db.userEdits.c_ore = { priority = 55 } -- same as Herbs
+		-- Gear is defined before BoE, but "c_boe" < "c_gear": the id tie-break must decide.
+		SB.Config.db.userEdits.c_gear = { priority = 75 }
 		C.Load()
 		p = ids(C.ByPriority())
-		local herbs, ore
+		local boe, gear
 		for i, id in ipairs(p) do
-			if id == "c_herbs" then
-				herbs = i
-			elseif id == "c_ore" then
-				ore = i
+			if id == "c_boe" then
+				boe = i
+			elseif id == "c_gear" then
+				gear = i
 			end
 		end
-		assert.equal(herbs + 1, ore, "tie: c_herbs before c_ore")
+		assert.equal(boe + 1, gear, "tie: c_boe before c_gear")
 	end)
 
 	it("Reagents exists only while the reagent bag is shown separately (AC1.4)", function()
@@ -106,6 +125,36 @@ describe("Categories", function()
 		C.AddToList("c_tools", 6948)
 		assert.falsy(C.Get("c_tools").itemList.exclude[6948])
 		assert.falsy(C.Get("c_other").itemList.include[6948])
+	end)
+
+	it("an item moved away and back leaves no diff behind (spec 8.5)", function()
+		C.AddToList("c_fish", 211880)
+		C.AddToList("c_consumables", 211880)
+		assert.falsy(SB.Config.db.userEdits.c_fish, "emptied diff is pruned")
+		C.ResetBuiltin("c_consumables")
+		assert.same({}, SB.Config.db.userEdits)
+		local _, edited = C.Counts()
+		assert.equal(0, edited)
+	end)
+
+	it("Hearthstone round trip ends with no stored diffs", function()
+		C.AddToList("c_other", 6948)
+		C.AddToList("c_tools", 6948)
+		assert.same({}, SB.Config.db.userEdits)
+		assert.truthy(C.Get("c_tools").itemList.include[6948])
+		local _, edited = C.Counts()
+		assert.equal(0, edited)
+	end)
+
+	it("AddToList onto a damaged diff does not throw and rejects bad item ids", function()
+		SB.Config.db.userEdits = { c_gear = "garbage" }
+		SB.Config.db.categories = { u_x = "junk" }
+		C.Load()
+		assert.truthy(C.AddToList("c_gear", 123))
+		assert.truthy(C.Get("c_gear").itemList.include[123])
+		assert.falsy(C.AddToList("c_gear", 0 / 0))
+		assert.falsy(C.AddToList("c_gear", 1.5))
+		assert.falsy(C.AddToList("c_gear", -3))
 	end)
 
 	it("AddToList refuses unknown categories, New/Free and non-item values", function()
