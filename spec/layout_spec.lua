@@ -263,6 +263,7 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 	it("a different item arriving in a category section leaves a placeholder; the button goes to New", function()
 		L.Apply(st, { change(0, 3, "arrived", 333) })
 		assert.truthy(st.sections.b.cells[1].placeholder)
+		assert.equal(333, st.sections.b.cells[1].icon)
 		assert.equal("new#2", where(0, 3))
 	end)
 
@@ -352,43 +353,97 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 		assert.same({}, L.Position(st, OPTS, {}).placeholders)
 	end)
 
-	it("section truth: after any sequence of changes, a button in a category section still holds its item", function()
-		local content, built, slots = {}, {}, {}
-		for slot = 1, 20 do
-			content[slot] = slot % 4 ~= 0 and slot or nil
-			built[slot] = content[slot]
-			slots[slot] = { bag = 0, slot = slot, record = content[slot] and { cat = "c" .. (content[slot] % 3) } or nil }
+	it("New's +N more count follows the slots that overflowed: a slot that leaves stops counting, a repeat is not counted twice", function()
+		local slots = { S(0, 1, nil) }
+		for slot = 2, 12 do
+			slots[slot] = S(0, slot, "a")
 		end
-		st = L.Build(slots, assign, { "c0", "c1", "c2" }, { columns = 4, newRows = 2 })
-		local seed = 7
-		local function rand(n)
-			seed = (seed * 1103515245 + 12345) % 2147483648
-			return seed % n + 1
+		st = L.Build(slots, assign, { "a" }, { columns = 4, newRows = 2 })
+		local changes = {}
+		for slot = 2, 11 do
+			changes[#changes + 1] = change(0, slot, "arrived")
 		end
-		local leaves, arrivals, steps = 0, 0, 0
-		for _ = 1, 300 do
-			local slot = rand(20)
-			local new
-			if rand(3) ~= 1 then
-				new = rand(30)
+		local r = L.Apply(st, changes) -- 7 fit in New (cells 2-8), slots 9, 10, 11 overflow
+		assert.equal(3, r.overflowed)
+		assert.equal(3, st.sections.new.overflow)
+		r = L.Apply(st, { change(0, 10, "arrived") }) -- same slot again
+		assert.equal(0, r.overflowed)
+		assert.equal(3, st.sections.new.overflow)
+		L.Apply(st, { change(0, 11, "removed") })
+		assert.equal(2, st.sections.new.overflow)
+		L.Apply(st, { change(0, 9, "left") })
+		assert.equal(1, st.sections.new.overflow)
+		assert.equal(1, L.Position(st, OPTS, {}).headers[1].overflow)
+	end)
+
+	it("a bag that grows (added only) sets needsReflow", function()
+		assert.falsy(st.needsReflow)
+		L.Apply(st, { change(2, 1, "added") })
+		assert.truthy(st.needsReflow)
+	end)
+
+	it("section truth: random swaps, returns, batches, overflow and hover holds never put a wrong item in a section", function()
+		local totals = { leavePh = 0, toNew = 0, overflowed = 0, swaps = 0, deferrals = 0, leaves = 0 }
+		for seedNo = 1, 24 do
+			local content, built, slots = {}, {}, {}
+			for slot = 1, 20 do
+				content[slot] = slot % 4 ~= 0 and slot or nil
+				built[slot] = content[slot]
+				slots[slot] = { bag = 0, slot = slot, record = content[slot] and { cat = "c" .. (content[slot] % 3) } or nil }
 			end
-			if new ~= content[slot] then
-				steps = steps + 1
-				local before = {}
-				for k, w in pairs(st.where) do
-					before[k] = w.section .. "#" .. w.index
+			st = L.Build(slots, assign, { "c0", "c1", "c2" }, { columns = 4, newRows = 2 })
+			local headerY = {}
+			for _, h in ipairs(L.Position(st, OPTS, {}).headers) do
+				headerY[h.id] = h.y
+			end
+			local seed = seedNo * 7919
+			local function rand(n)
+				seed = (seed * 1103515245 + 12345) % 2147483648
+				return math.floor(seed / 65536) % n + 1
+			end
+			local nextItem = 100
+			local function occupied()
+				for _ = 1, 30 do
+					local slot = rand(20)
+					if content[slot] ~= nil then
+						return slot
+					end
 				end
-				content[slot] = new
-				if new == nil then
-					leaves = leaves + 1
-				else
-					arrivals = arrivals + 1
+			end
+			local function leave()
+				local slot = occupied()
+				if not slot then
+					return nil
 				end
-				local r = L.Apply(st, { change(0, slot, new == nil and "left" or "arrived") })
-				local moved = {}
-				for _, k in ipairs(r.moved) do
-					moved[k] = true
+				content[slot] = nil
+				totals.leaves = totals.leaves + 1
+				return change(0, slot, "left", 1000 + slot)
+			end
+			local function arrive(slot)
+				nextItem = nextItem + 1
+				content[slot] = nextItem
+				return change(0, slot, "arrived", nextItem)
+			end
+			local function ret()
+				for _ = 1, 30 do
+					local slot = rand(20)
+					if content[slot] == nil and built[slot] ~= nil then
+						content[slot] = built[slot]
+						return change(0, slot, "arrived", built[slot])
+					end
 				end
+			end
+			local function one()
+				local k = rand(4)
+				if k == 1 then
+					return leave()
+				elseif k == 2 then
+					return ret()
+				end
+				return arrive(rand(20))
+			end
+
+			local function checkInvariants(label)
 				-- invariant 1: every (bag, slot) is placed exactly once
 				local seen, count = {}, 0
 				for id, sec in pairs(st.sections) do
@@ -396,39 +451,119 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 						local c = sec.cells[i]
 						if c and not c.placeholder then
 							local key = L.Key(c.bag, c.slot)
-							assert.falsy(seen[key], "button placed twice")
+							assert.falsy(seen[key], label .. ": button placed twice")
 							seen[key] = true
 							count = count + 1
 							assert.same({ section = id, index = i }, st.where[key])
 						end
 					end
 				end
-				assert.equal(20, count, "a button was lost")
-				-- invariant 2: a shown button in a category section shows its section's item, or is a placeholder
+				assert.equal(20, count, label .. ": a button was lost")
+				local held = {}
+				for _, ch in ipairs(st.deferred) do
+					held[ch.slot] = true
+				end
+				-- invariant 2: a shown button in a category section shows that section's item, or is a placeholder
 				local pos = L.Position(st, OPTS, {})
 				for _, cell in ipairs(pos.cells) do
 					local w = st.where[L.Key(cell.bag, cell.slot)]
-					if w.section ~= "new" and w.section ~= "free" then
+					if w.section ~= "new" and w.section ~= "free" and not held[cell.slot] then
 						assert.truthy(cell.shown)
-						assert.equal(built[cell.slot], content[cell.slot], "wrong item in section " .. w.section)
+						assert.equal(built[cell.slot], content[cell.slot], label .. ": wrong item in section " .. w.section)
 					end
 				end
 				for id, sec in pairs(st.sections) do
 					if id ~= "new" and id ~= "free" then
 						for i = 1, sec.size do
 							local c = sec.cells[i]
-							assert.truthy(c and (c.placeholder or built[c.slot] == content[c.slot]), "hole or wrong item in " .. id)
+							assert.truthy(c and (c.placeholder or held[c.slot] or built[c.slot] == content[c.slot]),
+								label .. ": hole or wrong item in " .. id)
 						end
 					end
+				end
+				for _, h in ipairs(pos.headers) do
+					assert.equal(headerY[h.id], h.y, label .. ": header " .. h.id .. " moved")
+				end
+				local n = 0
+				for _ in pairs(st.sections.new.overflowKeys or {}) do
+					n = n + 1
+				end
+				assert.equal(n, st.sections.new.overflow)
+			end
+
+			for step = 1, 400 do
+				local changes = {}
+				local kind = rand(10)
+				local swapped = false
+				if kind <= 3 then
+					changes[1] = leave()
+				elseif kind <= 5 then
+					changes[1] = arrive(rand(20))
+				elseif kind <= 7 then
+					local a, b = occupied(), occupied()
+					if a and b and a ~= b and content[a] ~= content[b] then
+						content[a], content[b] = content[b], content[a]
+						changes[1] = change(0, a, "arrived", content[a])
+						changes[2] = change(0, b, "arrived", content[b])
+						swapped = true
+					end
+				elseif kind == 8 then
+					changes[1] = ret()
+				else
+					for _ = 1, rand(4) + 1 do
+						changes[#changes + 1] = one()
+					end
+				end
+				local before = {}
+				for k, w in pairs(st.where) do
+					before[k] = w.section .. "#" .. w.index
+				end
+				local holdSet
+				if rand(3) == 1 then
+					holdSet = {}
+					for _ = 1, rand(5) do
+						holdSet[rand(20)] = true
+					end
+				end
+				local r = L.Apply(st, changes, holdSet and function(_, slot)
+					return holdSet[slot] == true
+				end or nil)
+				if swapped then
+					totals.swaps = totals.swaps + 1
+				end
+				if r.deferred > 0 then
+					totals.deferrals = totals.deferrals + 1
+				end
+				totals.overflowed = totals.overflowed + r.overflowed
+				if #changes == 1 and changes[1].kind == "left" then
+					totals.leavePh = totals.leavePh + r.placeholders
+				end
+				for k, w in pairs(st.where) do
+					if before[k] and before[k]:sub(1, 4) == "free" and w.section == "new" then
+						totals.toNew = totals.toNew + 1
+					end
+				end
+				local moved = {}
+				for _, k in ipairs(r.moved) do
+					moved[k] = true
 				end
 				for k, w in pairs(st.where) do
 					if not moved[k] then
 						assert.equal(before[k], w.section .. "#" .. w.index, "a button moved that was not changed")
 					end
 				end
+				checkInvariants(("seed %d step %d"):format(seedNo, step))
 			end
+			local r = L.Apply(st, {}, nil) -- drain: nothing is held now
+			assert.equal(0, r.deferred)
+			assert.same({}, st.deferred)
+			checkInvariants(("seed %d drained"):format(seedNo))
 		end
-		assert.truthy(leaves > 0, "no leave events happened")
-		assert.truthy(arrivals > 0, "no arrival events happened")
+		assert.truthy(totals.leaves > 0, "no leave events happened")
+		assert.truthy(totals.leavePh > 0, "no placeholder was made by a leave")
+		assert.truthy(totals.toNew > 0, "nothing arrived in a Free slot")
+		assert.truthy(totals.overflowed > 0, "New never overflowed")
+		assert.truthy(totals.swaps > 0, "no swaps")
+		assert.truthy(totals.deferrals > 0, "the hover guard never held anything")
 	end)
 end)
