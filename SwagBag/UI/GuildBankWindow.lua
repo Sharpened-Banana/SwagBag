@@ -517,7 +517,10 @@ end
 
 function GW.ToggleView()
 	local view = GW.View() == "grid" and "sections" or "grid"
-	SB.Config.Set("guildBank.view", view)
+	if not SB.Config.Set("guildBank.view", view) then -- read-only settings: nothing changes
+		GW.Flash(L.SETTINGS_READONLY)
+		return
+	end
 	GW.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	GW.Flash(view == "grid" and L.GUILD_VIEW_GRID or L.GUILD_VIEW_SECTIONS)
 	if GW.view.RequestLayout("view") then
@@ -533,10 +536,14 @@ GW.reflowButton = titleButton(L.BTN_REFLOW, "guild.reflowButton", function()
 	GW.Reflow("reflow")
 end, 60)
 GW.reflowButton:SetPoint("RIGHT", GW.viewButton, "LEFT", -4, 0)
+-- W3-26 parity: the title (and its flashes) ends left of the leftmost title button, on one line.
+frame.title:SetPoint("RIGHT", GW.reflowButton, "LEFT", -6, 0)
+frame.title:SetJustifyH("LEFT")
+frame.title:SetWordWrap(false)
 
 -- Re-read the tabs that answered this visit (a query answer, or an item that moved). A tab
--- read for the first time this session is laid out in full (held back while the mouse is
--- over the items); otherwise slots whose item changed go through GroupView.Changes (spec
+-- read for the first time this session is laid out in full (held back while a button that
+-- would move is under the mouse, W3-38); otherwise slots whose item changed go through GroupView.Changes (spec
 -- 4.3) and the rest only repaint.
 function GW.Refresh()
 	local A, B = SB.Adapter, SB.GuildButtons

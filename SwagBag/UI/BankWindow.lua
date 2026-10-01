@@ -420,7 +420,10 @@ end
 
 function BW.ToggleView()
 	local view = BW.View() == "grid" and "sections" or "grid"
-	SB.Config.Set("bank.view", view)
+	if not SB.Config.Set("bank.view", view) then -- read-only settings: nothing changes
+		BW.Flash(L.SETTINGS_READONLY)
+		return
+	end
 	BW.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	BW.Flash(view == "grid" and L.BANK_VIEW_GRID or L.BANK_VIEW_SECTIONS)
 	if BW.view.RequestLayout("view") then
@@ -547,8 +550,11 @@ BW.stillOpenButton:SetScript("OnClick", Guard("bank.stillOpen", function()
 end, "bank"))
 BW.stillOpenButton:Hide()
 
+-- The bags title ends left of the leftmost shown title button: this one while it shows.
 function BW.RefreshStillOpen()
-	BW.stillOpenButton:SetShown(BW.interaction and not frame:IsShown() and not SB.SafeMode.IsOn("bank"))
+	local shown = (BW.interaction and not frame:IsShown() and not SB.SafeMode.IsOn("bank")) and true or false
+	BW.stillOpenButton:SetShown(shown)
+	bags.BoundTitle(shown and BW.stillOpenButton or nil)
 end
 
 function BW.Open()

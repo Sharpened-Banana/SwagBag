@@ -432,4 +432,26 @@ describe("Snapshots (spec 8.3 format, 5.7 timing, 8.4 budget)", function()
 		assert.is_nil(SB.Config.db.chars)
 		assert.is_nil(SB.Config.db.warband)
 	end)
+	-- Final review M4 (W3-29 parity for the bags). Mutation: limit store's 0-slot check to the
+	-- bank kinds again.
+	it("logging out with an unscanned model (0 slots) keeps the saved bags snapshot", function()
+		local good = { v = 1, at = 5, containers = { [0] = { size = 8, s = "1:item:1;5\n" } } }
+		Snap.Char().bags = good -- saved by an earlier session; this one never scanned
+		SB.eventFrame:Fire("PLAYER_LOGOUT")
+		assert.equal(good, SB.Config.db.chars["Swagger-Argent Dawn"].bags)
+	end)
+
+	-- Final review M7. Mutation: delete the Inv.FlushKinds call in the BANKFRAME_CLOSED handler.
+	it("a deposit still waiting for its 50 ms flush when the bank closes is in the close snapshot", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.Advance(0.5)
+		A.Put(6, 4, Fixtures.JUNK, 1)
+		SB.eventFrame:Fire("BAG_UPDATE", 6)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.02) -- inside the 50 ms debounce
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		local slots = Snap.Deserialize(SB.Config.db.chars["Swagger-Argent Dawn"].bank.containers[6])
+		assert.equal("item:" .. Fixtures.JUNK, slots[4] and slots[4].link)
+	end)
 end)

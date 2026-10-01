@@ -200,4 +200,13 @@ describe("Inventory", function()
 		assert.truthy(SB.SafeMode.IsOn("bags"))
 		assert.equal("inventory.listener", SB.ErrorTrap.Recent()[1].label)
 	end)
+	-- Final review M5. Mutation: drop the pcall around the loop in Inv.ScanKind.
+	it("ScanKind puts Inv.scanned back even when a bag scan errors, and still raises the error", function()
+		assert.truthy(Inv.scanned)
+		Inv.ScanBag = function() error("scan broke") end
+		local ok, err = pcall(Inv.ScanKind, "bags")
+		assert.falsy(ok)
+		assert.truthy(tostring(err):find("scan broke", 1, true))
+		assert.equal(true, Inv.scanned)
+	end)
 end)

@@ -309,6 +309,31 @@ describe("BankWindow frames (check V2)", function()
 			"Use /swagbag bank tiny or /swagbag bank beside (now: tiny)." }, A.Lines())
 	end)
 
+	-- Final review M2. Mutation: delete the bags.BoundTitle call in BW.RefreshStillOpen (the
+	-- bags title stays bounded by Sort and runs under "Bank still open").
+	it("'Bank still open' showing or hiding re-bounds the bags title to the leftmost shown button", function()
+		local bags = SB.BagsWindow
+		openBank()
+		BW.frame:Hide() -- "Bank still open" shows on the bags window
+		assert.truthy(BW.stillOpenButton.shown)
+		assert.equal(BW.stillOpenButton, bags.titleBound)
+		Fake.Fire(BW.stillOpenButton, "OnClick")
+		assert.falsy(BW.stillOpenButton.shown)
+		assert.equal(false, bags.titleBound)
+	end)
+
+	-- Final review M8. Mutation: ignore SB.Config.Set's result in BW.ToggleView.
+	it("the view toggle with read-only settings says so and changes nothing", function()
+		openBank()
+		local text, reason = BW.viewButton.text, BW.view.stats.lastLayoutReason
+		SB.Config.readOnly = true
+		Fake.Fire(BW.viewButton, "OnClick")
+		assert.equal(SB.L.SETTINGS_READONLY, BW.frame.title.text)
+		assert.equal("sections", SB.Config.Get("bank.view"))
+		assert.equal(text, BW.viewButton.text)
+		assert.equal(reason, BW.view.stats.lastLayoutReason)
+	end)
+
 	it("the X button hides only SwagBag's window; the bags window offers 'Bank still open', which reopens it", function()
 		openBank()
 		assert.equal("SwagBagBankWindow", UISpecialFrames[1])

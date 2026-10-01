@@ -263,14 +263,17 @@ describe("BankWindow contents", function()
 		assert.falsy(BW.sortPending)
 	end)
 
-	it("Reflow regroups, but waits while the mouse is over the items", function()
+	-- W3-38: held only while a button that would move is under the mouse.
+	it("Reflow regroups, but waits while a button that would move is under the mouse", function()
 		openBank()
 		A.Clear(6, 2)
 		bankUpdate(6)
 		BW.scroll.mouseOver = true
+		B.Get(6, 3).mouseOver = true -- below the gap 6/2 left: Reflow moves it up
 		Fake.Fire(BW.reflowButton, "OnClick")
 		assert.equal(SB.L.REFLOW_WAITING, BW.frame.title.text)
 		assert.equal(1, #B.placeholdersInUse)
+		B.Get(6, 3).mouseOver = false
 		BW.scroll.mouseOver = false
 		A.Advance(0.3)
 		assert.equal(0, #B.placeholdersInUse)
