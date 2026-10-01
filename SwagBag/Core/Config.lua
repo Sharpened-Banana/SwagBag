@@ -40,6 +40,22 @@ Config.Defaults = {
 		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 			usePawn = false },
+		-- Focus modes (spec 6, Engine/Focus.lua). auto: modes switch by themselves (AC8.1);
+		-- resolve: "merge" (open the union, default) | "priority" (combat > activity > location,
+		-- AC8.4); peek: a click on a collapsed header opens it until the bag closes ("peek") or
+		-- until the mode changes ("keep", AC8.3); announce: one chat line per mode change (spec
+		-- 6.4, default off); on.<mode>: each built-in mode (all on); sections.<mode>: the sections
+		-- the mode opens, comma-separated category ids (New is always open).
+		focus = { auto = true, resolve = "merge", peek = "peek", announce = false,
+			on = { mplus = true, raid = true, delves = true, gathering = true, fishing = true, market = true },
+			sections = {
+				mplus = "c_consumables,c_keystone,c_gear",
+				raid = "c_consumables,c_gear",
+				delves = "c_consumables,c_gear",
+				gathering = "c_herbs,c_ore,c_leathercloth,c_tools",
+				fishing = "c_fish,c_cooking",
+				market = "c_junk,c_tradegoods,c_boe",
+			} },
 	},
 }
 
