@@ -104,6 +104,8 @@ L.QUERY_EXPECT_QUOTE = "a closing \""
 L.QUERY_EXPECT_KEYWORD = "a known keyword"
 L.QUERY_EXPECT_NUMERIC = "a keyword that takes a number (ilvl, level, count, stack, gear, tab)"
 L.QUERY_EXPECT_OPERATOR = "& or |"
+L.QUERY_EXPECT_SHALLOWER = "fewer nested ( and ! (at most 100 levels)"
+L.QUERY_EXPECT_AND_BEFORE_COMPARISON = "& or | before a multi-word phrase and a comparison"
 L.QUERY_FOUND_END = "the end of the search"
 
 -- In-game check V1 (optional)
