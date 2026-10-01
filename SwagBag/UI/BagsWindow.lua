@@ -208,8 +208,23 @@ end
 local function describe(bag, slot)
 	W.records[bag] = W.records[bag] or {}
 	local record = SB.Items.Describe(bag, slot)
+	if record and not record.icon then -- a pending item has no slot icon yet: placeholders still need one
+		record.icon = (SB.Adapter.GetItemInstant(record.itemID) or {}).icon
+	end
 	W.records[bag][slot] = record
 	return record
+end
+
+-- Count, lock, cooldown and loaded-data changes: refresh the record only while the slot still
+-- holds the same item. An emptied slot keeps the record the layout was built from, so its
+-- placeholder keeps its icon even if a lock event arrives before the bag flush.
+local function refreshRecord(bag, slot)
+	local old = W.records[bag] and W.records[bag][slot]
+	local fresh = SB.Items.Describe(bag, slot)
+	if old and fresh and fresh.itemID == old.itemID then
+		fresh.icon = fresh.icon or old.icon
+		W.records[bag][slot] = fresh
+	end
 end
 
 local function place(button, x, y)
@@ -462,15 +477,22 @@ function W.ApplyChanges(changes)
 	if not st then
 		return nil
 	end
+	local newSec = st.sections[SB.Layout.NEW]
+	local overflowBefore = newSec and newSec.overflow or 0
 	local result = SB.Layout.Apply(st, changes, (busyCheck()), W.Collapsed())
-	if #result.moved > 0 then
+	newSec = st.sections[SB.Layout.NEW]
+	-- New's "+N more below" can change with no button moving, so the headers redraw then too.
+	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore then
+		result.rendered = true
 		W.pos = SB.Layout.Position(st, positionOpts(), W.Collapsed())
 		sizeFrame(render())
 	end
 	if result.deferred > 0 then
 		SB.Debounce("bags.retry", W.RETRY, function()
-			W.ApplyChanges({})
-			SB.Emit("SB_BAGS_UPDATED")
+			local retried = W.ApplyChanges({})
+			if retried and retried.rendered then
+				SB.Emit("SB_BAGS_UPDATED")
+			end
 		end, "bags")
 	end
 	return result
@@ -543,11 +565,18 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 		if B.KindOf(c.bag) == "bags" and button and c.slot <= (W.sizes[c.bag] or 0) then
 			local old = W.records[c.bag] and W.records[c.bag][c.slot]
 			B.Paint(button, A.GetSlot(c.bag, c.slot))
-			local record = describe(c.bag, c.slot)
 			touched = true
-			if W.state and Inv.Has(c.reasons, Inv.R.ITEM) then
-				moves[#moves + 1] = { bag = c.bag, slot = c.slot, kind = record and "arrived" or "left",
-					icon = old and old.icon }
+			if not Inv.Has(c.reasons, Inv.R.ITEM) then
+				refreshRecord(c.bag, c.slot)
+			else
+				local record = describe(c.bag, c.slot)
+				-- Same itemID, new link (keystone level, enchant, gem): repaint in place; the
+				-- item is re-categorized on the next open or Reflow (W12).
+				local sameItem = old and record and old.itemID == record.itemID
+				if W.state and not sameItem and (record or old) then
+					moves[#moves + 1] = { bag = c.bag, slot = c.slot, kind = record and "arrived" or "left",
+						icon = old and old.icon }
+				end
 			end
 		end
 	end

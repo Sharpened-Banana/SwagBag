@@ -5917,7 +5917,9 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 - [ ] **Step 7: In-game session E1: category view, collapse, toggle, V4 and V12 (the user does this; about 25 minutes)**
 
-Give the user this checklist exactly. Have with you: a stack of potions or food you can use up, a few gray junk items, a stack of something you can split (herbs, cloth), at least two empty bag slots, and a training dummy and a vendor nearby (a capital city).
+Give the user this checklist exactly. Have with you: two small stacks (2 or 3 each) of food or drink, a few gray junk items, a stack of something you can split (herbs, cloth), at least two empty bag slots, your Mythic keystone, and a training dummy and a vendor nearby (a capital city). Use the food or drink out of combat. Eating or drinking makes your character sit down; that is fine, but stand up again afterwards.
+
+Throughout: whenever a step says an item "moves" or "goes away", move the mouse off that slot first. SwagBag deliberately waits while the mouse is on a slot or an item is on your cursor.
 
 1. **Quit the game completely and start it again.** New files were added this week, and `/reload` does not load new files. Log in. Chat shows `SwagBag: v0.2.0 loaded…`.
 2. Press **B**. The window shows sections with headers such as `- Keystone & Crests (1)`, `- Consumables (…)`, `- Gear (…)`, `- Junk (…)`, `- Other (…)` and, at the bottom, `- Free (…)` with your empty slots. At the very top is `- New (0)` with an empty area two rows tall.
@@ -5937,27 +5939,33 @@ Give the user this checklist exactly. Have with you: a stack of potions or food 
    Write down every item that looks wrong: the item name and the section it is in. Also write down what is in **Other**.
 4. Click the **Consumables** header. Its items disappear, the header now starts with `+`, and the sections below move up.
 5. Click it again. The items come back in exactly the same places.
-6. Click the **Junk** header to collapse it. Press **B** twice (close, open). Junk is still collapsed.
-7. Type `/reload`, then press **B**. Junk is **still** collapsed (saved for this character). Click it to expand it again.
-8. Click the **Grid** button at the top right. All items show in one grid in bag order. The button now reads **Categories**, and the title briefly says `SwagBag - grid view`.
-9. Click **Categories**. The sections come back.
-10. Attack a training dummy. While in combat, click **Grid**, then **Categories**. Both work, with no red error. Stop attacking and leave combat.
-11. **V12, using up a stack:** right-click your potion or food until the stack is gone (move the mouse off it after the last use). A faded gray copy of its icon stays where it was. One more empty slot appears at the end of **Free**. Nothing else in the window moves.
-12. **V4:** right-click the faded icon. Only a tooltip appears: "This item moved or was used - items regroup when you close the bag." Nothing is used and nothing is picked up.
-13. Left-click the faded icon. Same: only the tooltip.
-14. **V12, looting or buying:** buy one cheap item from the vendor (or loot something). It appears in the **New** section at the top, and New's header shows `(1)`. Nothing else moves.
-15. **V12, vendoring:** with the vendor open, right-click a gray junk item to sell it. A faded copy stays where it was. Nothing else moves.
-16. **V12, splitting:** Shift-click a stack, choose 1, and click **Okay**. The 1 item sits on your cursor. Click an empty slot in **Free** to put it down. It shows up in **New**. The original stack stays where it was.
-17. **V12, dragging:** drag any item onto an empty slot in **Free**. A faded copy stays where the item was, and the item shows up in **New**.
-18. **Hover guard:** right-click the last item of a stack (for example your last potion) and keep the mouse **still** on it afterwards. Its slot does not jump away while the mouse is on it. Move the mouse off. Within about half a second the empty slot moves to Free and a faded copy remains.
-19. Press **B** twice (close, open). All faded icons are gone, New is empty, and the items you bought, split or dragged are now in their real sections.
-20. If the window scrolls: scroll to the bottom, then collapse two big sections. The view never stays scrolled past the end.
-21. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code together with your notes from step 3. Claude checks:
+6. Click the **Junk** header to collapse it.
+7. Press **B** to close the window, then press **B** again to open it. Junk is still collapsed.
+8. Type `/reload`, then press **B**. Junk is **still** collapsed (saved for this character).
+9. Click the **Junk** header to expand it again.
+10. Click the **Grid** button at the top right. All items show in one grid in bag order. The button now reads **Categories**, and the title briefly says `SwagBag - grid view`.
+11. Click **Categories**. The sections come back.
+12. Attack a training dummy.
+13. While in combat, click **Grid**. The grid shows, with no red error.
+14. Still in combat, click **Categories**. The sections come back, with no red error.
+15. Stop attacking and leave combat.
+16. **V12, using up a stack:** right-click one of your small food or drink stacks until it is gone. Move the mouse off the slot after the last use. Within about half a second a faded gray copy of its icon stays where it was, and one more empty slot appears at the end of **Free**. Nothing else in the window moves.
+17. **V4:** right-click the faded icon. Only a tooltip appears: "This item moved or was used - items regroup when you close the bag." Nothing is used and nothing is picked up.
+18. Left-click the faded icon. Same: only the tooltip.
+19. **V12, looting or buying:** buy one cheap item from the vendor that you do **not** already have (an item you already have would stack onto its existing stack and not appear in New). Move the mouse off it. Within about half a second the item appears in the **New** section at the top, and New's header shows `(1)`. Nothing else moves.
+20. **V12, vendoring:** with the vendor open, right-click a gray junk item to sell it. Move the mouse off the slot. Within about half a second a faded copy stays where it was. Nothing else moves.
+21. **V12, splitting:** Shift-click a stack, choose 1, and click **Okay**. The 1 item sits on your cursor. Click an empty slot in **Free** to put it down, then move the mouse off it. Within about half a second it shows up in **New**. The original stack stays where it was.
+22. **V12, dragging:** drag an item from a category section (not from New or Free) onto an empty slot in **Free**, then move the mouse off it. Within about half a second a faded copy stays where the item was, and the item shows up in **New**.
+23. **Hover guard:** right-click the last item of your other small food or drink stack and keep the mouse **still** on it afterwards. Its slot does not jump away while the mouse is on it. Move the mouse off. Within about half a second the empty slot moves to Free and a faded copy remains.
+24. **Keystone:** if you can finish a key (or get a changed keystone), check afterwards that your keystone is still in its **Keystone & Crests** section, even though its level changed. It regroups only the next time you open the bag. If you cannot do a key now, say so and skip this step.
+25. Press **B** to close the window, then press **B** again to open it. All faded icons are gone, New is empty, and the items you bought, split or dragged are now in their real sections.
+26. If the window scrolls: scroll to the bottom, then collapse two big sections. The view never stays scrolled past the end.
+27. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code together with your notes from step 3. Claude checks:
     - no new errors and `Blocked actions: none`;
     - `Categories: 18 (0 edited)  Broken: none`;
     - `Last bags layout: … ms (open)` at or below 25 ms.
 
-Pass: steps 2 and 4–20 behave as described, no item was ever used or picked up by mistake, and nothing moved while the mouse was on it.
+Pass: steps 2 and 4-26 behave as described, no item was ever used or picked up by mistake, and nothing moved while the mouse was on it.
 
 ---
 
