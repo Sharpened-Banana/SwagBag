@@ -15,6 +15,14 @@ function Frame:RegisterEvent(event)
 	self.events[event] = true
 end
 
+-- Test fake: a unit event is delivered only when its first argument is the registered unit.
+function Frame:RegisterUnitEvent(event, unit)
+	if Stub.unknownEvents[event] then
+		error("Attempt to register unknown event \"" .. event .. "\"")
+	end
+	self.unitEvents[event] = unit
+end
+
 function Frame:UnregisterEvent(event)
 	self.events[event] = nil
 end
@@ -29,13 +37,16 @@ end
 
 -- Test helper: deliver a WoW event the way the client would.
 function Frame:Fire(event, ...)
-	if self.events[event] and self.scripts.OnEvent then
-		self.scripts.OnEvent(self, event, ...)
+	if self.scripts.OnEvent then
+		local unit = self.unitEvents[event]
+		if self.events[event] or (unit ~= nil and unit == (...)) then
+			self.scripts.OnEvent(self, event, ...)
+		end
 	end
 end
 
 function Stub.CreateFrame()
-	local f = setmetatable({ events = {}, scripts = {} }, Frame)
+	local f = setmetatable({ events = {}, unitEvents = {}, scripts = {} }, Frame)
 	Stub.frames[#Stub.frames + 1] = f
 	return f
 end
