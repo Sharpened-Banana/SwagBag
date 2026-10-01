@@ -66,6 +66,7 @@ end
 
 local MAX_UNKNOWN_RETRIES = 10
 local unknownRetries = 0
+local retryPending = false
 
 local function anyUnknown(equipped)
 	for _, e in pairs(equipped) do
@@ -77,8 +78,9 @@ local function anyUnknown(equipped)
 end
 
 -- What the character wears and can use; kept until the equipment changes. A context with a
--- worn item whose level is unreadable (unknown) is never kept: it is re-read 1 s later, up to
--- 10 times per episode (W3-19).
+-- worn item whose level is unreadable (unknown) is kept for the pass in hand, and one retry
+-- (1 s later, clearing it and re-drawing) is scheduled if none is pending: at most 10 retries
+-- per episode, the count reset by a clean read (W3-19).
 function Ov.Context()
 	if not Ov.context then
 		local A = SB.Adapter
@@ -91,17 +93,17 @@ function Ov.Context()
 				return nil
 			end
 		end
-		if anyUnknown(ctx.equipped) then
-			if unknownRetries < MAX_UNKNOWN_RETRIES then
+		if not anyUnknown(ctx.equipped) then
+			unknownRetries = 0
+		elseif not retryPending and unknownRetries < MAX_UNKNOWN_RETRIES then
+			retryPending = true
+			SB.Debounce("overlays.unknown", 1, function()
+				retryPending = false
 				unknownRetries = unknownRetries + 1
-				SB.Debounce("overlays.unknown", 1, function()
-					Ov.context = nil
-					Ov.RefreshAll()
-				end, "none")
-			end
-			return ctx -- not stored
+				Ov.context = nil
+				Ov.RefreshAll()
+			end, "none")
 		end
-		unknownRetries = 0
 		Ov.context = ctx
 	end
 	return Ov.context
