@@ -342,6 +342,20 @@ describe("GuildBankWindow (check G1)", function()
 		assert.same({ 1 }, A.guild.queried)
 	end)
 
+	-- Mutation: delete the Apply block in the guild window's `describe`.
+	it("a reopen draws overlays on a cached tab that has not answered (describe path)", function()
+		openVault()
+		answerQueries()
+		closeVault()
+		local r = SB.Overlays.regions[button(2, 1)]
+		r.topLeft:SetText("")
+		r.bind:SetText("")
+		A.guild.slots[2] = {}
+		openVault()
+		assert.falsy(GW.answered[2], "tab 2 is still waiting for its answer")
+		assert.same({ "285", "BoE" }, { r.topLeft.text, r.bind.text })
+	end)
+
 	it("while open, an item taken by someone else leaves a placeholder; a deposit goes to that tab's New", function()
 		openVault()
 		answerQueries()

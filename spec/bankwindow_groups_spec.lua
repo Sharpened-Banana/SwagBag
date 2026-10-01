@@ -331,6 +331,21 @@ describe("BankWindow contents", function()
 		assert.equal(false, BW.view.Record(13, 1).isNew, "not new: it was there when the tab appeared")
 	end)
 
+	-- Mutation: delete the Apply in the in-place (no ITEM reason) branch of the bank's live refresh.
+	it("a count-only change on a bank slot re-draws that button's overlays in place", function()
+		openBank()
+		local applied = {}
+		local apply = SB.Overlays.Apply
+		SB.Overlays.Apply = function(button, ...)
+			applied[button] = (applied[button] or 0) + 1
+			return apply(button, ...)
+		end
+		A.Put(6, 2, Fixtures.HERB, 25)
+		bankUpdate(6)
+		SB.Overlays.Apply = apply
+		assert.equal(1, applied[B.Get(6, 2)])
+	end)
+
 	it("an item dropped on a bank section header goes to the bags window's drag-to-assign", function()
 		openBank()
 		A.cursor = { itemID = Fixtures.JUNK }

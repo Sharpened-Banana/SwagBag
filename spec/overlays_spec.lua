@@ -229,6 +229,24 @@ describe("Overlays (spec F9)", function()
 		assert.same({ false, false }, { bank.arrow.shown, guild.arrow.shown })
 	end)
 
+	it("one RefreshAll over bags, bank and guild bank reads the equipment once", function()
+		local b1, b2, b3 = Fake.New("ItemButton"), Fake.New("ItemButton"), Fake.New("ItemButton")
+		local record = SB.Items.Describe(0, 3)
+		local function slots(button)
+			return function(fn) fn(button, record, 0, 3) end
+		end
+		SB.BagsWindow = { IsOpen = function() return true end, ForEachSlot = slots(b1) }
+		SB.BankWindow = { IsOpen = function() return true end, view = { ForEachSlot = slots(b2) } }
+		SB.GuildBankWindow = { IsOpen = function() return true end, view = { ForEachSlot = slots(b3) } }
+		local reads = 0
+		local equippedItems = A.EquippedItems
+		A.EquippedItems = function() reads = reads + 1 return equippedItems() end
+		Ov.context = nil
+		Ov.RefreshAll()
+		assert.equal(1, reads)
+		assert.truthy(Ov.regions[b3])
+	end)
+
 	it("Use Pawn never asks Pawn about a guild bank slot; the item-level rule decides there", function()
 		A.equipped[11] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
 		A.equipped[12] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
