@@ -244,6 +244,35 @@ function M.New(SB)
 		m.auctionatorCallback = cb
 	end
 
+	-- Focus signals (week 4): m.instance = { instanceType, difficultyID }; m.challengeMode true |
+	-- false | nil (no API); m.delve; m.spellNames[spellID] = lower-case name; m.fishingLoot;
+	-- m.lootSource ("GameObject", "Creature", ... or nil); m.professions ({ herb, ore, skin } or nil).
+	-- m.spellNameCalls counts SpellName lookups per spellID.
+	m.instance, m.challengeMode, m.delve, m.spellNames = {}, nil, false, {}
+	m.fishingLoot, m.lootSource, m.professions, m.spellNameCalls = false, nil, nil, {}
+	function m.InstanceInfo()
+		return { instanceType = m.instance.instanceType, difficultyID = m.instance.difficultyID }
+	end
+	function m.ChallengeModeActive()
+		return m.challengeMode
+	end
+	function m.InDelve()
+		return m.delve == true
+	end
+	function m.SpellName(spellID)
+		m.spellNameCalls[spellID] = (m.spellNameCalls[spellID] or 0) + 1
+		return m.spellNames[spellID]
+	end
+	function m.IsFishingLoot()
+		return m.fishingLoot == true
+	end
+	function m.LootSourceType()
+		return m.lootSource
+	end
+	function m.GatheringProfessions()
+		return m.professions
+	end
+
 	M.AddContainers(m)
 	return m
 end

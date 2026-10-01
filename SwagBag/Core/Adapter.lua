@@ -686,6 +686,128 @@ function A.AuctionatorOnUpdate(cb)
 end
 
 ---------------------------------------------------------------------------
+-- Focus-mode signals (week 4, spec 6.2). Every read is feature-detected: a missing function
+-- gives the fallback named next to it, never an error.
+---------------------------------------------------------------------------
+-- Difficulty IDs (12.1): 8 Mythic Keystone and 23 Mythic dungeon; 208 Delves.
+A.MYTHIC_DUNGEON_DIFFICULTY = { [8] = true, [23] = true }
+A.DELVE_DIFFICULTY = { [208] = true }
+
+-- { instanceType = "party" | "raid" | "pvp" | "arena" | "scenario" | nil, difficultyID = n | nil }.
+-- Outside an instance (or without IsInInstance) both are nil.
+function A.InstanceInfo()
+	local out = {}
+	local inInstance, info = _G.IsInInstance, _G.GetInstanceInfo
+	if type(inInstance) ~= "function" then
+		return out
+	end
+	local ok, inside, kind = pcall(inInstance)
+	if not ok or not inside or type(kind) ~= "string" or isSecret(kind) or kind == "none" then
+		return out
+	end
+	out.instanceType = kind
+	if type(info) == "function" then
+		local okI, _, _, difficultyID = pcall(info)
+		if okI and type(difficultyID) == "number" and not isSecret(difficultyID) then
+			out.difficultyID = difficultyID
+		end
+	end
+	return out
+end
+
+-- true / false: a Mythic+ key is running. Read from the challenge-mode API, else from the
+-- client's ChallengeMode add-on restriction. nil when neither exists: the M+ mode then uses its
+-- fallback, a Mythic party dungeon with a keystone in the bags (check V5).
+function A.ChallengeModeActive()
+	if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive then
+		local ok, v = pcall(C_ChallengeMode.IsChallengeModeActive)
+		if ok and not isSecret(v) then
+			return v == true
+		end
+	end
+	local R, E = C_RestrictedActions, Enum and Enum.AddOnRestrictionType
+	if R and R.IsAddOnRestrictionActive and E and E.ChallengeMode ~= nil then
+		local ok, v = pcall(R.IsAddOnRestrictionActive, E.ChallengeMode)
+		if ok and not isSecret(v) then
+			return v == true
+		end
+	end
+	return nil
+end
+
+-- true inside a delve: the party API when the client has it, else a scenario at the delve
+-- difficulty (check V7). info: an InstanceInfo() result (read again when nil).
+function A.InDelve(info)
+	if C_PartyInfo and C_PartyInfo.IsDelveInProgress then
+		local ok, v = pcall(C_PartyInfo.IsDelveInProgress)
+		if ok and not isSecret(v) then
+			return v == true
+		end
+	end
+	info = info or A.InstanceInfo()
+	return info.instanceType == "scenario" and A.DELVE_DIFFICULTY[info.difficultyID] == true
+end
+
+-- The lower-case name of a spell (name matching backs up the spell-ID lists), or nil.
+function A.SpellName(spellID)
+	if type(spellID) ~= "number" or isSecret(spellID) or not (C_Spell and C_Spell.GetSpellName) then
+		return nil
+	end
+	local ok, name = pcall(C_Spell.GetSpellName, spellID)
+	if ok and type(name) == "string" and not isSecret(name) then
+		return name:lower()
+	end
+	return nil
+end
+
+-- true while the open loot window is fishing loot; false otherwise or without the function.
+function A.IsFishingLoot()
+	local fn = _G.IsFishingLoot
+	if type(fn) ~= "function" then
+		return false
+	end
+	local ok, v = pcall(fn)
+	return ok and v == true
+end
+
+-- The GUID type of the first loot slot's source ("GameObject" for a node, "Creature" for
+-- skinning), or nil when the client cannot tell (the gathering signal then trusts the spell).
+function A.LootSourceType()
+	local fn = _G.GetLootSourceInfo
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, guid = pcall(fn, 1)
+	if not ok or type(guid) ~= "string" or isSecret(guid) then
+		return nil
+	end
+	return guid:match("^(%a+)%-")
+end
+
+-- The character's gathering professions: { herb = true, ore = true, skin = true } (those it
+-- has), or nil when the client cannot tell (Gathering then opens all three materials sections).
+-- Skill lines: 182 Herbalism, 186 Mining, 393 Skinning.
+local GATHER_SKILL_LINES = { [182] = "herb", [186] = "ore", [393] = "skin" }
+function A.GatheringProfessions()
+	local list, info = _G.GetProfessions, _G.GetProfessionInfo
+	if type(list) ~= "function" or type(info) ~= "function" then
+		return nil
+	end
+	local ok, first, second = pcall(list)
+	if not ok then
+		return nil
+	end
+	local out = {}
+	for _, index in pairs({ first, second }) do
+		local okI, _, _, _, _, _, _, skillLine = pcall(info, index)
+		if okI and GATHER_SKILL_LINES[skillLine] then
+			out[GATHER_SKILL_LINES[skillLine]] = true
+		end
+	end
+	return out
+end
+
+---------------------------------------------------------------------------
 -- Feature checks (consumed by Core/Checks.lua). window: which Safe Mode
 -- flag a failed REQUIRED check turns on. value: exact value expected.
 ---------------------------------------------------------------------------
@@ -754,4 +876,12 @@ A.CHECKS = {
 	{ path = "AutoStoreGuildBankItem", window = "bank", required = false },
 	{ path = "PickupGuildBankItem", window = "bank", required = false },
 	{ path = "Enum.PlayerInteractionType.GuildBanker", window = "bank", required = false },
+	{ path = "IsInInstance", window = "bags", required = false },
+	{ path = "GetInstanceInfo", window = "bags", required = false },
+	{ path = "C_PartyInfo.IsDelveInProgress", window = "bags", required = false },
+	{ path = "C_Spell.GetSpellName", window = "bags", required = false },
+	{ path = "IsFishingLoot", window = "bags", required = false },
+	{ path = "GetLootSourceInfo", window = "bags", required = false },
+	{ path = "GetProfessions", window = "bags", required = false },
+	{ path = "GetProfessionInfo", window = "bags", required = false },
 }

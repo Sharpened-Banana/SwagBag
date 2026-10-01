@@ -41,6 +41,8 @@ Engine/Snapshots.lua
 Engine/Prices.lua
 Engine/OverlayData.lua
 Engine/Focus.lua
+Engine/FocusData.lua
+Engine/Signals.lua
 
 # Providers
 Providers/Auctionator.lua
