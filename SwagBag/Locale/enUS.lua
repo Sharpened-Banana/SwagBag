@@ -83,10 +83,33 @@ L.REPORT_BLOCKED_ITEM = "%s at %s%s"
 L.REPORT_ADDONS = "Bag-related addons: %s"
 L.REPORT_NOT_LOADED = "%s (not loaded)"
 L.REPORT_SETTINGS = "Settings hash: %s  Schema: %d  Buttons: %d (%d ms)"
+L.REPORT_CATEGORIES = "Categories: %d (%d edited)  Broken: %s"
 
 -- Bags window
 L.BAGS_TITLE = "SwagBag"
 L.BAGS_SCALE = "SwagBag %d%%"
+
+-- Categories (spec 7.6) and New / Free sections
+L.CAT_NEW = "New"
+L.CAT_KEYSTONE = "Keystone & Crests"
+L.CAT_CONSUMABLES = "Consumables"
+L.CAT_GEAR = "Gear"
+L.CAT_BOE = "BoE gear"
+L.CAT_TRADEGOODS = "Trade Goods"
+L.CAT_HERBS = "Herbs"
+L.CAT_ORE = "Ore"
+L.CAT_LEATHERCLOTH = "Leather & Cloth"
+L.CAT_ENCHANTING = "Enchanting"
+L.CAT_COOKING = "Cooking"
+L.CAT_FISH = "Fish & Lures"
+L.CAT_QUEST = "Quest"
+L.CAT_HOUSING = "Housing"
+L.CAT_COLLECT = "Pets & Mounts & Toys"
+L.CAT_TOOLS = "Teleports & Tools"
+L.CAT_REAGENTS = "Reagents"
+L.CAT_JUNK = "Junk"
+L.CAT_OTHER = "Other"
+L.CAT_FREE = "Free"
 
 -- Search
 L.SEARCH_RESULT = "Search \"%s\": %d of %d slots match (%.1f ms)."

@@ -32,6 +32,8 @@ Engine/Query/Parser.lua
 Engine/Query/Query.lua
 Engine/Keywords.lua
 Engine/Search.lua
+Engine/CategoryDefaults.lua
+Engine/Categories.lua
 
 # UI
 UI/ReportBox.lua

@@ -97,5 +97,9 @@ function Report.Build()
 	local stats = SB.Buttons and SB.Buttons.stats or {}
 	lines[#lines + 1] = L.REPORT_SETTINGS:format(Report.Hash(db.settings or {}), db.schemaVersion or 0, stats.count or 0,
 		math.floor(stats.createMs or 0))
+	if SB.Categories and SB.Categories.loaded then
+		local total, edited, broken = SB.Categories.Counts()
+		lines[#lines + 1] = L.REPORT_CATEGORIES:format(total, edited, #broken > 0 and table.concat(broken, ", ") or L.REPORT_NONE)
+	end
 	return table.concat(lines, "\n")
 end
