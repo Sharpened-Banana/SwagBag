@@ -108,6 +108,7 @@ L.QUERY_EXPECT_OPERATOR = "& or |"
 L.QUERY_EXPECT_SHALLOWER = "fewer nested ( and ! (at most 100 levels)"
 L.QUERY_ERR_AND_BEFORE_COMPARISON = "Put & between a name and a comparison (at character %d)"
 L.QUERY_FOUND_END = "the end of the search"
+L.QUERY_WARN_UNKNOWN_KEYWORD = "Unknown keyword \"#%s\" matches nothing (character %d)"
 
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"

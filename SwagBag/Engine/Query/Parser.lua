@@ -2,8 +2,12 @@
 --   or      := and ( "|" and )*
 --   and     := not ( "&" not )*
 --   not     := "!" not | primary
---   primary := "(" or ")" | STRING | "#" phrase | phrase [ OP NUMBER ]
+--   primary := "(" or ")" | STRING | "#" phrase | OP NUMBER | phrase [ OP NUMBER ]
 --   phrase  := WORD+            adjacent words form ONE phrase (spec 7.5 #1)
+-- Syndicator-style item level (spec 7.5 #8), always on the "ilvl" keyword:
+--   <N >N =N   bare comparison; < and > INCLUDE N (<536 is ilvl<=536)
+--   N          a single all-digit word: ilvl=N
+--   N-M        a single word: ilvl>=min(N,M) & ilvl<=max(N,M)
 -- AST nodes (every node has a 1-based character span s..e):
 --   { type = "or" | "and", items = {...} }      { type = "not", item = node }
 --   { type = "word", value }   bare word/phrase: keyword if registered, else name text
@@ -15,6 +19,13 @@ local _, SB = ...
 
 local Parser = {}
 SB.QueryParser = Parser
+
+-- Bare < and > include the number, as in Syndicator.
+local INCLUSIVE = { ["<"] = "<=", [">"] = ">=" }
+
+local function levelNode(op, value, raw, s, e)
+	return { type = "num", name = "ilvl", op = op, value = value, raw = raw, s = s, e = e }
+end
 
 function Parser.Parse(text)
 	local tokens, lexErr = SB.QueryLexer.Tokenize(text)
@@ -81,9 +92,31 @@ function Parser.Parse(text)
 			end
 			local value, _, e = phrase()
 			return { type = "exact", value = value, s = tok.s, e = e }
+		elseif tok.type == "OP" then
+			pos = pos + 1
+			local num = peek()
+			local n = num.type == "WORD" and tonumber(num.value) or nil
+			if n == nil then
+				fail("NUMBER")
+			end
+			pos = pos + 1
+			return levelNode(INCLUSIVE[tok.value] or tok.value, n, num.value, tok.s, num.e)
 		elseif tok.type == "WORD" then
 			local value, s, e, wordCount = phrase()
 			if peek().type ~= "OP" then
+				if wordCount == 1 then
+					local lo, hi = value:match("^(%d+)%-(%d+)$")
+					if lo then
+						lo, hi = tonumber(lo), tonumber(hi)
+						if lo > hi then
+							lo, hi = hi, lo
+						end
+						return { type = "and", s = s, e = e, items = {
+							levelNode(">=", lo, tostring(lo), s, e), levelNode("<=", hi, tostring(hi), s, e) } }
+					elseif value:match("^%d+$") then
+						return levelNode("=", tonumber(value), value, s, e)
+					end
+				end
 				return { type = "word", value = value, s = s, e = e }
 			end
 			if wordCount > 1 then

@@ -5,11 +5,14 @@
 --       value(record) -> number | false | nil for numeric use:   ilvl>250
 --                        (false = item has no such field -> comparison is false;
 --                         nil = data not loaded yet -> result unknown)
---   Query.Compile(text) -> { fn, cacheClass, keywords, errors, ast, id, text, empty }
+--   Query.Compile(text) -> { fn, cacheClass, keywords, errors, warnings, ast, id, text, empty }
+--       warnings: { { kind = "unknown_keyword", value, position } } for #word with no such
+--       keyword. Like Syndicator, such a term is simply false (spec 7.5 #3); not an error.
 --   Query.Eval(compiled, record) -> true | false | nil   (nil when compiled has errors)
 --   Query.Validate(compiled) -> { ok, problems, warnings }
 --   Query.Pretty(ast) -> canonical text; Parse(Pretty(ast)) gives the same tree
 --   Query.FormatError(err) -> "Expected a value after "&" at character 6"
+--   Query.FormatWarning(w) -> "Unknown keyword "#potin" matches nothing (character 7)"
 -- Tri-state (Kleene): AND is false if any part is false, else nil if any is nil;
 -- OR is true if any part is true, else nil if any is nil; NOT nil is nil.
 local _, SB = ...
@@ -129,9 +132,13 @@ local function unknown()
 	return nil
 end
 
+local function never()
+	return false
+end
+
 function Q.Compile(text)
 	text = text or ""
-	local compiled = { text = text, keywords = {}, errors = {}, cacheClass = "static" }
+	local compiled = { text = text, keywords = {}, errors = {}, warnings = {}, cacheClass = "static" }
 	if not text:find("%S") then
 		compiled.empty = true
 		compiled.ast = { type = "all" }
@@ -167,8 +174,8 @@ function Q.Compile(text)
 				return kw.eval
 			end
 			if node.type == "exact" then
-				fail(node, "KEYWORD", node.value)
-				return unknown
+				compiled.warnings[#compiled.warnings + 1] = { kind = "unknown_keyword", value = node.value, position = node.s }
+				return never
 			end
 			return textMatcher(node.value)
 		elseif node.type == "text" then
@@ -222,6 +229,10 @@ function Q.FormatError(err)
 	return L.QUERY_ERR_FOUND:format(expect, found, err.position)
 end
 
+function Q.FormatWarning(w)
+	return SB.L.QUERY_WARN_UNKNOWN_KEYWORD:format(w.value, w.position)
+end
+
 local function walk(node, fn)
 	fn(node)
 	if node.items then
@@ -246,6 +257,9 @@ function Q.Validate(compiled)
 			report.problems[#report.problems + 1] = { kind = "error", position = err.position, message = Q.FormatError(err) }
 		end
 		return report
+	end
+	for _, w in ipairs(compiled.warnings or {}) do
+		report.warnings[#report.warnings + 1] = w
 	end
 	for _, mode in ipairs(VALIDATE_MODES) do
 		local leafValue = mode.value

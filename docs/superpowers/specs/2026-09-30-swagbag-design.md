@@ -445,20 +445,22 @@ Triggers: `CHALLENGE_MODE_START`; `PLAYER_ENTERING_WORLD` into an M+ instance; `
 
 One grammar for the search box, categories, focus-mode section queries and consumables watch lists. **Syntax is Syndicator/Baganator-compatible**: a category string pasted from Baganator or a Wago category should parse and match the same items for every keyword both support. Our implementation is clean-room and stricter: fixed precedence, positioned errors, tri-state semantics. Where Syndicator's behaviour is undefined (e.g. the gold-range quirk noted in research), we define it and document the divergence.
 
-Desk spike F (grammar diff against the Syndicator mirror with 20 popular Wago strings) runs before M2 freezes; its output updates §7.3 and §7.5. Any divergence found there is listed under "Known divergences", never silently absorbed.
+Desk spike F (grammar diff against the Syndicator v284 mirror and 24 published Wago/Baganator strings) ran on 2026-10-01: `docs/research/2026-10-syndicator-grammar-diff.md`. Its findings are folded into §7.2 and §7.5. Any divergence found there is listed under "Known divergences", never silently absorbed.
 
 ### 7.2 Grammar
 
 ```
 expr     := or
-or       := and ( "|" and )*
+or       := and ( ("|" | "||") and )*
 and      := not ( "&" not )*               -- explicit & only; adjacent words are NOT implicit AND (see 7.5)
-not      := "!" not | primary
+not      := ("!" | "~") not | primary
 primary  := "(" expr ")" | term
-term     := keyword | numeric | exact | text
+term     := keyword | numeric | level | range | exact | text
 keyword  := WORD                            -- registered keyword: boe, junk, potion, reagent, ...
-numeric  := WORD op NUMBER                  -- ilvl>250, lvl<80, gear<210, count>=5
-exact    := "#" WORD                        -- keyword only; never a name-text match
+numeric  := WORD op NUMBER                  -- ilvl>250, lvl<80, gear<210, count>=5 (strict < >)
+level    := op NUMBER | DIGITS              -- Syndicator item level: <536 = ilvl<=536, >150 = ilvl>=150, 536 = ilvl=536
+range    := DIGITS "-" DIGITS               -- one word: 400-450 = ilvl>=400 & ilvl<=450 (either order)
+exact    := "#" WORD                        -- keyword only; never a name-text match; unknown = warning, false
 text     := WORD | '"' chars '"'            -- item-name substring (case-insensitive, ASCII-folded in enUS)
 op       := "=" | "<" | "<=" | ">" | ">="
 ```
@@ -496,12 +498,20 @@ Keywords are registered English-only in v1.0 through `Query.RegisterKeyword{name
 
 ### 7.5 Known divergences from Syndicator (documented, surfaced in the editor)
 
-1. **Adjacent words are not implicit AND.** `healing potion` is a single text phrase "healing potion", as in Syndicator-style name search. Use `&` for conjunction. (Decision: phrase search is what bag users expect; the critique's `Metal & Stone` parse problem is handled by quoting: the builder auto-quotes values containing operators.)
-2. **Precedence is fixed** (`!` > `&` > `|`). Strings relying on left-to-right evaluation may differ; the editor shows the parsed tree so the user sees what will match.
-3. **Errors are shown**, not swallowed. A trailing `&` or unbalanced parenthesis marks the category invalid and keeps the previous compiled version active.
+Verified against Syndicator v284 by desk spike F (`docs/research/2026-10-syndicator-grammar-diff.md`, 2026-10-01).
+
+1. **Adjacent words are one phrase in both.** `healing potion` is one term; use `&` for conjunction. (Not a divergence; kept for clarity. The builder auto-quotes values containing operators, which handles the critique's `Metal & Stone` case.)
+2. **Precedence is the same** (`!` > `&` > `|`, parentheses group). `~` is accepted as a synonym for `!`, and `||` for `|`.
+3. **Errors are shown, not swallowed.** Syndicator silently ignores unbalanced parentheses and stray operators; we mark the category invalid and keep the previous compiled version active. Exception: an **unknown `#keyword` is a warning, not an error**. It evaluates `false`, as in Syndicator, so imported OR-lists of alternative spellings keep working.
 4. **Undefined branches are defined.** Numeric comparisons on items lacking the field (ilvl on a potion) evaluate `false`, not `nil`.
-5. **Tri-state**: items with unloaded data evaluate `nil` and are held in New rather than mis-filed.
-6. **`#` is keyword-only** in both; if desk spike F finds a different Syndicator meaning, we follow Syndicator and move our "exact" prefix to `=word`.
+5. **Tri-state**: items with unloaded data evaluate `nil` and are held in New rather than mis-filed (Syndicator also passes "unknown" through).
+6. **`#` is keyword-only in both** (exact keyword: no prefix expansion, no name text). Confirmed by spike F; the `=word` fallback is dropped.
+7. **Bare words search item names only.** Syndicator also searches selected tooltip lines and treats a bare word as a keyword *prefix* (`pot` finds potions). We match whole keywords, else the name. The editor hints at the nearest keyword.
+8. **Item-level syntax.** Syndicator's bare forms are accepted: `<N`, `>N`, `=N`, `N` and the range `N-M`. Bare `<`/`>` **include** N as in Syndicator (`<536` = `ilvl<=536`), and the range includes both ends. Our named forms `ilvl>N`, `gear<N`, `lvl<N` are SwagBag extensions with **strict** `<`/`>`. A bare number is an item-level test only; it does not also match item names. Our `ilvl` counts equippable gear only; Syndicator reads the tooltip item level of any item.
+9. **Quotes** are a SwagBag extension (always name text). In Syndicator `"` is a literal character.
+10. **Same word, different meaning:** `upgrade` (ours: has an upgrade track; theirs: is an upgrade for this character) and `bop` (ours: bind type; theirs: currently bound). Both are explained in the editor's keyword help.
+11. **A comparison after a multi-word phrase** (`a b ilvl>5`) is a positioned `AND_BEFORE_COMPARISON` error for us; Syndicator treats the whole string as a name search that matches nothing.
+12. **Keyword vocabulary.** Syndicator's English spellings used by published category strings are registered as aliases: `equipment`, `bwe`, `tradeable loot`, `tradable loot`, `tradeskill`, `profession`, `profession equipment`, `battle pet(s)`, `off-hand`/`off hand`/`held in off-hand`, `main hand`, `two-hand`, `one-hand`, `trash`, `account bound`, `warbound until equipped`, `helm`, `cloak`, `bracers`, `gloves`, `belt`, `boots`. Subclass and detail keywords we do not have yet (`elemental`, `optional reagents`, `finishing reagents`, `crafting reagent`, `open`, `socket`, expansion and profession names) are unknown `#keywords` (rule 3) until they are registered.
 
 ### 7.6 Default category set (first run, display order)
 
@@ -785,7 +795,7 @@ M7 rule builder + full wizard + tour (≈2 weeks) · M8 offline alt view + toolt
 
 ### 13.2 Open items (to be resolved during the named milestone)
 
-1. Desk spike F: exact Syndicator semantics of `#`, `gear<N`, and whether adjacent words are phrase or AND; update §7.5 (M2).
+1. ~~Desk spike F: exact Syndicator semantics of `#`, `gear<N`, and whether adjacent words are phrase or AND; update §7.5 (M2).~~ Resolved 2026-10-01: see §7.2, §7.5 and `docs/research/2026-10-syndicator-grammar-diff.md`.
 2. Delve detection API (`C_DelvesUI` / difficulty IDs) — V7 (M5).
 3. M+ teleport spell ID list source (data file; Blizzard dungeon teleports by season) (M5).
 4. Crest/upgrade-currency item IDs per season (data file) (M6).

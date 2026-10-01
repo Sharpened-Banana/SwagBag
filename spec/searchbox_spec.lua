@@ -148,6 +148,22 @@ describe("SearchBox", function()
 		assert.equal("Search cleared.", printed[4])
 	end)
 
+	it("an unknown #keyword is a soft warning: the search still applies and the line says why", function()
+		open()
+		SB.Slash.Dispatch("search #potin")
+		assert.equal(2, #printed)
+		assert.truthy(printed[1]:find("slots match", 1, true))
+		assert.equal("Unknown keyword \"#potin\" matches nothing (character 1)", printed[2])
+		local errorLine
+		for _, fs in ipairs(window.frame.created) do
+			if fs.calls.SetWordWrap then
+				errorLine = fs
+			end
+		end
+		assert.equal(printed[2], errorLine.text)
+		assert.equal(6, dimCount())
+	end)
+
 	it("a failing keyword does not break the window and reports the problem", function()
 		open()
 		SB.Query.RegisterKeyword({ name = "boom", class = "volatile", eval = function() error("x") end })

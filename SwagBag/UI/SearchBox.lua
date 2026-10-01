@@ -44,8 +44,9 @@ local function textWidth(text)
 	return measure:GetStringWidth()
 end
 
+-- No error: show the applied search's soft warning (unknown #keyword), if any.
 function Box.ClearError()
-	errorLine:SetText("")
+	errorLine:SetText(SB.Search.lastWarning or "")
 	underline:Hide()
 end
 
@@ -120,5 +121,9 @@ SB.Slash.Register("search", L.HELP_SEARCH, function(arg)
 	if not SB.Search.IsActive() then
 		return L.SEARCH_CLEARED
 	end
-	return L.SEARCH_RESULT:format(arg, matches, total, ms)
+	local result = L.SEARCH_RESULT:format(arg, matches, total, ms)
+	if SB.Search.lastWarning then
+		return { result, SB.Search.lastWarning }
+	end
+	return result
 end, "bags")
