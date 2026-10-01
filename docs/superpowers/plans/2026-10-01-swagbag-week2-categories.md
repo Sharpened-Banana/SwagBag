@@ -654,9 +654,9 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 Give the user this checklist exactly. Stand near a vendor.
 
-1. Type `/reload`. Chat shows `SwagBag: v0.2.0 loaded. Type /swagbag help for commands.`
+1. Quit the game completely and start it again (new files need a full restart, not `/reload`). Log in. Chat shows `SwagBag: v0.2.0 loaded. Type /swagbag help for commands.`
 2. Press **B**. The SwagBag window opens.
-3. Click the search box and type `boe &` (with the trailing &). A red message appears to the right of the search box, level with the box, on at most two lines. It does **not** cover any items.
+3. Click the search box and type `boe &` (with the trailing &). A red message appears to the right of the search box, level with the box, on at most two lines. It does **not** cover any items, and it does not overlap the **X** close button.
 4. Click the small **x** in the search box. The red message disappears.
 5. Press **B** to close the window. Click one of the bag icons on your bag bar (bottom right of the screen). The SwagBag window opens. Click the same icon again: it closes. Each click opens or closes it exactly once.
 6. With the window closed, talk to the vendor. The SwagBag window opens by itself.
@@ -5937,8 +5937,9 @@ Throughout: whenever a step says an item "moves" or "goes away", move the mouse 
    - Other: anything else.
 
    Write down every item that looks wrong: the item name and the section it is in. Also write down what is in **Other**.
-4. Click the **Consumables** header. Its items disappear, the header now starts with `+`, and the sections below move up.
+4. Click the **Consumables** header. Its items disappear, the header now starts with `+`, and the sections below move up. The Consumables header itself stays exactly where it is.
 5. Click it again. The items come back in exactly the same places.
+5a. Collapse a section near the top: the header you clicked does not move and no item slides under your mouse. Expand it again.
 6. Click the **Junk** header to collapse it.
 7. Press **B** to close the window, then press **B** again to open it. Junk is still collapsed.
 8. Type `/reload`, then press **B**. Junk is **still** collapsed (saved for this character).
@@ -5956,8 +5957,8 @@ Throughout: whenever a step says an item "moves" or "goes away", move the mouse 
 20. **V12, vendoring:** with the vendor open, right-click a gray junk item to sell it. Move the mouse off the slot. Within about half a second a faded copy stays where it was. Nothing else moves.
 21. **V12, splitting:** Shift-click a stack, choose 1, and click **Okay**. The 1 item sits on your cursor. Click an empty slot in **Free** to put it down, then move the mouse off it. Within about half a second it shows up in **New**. The original stack stays where it was.
 22. **V12, dragging:** drag an item from a category section (not from New or Free) onto an empty slot in **Free**, then move the mouse off it. Within about half a second a faded copy stays where the item was, and the item shows up in **New**.
-23. **Hover guard:** right-click the last item of your other small food or drink stack and keep the mouse **still** on it afterwards. Its slot does not jump away while the mouse is on it. Move the mouse off. Within about half a second the empty slot moves to Free and a faded copy remains.
-24. **Keystone:** if you can finish a key (or get a changed keystone), check afterwards that your keystone is still in its **Keystone & Crests** section, even though its level changed. It regroups only the next time you open the bag. If you cannot do a key now, say so and skip this step.
+23. **Hover guard:** right-click your other small food or drink stack until only one is left (the number on the icon disappears), and stand up. Then right-click the last one and keep the mouse **still** on it afterwards. Its slot does not jump away while the mouse is on it. Move the mouse off. Within about half a second the empty slot moves to Free and a faded copy remains.
+24. **Keystone:** keep the SwagBag window open while the run ends (when the key level changes). The keystone stays in Keystone & Crests and does not jump to New. It regroups only the next time you open the bag. If you cannot do a key now, say so and skip this step.
 25. Press **B** to close the window, then press **B** again to open it. All faded icons are gone, New is empty, and the items you bought, split or dragged are now in their real sections.
 26. If the window scrolls: scroll to the bottom, then collapse two big sections. The view never stays scrolled past the end.
 27. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code together with your notes from step 3. Claude checks:
@@ -6316,15 +6317,16 @@ Give the user this checklist exactly. Stand near a banker, with a training dummy
 6. Pick up an item and drop it on the **New** header. Chat says `Items can't be added to New. Drop them on a category header.` The item stays on your cursor. Click an empty bag slot to put it back.
 7. If you carry a fish or a lure that is not in **Fish & Lures**, drop it on that header, then click **Reflow**. It moves there.
 8. Click **Sort**. The title says `Sorting...`. Blizzard sorts your bags. For a moment faded icons may appear. About half a second after the sorting stops, the window regroups (title `Regrouped`): no faded icons, and every item is in its section. (If your bags were already sorted, nothing moves and nothing regroups. That is fine. Swap two items by hand and try again.)
+8a. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks `Last bags layout: … ms (sort)` at or below 40 ms.
 9. Your bags are already sorted after step 8, so a second Sort changes nothing. Swap two items by hand, then click **Sort** and immediately move the mouse over the items and keep it there. The window waits. The title says `Regroups when the mouse leaves the items`. Move the mouse off the window. It regroups.
 10. Attack a training dummy. In combat, click **Sort**. The title says `Sort after combat ends`, and nothing moves. Leave combat: still nothing moves, and nothing is sorted by itself. Click **Sort** again: now it sorts, and the window regroups.
 11. **V12 at the bank:** talk to the banker (Blizzard's bank window is still used this week). Right-click an item in the SwagBag window: it goes to the bank, a faded copy stays where it was, and nothing else moves.
-12. Drag an item from the bank into an empty SwagBag slot. It appears in **New**.
+12. Drag an item from the bank into an empty SwagBag slot. It appears in **New**; then move the mouse off it.
 13. Close the bank and press **B** twice. Everything is regrouped, with no faded icons.
 14. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks:
     - no new errors and `Blocked actions: none`;
     - `Categories: 18 (N edited)  Broken: none`, where N is the number of sections you dropped items on;
-    - `Last bags layout: … ms (sort)` or `(reflow)` at or below 40 ms.
+    - `Last bags layout: … ms (open)` at or below 25 ms (the window was reopened in step 13).
 
 Pass: steps 2–13 behave as described, and no item ever moved under the mouse.
 
@@ -6348,7 +6350,7 @@ The user ticks these in game on Oct 14 and pastes the final `/swagbag report` in
 1. [ ] Sessions E0, E1 and E2 passed (or every failure was fixed and its step re-run).
 2. [ ] At least three days of play with the category view as the only bag view, including at least one dungeon or M+ key. Bags were opened with B, the backpack button, a bag-bar icon, the vendor, the mailbox and the bank.
 3. [ ] The daily V12 check had five "no" answers every day, or every "yes" was fixed.
-4. [ ] V4 passed (E1 steps 12–13): a faded icon only ever shows its tooltip.
+4. [ ] V4 passed (E1 steps 17–18): a faded icon only ever shows its tooltip.
 5. [ ] The items in **Other** were reviewed. Each was either moved by drag-onto-header or reported, so Claude can decide whether a default category needs a better rule.
 6. [ ] Collapse state survived `/reload` and logging out and back in.
 7. [ ] The final report shows: errors `none` (or only deliberate `debug:error` entries), `Blocked actions: none`, `Categories: 18 (N edited)  Broken: none`, and `Last bags layout` ≤ 25 ms for `open`.
