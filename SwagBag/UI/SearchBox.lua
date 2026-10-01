@@ -19,10 +19,13 @@ box:SetAutoFocus(false)
 Box.editBox = box
 
 local errorLine = W.frame:CreateFontString(nil, "OVERLAY", "GameFontRedSmall")
-errorLine:SetPoint("LEFT", box, "RIGHT", 8, 0)
+errorLine:SetPoint("TOPLEFT", box, "TOPRIGHT", 8, 4)
 errorLine:SetPoint("RIGHT", W.frame, "RIGHT", -8, 0)
 errorLine:SetJustifyH("LEFT")
-errorLine:SetWordWrap(false)
+errorLine:SetWordWrap(true)
+if errorLine.SetMaxLines then
+	errorLine:SetMaxLines(2)
+end
 
 local underline = box:CreateTexture(nil, "OVERLAY")
 underline:SetColorTexture(1, 0.25, 0.25, 1)
