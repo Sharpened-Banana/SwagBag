@@ -15,6 +15,7 @@ Locale/enUS.lua
 Core/Adapter.lua
 Core/SafeMode.lua
 Core/ErrorTrap.lua
+Core/Events.lua
 
 # Engine
 
