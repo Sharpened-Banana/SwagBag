@@ -86,7 +86,13 @@ local function fakeButtons()
 		button.x, button.y = x, y
 		button.placed = button.placed + 1
 	end
-	function B.Paint(button, info) button.itemID = info and info.itemID or nil end
+	function B.Paint(button, info)
+		button.itemID = info and info.itemID or nil
+		if info then -- like the real pool: a filled button never shows a free tile's number
+			button.freeCount = nil
+		end
+	end
+	function B.SetFreeCount(button, n) button.freeCount = n end
 	function B.KindOf(bag) return bag <= 5 and "bags" or "bank" end
 	function B.SetParentFor() end
 	function B.SetDimmed(button, d) button.dimmed = d end
@@ -148,6 +154,12 @@ describe("BagsWindow category view", function()
 		return { b.x, b.y }
 	end
 
+	-- The tests that pin Free's cells one by one show every free slot (bags.freeTile = false, the
+	-- alternative to the free tile, plan D19). The free tile has its own tests below.
+	local function everyFreeSlot()
+		SB.Config.Set("bags.freeTile", false)
+	end
+
 	it("opens in the category view: sections in display order, New reserved on top, Free last", function()
 		assert.truthy(W.Open())
 		assert.same({ "- New (0)", "- Keystone & Crests (1)", "- Consumables (2)", "- Gear (1)", "- BoE gear (1)",
@@ -160,6 +172,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("shows every slot button exactly once, each at its own cell", function()
+		everyFreeSlot()
 		W.Open()
 		local seen = {}
 		for slot = 1, 16 do
@@ -253,6 +266,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("an ApplyChanges that adds a Free row keeps the top-left corner fixed (C1)", function()
+		everyFreeSlot()
 		SB.Config.UI().positions.bags = { "BOTTOMLEFT", "BOTTOMLEFT", 100, 200 }
 		W.Open()
 		local left, top, height = W.frame:GetLeft(), W.frame:GetTop(), W.frame.h
@@ -346,6 +360,7 @@ describe("BagsWindow category view", function()
 	end
 
 	it("using up an item leaves a placeholder with its icon; its button goes to Free; nothing else moves", function()
+		everyFreeSlot()
 		W.Open()
 		local potionAt, counts = at(0, 1), placedCounts()
 		A.Clear(0, 1)
@@ -363,6 +378,7 @@ describe("BagsWindow category view", function()
 
 	it("a drag to an empty slot and a stack split in one update: one placeholder, both show in New (Review Focus 1)",
 		function()
+			everyFreeSlot()
 			W.Open()
 			local counts = placedCounts()
 			local ringAt = at(0, 3)
@@ -413,6 +429,92 @@ describe("BagsWindow category view", function()
 		assert.equal("280", SB.Overlays.regions[B.Get(0, 10)].topLeft.text)
 	end)
 
+	-- The free tile's number on a slot button (nil: none).
+	local function number(bag, slot)
+		return rawget(B.Get(bag, slot), "freeCount")
+	end
+
+	-- Plan D19 (the user's request W3-12): the free tile. Mutation: `freeTile = false` in
+	-- layoutSections' Build options.
+	it("Free shows one tile per bag family with its number of free slots; the other empty slots are hidden", function()
+		A.SetBagSize(5, 2)
+		SB.Inventory.ScanAll()
+		W.Open()
+		assert.equal("- Free (12)", header("free").text.text)
+		assert.same({ true, 10 }, { B.Get(0, 7).shown, number(0, 7) }, "the backpack's first empty slot")
+		assert.same({ true, 2 }, { B.Get(5, 1).shown, number(5, 1) }, "the reagent bag has its own tile")
+		for slot = 8, 16 do
+			assert.falsy(B.Get(0, slot).shown, "slot " .. slot)
+		end
+		assert.falsy(B.Get(5, 2).shown)
+		assert.equal(18, #W.cells, "search still sees every slot")
+		assert.truthy(SB.Overlays.regions[B.Get(5, 1)].reagent.shown, "the reagent tile keeps its green tint")
+	end)
+
+	-- Mutation: `if button and t.shown then` in paintTiles (no "really empty" check): the number
+	-- shows on the dropped item when another change redraws while the mouse is still on it.
+	it("a drop on the tile: the item stays under the mouse with no number; then the next empty slot takes its place",
+		function()
+			W.Open()
+			local tile, tileAt = B.Get(0, 7), at(0, 7)
+			tile.mouseOver = true
+			A.Put(0, 7, Fixtures.HERB, 5)
+			bagUpdate()
+			assert.same(tileAt, at(0, 7), "nothing moves under the mouse")
+			assert.is_nil(number(0, 7), "the item shows, not the number")
+			assert.falsy(B.Get(0, 8).shown)
+			A.Clear(0, 2) -- the flask is used meanwhile: a redraw while the drop still waits
+			bagUpdate()
+			assert.same(tileAt, at(0, 7))
+			assert.is_nil(number(0, 7))
+			tile.mouseOver = false
+			A.Advance(0.3)
+			assert.same({ 4, -24 }, at(0, 7), "the dropped item is first in New")
+			assert.same({ true, 10 }, { B.Get(0, 8).shown, number(0, 8) }, "10 - 1 + the flask's slot")
+			assert.same(tileAt, at(0, 8), "the next empty slot is where the tile was")
+			assert.equal("- Free (10)", header("free").text.text)
+		end)
+
+	it("with an item on the cursor the tile keeps its place and number until the item is put down", function()
+		W.Open()
+		local tileAt = at(0, 7)
+		A.cursor = { itemID = Fixtures.FLASK }
+		A.Clear(0, 1)
+		A.Put(0, 7, Fixtures.HEALING_POTION, 5) -- the potion stack dragged onto the tile
+		bagUpdate()
+		assert.same(tileAt, at(0, 7))
+		assert.truthy(B.Get(0, 1).shown, "the emptied potion slot waits too")
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.falsy(B.Get(0, 1).shown, "the emptied slot is a hidden free slot now")
+		assert.same(tileAt, at(0, 8))
+		assert.equal(10, number(0, 8))
+		assert.equal(1, #B.placeholders)
+	end)
+
+	-- Mutations: delete the SB_FREE_TILE_CHANGED handler; delete paintTiles(nil) in layoutGrid.
+	it("/swagbag free all regroups once the mouse leaves; the grid view never has a tile (AC3.6)", function()
+		W.Open()
+		SB.Config.Set("bags.freeTile", false)
+		W.scroll.mouseOver = true
+		SB.Emit("SB_FREE_TILE_CHANGED")
+		assert.falsy(B.Get(0, 8).shown, "waits while the mouse is over the items")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		for slot = 7, 16 do
+			assert.truthy(B.Get(0, slot).shown, "slot " .. slot)
+		end
+		assert.is_nil(number(0, 7))
+		SB.Config.Set("bags.freeTile", true)
+		SB.Emit("SB_FREE_TILE_CHANGED")
+		assert.equal(10, number(0, 7))
+		W.SetView("grid")
+		for slot = 7, 16 do
+			assert.truthy(B.Get(0, slot).shown, "grid: slot " .. slot)
+		end
+		assert.is_nil(number(0, 7), "the grid is the physical order: no tile")
+	end)
+
 	it("a stack count change only repaints", function()
 		W.Open()
 		local counts = placedCounts()
@@ -423,6 +525,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("a button under the mouse does not move; it moves 300 ms after the mouse leaves", function()
+		everyFreeSlot()
 		W.Open()
 		local potion = B.Get(0, 1)
 		local before = at(0, 1)
@@ -439,6 +542,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("an item on the cursor holds every move until it is put down", function()
+		everyFreeSlot()
 		W.Open()
 		A.cursor = { itemID = Fixtures.FLASK }
 		local before = at(0, 1)
@@ -517,6 +621,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("a bag equipped while open adds its slots at the end of Free", function()
+		everyFreeSlot()
 		W.Open()
 		local counts = placedCounts()
 		A.SetBagSize(1, 4)

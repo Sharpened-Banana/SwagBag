@@ -1,4 +1,4 @@
--- luacheck: globals GameTooltip
+-- luacheck: globals GameTooltip SetItemButtonTexture SetItemButtonCount SetItemButtonQuality SetItemButtonDesaturated
 local Loader = dofile("spec/helpers/loader.lua")
 
 -- Permissive fake frame: records scripts, points, text and every other call.
@@ -149,5 +149,36 @@ describe("Section headers", function()
 		assert.is_nil(rawget(h, "sectionId"))
 		assert.equal(h, H.Acquire(B, "y", "y", 0, 0, 10))
 		assert.equal(B, h.calls.SetParent[1])
+	end)
+end)
+
+describe("The free tile's number (plan D19)", function()
+	local SB
+	before_each(function()
+		SB = Loader.New(FILES)
+		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
+		SetItemButtonTexture, SetItemButtonCount = function() end, function() end
+		SetItemButtonQuality, SetItemButtonDesaturated = function() end, function() end
+	end)
+
+	after_each(function()
+		SetItemButtonTexture, SetItemButtonCount, SetItemButtonQuality, SetItemButtonDesaturated = nil, nil, nil, nil
+	end)
+
+	-- Mutation: delete `if info then Buttons.SetFreeCount(button, nil) end` in Buttons.Paint.
+	it("SetFreeCount shows a large number on the button; nil hides it; painting an item hides it too", function()
+		local button = fakeFrame("ItemButton")
+		SB.Buttons.SetFreeCount(button, 12)
+		local fs = SB.Buttons.freeCounts[button]
+		assert.same({ "12", true }, { tostring(fs.text), fs.shown })
+		assert.same({ "CENTER", button, "CENTER", 0, 0 }, fs.points[1])
+		SB.Buttons.SetFreeCount(button, nil)
+		assert.falsy(fs.shown)
+		SB.Buttons.SetFreeCount(button, 11)
+		SB.Buttons.Paint(button, nil)
+		assert.truthy(fs.shown, "an empty slot keeps its number")
+		SB.Buttons.Paint(button, { itemID = 5, icon = 1, count = 1 })
+		assert.falsy(fs.shown, "an item never shows the number")
+		assert.is_nil(SB.Buttons.freeCounts[fakeFrame("ItemButton")], "no region until a button needs one")
 	end)
 end)

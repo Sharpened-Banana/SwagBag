@@ -576,3 +576,440 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 		assert.truthy(totals.deferrals > 0, "the hover guard never held anything")
 	end)
 end)
+
+describe("Layout free tile (plan D19)", function()
+	local SB, L
+	before_each(function()
+		SB = Loader.New({ "SwagBag/Engine/Layout.lua" })
+		L = SB.Layout
+	end)
+
+	local function family(bag)
+		return bag == 5 and "reagent" or "any"
+	end
+
+	-- a: (0,1) (0,4)   empty "any": (0,2) (0,3) (0,5) (1,1) (1,2)   empty "reagent": (5,1) (5,2)
+	-- New holds one row of 4.
+	local function build()
+		return L.Build({ S(0, 1, "a"), S(0, 2, false), S(0, 3, false), S(0, 4, "a"), S(0, 5, false), S(1, 1, false),
+			S(1, 2, false), S(5, 1, false), S(5, 2, false) }, assign, { "a" },
+			{ columns = 4, newRows = 1, freeTile = true, family = family })
+	end
+
+	local function change(bag, slot, kind, icon)
+		return { bag = bag, slot = slot, kind = kind, icon = icon }
+	end
+
+	-- "bag:slot=count" for every shown tile, in display order.
+	local function tiles(pos)
+		local out = {}
+		for _, t in ipairs(pos.tiles) do
+			if t.shown then
+				out[#out + 1] = t.bag .. ":" .. t.slot .. "=" .. t.count
+			end
+		end
+		return out
+	end
+
+	local function xy(pos, bag, slot)
+		local c = pos.byKey[L.Key(bag, slot)]
+		return { c.x, c.y, c.shown }
+	end
+
+	it("Build: Free holds the first empty slot of each family as its tile; the other empty slots are hidden spares",
+		function()
+			local st = build()
+			local pos = L.Position(st, OPTS, {})
+			assert.same({ "0:2=5", "5:1=2" }, tiles(pos))
+			assert.same({ section = "free", index = 1 }, st.where[L.Key(0, 2)])
+			assert.same({ section = "free", spare = "any" }, st.where[L.Key(0, 3)])
+			assert.same({ L.Key(0, 3), L.Key(0, 5), L.Key(1, 1), L.Key(1, 2) }, st.tiles.spares.any)
+			assert.same({ L.Key(5, 2) }, st.tiles.spares.reagent)
+			for _, k in ipairs({ L.Key(0, 3), L.Key(0, 5), L.Key(1, 1), L.Key(1, 2), L.Key(5, 2) }) do
+				assert.same({ false, nil }, { pos.byKey[k].shown, pos.byKey[k].x }, "a spare is hidden and has no cell")
+			end
+			assert.equal(7, pos.headers[#pos.headers].count, "Free's header counts every free slot")
+			assert.equal(9, #pos.cells, "every slot is in the view (search still sees the spares)")
+		end)
+
+	-- Mutation: `return { key }` instead of `return { key, tile and promote(...) or nil }` at the end of
+	-- applyTile (the tile leaves and nothing takes its cell).
+	it("when the tile fills it goes to New and the next empty button takes the same cell, its count one lower",
+		function()
+			local st = build()
+			local old = L.Position(st, OPTS, {})
+			local r = L.Apply(st, { change(0, 2, "arrived", 7) })
+			local pos = L.Position(st, OPTS, {})
+			assert.same({ L.Key(0, 2), L.Key(0, 3) }, r.moved)
+			assert.equal("new", st.where[L.Key(0, 2)].section)
+			assert.same(xy(old, 0, 2), xy(pos, 0, 3), "the next empty button is in the tile's cell")
+			assert.same({ "0:3=4", "5:1=2" }, tiles(pos))
+			assert.same({ L.Key(0, 2), L.Key(0, 3) }, L.Moves(old, pos), "the swap is a move of both buttons")
+		end)
+
+	-- Mutation: `if held[key] or (isBusy and isBusy(ch.bag, ch.slot)) then` in Apply (no partner check):
+	-- the swap's second half fails. Mutation: drop the isBusy check entirely: every half fails.
+	it("a busy tile is not swapped: under the mouse, with an item on the cursor, or while the next spare is busy",
+		function()
+			local st = build()
+			local old = L.Position(st, OPTS, {})
+			for _, busy in ipairs({
+				function(bag, slot) return bag == 0 and slot == 2 end, -- the mouse is on the tile
+				function() return true end, -- an item is on the cursor
+				function(bag, slot) return bag == 0 and slot == 3 end, -- the button that would take the cell
+			}) do
+				local r = L.Apply(st, { change(0, 2, "arrived", 7) }, busy)
+				assert.same({}, r.moved)
+				assert.equal(1, r.deferred)
+				assert.same(old, L.Position(st, OPTS, {}), "nothing moved")
+				st.deferred = {}
+			end
+			L.Apply(st, { change(0, 2, "arrived", 7) }, function(bag, slot) return bag == 0 and slot == 2 end)
+			local r = L.Apply(st, {}, nil) -- 300 ms later the mouse has left
+			assert.same({ L.Key(0, 2), L.Key(0, 3) }, r.moved)
+			assert.same(xy(old, 0, 2), xy(L.Position(st, OPTS, {}), 0, 3))
+		end)
+
+	-- Mutation: in applyTile's "left" branch, `append(st, Layout.FREE, cell)` instead of
+	-- `Layout.ToFamily(st, key, cell)`: the emptied button shows as a second empty slot in Free.
+	it("an emptied button becomes a hidden spare and the count goes up; nothing else moves", function()
+		local st = build()
+		local old = L.Position(st, OPTS, {})
+		local r = L.Apply(st, { change(0, 1, "left", 77) })
+		local pos = L.Position(st, OPTS, {})
+		assert.equal(1, r.placeholders)
+		assert.same({ L.Key(0, 1) }, L.Moves(old, pos), "only the emptied button (it is hidden now)")
+		assert.same({ false, nil }, { pos.byKey[L.Key(0, 1)].shown, pos.byKey[L.Key(0, 1)].x })
+		assert.same({ "0:2=6", "5:1=2" }, tiles(pos))
+		-- an item that arrives and leaves again in New: the button goes back to the spares
+		L.Apply(st, { change(1, 1, "arrived", 8) })
+		assert.equal("new", st.where[L.Key(1, 1)].section)
+		L.Apply(st, { change(1, 1, "left", 8) })
+		assert.same({ section = "free", spare = "any" }, st.where[L.Key(1, 1)])
+		assert.same({ "0:2=6", "5:1=2" }, tiles(L.Position(st, OPTS, {})))
+	end)
+
+	it("a family with no free slot has no tile; its next empty slot comes back in the same cell", function()
+		local st = build()
+		local cell = xy(L.Position(st, OPTS, {}), 5, 1)
+		L.Apply(st, { change(5, 1, "arrived", 9), change(5, 2, "arrived", 10) })
+		assert.same({ "0:2=5" }, tiles(L.Position(st, OPTS, {})))
+		L.Apply(st, { change(5, 1, "left", 9) })
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ "0:2=5", "5:1=1" }, tiles(pos))
+		assert.same(cell, xy(pos, 5, 1))
+	end)
+
+	it("an item looted into a hidden slot goes to New; the tile stays where it is, its count one lower", function()
+		local st = build()
+		local old = L.Position(st, OPTS, {})
+		local r = L.Apply(st, { change(1, 2, "arrived", 11) })
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ L.Key(1, 2) }, r.moved)
+		assert.same({ L.Key(1, 2) }, L.Moves(old, pos))
+		assert.same({ "0:2=4", "5:1=2" }, tiles(pos))
+	end)
+
+	it("with New full, a filled tile stays where it is and the next spare is the tile at Free's end", function()
+		local st = build()
+		L.Apply(st, { change(0, 3, "arrived", 1), change(0, 5, "arrived", 2), change(1, 1, "arrived", 3),
+			change(1, 2, "arrived", 4) })
+		local old = L.Position(st, OPTS, {})
+		local r = L.Apply(st, { change(5, 1, "arrived", 5) })
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ L.Key(5, 2) }, r.moved, "only the next spare moves (it is shown)")
+		assert.same(xy(old, 5, 1), xy(pos, 5, 1), "the filled tile did not move")
+		assert.same({ "0:2=1", "5:2=1" }, tiles(pos))
+		assert.equal(1, st.sections.new.overflow)
+	end)
+
+	it("an added slot joins its family as a spare; a removed tile hands its cell to the next spare", function()
+		local st = build()
+		local cell = xy(L.Position(st, OPTS, {}), 0, 2)
+		L.Apply(st, { change(1, 3, "added") })
+		assert.same({ "0:2=6", "5:1=2" }, tiles(L.Position(st, OPTS, {})))
+		local r = L.Apply(st, { change(0, 2, "removed") })
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ L.Key(0, 2), L.Key(0, 3) }, r.moved)
+		assert.same(cell, xy(pos, 0, 3))
+		assert.same({ "0:3=5", "5:1=2" }, tiles(pos))
+	end)
+
+	-- The randomized check of W3-12. Park-Miller (seed * 16807 % 2147483647, exact in doubles).
+	-- 24 runs of 60 steps over a bag model (backpack 12, bag 1 8, reagent bag 6): leaves,
+	-- arrivals in hidden slots, drops on a tile (usually with the mouse on it), different items,
+	-- hover and cursor holds, the mouse leaving, and Reflows (a full Build of the bags as they are).
+	-- After EVERY step:
+	--   every slot is in exactly one cell or spare list; a button moved only if it was not busy;
+	--   no two shown buttons share a cell; a button that appears takes no busy button's cell;
+	--   each family shows at most one tile, and a shown tile is an empty slot (or the slot under
+	--   the mouse that just took a drop, its swap held back).
+	-- After every step with nothing held back (and after each run's drain), exactly:
+	--   one shown tile per family that has a free slot, none for a family without; the tile's
+	--   count is that family's real number of free slots; every spare is empty; every item shows.
+	-- Mutations that must make it fail: (1) `return { key }` instead of the promote at the end of
+	-- applyTile; (2) `if held[key] then` in Apply (no busy check); (3) `1 + #st.tiles.spares[f]`
+	-- -> `#st.tiles.spares[f]` in Position; (4) in applyTile's "left" branch,
+	-- `append(st, Layout.FREE, cell)` instead of `Layout.ToFamily(st, key, cell)`.
+	it("randomized: one real empty tile per family with the real count; nothing moves under the cursor", function()
+		local SIZES = { [0] = 12, [1] = 8, [5] = 6 }
+		local BAGS = { 0, 1, 5 }
+		local totals = { swaps = 0, heldSwaps = 0, spareLeaves = 0, spareArrivals = 0, reagentSwaps = 0, fullTile = 0,
+			steps = 0, settled = 0, reflows = 0 }
+		local seed = 20261002
+		local function rand(n)
+			seed = seed * 16807 % 2147483647
+			return seed % n + 1
+		end
+		for run = 1, 24 do
+			local content, slots, keys = {}, {}, {}
+			local nextItem = 100
+			for _, bag in ipairs(BAGS) do
+				for slot = 1, SIZES[bag] do
+					local k = L.Key(bag, slot)
+					keys[#keys + 1] = k
+					if rand(2) == 1 then
+						nextItem = nextItem + 1
+						content[k] = nextItem
+					end
+					slots[#slots + 1] = { bag = bag, slot = slot, record = content[k] and { cat = "c" .. (content[k] % 3) } or nil }
+				end
+			end
+			local st = L.Build(slots, assign, { "c0", "c1", "c2" },
+				{ columns = 4, newRows = 1 + rand(2), freeTile = true, family = family })
+			local pos = L.Position(st, OPTS, {})
+			local hover, cursor = nil, false
+
+			local function realFree(f)
+				local n = 0
+				for _, k in ipairs(keys) do
+					if content[k] == nil and family(math.floor(k / 1000)) == f then
+						n = n + 1
+					end
+				end
+				return n
+			end
+
+			local function tileOf(p, f)
+				for _, t in ipairs(p.tiles) do
+					if t.shown and t.tile == f then
+						return t
+					end
+				end
+			end
+
+			local function check(old, new, busyKeys, label)
+				local held = {}
+				for _, ch in ipairs(st.deferred) do
+					held[L.Key(ch.bag, ch.slot)] = true
+				end
+				-- every slot exactly once
+				local seen = {}
+				for id, sec in pairs(st.sections) do
+					for i = 1, sec.size do
+						local c = sec.cells[i]
+						if c and not c.placeholder then
+							local k = L.Key(c.bag, c.slot)
+							assert.is_nil(seen[k], label .. ": placed twice")
+							seen[k] = true
+							assert.same({ section = id, index = i }, st.where[k], label)
+						end
+					end
+				end
+				for f, list in pairs(st.tiles.spares) do
+					for _, k in ipairs(list) do
+						assert.is_nil(seen[k], label .. ": a spare is also in a cell")
+						seen[k] = true
+						assert.same({ section = "free", spare = f }, st.where[k], label)
+					end
+				end
+				for _, k in ipairs(keys) do
+					assert.truthy(seen[k], label .. ": a button was lost")
+				end
+				-- nothing moved under the cursor
+				for _, k in ipairs(L.Moves(old, new)) do
+					assert.falsy(busyKeys[k], label .. ": a busy button moved")
+				end
+				-- no two shown buttons in one cell; an appearing button takes no busy button's cell
+				local at = {}
+				for k, c in pairs(new.byKey) do
+					if c.shown then
+						local xyk = c.x .. "," .. c.y
+						assert.is_nil(at[xyk], label .. ": two buttons in one cell")
+						at[xyk] = k
+						local o = old.byKey[k]
+						if not (o and o.shown) then
+							for bk in pairs(busyKeys) do
+								local b = old.byKey[bk]
+								assert.falsy(b and b.shown and b.x == c.x and b.y == c.y,
+									label .. ": a hidden button was placed on the busy one")
+							end
+						end
+					end
+				end
+				for _, f in ipairs({ "any", "reagent" }) do
+					local n = 0
+					for _, t in ipairs(new.tiles) do
+						if t.shown and t.tile == f then
+							n = n + 1
+							assert.truthy(content[L.Key(t.bag, t.slot)] == nil or held[L.Key(t.bag, t.slot)],
+								label .. ": the tile is not an empty slot")
+						end
+					end
+					assert.truthy(n <= 1, label .. ": two tiles for " .. f)
+					if #st.deferred == 0 then
+						local t = tileOf(new, f)
+						if realFree(f) > 0 then
+							assert.truthy(t, label .. ": no tile for " .. f)
+							assert.equal(realFree(f), t.count, label .. ": the count of " .. f)
+						else
+							assert.is_nil(t, label .. ": a tile for a full family")
+						end
+					end
+				end
+				if #st.deferred == 0 then
+					totals.settled = totals.settled + 1
+					for _, list in pairs(st.tiles.spares) do
+						for _, k in ipairs(list) do
+							assert.is_nil(content[k], label .. ": an item in a hidden button")
+						end
+					end
+					for _, k in ipairs(keys) do
+						if content[k] then
+							assert.truthy(new.byKey[k].shown, label .. ": an item is hidden")
+						end
+					end
+				end
+			end
+
+			local function emptyKey(f)
+				local list = {}
+				for _, k in ipairs(keys) do
+					if content[k] == nil and (not f or family(math.floor(k / 1000)) == f) then
+						list[#list + 1] = k
+					end
+				end
+				return #list > 0 and list[rand(#list)] or nil
+			end
+			local function filledKey()
+				local list = {}
+				for _, k in ipairs(keys) do
+					if content[k] then
+						list[#list + 1] = k
+					end
+				end
+				return #list > 0 and list[rand(#list)] or nil
+			end
+			local function ch(k, kind, icon)
+				return { bag = math.floor(k / 1000), slot = k % 1000, kind = kind, icon = icon }
+			end
+
+			for step = 1, 60 do
+				local changes, label = {}, ("run %d step %d"):format(run, step)
+				local kind = rand(12)
+				local dropOnTile = nil
+				if kind <= 3 then -- an item is used up or moved away
+					local k = filledKey()
+					if k then
+						changes[1] = ch(k, "left", content[k])
+						content[k] = nil
+					end
+				elseif kind <= 6 then -- a drop on a family's tile, usually with the mouse on it
+					local t = tileOf(pos, rand(3) == 1 and "reagent" or "any")
+					if t and content[L.Key(t.bag, t.slot)] == nil then
+						dropOnTile = L.Key(t.bag, t.slot)
+						nextItem = nextItem + 1
+						content[dropOnTile] = nextItem
+						changes[1] = ch(dropOnTile, "arrived", nextItem)
+						if rand(4) ~= 1 then
+							hover = dropOnTile
+						end
+					end
+				elseif kind <= 8 then -- looted into whatever slot is free (often a hidden one)
+					local k = emptyKey()
+					if k then
+						nextItem = nextItem + 1
+						content[k] = nextItem
+						changes[1] = ch(k, "arrived", nextItem)
+					end
+				elseif kind == 9 then -- the mouse moves on, the cursor empties
+					hover = rand(2) == 1 and keys[rand(#keys)] or nil
+					cursor = rand(5) == 1
+				elseif kind == 10 then -- a different item in a filled slot
+					local k = filledKey()
+					if k then
+						nextItem = nextItem + 1
+						changes[1] = ch(k, "arrived", content[k])
+						content[k] = nextItem
+					end
+				elseif kind == 11 then -- the mouse leaves the items
+					hover, cursor = nil, false
+				elseif not hover and not cursor then -- Reflow: a full layout of what is in the bags now
+					local fresh = {}
+					for _, k in ipairs(keys) do
+						fresh[#fresh + 1] = { bag = math.floor(k / 1000), slot = k % 1000,
+							record = content[k] and { cat = "c" .. (content[k] % 3) } or nil }
+					end
+					st = L.Build(fresh, assign, { "c0", "c1", "c2" },
+						{ columns = 4, newRows = 1 + rand(2), freeTile = true, family = family })
+					pos = L.Position(st, OPTS, {})
+					totals.reflows = totals.reflows + 1
+				end
+				local busyKeys = {}
+				for _, k in ipairs(keys) do
+					local c = pos.byKey[k]
+					if cursor or (k == hover and c and c.shown) then
+						busyKeys[k] = true
+					end
+				end
+				local wasTile = {}
+				for _, t in ipairs(pos.tiles) do
+					wasTile[L.Key(t.bag, t.slot)] = t.tile
+				end
+				local heldBefore = {}
+				for _, d in ipairs(st.deferred) do
+					heldBefore[L.Key(d.bag, d.slot)] = true
+				end
+				local r = L.Apply(st, changes, function(bag, slot)
+					return busyKeys[L.Key(bag, slot)] == true
+				end)
+				local new = L.Position(st, OPTS, {})
+				for _, k in ipairs(r.moved) do
+					if wasTile[k] and st.where[k] and st.where[k].section == "new" then
+						totals.swaps = totals.swaps + 1
+						if wasTile[k] == "reagent" then
+							totals.reagentSwaps = totals.reagentSwaps + 1
+						end
+						if heldBefore[k] then -- a swap that waited for the mouse to leave
+							totals.heldSwaps = totals.heldSwaps + 1
+						end
+					end
+					if st.where[k] and st.where[k].spare and new.byKey[k] and not (pos.byKey[k] and pos.byKey[k].spare) then
+						totals.spareLeaves = totals.spareLeaves + 1
+					end
+					if pos.byKey[k] and pos.byKey[k].spare and not st.where[k].spare then
+						totals.spareArrivals = totals.spareArrivals + 1
+					end
+				end
+				if dropOnTile and st.where[dropOnTile].section == "free" and r.overflowed > 0 then
+					totals.fullTile = totals.fullTile + 1
+				end
+				totals.steps = totals.steps + 1
+				check(pos, new, busyKeys, label)
+				pos = new
+			end
+			local r = L.Apply(st, {}, nil) -- drain: the mouse has left and the cursor is empty
+			assert.equal(0, r.deferred)
+			local new = L.Position(st, OPTS, {})
+			check(pos, new, {}, ("run %d drained"):format(run))
+		end
+		assert.truthy(totals.swaps >= 100, "swaps " .. totals.swaps)
+		assert.truthy(totals.heldSwaps >= 60, "held swaps " .. totals.heldSwaps)
+		assert.truthy(totals.reagentSwaps >= 30, "reagent swaps " .. totals.reagentSwaps)
+		assert.truthy(totals.spareLeaves >= 200, "leaves into spares " .. totals.spareLeaves)
+		assert.truthy(totals.spareArrivals >= 250, "arrivals in hidden slots " .. totals.spareArrivals)
+		assert.truthy(totals.fullTile >= 20, "drops on the tile with New full " .. totals.fullTile)
+		assert.truthy(totals.settled >= 400, "settled checks " .. totals.settled)
+		assert.truthy(totals.reflows >= 25, "reflows " .. totals.reflows)
+	end)
+end)

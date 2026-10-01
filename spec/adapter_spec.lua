@@ -92,4 +92,13 @@ describe("Adapter.EquippedItems (real adapter, stubbed globals)", function()
 		assert.is_nil(A.EquippedItemLevel(), "a secret value")
 		issecretvalue = nil
 	end)
+
+	-- The free tile (plan D19). Mutation: delete the BagKind "reagentbag" test in A.BagFamily.
+	it("BagFamily: the reagent bag is its own family, a bag with a free-slot family is too, else 'any'", function()
+		assert.same({ "any", "reagent", "any" }, { A.BagFamily(0), A.BagFamily(5), A.BagFamily(6) })
+		C_Container = { GetContainerNumFreeSlots = function(bag) return 3, bag == 2 and 8 or 0 end }
+		assert.same({ "any", "family8", "reagent" }, { A.BagFamily(1), A.BagFamily(2), A.BagFamily(5) })
+		C_Container = { GetContainerNumFreeSlots = function() error("boom") end }
+		assert.equal("any", A.BagFamily(2))
+	end)
 end)

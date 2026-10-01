@@ -1,4 +1,4 @@
--- SwagBag week-1 slash commands: safe, report, check, reset, debug.
+-- SwagBag slash commands: safe, report, check, reset, free (week 3), debug.
 -- (help lives in Core/Slash.lua; search is registered by UI/SearchBox.lua.)
 local _, SB = ...
 
@@ -77,6 +77,19 @@ end
 Slash.Register("reset", L.HELP_RESET, function()
 	StaticPopup_Show("SWAGBAG_RESET")
 	return L.RESET_ASKED
+end)
+
+-- /swagbag free tile|all (plan D19): the setting, then every open window regroups (guarded).
+Slash.Register("free", L.HELP_FREE, function(arg)
+	arg = arg:lower()
+	if arg ~= "tile" and arg ~= "all" then
+		return L.FREE_USAGE:format(SB.Config.Get("bags.freeTile") and "tile" or "all")
+	end
+	if not SB.Config.Set("bags.freeTile", arg == "tile") then
+		return L.SETTINGS_READONLY
+	end
+	SB.Emit("SB_FREE_TILE_CHANGED")
+	return arg == "tile" and L.FREE_MODE_TILE or L.FREE_MODE_ALL
 end)
 
 Slash.Register("debug", L.HELP_DEBUG, function(arg)
