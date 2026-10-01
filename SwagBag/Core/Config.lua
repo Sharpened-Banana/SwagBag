@@ -150,6 +150,14 @@ end
 
 local RANK = { ok = 1, new = 2, migrated = 3, reset = 4 }
 
+-- SB_CONFIG_CHANGED(path): a setting changed (path), or everything may have (nil: Init, Reset).
+-- Engines that cache a view of the settings (Engine/Focus.lua) listen. Harmless before Events loads.
+local function changed(path)
+	if SB.Emit then
+		SB.Emit("SB_CONFIG_CHANGED", path)
+	end
+end
+
 function Config.Init(db, charDB)
 	Config.lastError = nil
 	Config.source = { db = db, charDB = charDB }
@@ -160,6 +168,7 @@ function Config.Init(db, charDB)
 		Config.status = "newer"
 		Config.readOnly = true
 		Config.db, Config.charDB = newDB(), newCharDB() -- in memory only; saved tables untouched
+		changed(nil)
 		return Config.status
 	end
 	local a, sa, ea = upgrade(db, Config.migrations, newDB)
@@ -168,6 +177,7 @@ function Config.Init(db, charDB)
 	Config.db, Config.charDB = a, c
 	Config.status = RANK[sa] >= RANK[sc] and sa or sc
 	Config.lastError = ea or ec
+	changed(nil)
 	return Config.status
 end
 
@@ -209,6 +219,7 @@ function Config.Set(path, value)
 	end
 	if Config.charDB.overrides[path] ~= nil then
 		Config.charDB.overrides[path] = value
+		changed(path)
 		return true
 	end
 	local parts = split(path)
@@ -220,6 +231,7 @@ function Config.Set(path, value)
 		t = t[parts[i]]
 	end
 	t[parts[#parts]] = value
+	changed(path)
 	return true
 end
 
@@ -234,6 +246,7 @@ function Config.CharOverride(path, on)
 	else
 		Config.charDB.overrides[path] = nil
 	end
+	changed(path)
 	return true
 end
 
@@ -300,5 +313,6 @@ function Config.Reset()
 	Config.source = { db = Config.db, charDB = Config.charDB }
 	Config.readOnly = false
 	Config.status = "ok"
+	changed(nil)
 	return Config.db, Config.charDB
 end
