@@ -16,6 +16,7 @@ Core/Adapter.lua
 Core/SafeMode.lua
 Core/ErrorTrap.lua
 Core/Events.lua
+Core/Config.lua
 
 # Engine
 
