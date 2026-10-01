@@ -764,6 +764,13 @@ SB.On("SB_LOGIN", function()
 	GW.HookFrame()
 end, "bank")
 
+-- Auctionator reported new prices: the section totals follow, in place.
+SB.On("SB_PRICES_CHANGED", function()
+	if GW.view.IsOpen() then
+		GW.view.RefreshTotals()
+	end
+end, "bank")
+
 SB.On("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", function(_, interactionType)
 	if SB.Adapter.IsGuildBanker(interactionType) then
 		GW.HookFrame()

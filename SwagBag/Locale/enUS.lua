@@ -231,6 +231,9 @@ L.AGE_DAYS = "%d days ago"
 L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
 
 -- Prices (spec F10)
+L.MONEY_GOLD = "%sg"
+L.MONEY_SILVER = "%ss"
+L.MONEY_COPPER = "%sc"
 L.PRICES_PROVIDER_OFF = "Price source %s stopped working and was switched off until /reload."
 L.REPORT_PRICES = "Prices: %s, %d cached"
 

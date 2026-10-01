@@ -633,6 +633,13 @@ SB.On("SB_FREE_TILE_CHANGED", function()
 	end
 end, "bank")
 
+-- Auctionator reported new prices: the section totals follow, in place.
+SB.On("SB_PRICES_CHANGED", function()
+	if frame:IsShown() then
+		BW.view.RefreshTotals()
+	end
+end, "bank")
+
 -- Disabling or reloading never leaves Blizzard's bank moved (spec 8.6).
 SB.On("PLAYER_LOGOUT", function()
 	host.Restore()

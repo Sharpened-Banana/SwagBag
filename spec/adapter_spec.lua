@@ -1,4 +1,5 @@
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
+-- luacheck: globals Auctionator
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
 describe("Adapter cursor and sort helpers", function()
 	local A
@@ -100,5 +101,45 @@ describe("Adapter.EquippedItems (real adapter, stubbed globals)", function()
 		assert.same({ "any", "family8", "reagent" }, { A.BagFamily(1), A.BagFamily(2), A.BagFamily(5) })
 		C_Container = { GetContainerNumFreeSlots = function() error("boom") end }
 		assert.equal("any", A.BagFamily(2))
+	end)
+end)
+
+describe("Adapter Auctionator (real adapter, stubbed global)", function()
+	local A
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+	end)
+
+	after_each(function()
+		Auctionator = nil
+	end)
+
+	local function price(v)
+		Auctionator = { API = { v1 = { GetAuctionPriceByItemLink = function() return v end } } }
+		assert.truthy(A.AuctionatorAvailable())
+		return A.AuctionatorPrice("item:1")
+	end
+
+	it("accepts finite prices of 0 or more; infinity, NaN, negatives and non-numbers are no price", function()
+		assert.equal(1500, price(1500))
+		assert.equal(0, price(0))
+		assert.is_nil(price(math.huge))
+		assert.is_nil(price(-math.huge))
+		assert.is_nil(price(0 / 0))
+		assert.is_nil(price(-5))
+		assert.is_nil(price("12"))
+	end)
+
+	it("resolves the API when availability is asked, not on every price call", function()
+		local calls = 0
+		Auctionator = { API = { v1 = { GetAuctionPriceByItemLink = function() calls = calls + 1 return 7 end } } }
+		assert.is_nil(A.AuctionatorPrice("item:1"), "not asked yet")
+		A.AuctionatorAvailable()
+		assert.equal(7, A.AuctionatorPrice("item:1"))
+		Auctionator = nil
+		assert.equal(7, A.AuctionatorPrice("item:1"), "the resolved API is kept until the next availability check")
+		assert.equal(2, calls)
 	end)
 end)
