@@ -232,6 +232,30 @@ describe("SearchBox", function()
 		assert.is_nil(SB.Search.lastError, "the error belongs to the bank box only")
 	end)
 
+	it("typing in two windows' boxes in the same 150 ms applies both (debounce keys are separate)", function()
+		open()
+		local bankDimmed = {}
+		local bankSlots = { { button = "k1", record = slots[3].record }, { button = "k2", record = slots[1].record } }
+		local bank = Box.New({
+			parent = newFake(), name = "SwagBagBankSearchBox", search = SB.SearchState.New(), window = "bank",
+			debounceKey = "search.bank",
+			isOpen = function() return true end,
+			forEachSlot = function(fn)
+				for _, s in ipairs(bankSlots) do
+					fn(s.button, s.record)
+				end
+			end,
+			setDimmed = function(button, d) bankDimmed[button] = d end,
+		})
+		Box.editBox:SetText("potion")
+		bank.editBox:SetText("gear")
+		SB.Adapter.Advance(0.2)
+		assert.equal("potion", SB.Search.text)
+		assert.equal("gear", bank.search.text)
+		assert.truthy(dimCount() > 0, "the bags search applied")
+		assert.same({ k1 = false, k2 = true }, bankDimmed, "the bank search applied")
+	end)
+
 	it("the error line is top-aligned right of the box and never stretches over the items", function()
 		local errorLine
 		for _, fs in ipairs(window.frame.created) do
