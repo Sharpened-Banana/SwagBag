@@ -1,5 +1,5 @@
--- Mock Adapter for unit tests. Loads the REAL SwagBag/Core/Adapter.lua (so its
--- constants and pure helpers are tested too), then replaces every function that
+-- Mock Adapter for unit tests. Loads the REAL SwagBag/Core/Adapter.lua for
+-- isSecret and Resolve load-time code, then replaces every function that
 -- would call WoW with an in-memory fake.
 local M = {}
 

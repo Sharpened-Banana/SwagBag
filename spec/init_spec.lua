@@ -36,3 +36,52 @@ describe("Init and test harness", function()
 		assert.is_nil(A.Resolve("C_Bank.FetchPurchasedBankTabIDs"))
 	end)
 end)
+
+describe("Adapter pure functions (real code)", function()
+	it("Resolve walks dotted paths via _G and returns nil when missing", function()
+		-- Set up temporary globals
+		_G.TEST_RESOLVE_NS = { SortBags = print }
+		_G.TEST_RESOLVE_FN = function() end
+
+		-- Test the real Adapter's Resolve via the global _G
+		local ok, result = pcall(function()
+			local chunk = assert(loadfile("SwagBag/Core/Adapter.lua"))
+			local SB = {}
+			chunk("SwagBag", SB)
+			local A = SB.Adapter
+
+			-- Test successful resolution
+			assert.equal(print, A.Resolve("TEST_RESOLVE_NS.SortBags"))
+			assert.equal(_G.TEST_RESOLVE_FN, A.Resolve("TEST_RESOLVE_FN"))
+
+			-- Test missing keys
+			assert.is_nil(A.Resolve("TEST_RESOLVE_NS.Missing"))
+			assert.is_nil(A.Resolve("MISSING.Path"))
+
+			-- Test path through non-table returns nil
+			assert.is_nil(A.Resolve("TEST_RESOLVE_FN.property"))
+		end)
+
+		-- Clean up
+		_G.TEST_RESOLVE_NS = nil
+		_G.TEST_RESOLVE_FN = nil
+
+		assert.truthy(ok, result)
+	end)
+
+	it("IsSecret checks for issecretvalue builtin", function()
+		local ok, result = pcall(function()
+			local chunk = assert(loadfile("SwagBag/Core/Adapter.lua"))
+			local SB = {}
+			chunk("SwagBag", SB)
+			local A = SB.Adapter
+
+			-- In test environment issecretvalue doesn't exist, so IsSecret returns false
+			assert.equal(false, A.IsSecret("test"))
+			assert.equal(false, A.IsSecret(123))
+			assert.equal(false, A.IsSecret(print))
+		end)
+
+		assert.truthy(ok, result)
+	end)
+end)
