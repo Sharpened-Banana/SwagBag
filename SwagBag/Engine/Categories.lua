@@ -108,7 +108,10 @@ function C.Load()
 	end
 	table.sort(userIds)
 	for _, id in ipairs(userIds) do
-		local def = users[id]
+		local def = {}
+		for k, v in pairs(users[id]) do
+			def[k] = v
+		end
 		def.id = id
 		local c = build(def, nil, false)
 		C.list[#C.list + 1] = c
@@ -188,10 +191,34 @@ local function editFor(c)
 	local db = SB.Config.db
 	if c.builtin then
 		db.userEdits = type(db.userEdits) == "table" and db.userEdits or {}
-		db.userEdits[c.id] = db.userEdits[c.id] or {}
+		if type(db.userEdits[c.id]) ~= "table" then
+			db.userEdits[c.id] = {}
+		end
 		return db.userEdits[c.id]
 	end
+	db.categories = type(db.categories) == "table" and db.categories or {}
+	if type(db.categories[c.id]) ~= "table" then
+		db.categories[c.id] = {}
+	end
 	return db.categories[c.id]
+end
+
+-- Drop empty include/exclude tables, then an empty itemList, then (built-ins only) the
+-- whole diff once nothing is left, so an unedited built-in is never stored (spec 8.5).
+local function prune(c, e)
+	if type(e.itemList) == "table" then
+		for _, which in ipairs({ "include", "exclude" }) do
+			if type(e.itemList[which]) == "table" and next(e.itemList[which]) == nil then
+				e.itemList[which] = nil
+			end
+		end
+		if next(e.itemList) == nil then
+			e.itemList = nil
+		end
+	end
+	if c.builtin and next(e) == nil then
+		SB.Config.db.userEdits[c.id] = nil
+	end
 end
 
 local function ensureList(e, which)
@@ -215,7 +242,8 @@ end
 function C.AddToList(targetId, itemID)
 	C.Ensure()
 	local target = C.byId[targetId]
-	if not target or type(itemID) ~= "number" or SB.Config.readOnly then
+	if not target or type(itemID) ~= "number" or itemID < 1 or itemID ~= math.floor(itemID) or itemID == math.huge
+		or SB.Config.readOnly then
 		return false
 	end
 	for _, c in ipairs(C.list) do
@@ -228,14 +256,18 @@ function C.AddToList(targetId, itemID)
 			if c.builtin and defaultIncludes(c.id)[itemID] then
 				ensureList(e, "exclude")[itemID] = true
 			end
+			prune(c, e)
 		end
 	end
 	local e = editFor(target)
-	ensureList(e, "include")[itemID] = true
+	if not (target.builtin and defaultIncludes(targetId)[itemID]) then
+		ensureList(e, "include")[itemID] = true
+	end
 	local exc = list(e, "exclude")
 	if exc then
 		exc[itemID] = nil
 	end
+	prune(target, e)
 	C.Load()
 	return true
 end
