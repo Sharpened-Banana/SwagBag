@@ -138,8 +138,12 @@ function Buttons.Place(button, x, y)
 	button:SetPoint("TOPLEFT", button:GetParent(), "TOPLEFT", x, y)
 end
 
--- info: SB.Adapter.GetSlot(bag, slot) result, or nil for an empty slot.
+-- info: SB.Adapter.GetSlot(bag, slot) result, or nil for an empty slot. A filled button never
+-- shows a free tile's number (plan D19).
 function Buttons.Paint(button, info)
+	if info then
+		Buttons.SetFreeCount(button, nil)
+	end
 	SetItemButtonTexture(button, info and info.icon or nil)
 	SetItemButtonCount(button, info and info.count or 0)
 	SetItemButtonQuality(button, info and info.quality or nil, info and info.link or nil)
@@ -152,6 +156,28 @@ end
 -- Full dim: alpha on the whole button covers icon, border, count and glows.
 function Buttons.SetDimmed(button, dimmed)
 	button:SetAlpha(dimmed and Buttons.DIM_ALPHA or 1)
+end
+
+-- The free tile (plan D19): n in large white text in the middle of an empty slot button; nil
+-- hides it. A font string on the button itself, made the first time (no frame: allowed in
+-- combat), kept in a side table rather than a field on Blizzard's button.
+Buttons.freeCounts = setmetatable({}, { __mode = "k" })
+function Buttons.SetFreeCount(button, n)
+	local fs = Buttons.freeCounts[button]
+	if n == nil then
+		if fs then
+			fs:Hide()
+		end
+		return
+	end
+	if not fs then
+		fs = button:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+		fs:SetPoint("CENTER", button, "CENTER", 0, 0)
+		fs:SetTextColor(1, 1, 1)
+		Buttons.freeCounts[button] = fs
+	end
+	fs:SetText(n)
+	fs:Show()
 end
 
 ---------------------------------------------------------------------------

@@ -160,6 +160,22 @@ function A.BagKind(bag)
 	return nil, nil
 end
 
+-- Which empty slots belong together (the free tile, plan D19): "reagent" for the reagent bag
+-- (only reagents fit), "family<N>" for a bag whose GetContainerNumFreeSlots family N is not 0
+-- (a profession bag: only its items fit), else "any". Feature-detected: "any" without the API.
+function A.BagFamily(bag)
+	if A.BagKind(bag) == "reagentbag" then
+		return "reagent"
+	end
+	if C_Container and C_Container.GetContainerNumFreeSlots then
+		local ok, _, family = pcall(C_Container.GetContainerNumFreeSlots, bag)
+		if ok and type(family) == "number" and not isSecret(family) and family ~= 0 then
+			return "family" .. family
+		end
+	end
+	return "any"
+end
+
 -- kind: "bags" | "bank" | "warband". Bank kinds return PURCHASED tab IDs only.
 function A.GetBagIDs(kind)
 	if kind == "bags" then
@@ -600,6 +616,7 @@ A.CHECKS = {
 	{ path = "C_Container.GetContainerNumSlots", window = "bags", required = true },
 	{ path = "C_Container.GetContainerItemInfo", window = "bags", required = true },
 	{ path = "C_Container.GetContainerItemCooldown", window = "bags", required = true },
+	{ path = "C_Container.GetContainerNumFreeSlots", window = "bags", required = false },
 	{ path = "C_Container.GetContainerItemEquipmentSetInfo", window = "bags", required = false },
 	{ path = "C_Container.GetContainerItemQuestInfo", window = "bags", required = false },
 	{ path = "C_Container.SortBags", window = "bags", required = false },

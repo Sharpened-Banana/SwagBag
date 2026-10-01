@@ -108,4 +108,28 @@ describe("Commands", function()
 		assert.equal(2, SwagBagDB.schemaVersion)
 		assert.same({ schemaVersion = 7 }, SwagBagDB.backups.reset)
 	end)
+
+	-- Plan D19. Mutation: delete SB.Emit("SB_FREE_TILE_CHANGED") in the free command.
+	it("free tile|all saves bags.freeTile, answers, and asks the open windows to regroup; else the usage", function()
+		local regroups = 0
+		SB.On("SB_FREE_TILE_CHANGED", function()
+			regroups = regroups + 1
+		end)
+		assert.equal(true, SB.Config.Get("bags.freeTile"), "the tile is the default")
+		SB.Slash.Dispatch("free all")
+		assert.equal(false, SB.Config.Get("bags.freeTile"))
+		SB.Slash.Dispatch("free tile")
+		assert.equal(true, SB.Config.Get("bags.freeTile"))
+		SB.Slash.Dispatch("free")
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("free all")
+		assert.equal(true, SB.Config.Get("bags.freeTile"))
+		assert.same({
+			"Every free slot is shown again.",
+			"Free slots now show as one slot with the number of free slots.",
+			"Use /swagbag free tile or /swagbag free all (now: tile).",
+			"SwagBag's saved settings are read-only, so nothing was changed.",
+		}, A.Lines())
+		assert.equal(2, regroups)
+	end)
 end)

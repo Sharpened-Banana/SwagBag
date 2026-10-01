@@ -216,6 +216,12 @@ L.OVERLAYS_SET = "Overlay %s is now %s."
 L.OVERLAYS_USAGE = "Use /swagbag overlays, or /swagbag overlays <ilvl|track|upgrade|keystone|junk|bind|pawn|title> <on|off>."
 L.OVERLAYS_NO_PAWN = "Pawn is not loaded, so the item-level rule still decides the upgrade arrow."
 
+-- Free tile (plan D19)
+L.HELP_FREE = "free tile|all: show free slots as one slot with a number (tile) or show every free slot (all)"
+L.FREE_USAGE = "Use /swagbag free tile or /swagbag free all (now: %s)."
+L.FREE_MODE_TILE = "Free slots now show as one slot with the number of free slots."
+L.FREE_MODE_ALL = "Every free slot is shown again."
+
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
 L.V1_SHOWN = "V1 strip shown with %d usable items. Enter combat, right-click them 3 times, then /swagbag report."

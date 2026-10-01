@@ -19,6 +19,7 @@ local W = {
 	state = nil, -- sections view: Layout state while open (nil when closed or in grid view)
 	pos = nil, -- sections view: last Layout.Position result
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
+	tiled = {}, -- [button] = true while it shows a free tile's number (plan D19)
 	size = { 100, 100 }, -- last content width, height
 	SLOT = 37,
 	GAP = 4,
@@ -300,6 +301,27 @@ local function place(button, x, y)
 	end
 end
 
+-- The free tile's number (plan D19): each family's tile shows how many empty slots the family
+-- has, but only while the tile really is empty (a drop that waits under the mouse shows the
+-- item and no number). Every other button's number is cleared.
+local function paintTiles(pos)
+	local B, now = SB.Buttons, {}
+	for _, t in ipairs(pos and pos.tiles or {}) do
+		local button = B.Get(t.bag, t.slot)
+		if button and t.shown and not (W.records[t.bag] and W.records[t.bag][t.slot]) then
+			B.SetFreeCount(button, t.count)
+			now[button] = true
+		end
+	end
+	for button in pairs(W.tiled) do
+		if not now[button] then
+			B.SetFreeCount(button, nil)
+		end
+	end
+	W.tiled = now
+end
+
+-- The grid is the physical order (AC3.6): every empty slot is shown there, no tile.
 local function layoutGrid(bags)
 	local A, B = SB.Adapter, SB.Buttons
 	local g = SB.GridLayout.Compute(bags, { columns = columns(), size = W.SLOT, gap = W.GAP, padding = W.PAD })
@@ -313,6 +335,7 @@ local function layoutGrid(bags)
 			button:Show()
 		end
 	end
+	paintTiles(nil)
 	return g.width, g.height
 end
 
@@ -343,6 +366,7 @@ local function render()
 		H.Acquire(child, h.id, H.Label(SB.Categories.Name(h.id), h.count, h.collapsed, h.overflow), W.PAD, h.y,
 			pos.width - 2 * W.PAD)
 	end
+	paintTiles(pos)
 	return pos.width, pos.height
 end
 W.Render = render
@@ -360,7 +384,8 @@ local function layoutSections(bags)
 		end
 	end
 	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
-		{ columns = columns(), newRows = SB.Config.Get("bags.newRows") })
+		{ columns = columns(), newRows = SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
+			family = SB.Adapter.BagFamily })
 	W.pos = SB.Layout.Position(W.state, positionOpts(), W.Collapsed())
 	return render()
 end
@@ -782,3 +807,8 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 		SB.Emit("SB_BAGS_UPDATED")
 	end
 end, "bags"))
+
+-- /swagbag free tile|all (Core/Commands.lua): regroup now, or once the mouse leaves the items.
+SB.On("SB_FREE_TILE_CHANGED", function()
+	W.RequestLayout("free")
+end, "bags")
