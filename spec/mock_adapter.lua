@@ -126,6 +126,12 @@ function M.New(SB)
 		return true
 	end
 
+	m.bankSorts = {}
+	function m.SortBank(kind)
+		m.bankSorts[#m.bankSorts + 1] = kind
+		return true
+	end
+
 	-- Blizzard frames by global name, and Blizzard's selected bank type (week 3).
 	m.frames = {}
 	m.activeBankType = nil

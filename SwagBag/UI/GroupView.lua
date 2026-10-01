@@ -18,6 +18,7 @@
 --                                       "left" | "arrived" | "added" | "removed" (Layout.Apply)
 --   v.Restack() -> bool                 redraw after a collapse or expand (held back like a move)
 --   v.ToggleSection(groupId, sectionId), v.ToggleGroup(groupId)
+--   v.Relabel()                         redraw the headers only (nothing moves)
 --   v.ForEachSlot(fn)                   fn(button, record, bag, slot) for every slot (search)
 --   v.Record(bag, slot), v.SetRecord(bag, slot, record), v.GroupOf(bag), v.Size(bag), v.IsOpen()
 --   v.Clear()                           window closed: hide the buttons, forget the layout
@@ -480,6 +481,13 @@ function GV.New(cfg)
 	---------------------------------------------------------------------------
 	-- Collapse
 	---------------------------------------------------------------------------
+	-- Redraw only the headers (a new deposit target, a renamed tab): nothing moves.
+	function v.Relabel()
+		if v.pos then
+			renderExtras(v.pos)
+		end
+	end
+
 	function v.Restack()
 		if not v.pos then
 			return true

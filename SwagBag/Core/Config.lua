@@ -27,7 +27,8 @@ Config.Defaults = {
 		safeMode = { bags = false, bank = false },
 		-- blizzardFrame: "tiny" (Blizzard's bank invisible, its tabs on SwagBag's window) |
 		-- "beside" (Blizzard's bank visible, SwagBag's window next to it; spec 5.4, check V2).
-		bank = { blizzardFrame = "tiny" },
+		-- view: "sections" | "grid"; columns: slots per row in the bank window.
+		bank = { blizzardFrame = "tiny", view = "sections", columns = 14 },
 		-- mode: "full" (SwagBag's window replaces Blizzard's; spec F16) | "view" (read-only window
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).

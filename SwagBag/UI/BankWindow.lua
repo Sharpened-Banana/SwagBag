@@ -11,6 +11,12 @@
 -- (Adapter.ActiveBankType); SwagBag shows it and never sets it. Esc or the X hides SwagBag's
 -- window (spec 5.6) and gives Blizzard's bank back its parent, so it is visible while the
 -- visit lasts; the bags window shows "Bank still open", which shows this window again.
+-- Contents (UI/GroupView.lua): the "Character bank" group on top, the "Warband bank" group
+-- below, each with its own category sections (or grid), for the purchased tabs the client
+-- reports. The receiving group is tinted and says "deposits go here". Items move only into
+-- New or Free while the window is open (spec 4.3). Sort buttons call Blizzard's bank sort
+-- and regroup after the bank settles; in combat they refuse with feedback and nothing runs
+-- later (spec 5.5, ruling W11). The window has its own search box.
 local _, SB = ...
 
 local L = SB.L
@@ -20,8 +26,13 @@ local BW = {
 	visit = nil, -- "tiny" | "beside" for this visit (the Blizzard bank button), nil = setting
 	target = nil, -- "bank" | "warband" | nil: Blizzard's selected bank type, last read
 	lastVisit = nil, -- "tiny" | "beside": the mode of the last visit (for /swagbag report)
-	HEADER = 58,
+	sortPending = false, -- a Sort was pressed and the bank updates are still settling
+	sortSawUpdate = false,
+	HEADER = 80, -- title row, search row, deposit line
 	FOOTER = 6,
+	MAX_HEIGHT_FRACTION = 0.75,
+	SORT_SETTLE = 0.3,
+	SORT_TIMEOUT = 1.5,
 }
 SB.BankWindow = BW
 
@@ -51,11 +62,32 @@ frame.title:SetPoint("TOPLEFT", 10, -8)
 frame.title:SetText(L.BANK_TITLE)
 
 frame.deposit = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-frame.deposit:SetPoint("TOPLEFT", 10, -24)
+frame.deposit:SetPoint("TOPLEFT", 14, -58)
 frame.deposit:SetJustifyH("LEFT")
 
 local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
+
+local scroll = CreateFrame("ScrollFrame", nil, frame)
+scroll:SetPoint("TOPLEFT", 4, -BW.HEADER)
+scroll:SetPoint("BOTTOMRIGHT", -4, BW.FOOTER)
+local child = CreateFrame("Frame", nil, scroll)
+child:SetSize(100, 100)
+scroll:SetScrollChild(child)
+BW.scroll, BW.child = scroll, child
+-- The bank tabs' bag frames (and so their item buttons) live in this window.
+SB.Buttons.SetParentFor("bank", child)
+SB.Buttons.SetParentFor("warband", child)
+
+local function clampScroll()
+	scroll:SetVerticalScroll(SB.GridLayout.ClampOffset(scroll:GetVerticalScroll(), child:GetHeight(), scroll:GetHeight()))
+end
+
+scroll:EnableMouseWheel(true)
+scroll:SetScript("OnMouseWheel", Guard("bank.wheel", function(_, delta)
+	scroll:SetVerticalScroll(scroll:GetVerticalScroll() - delta * (SB.GroupView.SLOT + SB.GroupView.GAP) * 3)
+	clampScroll()
+end, "bank"))
 
 local function blizzardBank()
 	return SB.Adapter.Frame("BankFrame")
@@ -115,8 +147,12 @@ BW.GroupName = groupName
 
 -- Read Blizzard's selected bank type (never written) and show where deposits go.
 function BW.RefreshTarget()
+	local old = BW.target
 	BW.target = SB.Adapter.ActiveBankType()
 	frame.deposit:SetText(BW.target and L.BANK_DEPOSITS_TO:format(groupName(BW.target)) or "")
+	if old ~= BW.target and BW.view and BW.view.IsOpen() then
+		BW.view.Relabel() -- the tint and "deposits go here" move to the other group
+	end
 	SB.Emit("SB_BANK_TARGET", BW.target)
 end
 
@@ -211,6 +247,266 @@ end, 104)
 BW.blizzardButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -5)
 
 ---------------------------------------------------------------------------
+-- Contents: two groups in one GroupView
+---------------------------------------------------------------------------
+function BW.View()
+	return SB.Config.Get("bank.view") == "grid" and "grid" or "sections"
+end
+
+local function bagsOf(kind)
+	local A, B, list = SB.Adapter, SB.Buttons, {}
+	for _, bag in ipairs(A.GetBagIDs(kind)) do
+		local n = A.NumSlots(bag)
+		if n > 0 then
+			if B.Count(bag) < n then
+				B.EnsureCapacity(bag, n) -- in combat this waits; the slots appear at the next layout
+			end
+			list[#list + 1] = { bag = bag, size = n }
+		end
+	end
+	return list
+end
+
+-- Paint the slot's button and return its item record (nil for an empty slot). A pending item
+-- has no slot icon yet; placeholders still need one.
+local function describe(bag, slot)
+	local A, B = SB.Adapter, SB.Buttons
+	local button = B.Get(bag, slot)
+	if button then
+		B.Paint(button, A.GetSlot(bag, slot))
+	end
+	local record = SB.Items.Describe(bag, slot)
+	if record and not record.icon then
+		record.icon = (A.GetItemInstant(record.itemID) or {}).icon
+	end
+	return record
+end
+
+-- Fit the window around the content; scroll when taller than 75 % of the screen. Every anchor
+-- of this window is a top-left corner, so a resize never moves its top edge.
+local function sizeFrame(width, height)
+	child:SetSize(width, height)
+	local maxHeight = UIParent:GetHeight() * BW.MAX_HEIGHT_FRACTION / frame:GetScale()
+	frame:SetSize(width + 8, math.min(height, maxHeight - BW.HEADER - BW.FOOTER) + BW.HEADER + BW.FOOTER)
+	clampScroll()
+end
+
+local searchBox
+
+BW.view = SB.GroupView.New({
+	key = "bank",
+	window = "bank",
+	child = child,
+	scroll = scroll,
+	button = function(bag, slot)
+		return SB.Buttons.Get(bag, slot)
+	end,
+	describe = describe,
+	groups = function()
+		return { { id = "bank", bags = bagsOf("bank") }, { id = "warband", bags = bagsOf("warband") } }
+	end,
+	groupLabel = function(id, collapsed, count)
+		local text = L.BANK_GROUP_LABEL:format(collapsed and "+" or "-", groupName(id), count)
+		if id == BW.target then
+			text = text .. L.BANK_GROUP_TARGET
+		end
+		return text
+	end,
+	groupTint = function(id)
+		return id == BW.target
+	end,
+	view = BW.View,
+	columns = function()
+		return SB.Config.Get("bank.columns")
+	end,
+	newRows = function()
+		return SB.Config.Get("bags.newRows")
+	end,
+	freeTile = function() -- one setting for the bags and the bank (plan D19, /swagbag free)
+		return SB.Config.Get("bags.freeTile")
+	end,
+	onResize = sizeFrame,
+	onUpdated = function()
+		searchBox.Apply()
+	end,
+	onDrop = function(sectionId)
+		SB.BagsWindow.DropOnSection(sectionId)
+	end,
+})
+
+searchBox = SB.SearchBox.New({
+	parent = frame,
+	name = "SwagBagBankSearchBox",
+	search = SB.SearchState.New(),
+	window = "bank",
+	debounceKey = "search.bank",
+	isOpen = function()
+		return BW.IsOpen()
+	end,
+	forEachSlot = function(fn)
+		return BW.view.ForEachSlot(fn)
+	end,
+	setDimmed = function(button, dimmed)
+		return SB.Buttons.SetDimmed(button, dimmed)
+	end,
+})
+BW.searchBox = searchBox
+
+-- Full layout of both groups, then the search dimming.
+function BW.Layout(reason)
+	BW.view.Layout(reason)
+	searchBox.Apply()
+end
+
+-- Sort (spec 5.5): Blizzard's bank sort for one bank type, only from a click and never in
+-- combat (nothing is queued; ruling W11). SORT_SETTLE after the last bank update the window
+-- regroups (held back while the mouse is over the items); a sort that changes nothing stops
+-- waiting after SORT_TIMEOUT.
+function BW.Sort(kind)
+	local A = SB.Adapter
+	if A.InCombat() then
+		BW.Flash(L.SORT_AFTER_COMBAT)
+		return false
+	end
+	local ok, err = A.SortBank(kind)
+	if not ok then
+		if err ~= nil then
+			SB.ErrorTrap.OnError("bank.sort", "none", tostring(err), A.Stack())
+		end
+		BW.Flash(L.SORT_UNAVAILABLE)
+		return false
+	end
+	if not BW.sortPending then
+		BW.sortSawUpdate = false
+	end
+	BW.sortPending = frame:IsShown()
+	if BW.sortPending then
+		SB.Debounce("bank.sortSettle", BW.SORT_TIMEOUT, function()
+			local saw = BW.sortSawUpdate
+			BW.sortPending, BW.sortSawUpdate = false, false
+			if saw then
+				BW.Reflow("sort")
+			end
+		end, "bank")
+	end
+	BW.Flash(L.SORT_STARTED)
+	return true
+end
+
+function BW.Reflow(reason)
+	if not frame:IsShown() then
+		return false
+	end
+	local done = BW.view.RequestLayout(reason or "reflow")
+	if done then
+		searchBox.Apply()
+	end
+	BW.Flash(done and L.REFLOW_DONE or L.REFLOW_WAITING)
+	return done
+end
+
+function BW.ToggleView()
+	local view = BW.View() == "grid" and "sections" or "grid"
+	SB.Config.Set("bank.view", view)
+	BW.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	BW.Flash(view == "grid" and L.BANK_VIEW_GRID or L.BANK_VIEW_SECTIONS)
+	if BW.view.RequestLayout("view") then
+		searchBox.Apply()
+	end
+end
+
+-- Config is not initialized while this file loads, so the view label is set in BW.Open().
+BW.viewButton = titleButton(L.VIEW_TO_GRID, "bank.viewButton", function()
+	BW.ToggleView()
+end)
+BW.viewButton:SetPoint("RIGHT", BW.blizzardButton, "LEFT", -4, 0)
+BW.reflowButton = titleButton(L.BTN_REFLOW, "bank.reflowButton", function()
+	BW.Reflow("reflow")
+end, 60)
+BW.reflowButton:SetPoint("RIGHT", BW.viewButton, "LEFT", -4, 0)
+BW.sortWarbandButton = titleButton(L.BTN_SORT_WARBAND, "bank.sortWarband", function()
+	BW.Sort("warband")
+end, 96)
+BW.sortWarbandButton:SetPoint("RIGHT", BW.reflowButton, "LEFT", -4, 0)
+BW.sortBankButton = titleButton(L.BTN_SORT_BANK, "bank.sortBank", function()
+	BW.Sort("bank")
+end, 76)
+BW.sortBankButton:SetPoint("RIGHT", BW.sortWarbandButton, "LEFT", -4, 0)
+
+-- Live updates while open (spec 4.3), for the bank tabs only: count, lock and loaded data
+-- repaint in place; an emptied slot or a different item goes to GroupView.Changes; a tab
+-- that appears or changes size lays the bank out again (held back like any full layout).
+local BANK_REASONS
+SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
+	if not (frame:IsShown() and BW.view.IsOpen()) then
+		return
+	end
+	local Inv, B, A, v = SB.Inventory, SB.Buttons, SB.Adapter, BW.view
+	BANK_REASONS = BANK_REASONS or { Inv.R.COUNT, Inv.R.ITEM, Inv.R.SIZE, Inv.R.LOCK, Inv.R.LOADED }
+	local bankChange = false
+	for _, c in ipairs(changes) do
+		if B.KindOf(c.bag) ~= "bags" then
+			bankChange = true
+			break
+		end
+	end
+	if BW.sortPending and bankChange then
+		for _, r in ipairs(BANK_REASONS) do
+			if Inv.Has(mask, r) then
+				BW.sortSawUpdate = true
+				SB.Debounce("bank.sortSettle", BW.SORT_SETTLE, function()
+					BW.sortPending, BW.sortSawUpdate = false, false
+					BW.Reflow("sort")
+				end, "bank")
+				break
+			end
+		end
+	end
+	if Inv.Has(mask, Inv.R.SIZE) and bankChange then
+		B.EnsureBankTabs()
+		if BW.view.RequestLayout("size") then
+			searchBox.Apply()
+		end
+		return
+	end
+	local byGroup, touched = {}, false
+	for _, c in ipairs(changes) do
+		local gid = v.GroupOf(c.bag)
+		local button = B.Get(c.bag, c.slot)
+		if gid and button and c.slot <= (v.Size(c.bag) or 0) then
+			local old = v.Record(c.bag, c.slot)
+			touched = true
+			if not Inv.Has(c.reasons, Inv.R.ITEM) then
+				B.Paint(button, A.GetSlot(c.bag, c.slot))
+				local fresh = SB.Items.Describe(c.bag, c.slot)
+				if old and fresh and fresh.itemID == old.itemID then
+					fresh.icon = fresh.icon or old.icon
+					v.SetRecord(c.bag, c.slot, fresh)
+				end
+			else
+				local record = describe(c.bag, c.slot)
+				v.SetRecord(c.bag, c.slot, record)
+				-- Same itemID, new link (a keystone after a run): repaint in place (W12).
+				local sameItem = old and record and old.itemID == record.itemID
+				if not sameItem and (record or old) then
+					byGroup[gid] = byGroup[gid] or {}
+					table.insert(byGroup[gid], { bag = c.bag, slot = c.slot, kind = record and "arrived" or "left",
+						icon = old and old.icon })
+				end
+			end
+		end
+	end
+	for _, gid in ipairs({ "bank", "warband" }) do
+		if byGroup[gid] then
+			v.Changes(gid, byGroup[gid])
+		end
+	end
+	if touched then
+		searchBox.Apply()
+	end
+end, "bank"))
+
+---------------------------------------------------------------------------
 -- Open / close
 ---------------------------------------------------------------------------
 function BW.IsOpen()
@@ -240,8 +536,11 @@ function BW.Open()
 	if frame:IsShown() then
 		return true
 	end
+	BW.sortPending, BW.sortSawUpdate = false, false
+	BW.viewButton:SetText(BW.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	frame:Show()
 	BW.ApplyMode()
+	BW.Layout("open")
 	SB.Emit("SB_BANK_OPENED")
 	BW.RefreshStillOpen()
 	return true
@@ -261,6 +560,8 @@ frame:SetScript("OnHide", Guard("bank.hide", function(self)
 	if BW.interaction then -- the visit is still open: make Blizzard's bank visible again
 		host.Restore()
 	end
+	BW.view.Clear()
+	BW.sortPending, BW.sortSawUpdate = false, false
 	SB.Emit("SB_BANK_CLOSED")
 	BW.RefreshStillOpen()
 end, "bank"))
@@ -284,6 +585,27 @@ end, "bank")
 
 SB.On("BANKFRAME_CLOSED", function()
 	BW.OnBankClosed()
+end, "bank")
+
+-- A bank tab bought or changed during the visit (spec 9, 13.2 item 6; the event is
+-- feature-detected: registration fails silently on a client without it).
+SB.On("BANK_TAB_SETTINGS_UPDATED", function()
+	if not (frame:IsShown() and BW.view.IsOpen()) then
+		return
+	end
+	SB.Inventory.ScanKind("bank")
+	SB.Inventory.ScanKind("warband")
+	SB.Buttons.EnsureBankTabs()
+	if BW.view.RequestLayout("tabs") then
+		searchBox.Apply()
+	end
+end, "bank")
+
+-- /swagbag free tile|all (plan D19): the bank regroups too, held back like any full layout.
+SB.On("SB_FREE_TILE_CHANGED", function()
+	if frame:IsShown() and BW.view.RequestLayout("free") then
+		searchBox.Apply()
+	end
 end, "bank")
 
 -- Disabling or reloading never leaves Blizzard's bank moved (spec 8.6).

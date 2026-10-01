@@ -439,6 +439,16 @@ function A.SortBags()
 	return pcall(C_Container.SortBags)
 end
 
+-- Blizzard's own bank sort for "bank" (character bank) or "warband" (spec 5.5). ok, err.
+function A.SortBank(kind)
+	local BT = Enum and Enum.BankType
+	local bankType = BT and ((kind == "bank" and BT.Character) or (kind == "warband" and BT.Account))
+	if bankType == nil or not (C_Container and C_Container.SortBank) then
+		return false
+	end
+	return pcall(C_Container.SortBank, bankType)
+end
+
 ---------------------------------------------------------------------------
 -- Blizzard frames and the bank (week 3). SwagBag only READS Blizzard's bank state
 -- (spec 5.2, 5.3): it never selects a tab or a bank type and never closes the bank.
@@ -620,6 +630,7 @@ A.CHECKS = {
 	{ path = "C_Container.GetContainerItemEquipmentSetInfo", window = "bags", required = false },
 	{ path = "C_Container.GetContainerItemQuestInfo", window = "bags", required = false },
 	{ path = "C_Container.SortBags", window = "bags", required = false },
+	{ path = "C_Container.SortBank", window = "bank", required = false },
 	{ path = "GetCursorInfo", window = "bags", required = false },
 	{ path = "ClearCursor", window = "bags", required = false },
 	{ path = "GameTooltip", window = "bags", required = false },

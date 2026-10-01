@@ -156,6 +156,18 @@ function Inv.TrackedBags()
 	return list
 end
 
+-- Rescan every bag of a kind without marking anything "new". The character bank can only be
+-- read at a banker (spec 5.7), so what is in it at a visit is not a new arrival.
+function Inv.ScanKind(kind)
+	local was = Inv.scanned
+	Inv.scanned = false
+	for _, bag in ipairs(SB.Adapter.GetBagIDs(kind)) do
+		Inv.ScanBag(bag)
+		Inv.dirty[bag] = nil
+	end
+	Inv.scanned = was
+end
+
 -- Initial full scan (no "new" marking). Called on SB_LOGIN.
 function Inv.ScanAll()
 	for _, bag in ipairs(Inv.TrackedBags()) do
@@ -253,3 +265,8 @@ SB.On("GET_ITEM_INFO_RECEIVED", onItemLoaded, "bags")
 SB.On("SB_LOGIN", function()
 	Inv.ScanAll()
 end, "bags")
+
+SB.On("BANKFRAME_OPENED", function()
+	Inv.ScanKind("bank")
+	Inv.ScanKind("warband")
+end, "bank")
