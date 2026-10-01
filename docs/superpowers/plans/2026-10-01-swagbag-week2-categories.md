@@ -6313,11 +6313,11 @@ Give the user this checklist exactly. Stand near a banker, with a training dummy
 3. Click **Reflow**. The title briefly says `Regrouped`, and the item now sits in Consumables.
 4. Press **B** twice (close, open). It is still in Consumables. Type `/reload` and press **B**: still there (saved).
 5. Pick up another item and **click** (do not drag) on the **Gear** header. The same kind of chat line appears for Gear, and Gear does **not** collapse.
-6. Pick up an item and drop it on the **New** header. Chat says `Items can't be added to New. Drop them on a category header.` The item goes back.
+6. Pick up an item and drop it on the **New** header. Chat says `Items can't be added to New. Drop them on a category header.` The item stays on your cursor. Click an empty bag slot to put it back.
 7. If you carry a fish or a lure that is not in **Fish & Lures**, drop it on that header, then click **Reflow**. It moves there.
 8. Click **Sort**. The title says `Sorting...`. Blizzard sorts your bags. For a moment faded icons may appear. About half a second after the sorting stops, the window regroups (title `Regrouped`): no faded icons, and every item is in its section. (If your bags were already sorted, nothing moves and nothing regroups. That is fine. Swap two items by hand and try again.)
-9. Click **Sort** again and immediately move the mouse over the items and keep it there. The window waits. The title says `Regroups when the mouse leaves the items`. Move the mouse off the window. It regroups.
-10. Attack a training dummy. In combat, click **Sort**. The title says `Sort will run after combat`, and nothing moves. Leave combat. Within a moment the sort runs and the window regroups.
+9. Your bags are already sorted after step 8, so a second Sort changes nothing. Swap two items by hand, then click **Sort** and immediately move the mouse over the items and keep it there. The window waits. The title says `Regroups when the mouse leaves the items`. Move the mouse off the window. It regroups.
+10. Attack a training dummy. In combat, click **Sort**. The title says `Sort after combat ends`, and nothing moves. Leave combat: still nothing moves, and nothing is sorted by itself. Click **Sort** again: now it sorts, and the window regroups.
 11. **V12 at the bank:** talk to the banker (Blizzard's bank window is still used this week). Right-click an item in the SwagBag window: it goes to the bank, a faded copy stays where it was, and nothing else moves.
 12. Drag an item from the bank into an empty SwagBag slot. It appears in **New**.
 13. Close the bank and press **B** twice. Everything is regrouped, with no faded icons.

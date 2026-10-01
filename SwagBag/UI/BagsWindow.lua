@@ -14,6 +14,7 @@ local W = {
 	cells = {}, -- { {bag, slot, ...} } every slot in the view, shown or collapsed (search dims these)
 	sizes = {}, -- [bag] = number of slots laid out
 	stats = {},
+	sortSawUpdate = false, -- a bag update arrived since the pending Sort began
 	sortPending = false, -- a Sort was pressed and its bag updates are still settling
 	state = nil, -- sections view: Layout state while open (nil when closed or in grid view)
 	pos = nil, -- sections view: last Layout.Position result
@@ -81,7 +82,8 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 	if self:IsShown() then
 		return
 	end
-	W.state, W.pos, W.sortPending = nil, nil, false
+	W.state, W.pos, W.sortPending, W.sortSawUpdate = nil, nil, false, false
+	W.ClearDropGuard()
 	SB.Buttons.ReleasePlaceholders()
 	SB.Emit("SB_BAGS_CLOSED")
 end, "bags"))
@@ -446,10 +448,19 @@ function W.Sort()
 		W.Flash(L.SORT_UNAVAILABLE)
 		return false
 	end
+	if not W.sortPending then
+		W.sortSawUpdate = false
+	end
 	W.sortPending = frame:IsShown()
 	if W.sortPending then
+		-- A second Sort replaces a running settle; if the first sort already changed bags, its
+		-- regroup still happens when this timeout ends.
 		SB.Debounce("bags.sortSettle", W.SORT_TIMEOUT, function()
-			W.sortPending = false
+			local saw = W.sortSawUpdate
+			W.sortPending, W.sortSawUpdate = false, false
+			if saw then
+				W.Reflow("sort")
+			end
 		end, "bags")
 	end
 	W.Flash(L.SORT_STARTED)
@@ -468,6 +479,9 @@ end
 -- cursor is empty by then: for DROP_GUARD seconds after a drop on a header, the next
 -- click or drop on that same header is ignored, so one press runs one drop and never a collapse.
 local dropGuard, dropToken = nil, 0
+function W.ClearDropGuard()
+	dropGuard, dropToken = nil, dropToken + 1
+end
 
 -- AC4.3: an item dropped on a header (or clicked onto it) joins that section's manual
 -- list. Order: read the cursor, add, confirm in chat, and only then put the item back (a
@@ -552,7 +566,7 @@ function W.Open()
 	end
 	W.RestorePosition()
 	frame:SetScale(SB.GridLayout.ClampScale(SB.Config.Get("bags.scale")))
-	W.sortPending = false
+	W.sortPending, W.sortSawUpdate = false, false
 	W.viewButton:SetText(W.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	frame:Show()
 	W.Layout("open")
@@ -643,9 +657,13 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 		return
 	end
 	local Inv, B, A = SB.Inventory, SB.Buttons, SB.Adapter
-	if W.sortPending then -- sort settle: regroup SORT_SETTLE after the LAST update (rule 5 applies)
+	-- Sort settle: regroup SORT_SETTLE after the LAST update (rule 5 applies). A cooldown-only
+	-- event is not a bag change and does not count.
+	if W.sortPending and (Inv.Has(mask, Inv.R.COUNT) or Inv.Has(mask, Inv.R.ITEM) or Inv.Has(mask, Inv.R.SIZE)
+		or Inv.Has(mask, Inv.R.LOCK) or Inv.Has(mask, Inv.R.LOADED)) then
+		W.sortSawUpdate = true
 		SB.Debounce("bags.sortSettle", W.SORT_SETTLE, function()
-			W.sortPending = false
+			W.sortPending, W.sortSawUpdate = false, false
 			W.Reflow("sort")
 		end, "bags")
 	end
