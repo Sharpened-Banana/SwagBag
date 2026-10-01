@@ -84,10 +84,15 @@ L.REPORT_ADDONS = "Bag-related addons: %s"
 L.REPORT_NOT_LOADED = "%s (not loaded)"
 L.REPORT_SETTINGS = "Settings hash: %s  Schema: %d  Buttons: %d (%d ms)"
 L.REPORT_CATEGORIES = "Categories: %d (%d edited)  Broken: %s"
+L.REPORT_LAYOUT = "Last bags layout: %.1f ms (%s)"
 
 -- Bags window
 L.BAGS_TITLE = "SwagBag"
 L.BAGS_SCALE = "SwagBag %d%%"
+L.VIEW_TO_GRID = "Grid"
+L.VIEW_TO_SECTIONS = "Categories"
+L.VIEW_GRID = "SwagBag - grid view"
+L.VIEW_SECTIONS = "SwagBag - category view"
 
 -- Categories (spec 7.6) and New / Free sections
 L.CAT_NEW = "New"
