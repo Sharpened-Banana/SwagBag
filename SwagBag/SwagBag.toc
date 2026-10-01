@@ -26,10 +26,12 @@ Core/Commands.lua
 # Engine
 Engine/Items.lua
 Engine/Inventory.lua
+Engine/GridLayout.lua
 
 # UI
 UI/ReportBox.lua
 UI/Buttons.lua
+UI/BagsWindow.lua
 
 # Start-up (keep last)
 Core/Boot.lua
