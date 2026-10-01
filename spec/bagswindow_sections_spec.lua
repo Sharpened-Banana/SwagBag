@@ -28,13 +28,29 @@ local function newFake(kind)
 		IsMouseOver = function(self) return self.mouseOver == true end,
 		SetScale = function(self, s) self.scale = s end,
 		GetScale = function(self) return self.scale end,
-		SetSize = function(self, w, h) self.w, self.h = w, h end,
+		SetSize = function(self, w, h)
+			-- Like the client: a bottom anchor keeps the bottom edge, so the top edge moves with the height.
+			self.w, self.h = w, h
+		end,
 		GetHeight = function(self) return self.h end,
 		SetScript = function(self, n, fn) self.scripts[n] = fn end,
 		SetVerticalScroll = function(self, v) self.vscroll = v end,
 		GetVerticalScroll = function(self) return self.vscroll end,
 		ClearAllPoints = function(self) self.points = {} end,
-		SetPoint = function(self, ...) self.points[#self.points + 1] = { ... } end,
+		SetPoint = function(self, ...)
+			self.points[#self.points + 1] = { ... }
+			local p = { ... }
+			if p[3] == "BOTTOMLEFT" and (p[1] == "TOPLEFT" or p[1] == "BOTTOMLEFT") then
+				self.anchor, self.left, self.edgeY = p[1], p[4], p[5]
+			end
+		end,
+		GetLeft = function(self) return self.left end,
+		GetTop = function(self)
+			if self.anchor == "BOTTOMLEFT" then
+				return self.edgeY + self.h
+			end
+			return self.edgeY
+		end,
 		GetPoint = function(self, i)
 			local p = self.points[i]
 			if p then
@@ -213,6 +229,62 @@ describe("BagsWindow category view", function()
 		assert.truthy(B.released > released)
 	end)
 
+	-- Change the mock bags, then deliver the events the client would send.
+	local function bagUpdate(bag)
+		SB.eventFrame:Fire("BAG_UPDATE", bag or 0)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.06)
+	end
+
+	local function lastPoint()
+		return W.frame.points[#W.frame.points]
+	end
+
+	it("a collapse that changes the height keeps the top-left corner fixed (C1)", function()
+		SB.Config.UI().positions.bags = { "BOTTOMLEFT", "BOTTOMLEFT", 100, 200 } -- old format, bottom anchor
+		W.Open()
+		local left, top, height = W.frame:GetLeft(), W.frame:GetTop(), W.frame.h
+		header("c_consumables").scripts.OnClick(header("c_consumables"))
+		assert.truthy(W.frame.h ~= height, "the collapse changed the height")
+		assert.same({ left, top }, { W.frame:GetLeft(), W.frame:GetTop() })
+		assert.equal("TOPLEFT", lastPoint()[1])
+	end)
+
+	it("an ApplyChanges that adds a Free row keeps the top-left corner fixed (C1)", function()
+		SB.Config.UI().positions.bags = { "BOTTOMLEFT", "BOTTOMLEFT", 100, 200 }
+		W.Open()
+		local left, top, height = W.frame:GetLeft(), W.frame:GetTop(), W.frame.h
+		A.SetBagSize(1, 30) -- a bag equipped while open: Free grows by more than a row
+		bagUpdate(1)
+		assert.truthy(W.frame.h ~= height, "the height changed")
+		assert.same({ left, top }, { W.frame:GetLeft(), W.frame:GetTop() })
+		assert.equal("TOPLEFT", lastPoint()[1])
+	end)
+
+	it("the open path restores a saved position, also in the old point+offset format (C1)", function()
+		SB.Config.UI().positions.bags = { "BOTTOMRIGHT", "BOTTOMRIGHT", -20, 40 }
+		assert.truthy(W.Open())
+		local p = W.frame.points[1]
+		assert.same({ "BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -20, 40 }, { p[1], p[2], p[3], p[4], p[5] })
+		assert.equal(1, #W.frame.points, "open did not re-anchor")
+		W.Close()
+		SB.Config.UI().positions.bags = { "TOPLEFT", "BOTTOMLEFT", 100, 900 }
+		assert.truthy(W.Open())
+		p = W.frame.points[1]
+		assert.same({ "TOPLEFT", UIParent, "BOTTOMLEFT", 100, 900 }, { p[1], p[2], p[3], p[4], p[5] })
+	end)
+
+	it("Ctrl+wheel scaling keeps the top-left corner on screen (C1)", function()
+		SB.Config.UI().positions.bags = { "TOPLEFT", "BOTTOMLEFT", 100, 900 }
+		W.Open()
+		IsControlKeyDown = function() return true end
+		W.scroll.scripts.OnMouseWheel(W.scroll, 1)
+		local p = lastPoint()
+		assert.equal("TOPLEFT", p[1])
+		assert.truthy(math.abs(p[4] * 1.05 - 100) < 1e-6 and math.abs(p[5] * 1.05 - 900) < 1e-6,
+			"screen position unchanged after the scale change")
+	end)
+
 	it("Ctrl+wheel scaling only resizes; it does not regroup", function()
 		W.Open()
 		IsControlKeyDown = function() return true end
@@ -262,13 +334,6 @@ describe("BagsWindow category view", function()
 		assert.equal(7, #headers())
 		assert.equal(SB.L.VIEW_TO_GRID, W.viewButton.text)
 	end)
-
-	-- Change the mock bags, then deliver the events the client would send.
-	local function bagUpdate(bag)
-		SB.eventFrame:Fire("BAG_UPDATE", bag or 0)
-		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
-		A.Advance(0.06)
-	end
 
 	local function placedCounts()
 		local out = {}
