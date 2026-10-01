@@ -50,6 +50,7 @@ UI/TinyHost.lua
 UI/BankWindow.lua
 UI/GuildButtons.lua
 UI/GuildBankWindow.lua
+UI/Overlays.lua
 UI/DebugV1.lua
 
 # Start-up (keep last)

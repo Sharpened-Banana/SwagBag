@@ -354,6 +354,15 @@ function M.AddContainers(m)
 		return not m.cannotUse[itemID]
 	end
 
+	-- m.avgIlvl: the average equipped item level (nil = the client gives none).
+	function m.EquippedItemLevel()
+		return m.avgIlvl
+	end
+
+	function m.HasPawn()
+		return m.pawn ~= nil
+	end
+
 	function m.PawnUpgrade(bag, slot)
 		if m.pawn == nil then
 			return nil

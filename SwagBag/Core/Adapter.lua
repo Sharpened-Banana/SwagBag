@@ -326,6 +326,24 @@ function A.CanUse(itemID)
 	return not ok or yes ~= false
 end
 
+-- Average item level of what the character wears (GetAverageItemLevel's second value), or
+-- nil when the client lacks the function or gives no number (spec addition D18).
+function A.EquippedItemLevel()
+	local fn = _G.GetAverageItemLevel
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, _, equipped = pcall(fn)
+	if not ok or type(equipped) ~= "number" or isSecret(equipped) then
+		return nil
+	end
+	return equipped
+end
+
+function A.HasPawn()
+	return type(_G.PawnIsContainerItemAnUpgrade) == "function"
+end
+
 -- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
 function A.PawnUpgrade(bag, slot)
 	local fn = _G.PawnIsContainerItemAnUpgrade
@@ -631,6 +649,7 @@ A.CHECKS = {
 	{ path = "C_Item.GetCurrentItemLevel", window = "bags", required = false },
 	{ path = "ItemLocation.CreateFromEquipmentSlot", window = "bags", required = false },
 	{ path = "GetInventoryItemLink", window = "bags", required = false },
+	{ path = "GetAverageItemLevel", window = "bags", required = false },
 	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
 	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
 	{ path = "GetGuildBankItemLink", window = "bank", required = false },

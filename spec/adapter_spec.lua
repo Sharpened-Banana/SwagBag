@@ -1,4 +1,4 @@
--- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink
+-- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
 describe("Adapter cursor and sort helpers", function()
 	local A
@@ -9,7 +9,7 @@ describe("Adapter cursor and sort helpers", function()
 	end)
 
 	after_each(function()
-		GetCursorInfo, ClearCursor, C_Container = nil, nil, nil
+		GetCursorInfo, ClearCursor, C_Container, GetAverageItemLevel = nil, nil, nil, nil
 	end)
 
 	it("CursorItem returns the item on the cursor, and nothing for spells, errors or a missing API", function()
@@ -75,5 +75,15 @@ describe("Adapter.EquippedItems (real adapter, stubbed globals)", function()
 		assert.is_nil(out[3])
 		C_Item.GetCurrentItemLevel = function() return "x" end
 		assert.equal(true, A.EquippedItems()[1].unknown, "not a number")
+	end)
+
+	it("EquippedItemLevel is GetAverageItemLevel's equipped value, and nil without the API or on an error", function()
+		assert.is_nil(A.EquippedItemLevel())
+		GetAverageItemLevel = function() return 285.5, 279.44, 270 end
+		assert.equal(279.44, A.EquippedItemLevel())
+		GetAverageItemLevel = function() return 285.5 end
+		assert.is_nil(A.EquippedItemLevel())
+		GetAverageItemLevel = function() error("boom") end
+		assert.is_nil(A.EquippedItemLevel())
 	end)
 end)

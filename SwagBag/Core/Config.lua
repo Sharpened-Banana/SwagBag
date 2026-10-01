@@ -18,8 +18,10 @@ SB.Config = Config
 Config.Defaults = {
 	settings = {
 		-- view: "sections" (category view) | "grid"; newRows: rows kept for New while open;
-		-- reagentSeparate: show the reagent bag as its own "Reagents" section (spec AC1.4).
-		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false },
+		-- reagentSeparate: show the reagent bag as its own "Reagents" section (spec AC1.4);
+		-- showIlvl: the title shows the average equipped item level (plan D18).
+		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
+			showIlvl = true },
 		safeMode = { bags = false, bank = false },
 		-- blizzardFrame: "tiny" (Blizzard's bank invisible, its tabs on SwagBag's window) |
 		-- "beside" (Blizzard's bank visible, SwagBag's window next to it; spec 5.4, check V2).
@@ -29,6 +31,9 @@ Config.Defaults = {
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
 		-- Off until check G1 proves the client withdraws from the tab it is given (ruling W3-10).
 		guildBank = { mode = "full", withdrawAnyTab = false },
+		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
+		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
+			usePawn = false },
 	},
 }
 
