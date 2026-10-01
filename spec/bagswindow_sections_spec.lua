@@ -142,6 +142,16 @@ describe("BagsWindow category view", function()
 		return out
 	end
 
+	-- Counts header Acquire/ReleaseAll calls from now on (the pool hands the same frames back, so
+	-- identity alone cannot tell a redraw from an in-place update).
+	local function countChurn()
+		local H, n = SB.SectionHeaders, { acquired = 0, released = 0 }
+		local acquire, release = H.Acquire, H.ReleaseAll
+		H.Acquire = function(...) n.acquired = n.acquired + 1 return acquire(...) end
+		H.ReleaseAll = function(...) n.released = n.released + 1 return release(...) end
+		return n
+	end
+
 	local function header(id)
 		for _, h in ipairs(SB.SectionHeaders.inUse) do
 			if h.sectionId == id then
@@ -501,11 +511,41 @@ describe("BagsWindow category view", function()
 		A.items[Fixtures.HEALING_POTION].sellPrice = 2500
 		W.Open()
 		assert.equal("- Consumables (2) - 1g vendor", header("c_consumables").text.text)
-		local oldPos = W.pos
+		local oldPos, frameBefore, pool = W.pos, header("c_consumables"), #SB.SectionHeaders.pool
+		local churn = countChurn()
 		A.Put(0, 1, Fixtures.HEALING_POTION, 9) -- 9 x 25s = 2g 25s
 		bagUpdate(0)
 		assert.equal(oldPos, W.pos, "no layout ran, nothing moved")
 		assert.equal("- Consumables (2) - 2g vendor", header("c_consumables").text.text)
+		assert.equal(frameBefore, header("c_consumables"), "the same header frame, set in place")
+		assert.equal(pool, #SB.SectionHeaders.pool, "nothing released or acquired")
+		assert.same({ acquired = 0, released = 0 }, churn)
+	end)
+
+	-- Mutation: make W.RefreshHeaders call renderExtras(W.pos) again.
+	it("new Auctionator prices update the open window's header totals in place (W3-36)", function()
+		A.items[Fixtures.FLASK].sellPrice = 60000
+		W.Open()
+		assert.equal("- Consumables (2) - 12g vendor", header("c_consumables").text.text)
+		local oldPos, frameBefore, pool = W.pos, header("c_consumables"), #SB.SectionHeaders.pool
+		local churn = countChurn()
+		A.auctionator = { prices = { ["item:" .. Fixtures.FLASK] = 12400000 } }
+		A.auctionatorCallback()
+		A.Advance(0.5)
+		assert.equal("- Consumables (2) - 2,480g", header("c_consumables").text.text)
+		assert.equal(oldPos, W.pos, "no layout ran")
+		assert.equal(frameBefore, header("c_consumables"))
+		assert.equal(pool, #SB.SectionHeaders.pool)
+		assert.same({ acquired = 0, released = 0 }, churn)
+	end)
+
+	it("a warbound-until-equipped item is worth its vendor price, like a bound one (W3-35)", function()
+		A.items[Fixtures.FLASK].sellPrice = 60000
+		A.auctionator = { prices = { ["item:" .. Fixtures.FLASK] = 12400000 } }
+		SB.Prices.Invalidate()
+		A.Put(0, 2, Fixtures.FLASK, 2, { onCooldown = true, isWUE = true })
+		W.Open()
+		assert.equal("- Consumables (2) - 12g", header("c_consumables").text.text, "2 flasks at vendor, Auctionator wins nothing")
 	end)
 
 	it("bag items get their overlays; an empty reagent-bag slot is tinted in Free", function()

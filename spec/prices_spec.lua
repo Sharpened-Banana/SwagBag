@@ -42,6 +42,14 @@ describe("Prices (spec F10, 3.3)", function()
 		assert.same({ 250000, "Vendor" }, { P.Value(RING_LINK, Fixtures.BOE_RING) })
 	end)
 
+	-- Mutation: register the bare function instead of the Guard-wrapped one in the SB_LOGIN handler.
+	it("Auctionator's update callback runs trapped: an error is recorded, never raised (P6)", function()
+		P.Invalidate = function() error("boom") end
+		A.auctionatorCallback()
+		assert.equal(1, #SB.ErrorTrap.Recent())
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
 	it("a bound item is worth its vendor price only", function()
 		A.auctionator = { prices = { [RING_LINK] = 9990000 } }
 		P.Invalidate()
@@ -109,6 +117,18 @@ describe("Prices (spec F10, 3.3)", function()
 		st.sections.free = { size = 2, cells = { { bag = 0, slot = 9 }, { shown = false, spare = "bags" } } } -- tile + spare entry
 		local totals = P.SectionTotals(st, function(_, slot) return records[slot] end)
 		assert.same({ c_herbs = 23 * 1500, c_consumables = 500, new = 0, free = 0 }, totals)
+	end)
+
+	it("a warbound-until-equipped item is worth its vendor price only (W3-35)", function()
+		A.auctionator = { prices = { [RING_LINK] = 9990000 } }
+		P.Invalidate()
+		local st = { sections = { c = { size = 1, cells = { { bag = 0, slot = 1 } } } } }
+		local rec = { itemID = Fixtures.BOE_RING, link = RING_LINK, count = 1, isWUE = true }
+		assert.same({ c = 250000 }, P.SectionTotals(st, function() return rec end))
+		A.SetBagSize(0, 1)
+		A.Put(0, 1, Fixtures.BOE_RING, 1, { link = RING_LINK, isWUE = true })
+		local q = SB.Query.Compile("value>100")
+		assert.equal(false, SB.Query.Eval(q, SB.Items.Describe(0, 1)), "25g, not the 999g auction price")
 	end)
 
 	it("the value keyword compares the price per unit in gold (spec 7.4: value>100 & tradegoods)", function()

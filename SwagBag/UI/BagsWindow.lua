@@ -388,16 +388,24 @@ local function renderExtras(pos)
 	for i, h in ipairs(pos.headers) do
 		H.Acquire(child, h.id, labels[i], W.PAD, h.y, pos.width - 2 * W.PAD)
 	end
-	W.headerSig = table.concat(labels, "\n")
 end
 
 -- A stack's count or an item's price can change a section's total with no button moving:
--- redraw the headers (only) when their text would differ.
+-- set the header texts in place (only those that differ); nothing is released or acquired.
 function W.RefreshHeaders()
-	if W.state and W.pos and table.concat(headerLabels(W.pos), "\n") ~= W.headerSig then
-		renderExtras(W.pos)
+	if not (W.state and W.pos and frame:IsShown()) then
+		return
+	end
+	local H = SB.SectionHeaders
+	local labels = headerLabels(W.pos)
+	for i, h in ipairs(W.pos.headers) do
+		H.SetLabel(child, h.id, labels[i])
 	end
 end
+
+SB.On("SB_PRICES_CHANGED", function()
+	W.RefreshHeaders()
+end, "bags")
 
 local function cellsOf(pos)
 	local cells = {}

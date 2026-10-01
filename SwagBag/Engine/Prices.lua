@@ -17,8 +17,8 @@
 --   Prices.Invalidate()
 local _, SB = ...
 
-local P = { providers = {}, cache = {}, cached = 0, filledAt = nil, active = nil, errors = {}, off = {},
-	MAX_AGE = 600, MAX_ERRORS = 3 }
+local P = { providers = {}, cache = {}, boundCache = {}, cached = 0, filledAt = nil, active = nil, errors = {}, off = {},
+	MAX_AGE = 600, REFRESH_DELAY = 0.5, MAX_ERRORS = 3 }
 SB.Prices = P
 
 function P.RegisterProvider(p)
@@ -27,7 +27,7 @@ function P.RegisterProvider(p)
 end
 
 function P.Invalidate()
-	P.cache, P.cached, P.filledAt, P.active = {}, 0, nil, nil
+	P.cache, P.boundCache, P.cached, P.filledAt, P.active = {}, {}, 0, nil, nil
 end
 
 local function byPriority(a, b)
@@ -89,13 +89,16 @@ function P.Value(link, itemID, bound)
 	if P.filledAt and now - P.filledAt > P.MAX_AGE then
 		P.Invalidate()
 	end
-	local key = (link or tostring(itemID)) .. (bound and "#b" or "")
-	local hit = P.cache[key]
+	local key = link or itemID
+	local store = bound and P.boundCache or P.cache
+	local hit = key ~= nil and store[key]
 	if hit then
 		return hit[1] or nil, hit[2]
 	end
 	local v, source = lookup(link, itemID, bound)
-	P.cache[key] = { v or false, source }
+	if key ~= nil then
+		store[key] = { v or false, source }
+	end
 	P.cached = P.cached + 1
 	P.filledAt = P.filledAt or now
 	return v, source
@@ -110,7 +113,7 @@ function P.SectionTotals(state, recordOf)
 			if cell and cell.bag and not cell.placeholder then
 				local r = recordOf(cell.bag, cell.slot)
 				if r and not r.pending then
-					local v = P.Value(r.link, r.itemID, r.isBound)
+					local v = P.Value(r.link, r.itemID, r.isBound or r.isWUE)
 					if v then
 						sum = sum + v * (r.count or 1)
 					end
@@ -129,13 +132,14 @@ local function thousands(n)
 end
 
 function P.Money(copper)
+	local L = SB.L
 	copper = math.floor(copper or 0)
 	if copper >= 10000 then
-		return thousands(math.floor(copper / 10000)) .. "g"
+		return L.MONEY_GOLD:format(thousands(math.floor(copper / 10000)))
 	elseif copper >= 100 then
-		return math.floor(copper / 100) .. "s"
+		return L.MONEY_SILVER:format(math.floor(copper / 100))
 	end
-	return copper .. "c"
+	return L.MONEY_COPPER:format(copper)
 end
 
 -- The built-in fallback: what a vendor pays.
@@ -155,9 +159,13 @@ P.RegisterProvider({
 SB.On("SB_LOGIN", function()
 	for _, p in ipairs(P.providers) do
 		if p.onUpdate then
-			pcall(p.onUpdate, function()
+			pcall(p.onUpdate, SB.ErrorTrap.Guard("prices.update", function()
 				P.Invalidate()
-			end)
+				-- The windows refresh their header totals in place, once, after the burst.
+				SB.Debounce("prices.refresh", P.REFRESH_DELAY, function()
+					SB.Emit("SB_PRICES_CHANGED")
+				end, "none")
+			end, "none"))
 		end
 	end
 end, "none")

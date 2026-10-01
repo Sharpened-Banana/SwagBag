@@ -240,7 +240,7 @@ function K.RegisterAll()
 		if r.pending then
 			return nil
 		end
-		local copper = SB.Prices and SB.Prices.Value(r.link, r.itemID, r.isBound)
+		local copper = SB.Prices and SB.Prices.Value(r.link, r.itemID, r.isBound or r.isWUE)
 		return copper and copper / 10000 or false
 	end, { "gold" })
 

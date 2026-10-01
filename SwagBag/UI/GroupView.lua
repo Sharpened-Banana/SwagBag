@@ -19,7 +19,7 @@
 --   v.Restack() -> bool                 redraw after a collapse or expand (held back like a move)
 --   v.ToggleSection(groupId, sectionId), v.ToggleGroup(groupId)
 --   v.Relabel()                         redraw the headers only (nothing moves)
---   v.RefreshTotals()                   the same, only when a section's text would differ (a count or price changed)
+--   v.RefreshTotals()                   section headers' text in place (a count or price changed)
 --   v.ForEachSlot(fn)                   fn(button, record, bag, slot) for every slot (search)
 --   v.Record(bag, slot), v.SetRecord(bag, slot, record), v.GroupOf(bag), v.Size(bag), v.IsOpen()
 --   v.Clear()                           window closed: hide the buttons, forget the layout
@@ -258,7 +258,6 @@ function GV.New(cfg)
 		for i, h in ipairs(pos.headers) do
 			H.Acquire(child, h.group .. ":" .. h.id, labels[i], GV.PAD, h.y, width, owner)
 		end
-		v.headerSig = table.concat(labels, "\n")
 	end
 
 	local function cellsOf(pos)
@@ -509,11 +508,15 @@ function GV.New(cfg)
 		end
 	end
 
-	-- A count or a price changed a section's total with nothing moving: redraw the headers
-	-- (only) when their text would differ.
+	-- A count or a price changed a section's total with nothing moving: set the section
+	-- headers' texts in place (only those that differ). Group headers and pools are untouched.
 	function v.RefreshTotals()
-		if v.pos and table.concat(sectionLabels(v.pos), "\n") ~= v.headerSig then
-			renderExtras(v.pos)
+		if not v.pos then
+			return
+		end
+		local labels = sectionLabels(v.pos)
+		for i, h in ipairs(v.pos.headers) do
+			SB.SectionHeaders.SetLabel(cfg.child, h.group .. ":" .. h.id, labels[i])
 		end
 	end
 

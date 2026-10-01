@@ -656,18 +656,22 @@ local function auctionator()
 	return nil
 end
 
+-- Resolved when availability is asked (once per price-cache fill), not on every price lookup.
+local auctionatorApi
+
 function A.AuctionatorAvailable()
-	return auctionator() ~= nil
+	auctionatorApi = auctionator()
+	return auctionatorApi ~= nil
 end
 
 -- Copper per unit, or nil when Auctionator has no price. Errors are the caller's to count.
 function A.AuctionatorPrice(link)
-	local api = auctionator()
+	local api = auctionatorApi
 	if not api then
 		return nil
 	end
 	local v = api.GetAuctionPriceByItemLink("SwagBag", link)
-	if type(v) == "number" and not isSecret(v) then
+	if type(v) == "number" and not isSecret(v) and v == v and v >= 0 and v < math.huge then
 		return v
 	end
 	return nil

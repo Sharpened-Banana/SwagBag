@@ -63,6 +63,14 @@ describe("BankWindow contents", function()
 		end
 	end
 
+	local function countChurn()
+		local H, n = SB.SectionHeaders, { acquired = 0, released = 0 }
+		local acquire, release = H.Acquire, H.ReleaseAll
+		H.Acquire = function(...) n.acquired = n.acquired + 1 return acquire(...) end
+		H.ReleaseAll = function(...) n.released = n.released + 1 return release(...) end
+		return n
+	end
+
 	local function labels()
 		local out = {}
 		for _, h in ipairs(SB.SectionHeaders.inUse) do
@@ -122,14 +130,33 @@ describe("BankWindow contents", function()
 		assert.equal("- Ore (1) - 9g", header("warband:c_ore").text.text, "10 ore at 90s")
 	end)
 
+	it("new Auctionator prices update the bank headers in place (W3-36)", function()
+		A.items[Fixtures.HERB].sellPrice = 1500
+		openBank()
+		local frameBefore = header("bank:c_herbs")
+		local churn = countChurn()
+		A.auctionator = { prices = { [A.GetSlot(6, 2).link] = 90000 } }
+		A.auctionatorCallback()
+		A.Advance(0.5)
+		assert.equal("- Herbs (1) - 180g", header("bank:c_herbs").text.text)
+		assert.equal(frameBefore, header("bank:c_herbs"))
+		assert.same({ acquired = 0, released = 0 }, churn)
+	end)
+
 	-- Mutation: delete the `v.RefreshTotals()` call in the bank's BAG_UPDATE handler.
 	it("a stack's count changing with nothing moving updates the bank header's total (F10)", function()
 		A.items[Fixtures.HERB].sellPrice = 1500
 		openBank()
 		assert.equal("- Herbs (1) - 3g vendor", header("bank:c_herbs").text.text)
+		local frameBefore, pool, stats = header("bank:c_herbs"), #SB.SectionHeaders.pool, BW.view.pos
+		local churn = countChurn()
 		A.Put(6, 2, Fixtures.HERB, 40)
 		bankUpdate(6)
+		assert.same({ acquired = 0, released = 0 }, churn)
 		assert.equal("- Herbs (1) - 6g vendor", header("bank:c_herbs").text.text)
+		assert.equal(frameBefore, header("bank:c_herbs"), "the same header frame, set in place")
+		assert.equal(pool, #SB.SectionHeaders.pool, "nothing released or acquired")
+		assert.equal(stats, BW.view.pos, "no layout ran, no redraw: the position table is the same")
 	end)
 
 	it("a deposit shows in that group's New; nothing else moves", function()

@@ -14,7 +14,7 @@ SB.SectionHeaders = H
 
 -- [header] = the frame it was acquired in / its owner's { onClick, onDrop, window }. Kept beside the
 -- frames, not on them, so a field name can never clash with a frame method.
-local parents, owners = {}, {}
+local parents, owners, labels = {}, {}, {}
 
 -- Pure: the header text. value (copper, optional) is the section's total value (spec F10),
 -- shown when above 0; vendor = the value is the vendor price (no Auctionator).
@@ -85,6 +85,7 @@ function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	h.sectionId = sectionId
 	h.bg:SetColorTexture(1, 1, 1, 0.06)
 	h.text:SetText(label)
+	labels[h] = label
 	h:SetWidth(width)
 	h:ClearAllPoints()
 	h:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -93,13 +94,32 @@ function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	return h
 end
 
+-- Change the text of the header (parent, sectionId) in place, only when it differs. Group headers
+-- (ids starting with "#") are never touched. Nothing is released or acquired.
+function H.SetLabel(parent, sectionId, text)
+	if sectionId:sub(1, 1) == "#" then
+		return false
+	end
+	for _, h in ipairs(H.inUse) do
+		if parents[h] == parent and h.sectionId == sectionId then
+			if labels[h] ~= text then
+				labels[h] = text
+				h.text:SetText(text)
+				return true
+			end
+			return false
+		end
+	end
+	return false
+end
+
 -- Release the headers inside parent; every header when parent is nil.
 function H.ReleaseAll(parent)
 	for i = #H.inUse, 1, -1 do
 		local h = H.inUse[i]
 		if parent == nil or parents[h] == parent then
 			h:Hide()
-			h.sectionId, parents[h], owners[h] = nil, nil, nil
+			h.sectionId, parents[h], owners[h], labels[h] = nil, nil, nil, nil
 			table.remove(H.inUse, i)
 			H.pool[#H.pool + 1] = h
 		end
