@@ -100,4 +100,46 @@ describe("Config", function()
 		assert.is_nil(charDB.backups.reset)
 		assert.truthy(Config.Set("bags.columns", 9))
 	end)
+
+	it("account DB v99 does not migrate character DB v0", function()
+		local saved_db = { schemaVersion = 99, settings = { bags = { columns = 5 } } }
+		local saved_char = { schemaVersion = 0, ui = { positions = { bags = { "CENTER" } } } }
+		assert.equal("newer", Config.Init(saved_db, saved_char))
+		-- Verify the character table is unchanged (no backups added)
+		assert.same({ schemaVersion = 0, ui = { positions = { bags = { "CENTER" } } } }, saved_char)
+	end)
+
+	it("character DB v99 does not migrate account DB v0", function()
+		local saved_db = { schemaVersion = 0, settings = { bags = { columns = 7 } } }
+		local saved_char = { schemaVersion = 99, ui = { positions = {} } }
+		assert.equal("newer", Config.Init(saved_db, saved_char))
+		-- Verify the account table is unchanged (no backups added)
+		assert.same({ schemaVersion = 0, settings = { bags = { columns = 7 } } }, saved_db)
+	end)
+
+	it("after failed migration, Reset preserves v<N> backup and adds reset backup", function()
+		Config.CURRENT = 2
+		Config.migrations[2] = function() error("broken step") end
+		local saved = { schemaVersion = 1, settings = { bags = { columns = 7 } }, errors = {}, backups = {} }
+		assert.equal("reset", Config.Init(saved, nil))
+		-- Verify we have v1 backup from migration failure (preserves original data)
+		assert.equal(7, Config.db.backups.v1.settings.bags.columns)
+		-- Now Reset (both db and charDB returned)
+		local db, charDB = Config.Reset()
+		-- Verify schemaVersion matches Config.CURRENT (which is 2 in this test)
+		assert.equal(2, charDB.schemaVersion)
+		-- Verify v<N> backup from migration failure is preserved
+		assert.equal(7, db.backups.v1.settings.bags.columns)
+		-- Verify reset backup exists
+		assert.truthy(db.backups.reset)
+	end)
+
+	it("after new Init, Set, then Reset, backups.reset has the set value", function()
+		Config.Init(nil, nil)
+		assert.truthy(Config.Set("bags.columns", 9))
+		local db, charDB = Config.Reset()
+		-- Verify charDB has the correct schema version
+		assert.equal(1, charDB.schemaVersion)
+		assert.equal(9, db.backups.reset.settings.bags.columns)
+	end)
 end)
