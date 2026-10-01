@@ -1,0 +1,19 @@
+## Interface: 120100, 120105
+## Title: SwagBag
+## Notes: Bags that set themselves up, show what matters, and never break.
+## Author: lonezebra
+## Version: 0.1.0
+## SavedVariables: SwagBagDB
+## SavedVariablesPerCharacter: SwagBagCharDB
+## OptionalDeps: Auctionator, Syndicator
+## X-License: All Rights Reserved
+
+
+# Core
+Core/Init.lua
+
+# Engine
+
+# UI
+
+# Start-up (keep last)
