@@ -328,8 +328,11 @@ function M.AddContainers(m)
 	-- Overlays: m.tracks[link] = { track, level, max }; m.dungeons[mapID] = name;
 	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
 	m.tracks, m.dungeons, m.equipped, m.cannotUse, m.pawn = {}, {}, {}, {}, nil
-	function m.UpgradeInfo(link)
-		return m.tracks[link]
+	-- bag and slot are extra (the real call ignores them): they let a Put(..., { upgrade = true }) slot
+	-- report an upgrade track without sharing it with other slots holding the same link.
+	function m.UpgradeInfo(link, bag, slot)
+		local s = bag and slotOf(bag, slot)
+		return m.tracks[link], m.tracks[link] ~= nil or (s ~= nil and s.upgrade == true)
 	end
 
 	function m.DungeonName(mapID)
@@ -339,7 +342,7 @@ function M.AddContainers(m)
 	function m.EquippedItems()
 		local out = {}
 		for slot, e in pairs(m.equipped) do
-			out[slot] = { ilvl = e.ilvl, equipLoc = e.equipLoc }
+			out[slot] = { ilvl = e.ilvl, equipLoc = e.equipLoc, unknown = e.unknown }
 		end
 		return out
 	end
@@ -358,11 +361,6 @@ function M.AddContainers(m)
 	function m.IsWarboundUntilEquip(bag, slot)
 		local s = slotOf(bag, slot)
 		return s ~= nil and s.isWUE == true
-	end
-
-	function m.HasUpgradeTrack(bag, slot)
-		local s = slotOf(bag, slot)
-		return s ~= nil and s.upgrade == true
 	end
 
 	function m.IsOnCooldown(bag, slot)

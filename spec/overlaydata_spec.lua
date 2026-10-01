@@ -52,6 +52,7 @@ describe("OverlayData (spec F9)", function()
 		assert.same({ "DC", "AKCE", "PSF", "Roo", "OF", "TP" }, { O.Short("Darkflame Cleft"),
 			O.Short("Ara-Kara, City of Echoes"), O.Short("Priory of the Sacred Flame"), O.Short("The Rookery"),
 			O.Short("Operation: Floodgate"), O.Short("Theater of Pain") })
+		assert.same({ "EDA", "TSG" }, { O.Short("Eco-Dome Al'dani"), O.Short("Tazavesh: So'leah's Gambit") })
 		assert.is_nil(O.Short(nil))
 	end)
 
@@ -98,6 +99,8 @@ describe("OverlayData (spec F9)", function()
 		assert.equal(false, up(weapon("INVTYPE_2HWEAPON", 289), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
 		assert.equal(true, up(weapon("INVTYPE_2HWEAPON", 291), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
 		assert.equal(true, up(weapon("INVTYPE_RANGEDRIGHT", 200), worn({})))
+		assert.equal(true, up(weapon("INVTYPE_2HWEAPON", 200), worn({ [16] = { 290, "INVTYPE_WEAPON" } })),
+			"a 1H main hand with an empty off hand: 400 > 290 (empty counts as 0)")
 	end)
 
 	it("one-handers: the main hand, plus the off hand when it holds a one-hand weapon; off-hands never beat a two-hander",
@@ -120,12 +123,24 @@ describe("OverlayData (spec F9)", function()
 		assert.equal(false, up({ classID = A.ITEM_CLASS.Consumable, equipLoc = "", ilvl = 400 }, worn({})))
 	end)
 
+	it("a worn slot whose item level cannot be read gives no arrow; an empty slot still counts as 0", function()
+		local up = O.IsUpgrade
+		assert.equal(false, up(gear("INVTYPE_HEAD", 280), { [1] = { unknown = true, equipLoc = "INVTYPE_HEAD" } }))
+		assert.equal(false, up(gear("INVTYPE_FINGER", 280), { [11] = { unknown = true, equipLoc = "INVTYPE_FINGER" } }))
+		assert.equal(false, up(weapon("INVTYPE_2HWEAPON", 280), { [17] = { unknown = true, equipLoc = "INVTYPE_SHIELD" } }))
+		assert.equal(true, up(gear("INVTYPE_HEAD", 280), {}))
+	end)
+
 	it("with Pawn the verdict is Pawn's; without an answer from Pawn the item-level rule decides", function()
 		local helm = gear("INVTYPE_HEAD", 200)
 		local worse = worn({ [1] = { 300, "INVTYPE_HEAD" } })
 		assert.equal(true, O.For(helm, { equipped = worse, pawn = function() return true end }).upgrade)
 		assert.equal(false, O.For(gear("INVTYPE_HEAD", 400), { equipped = worse, pawn = function() return false end }).upgrade)
 		assert.equal(false, O.For(helm, { equipped = worse, pawn = function() return nil end }).upgrade)
+		assert.equal(false, O.For(helm, { equipped = worse, canUse = function() return false end,
+			pawn = function() return true end }).upgrade, "Pawn does not override 'cannot use'")
+		assert.equal(false, O.For(gear("INVTYPE_HEAD", 200, { pending = true }), { equipped = worse,
+			pawn = function() return true end }).upgrade, "Pawn does not override 'still loading'")
 		assert.equal(true, O.For(gear("INVTYPE_HEAD", 301), { equipped = worse, pawn = function() return nil end }).upgrade)
 	end)
 end)
