@@ -92,4 +92,58 @@ describe("Query parser", function()
 		_, err = P.Parse("\"open")
 		assert.same({ position = 6, expected = "QUOTE", got = "" }, err)
 	end)
+
+	it("reports empty query", function()
+		local _, err = P.Parse("")
+		assert.same({ position = 1, expected = "VALUE", got = "" }, err)
+	end)
+
+	it("reports lone NOT operator", function()
+		local _, err = P.Parse("!")
+		assert.same({ position = 2, expected = "VALUE", got = "", after = "!" }, err)
+	end)
+
+	it("reports trailing AND operator", function()
+		local _, err = P.Parse("a &")
+		assert.same({ position = 4, expected = "VALUE", got = "", after = "&" }, err)
+	end)
+
+	it("parses combined precedence !a & b | c", function()
+		local expected = {
+			type = "or",
+			items = {
+				{ type = "and", items = { { type = "not", item = W("a") }, W("b") } },
+				W("c")
+			}
+		}
+		assert.same(expected, parse("!a & b | c"))
+	end)
+
+	it("allows multi-word phrases with logical operators", function()
+		assert.same({ type = "and", items = { { type = "word", value = "a b" }, W("c") } }, parse("a b & c"))
+		assert.same({ type = "and", items = { W("a"), { type = "word", value = "b c" } } }, parse("a & b c"))
+	end)
+
+	it("rejects multi-word phrase before comparison operator", function()
+		local _, err = P.Parse("a b ilvl>5")
+		assert.same({ position = 1, expected = "AND_BEFORE_COMPARISON", got = ">", after = "ilvl" }, err)
+	end)
+
+	it("handles deep nesting without throwing", function()
+		local ast, err = P.Parse(string.rep("(", 1000) .. "a")
+		assert.is_nil(ast)
+		assert.truthy(err)
+		assert.equal("SHALLOWER", err.expected)
+
+		ast, err = P.Parse(string.rep("!", 1000) .. "a")
+		assert.is_nil(ast)
+		assert.truthy(err)
+		assert.equal("SHALLOWER", err.expected)
+	end)
+
+	it("allows exactly 100 levels of nesting", function()
+		local ast = P.Parse(string.rep("(", 100) .. "a" .. string.rep(")", 100))
+		assert.truthy(ast)
+		assert.equal("word", ast.type)
+	end)
 end)

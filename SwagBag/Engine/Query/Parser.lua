@@ -22,16 +22,17 @@ function Parser.Parse(text)
 		return nil, lexErr
 	end
 	local pos = 1
+	local depth = 0
 
 	local function peek()
 		return tokens[pos]
 	end
 
-	local function fail(expected)
+	local function fail(expected, position)
 		local tok, prev = tokens[pos], tokens[pos - 1]
 		error({
 			isQueryError = true,
-			position = tok.s,
+			position = position or tok.s,
 			expected = expected,
 			got = tok.type == "EOF" and "" or tok.value,
 			after = prev and prev.value or nil,
@@ -47,7 +48,7 @@ function Parser.Parse(text)
 			words[#words + 1] = last.value
 			pos = pos + 1
 		end
-		return table.concat(words, " "), first.s, last.e
+		return table.concat(words, " "), first.s, last.e, #words
 	end
 
 	local parseOr
@@ -55,6 +56,10 @@ function Parser.Parse(text)
 	local function parsePrimary()
 		local tok = peek()
 		if tok.type == "LPAREN" then
+			depth = depth + 1
+			if depth > 100 then
+				fail("SHALLOWER")
+			end
 			pos = pos + 1
 			if peek().type == "RPAREN" then
 				fail("VALUE")
@@ -64,6 +69,7 @@ function Parser.Parse(text)
 				fail("RPAREN")
 			end
 			pos = pos + 1
+			depth = depth - 1
 			return inner
 		elseif tok.type == "STRING" then
 			pos = pos + 1
@@ -76,9 +82,12 @@ function Parser.Parse(text)
 			local value, _, e = phrase()
 			return { type = "exact", value = value, s = tok.s, e = e }
 		elseif tok.type == "WORD" then
-			local value, s, e = phrase()
+			local value, s, e, wordCount = phrase()
 			if peek().type ~= "OP" then
 				return { type = "word", value = value, s = s, e = e }
+			end
+			if wordCount > 1 then
+				fail("AND_BEFORE_COMPARISON", s)
 			end
 			local op = peek()
 			pos = pos + 1
@@ -96,8 +105,13 @@ function Parser.Parse(text)
 	local function parseNot()
 		local tok = peek()
 		if tok.type == "NOT" then
+			depth = depth + 1
+			if depth > 100 then
+				fail("SHALLOWER")
+			end
 			pos = pos + 1
 			local item = parseNot()
+			depth = depth - 1
 			return { type = "not", item = item, s = tok.s, e = item.e }
 		end
 		return parsePrimary()
