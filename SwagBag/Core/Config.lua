@@ -2,7 +2,7 @@
 --   Config.Init(db, charDB) -> status: "new" | "ok" | "migrated" | "reset" | "newer"
 --   Config.Get(path) / Config.Set(path, value)   dotted paths, e.g. "bags.columns"
 --   Config.CharOverride(path, on)                make one setting character-specific
---   Config.UI()                                  per-character UI state (positions)
+--   Config.UI()                                  per-character UI state (positions, collapsed)
 --   Config.Reset()                               back up, then start from defaults
 -- Schema rules (spec 8.5): a DB newer than CURRENT is never touched (read-only,
 -- Safe Mode); older DBs run migrations[n] (n-1 -> n) in order inside pcall; a
@@ -90,6 +90,8 @@ local function upgrade(db, steps, fresh)
 	end
 	local backup = copy(db)
 	backup.backups = nil
+	-- Captured before the migrations run: migration 1 reassigns db.backups.
+	local kept = type(db.backups) == "table" and copy(db.backups) or {}
 	local ok, err = pcall(function()
 		for n = from + 1, Config.CURRENT do
 			local step = steps[n]
@@ -104,6 +106,9 @@ local function upgrade(db, steps, fresh)
 		return db, "migrated"
 	end
 	local reset = fresh()
+	for k, v in pairs(kept) do
+		reset.backups[k] = v
+	end
 	reset.backups["v" .. from] = backup
 	return reset, "reset", tostring(err)
 end
