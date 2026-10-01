@@ -110,6 +110,9 @@ L.CAT_REAGENTS = "Reagents"
 L.CAT_JUNK = "Junk"
 L.CAT_OTHER = "Other"
 L.CAT_FREE = "Free"
+L.HEADER_LABEL = "%s %s (%d)"
+L.HEADER_OVERFLOW = "  +%d more below"
+L.PLACEHOLDER_TIP = "This item moved or was used - items regroup when you close the bag."
 
 -- Search
 L.SEARCH_RESULT = "Search \"%s\": %d of %d slots match (%.1f ms)."

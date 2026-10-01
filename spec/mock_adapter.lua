@@ -105,6 +105,27 @@ function M.New(SB)
 		return true, v
 	end
 
+	-- Cursor and sort: set m.cursor = { itemID, link } to simulate a picked-up item.
+	m.cursor = nil
+	m.cleared = 0
+	m.sorts = 0
+	function m.CursorItem()
+		if m.cursor then
+			return m.cursor.itemID, m.cursor.link
+		end
+		return nil
+	end
+
+	function m.ClearCursor()
+		m.cursor = nil
+		m.cleared = m.cleared + 1
+	end
+
+	function m.SortBags()
+		m.sorts = m.sorts + 1
+		return true
+	end
+
 	M.AddContainers(m)
 	return m
 end
