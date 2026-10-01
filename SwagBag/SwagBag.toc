@@ -31,12 +31,14 @@ Engine/Query/Lexer.lua
 Engine/Query/Parser.lua
 Engine/Query/Query.lua
 Engine/Keywords.lua
+Engine/Search.lua
 
 # UI
 UI/ReportBox.lua
 UI/Buttons.lua
 UI/BagsWindow.lua
 UI/SafeModeHooks.lua
+UI/SearchBox.lua
 
 # Start-up (keep last)
 Core/Boot.lua

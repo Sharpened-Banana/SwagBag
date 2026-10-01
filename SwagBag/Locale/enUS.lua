@@ -93,6 +93,7 @@ L.SEARCH_RESULT = "Search \"%s\": %d of %d slots match (%.1f ms)."
 L.SEARCH_CLEARED = "Search cleared."
 L.SEARCH_OPEN_FIRST = "Open your bags first (press B), then search again."
 L.SEARCH_ERROR = "Search error: %s"
+L.SEARCH_EVAL_FAILED = "This search hit a problem and was skipped. The previous dimming is kept."
 
 -- Query errors
 L.QUERY_ERR_AFTER = "Expected %s after \"%s\" at character %d"
