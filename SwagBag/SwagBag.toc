@@ -11,6 +11,8 @@
 
 # Core
 Core/Init.lua
+Locale/enUS.lua
+Core/Adapter.lua
 
 # Engine
 
