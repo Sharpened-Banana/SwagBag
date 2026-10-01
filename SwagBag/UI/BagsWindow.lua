@@ -14,6 +14,7 @@ local W = {
 	cells = {}, -- { {bag, slot, ...} } every slot in the view, shown or collapsed (search dims these)
 	sizes = {}, -- [bag] = number of slots laid out
 	stats = {},
+	sortPending = false, -- a Sort was pressed and its bag updates are still settling
 	state = nil, -- sections view: Layout state while open (nil when closed or in grid view)
 	pos = nil, -- sections view: last Layout.Position result
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
@@ -28,6 +29,9 @@ local W = {
 	MAX_HEIGHT_FRACTION = 0.75,
 	SCALE_STEP = 0.05,
 	RETRY = 0.3, -- spec 4.2 rule 5: held-back moves retry 300 ms later
+	SORT_SETTLE = 0.3, -- regroup this long after the last bag update of a sort
+	SORT_TIMEOUT = 1.5, -- a sort that never changes anything stops waiting after this long (W3)
+	DROP_GUARD = 0.3, -- the click that follows a drop on the same header is ignored for this long
 }
 SB.BagsWindow = W
 
@@ -77,7 +81,7 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 	if self:IsShown() then
 		return
 	end
-	W.state, W.pos = nil, nil
+	W.state, W.pos, W.sortPending = nil, nil, false
 	SB.Buttons.ReleasePlaceholders()
 	SB.Emit("SB_BAGS_CLOSED")
 end, "bags"))
@@ -177,9 +181,9 @@ local function positionOpts()
 		sectionGap = W.SECTION_GAP }
 end
 
-local function titleButton(text, label, onClick)
+local function titleButton(text, label, onClick, width)
 	local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-	b:SetSize(72, 18)
+	b:SetSize(width or 72, 18)
 	b:SetText(text)
 	b:SetScript("OnClick", Guard(label, onClick, "bags"))
 	return b
@@ -413,9 +417,113 @@ function W.ToggleView()
 	W.SetView(W.View() == "grid" and "sections" or "grid")
 end
 
-SB.SectionHeaders.onClick = function(id)
-	W.ToggleSection(id)
+-- Reflow button (spec 4.3): regroup now, or as soon as the mouse leaves the items.
+function W.Reflow(reason)
+	if not frame:IsShown() then
+		return false
+	end
+	local done = W.RequestLayout(reason or "reflow")
+	W.Flash(done and L.REFLOW_DONE or L.REFLOW_WAITING)
+	return done
 end
+
+-- Sort button (AC2.7, spec 5.5): Blizzard's own sort moves items physically, and it is only
+-- known to work from a click. In combat nothing is queued: Sort says so and does nothing,
+-- the user presses it again (W11). Bag updates during the sort follow spec 4.3 as usual;
+-- SORT_SETTLE after the last one the window regroups (a guarded full layout). If the sort
+-- changes nothing, the timeout below still clears sortPending (W3).
+function W.Sort()
+	local A = SB.Adapter
+	if A.InCombat() then
+		W.Flash(L.SORT_AFTER_COMBAT)
+		return false
+	end
+	local ok, err = A.SortBags()
+	if not ok then
+		if err ~= nil then
+			SB.ErrorTrap.OnError("bags.sort", "none", tostring(err), A.Stack())
+		end
+		W.Flash(L.SORT_UNAVAILABLE)
+		return false
+	end
+	W.sortPending = frame:IsShown()
+	if W.sortPending then
+		SB.Debounce("bags.sortSettle", W.SORT_TIMEOUT, function()
+			W.sortPending = false
+		end, "bags")
+	end
+	W.Flash(L.SORT_STARTED)
+	return true
+end
+
+local function itemName(itemID, link)
+	local info = SB.Adapter.GetItemInfo(itemID)
+	if info and info.name then
+		return info.name
+	end
+	return (type(link) == "string" and link:match("%[(.-)%]")) or tostring(itemID)
+end
+
+-- A click on a header can follow its drop (the client sends both for one press), and the
+-- cursor is empty by then: for DROP_GUARD seconds after a drop on a header, the next
+-- click or drop on that same header is ignored, so one press runs one drop and never a collapse.
+local dropGuard, dropToken = nil, 0
+
+-- AC4.3: an item dropped on a header (or clicked onto it) joins that section's manual
+-- list. Order: read the cursor, add, confirm in chat, and only then put the item back (a
+-- refused drop keeps it on the cursor). It moves into the section on the next open or
+-- Reflow, never under the cursor (P5).
+function W.DropOnSection(id)
+	local A, C = SB.Adapter, SB.Categories
+	local itemID, link = A.CursorItem()
+	if not itemID then
+		return false
+	end
+	dropToken = dropToken + 1
+	local token = dropToken
+	dropGuard = id
+	A.After(W.DROP_GUARD, Guard("bags.dropGuard", function()
+		if token == dropToken then
+			dropGuard = nil
+		end
+	end, "bags"))
+	if id == C.NEW or id == C.FREE then
+		SB.Print(L.DROP_NOT_HERE:format(C.Name(id)))
+		return false
+	end
+	if not C.AddToList(id, itemID) then
+		SB.Print(SB.Config.readOnly and L.DROP_READONLY or L.DROP_INVALID)
+		return false
+	end
+	SB.Print(L.DROP_ADDED:format(itemName(itemID, link), C.Name(id)))
+	A.ClearCursor()
+	return true
+end
+
+SB.SectionHeaders.onClick = function(id)
+	if dropGuard == id then
+		return
+	end
+	if SB.Adapter.CursorItem() then
+		W.DropOnSection(id)
+	else
+		W.ToggleSection(id)
+	end
+end
+SB.SectionHeaders.onDrop = function(id)
+	if dropGuard ~= id then
+		W.DropOnSection(id)
+	end
+end
+
+W.reflowButton = titleButton(L.BTN_REFLOW, "bags.reflowButton", function()
+	W.Reflow("reflow")
+end, 60)
+W.reflowButton:SetPoint("RIGHT", W.viewButton, "LEFT", -4, 0)
+W.sortButton = titleButton(L.BTN_SORT, "bags.sortButton", function()
+	W.Sort()
+end, 52)
+W.sortButton:SetPoint("RIGHT", W.reflowButton, "LEFT", -4, 0)
 
 -- fn(button, record-or-nil, bag, slot) for every slot in the view (collapsed ones too).
 function W.ForEachSlot(fn)
@@ -444,6 +552,7 @@ function W.Open()
 	end
 	W.RestorePosition()
 	frame:SetScale(SB.GridLayout.ClampScale(SB.Config.Get("bags.scale")))
+	W.sortPending = false
 	W.viewButton:SetText(W.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	frame:Show()
 	W.Layout("open")
@@ -534,6 +643,12 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 		return
 	end
 	local Inv, B, A = SB.Inventory, SB.Buttons, SB.Adapter
+	if W.sortPending then -- sort settle: regroup SORT_SETTLE after the LAST update (rule 5 applies)
+		SB.Debounce("bags.sortSettle", W.SORT_SETTLE, function()
+			W.sortPending = false
+			W.Reflow("sort")
+		end, "bags")
+	end
 	if not W.state and Inv.Has(mask, Inv.R.SIZE) then
 		W.RequestLayout("size") -- grid view: the grid is the physical order; guarded by rule 5
 		return
