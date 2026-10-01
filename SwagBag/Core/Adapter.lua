@@ -305,8 +305,13 @@ function A.EquippedItems()
 			local okI, ilvl = pcall(function()
 				return C_Item.GetCurrentItemLevel(ItemLocation:CreateFromEquipmentSlot(slot))
 			end)
-			out[slot] = { ilvl = (okI and type(ilvl) == "number" and not isSecret(ilvl)) and ilvl or 0,
-				equipLoc = inst and inst.equipLoc or "" }
+			local equipLoc = inst and inst.equipLoc or ""
+			if okI and type(ilvl) == "number" and not isSecret(ilvl) then
+				out[slot] = { ilvl = ilvl, equipLoc = equipLoc }
+			else
+				-- A worn item whose level cannot be read is "unknown", never 0 (an empty slot is absent).
+				out[slot] = { ilvl = nil, unknown = true, equipLoc = equipLoc }
+			end
 		end
 	end
 	return out

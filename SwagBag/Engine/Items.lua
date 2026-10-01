@@ -34,7 +34,7 @@ function Items.Describe(bag, slot)
 	local info = A.GetItemInfo(s.itemID)
 	local location, tab = A.BagKind(bag)
 	local link = s.link or ""
-	local track, hasTrack = A.UpgradeInfo(s.link, bag, slot)
+	local track, hasTrack = A.UpgradeInfo(s.link)
 	local inv = SB.Inventory
 	local r = {
 		bag = bag,
