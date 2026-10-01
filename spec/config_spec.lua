@@ -126,6 +126,18 @@ describe("Config", function()
 		assert.same({ schemaVersion = 1, settings = {}, errors = {}, backups = {} }, db)
 	end)
 
+	it("a failed migration keeps the DB's existing backups (account and character)", function()
+		Config.migrations[2] = function() error("acct boom") end
+		Config.charMigrations[2] = function() error("char boom") end
+		local db = { schemaVersion = 1, settings = { a = 1 }, errors = {}, backups = { reset = { marker = true } } }
+		local char = { schemaVersion = 1, overrides = {}, ui = { positions = {} }, backups = { reset = { marker = true } } }
+		assert.equal("reset", Config.Init(db, char))
+		assert.same({ marker = true }, Config.db.backups.reset)
+		assert.equal(1, Config.db.backups.v1.settings.a)
+		assert.same({ marker = true }, Config.charDB.backups.reset)
+		assert.truthy(Config.charDB.backups.v1)
+	end)
+
 	it("a v2 migration that throws backs up the v1 table and resets", function()
 		Config.migrations[2] = function(d) d.categories = {}; error("v2 exploded") end
 		local saved = { schemaVersion = 1, settings = { bags = { columns = 7 } }, errors = {}, backups = {} }
