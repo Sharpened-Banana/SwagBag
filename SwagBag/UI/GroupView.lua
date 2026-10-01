@@ -44,6 +44,7 @@ local function keyOf(bag, slot)
 end
 
 function GV.New(cfg)
+	assert(cfg.child, "GroupView.New: cfg.child is required")
 	local Guard = SB.ErrorTrap.Guard
 	local window = cfg.window or "bank" -- the ErrorTrap window of every entry point (spec P6)
 	local v = { groups = {}, byId = {}, records = {}, cells = {}, placed = {}, sizes = {}, groupOf = {}, pos = nil,
@@ -159,8 +160,9 @@ function GV.New(cfg)
 	end
 
 	-- Header clicks: collapse; with an item on the cursor (or dragged onto a section header)
-	-- the item is dropped (cfg.onDrop). The click that follows a drop on the same header in
-	-- one press is ignored for DROP_GUARD seconds, as in the bags window.
+	-- the item is dropped (cfg.onDrop). A group header is not a drop target: a click on it
+	-- always collapses or expands the group (W3-24). The click that follows a drop on the
+	-- same header in one press is ignored for DROP_GUARD seconds, as in the bags window.
 	local dropGuard, dropToken = nil, 0
 	local function parseId(id)
 		if id:sub(1, 1) == "#" then
@@ -189,11 +191,11 @@ function GV.New(cfg)
 		if dropGuard == id then
 			return
 		end
-		if SB.Adapter.CursorItem() then
+		local gid, sid = parseId(id)
+		if sid and SB.Adapter.CursorItem() then -- a group header is not a drop target (W3-24)
 			drop(id)
 			return
 		end
-		local gid, sid = parseId(id)
 		if sid then
 			v.ToggleSection(gid, sid)
 		else
@@ -202,7 +204,8 @@ function GV.New(cfg)
 	end
 
 	function owner.onDrop(id)
-		if dropGuard ~= id then
+		local _, sid = parseId(id)
+		if sid and dropGuard ~= id then
 			drop(id)
 		end
 	end
@@ -221,7 +224,7 @@ function GV.New(cfg)
 		B.ReleasePlaceholders(child)
 		for _, p in ipairs(pos.placeholders) do
 			if p.shown then
-				B.AcquirePlaceholder(child, p.icon, GV.SLOT, p.x, p.y)
+				B.AcquirePlaceholder(child, p.icon, GV.SLOT, p.x, p.y, window)
 			end
 		end
 		H.ReleaseAll(child)
@@ -438,8 +441,12 @@ function GV.New(cfg)
 		for _, k in ipairs(res.moved) do
 			exempt[k] = true
 		end
+		local drawn = false
 		if #res.moved > 0 or overflowOf(g) ~= before or v.redrawPending then
-			redraw(exempt)
+			drawn = redraw(exempt)
+		end
+		if not drawn then
+			paintTiles(v.pos) -- a held drop shows its item; one picked back up, its number again
 		end
 		if res.deferred > 0 then
 			SB.Debounce(cfg.key .. ".retry", GV.RETRY, v.Retry, window)
@@ -483,6 +490,7 @@ function GV.New(cfg)
 			return false
 		end
 		renderMoved(v.pos, pos)
+		v.redrawPending = false -- positionAll drew every group's current state
 		cfg.onResize(pos.width, pos.height, true)
 		if cfg.onUpdated then
 			cfg.onUpdated()

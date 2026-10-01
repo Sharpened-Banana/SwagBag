@@ -215,6 +215,7 @@ end
 ---------------------------------------------------------------------------
 Buttons.placeholderPool, Buttons.placeholdersInUse = {}, {}
 local placeholderParent = {} -- [placeholder] = the frame it was acquired in
+local placeholderWindow = {} -- [placeholder] = the ErrorTrap window of its scripts (W3-23)
 Buttons.PLACEHOLDER_ALPHA = 0.5
 
 local function placeholderTip(self)
@@ -234,24 +235,30 @@ local function hideTip()
 end
 
 local function createPlaceholder(parent)
-	local Guard = SB.ErrorTrap.Guard
 	local p = CreateFrame("Frame", nil, parent)
 	p:EnableMouse(true)
 	p.icon = p:CreateTexture(nil, "ARTWORK")
 	p.icon:SetAllPoints(p)
 	p.icon:SetDesaturated(true)
 	p:SetAlpha(Buttons.PLACEHOLDER_ALPHA)
-	p:SetScript("OnEnter", Guard("placeholder.enter", placeholderTip, "bags"))
-	p:SetScript("OnMouseDown", Guard("placeholder.click", placeholderTip, "bags"))
-	p:SetScript("OnLeave", Guard("placeholder.leave", hideTip, "bags"))
+	-- Errors are trapped as the window that acquired the placeholder (W3-23, spec P6).
+	local function trap(label, fn)
+		return function(self)
+			SB.ErrorTrap.Run(label, placeholderWindow[self] or "bags", fn, self)
+		end
+	end
+	p:SetScript("OnEnter", trap("placeholder.enter", placeholderTip))
+	p:SetScript("OnMouseDown", trap("placeholder.click", placeholderTip))
+	p:SetScript("OnLeave", trap("placeholder.leave", hideTip))
 	return p
 end
 
--- A shown placeholder of `size` at TOPLEFT offset (x, y) inside parent.
-function Buttons.AcquirePlaceholder(parent, icon, size, x, y)
+-- A shown placeholder of `size` at TOPLEFT offset (x, y) inside parent. window: the ErrorTrap
+-- window of its scripts (default "bags").
+function Buttons.AcquirePlaceholder(parent, icon, size, x, y, window)
 	local p = table.remove(Buttons.placeholderPool) or createPlaceholder(parent)
 	p:SetParent(parent)
-	placeholderParent[p] = parent
+	placeholderParent[p], placeholderWindow[p] = parent, window
 	p:SetSize(size, size)
 	p.icon:SetTexture(icon)
 	p:ClearAllPoints()
@@ -268,7 +275,7 @@ function Buttons.ReleasePlaceholders(parent)
 		local p = Buttons.placeholdersInUse[i]
 		if parent == nil or placeholderParent[p] == parent then
 			p:Hide()
-			placeholderParent[p] = nil
+			placeholderParent[p], placeholderWindow[p] = nil, nil
 			table.remove(Buttons.placeholdersInUse, i)
 			Buttons.placeholderPool[#Buttons.placeholderPool + 1] = p
 		end

@@ -244,6 +244,121 @@ describe("GroupView", function()
 			assert.falsy(fc[btn(6, 4)].shown, "the filled slot shows no number")
 		end)
 
+	-- Review fix 1 (P5). Mutation: `if anyBusy(SB.Layout.Moves(v.pos, pos)) then` -> `if false then`
+	-- in v.Restack.
+	it("a collapse or expand waits while a button it would move is under the mouse", function()
+		v.Layout("open")
+		local ore = btn(12, 1)
+		local oreAt = at(ore)
+		local shown = {}
+		for slot = 1, 8 do
+			shown[slot] = btn(6, slot).shown
+		end
+		ore.mouseOver = true
+		assert.equal(false, v.ToggleSection("bank", "c_consumables"))
+		assert.equal(false, v.ToggleGroup("bank"))
+		assert.same(oreAt, at(ore), "held: the ore is under the mouse")
+		for slot = 1, 8 do
+			assert.equal(shown[slot], btn(6, slot).shown, "bank slot " .. slot)
+		end
+		ore.mouseOver = false
+		A.Advance(0.3)
+		assert.truthy(at(ore)[2] > oreAt[2], "warband lifted once the mouse left")
+		for slot = 1, 8 do
+			assert.falsy(btn(6, slot).shown, "bank slot " .. slot .. " hidden")
+		end
+		assert.equal("+ bank (3)", header("#bank").text.text)
+		for _, c in ipairs(v.pos.cells) do
+			if c.shown then
+				assert.same({ c.x, c.y }, at(f.buttons[c.bag][c.slot]))
+			end
+		end
+	end)
+
+	-- Review fix 1 (P5). Same mutation as above.
+	it("a collapse or expand waits while an item is on the cursor", function()
+		v.Layout("open")
+		local ore = btn(12, 1)
+		local oreAt = at(ore)
+		local shown = {}
+		for slot = 1, 8 do
+			shown[slot] = btn(6, slot).shown
+		end
+		A.cursor = { itemID = Fixtures.FLASK }
+		assert.equal(false, v.ToggleSection("bank", "c_consumables"))
+		assert.equal(false, v.ToggleGroup("bank"))
+		A.Advance(0.3)
+		assert.same(oreAt, at(ore), "still held: the item is on the cursor")
+		for slot = 1, 8 do
+			assert.equal(shown[slot], btn(6, slot).shown, "bank slot " .. slot)
+		end
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.truthy(at(ore)[2] > oreAt[2], "warband lifted once the cursor was empty")
+		for slot = 1, 8 do
+			assert.falsy(btn(6, slot).shown, "bank slot " .. slot .. " hidden")
+		end
+	end)
+
+	-- Review fix 3. Mutation: delete `paintTiles(v.pos)` in v.Changes.
+	it("with cfg.freeTile a drop held under the mouse hides the number, and picking it back up shows it again",
+		function()
+			v, f = newView(SB, { freeTile = true })
+			v.Layout("open")
+			local fc = SB.Buttons.freeCounts
+			local tile = btn(6, 4)
+			local tileAt = at(tile)
+			tile.mouseOver = true
+			A.Put(6, 4, Fixtures.ORE, 1)
+			v.SetRecord(6, 4, SB.Items.Describe(6, 4))
+			v.Changes("bank", { { bag = 6, slot = 4, kind = "arrived" } })
+			assert.falsy(fc[tile].shown, "the held item shows no number")
+			A.Clear(6, 4)
+			v.SetRecord(6, 4, nil)
+			v.Changes("bank", { { bag = 6, slot = 4, kind = "left", icon = Fixtures.ORE } })
+			assert.same({ true, "5" }, { fc[tile].shown, tostring(fc[tile].text) }, "picked back up: the number is back")
+			tile.mouseOver = false
+			A.Advance(0.3)
+			-- The held changes replay in order: the next empty slot took the tile, then 6:4 emptied
+			-- again as a spare. The tile's place still shows the number.
+			local t = v.pos.tiles[1]
+			local now = btn(t.bag, t.slot)
+			assert.same(tileAt, at(now), "the tile's place did not move")
+			assert.same({ true, "5" }, { fc[now].shown, tostring(fc[now].text) })
+			if now ~= tile then
+				assert.falsy(fc[tile].shown, "a spare shows no number")
+			end
+		end)
+
+	-- Ruling W3-24. Mutation: `if SB.Adapter.CursorItem() then` (without the section test) in
+	-- owner.onClick, or drop the group-header test in owner.onDrop.
+	it("a group header is not a drop target: a click with an item on the cursor collapses the group", function()
+		local dropped = {}
+		f.cfg.onDrop = function(sid) dropped[#dropped + 1] = sid end
+		v.Layout("open")
+		A.cursor = { itemID = Fixtures.JUNK }
+		local h = header("#bank")
+		h.scripts.OnReceiveDrag(h)
+		h.scripts.OnClick(h)
+		assert.equal(true, SB.Config.UI().collapsed["bank:#"].bank)
+		assert.same({}, dropped)
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.falsy(btn(6, 1).shown, "collapsed once the cursor was empty")
+	end)
+
+	-- Ruling W3-23. Mutation: drop `window` from GroupView's AcquirePlaceholder call.
+	it("an error in a group view placeholder's tooltip is trapped as the view's window", function()
+		v.Layout("open")
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = Fixtures.HEALING_POTION } })
+		local p = SB.Buttons.placeholdersInUse[1]
+		GameTooltip.SetOwner = function() error("tooltip broke") end
+		p.scripts.OnEnter(p)
+		assert.truthy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
 	it("the grid view shows each group's slots in physical order under its header", function()
 		v, f = newView(SB, { view = "grid" })
 		v.Layout("open")
@@ -349,7 +464,8 @@ describe("GroupView", function()
 		assert.equal(8, #v.cells)
 	end)
 
-	it("1,290 slots: a full layout stays inside the first-bank-open budget; a live change touches a few buttons", function()
+	it("1,078 bank slots of the 1,290-slot fixture: a full layout stays inside the first-bank-open budget; "
+		.. "a live change touches a few buttons", function()
 		Big.Install(A)
 		v, f = newView(SB, { columns = 14 })
 		local t0 = os.clock()
@@ -362,6 +478,44 @@ describe("GroupView", function()
 		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = 1 } })
 		assert.equal(1, #SB.Buttons.placeholdersInUse)
 		assert.truthy(f.gets.n <= 4, "Buttons looked up " .. f.gets.n .. " times for one change")
+	end)
+
+	-- Review fix 4. Mutation: `render(pos)` instead of `renderMoved(v.pos, pos)` in redraw.
+	it("1,078 bank slots with the free tile: a live change still touches a few buttons", function()
+		Big.Install(A)
+		v, f = newView(SB, { columns = 14, freeTile = true })
+		v.Layout("open")
+		assert.truthy(#v.pos.tiles >= 2, "a tile per group")
+		f.gets.n = 0
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = 1 } })
+		assert.equal(1, #SB.Buttons.placeholdersInUse)
+		assert.truthy(f.gets.n <= 4, "Buttons looked up " .. f.gets.n .. " times for one change")
+	end)
+
+	-- Review fix 4 (spec 9: incremental update <= 5 ms). A budget guard: a slower redraw (for
+	-- example a full layout per change) fails it; `render(pos)` alone stays under 5 ms in LuaJIT.
+	it("1,078 bank slots: a change that adds a Free row and pushes the warband stays inside 5 ms", function()
+		Big.Install(A)
+		v, f = newView(SB, { columns = 14 })
+		v.Layout("open")
+		local pushedMs
+		for slot = 1, 98 do
+			if A.slots[6][slot] then
+				local top = v.pos.groupHeaders[2].y
+				local icon = A.slots[6][slot].itemID
+				A.Clear(6, slot)
+				local t0 = os.clock()
+				v.Changes("bank", { { bag = 6, slot = slot, kind = "left", icon = icon } })
+				local ms = (os.clock() - t0) * 1000
+				if v.pos.groupHeaders[2].y ~= top then
+					pushedMs = ms
+					break
+				end
+			end
+		end
+		assert.truthy(pushedMs, "no change pushed the warband group")
+		assert.truthy(pushedMs <= 5, ("the push took %.2f ms"):format(pushedMs))
 	end)
 end)
 
