@@ -82,12 +82,12 @@ function Items.Describe(bag, slot)
 end
 
 -- Memo key for a record by cache class (spec 7.8):
---   static -> itemID; instance -> full link + bound suffix; volatile -> nil (never memoized)
+--   static -> itemID; instance -> full link + bound/WuE suffix (#b, #uw, #u); volatile -> nil (never memoized)
 function Items.Key(record, class)
 	if class == "static" then
 		return record.itemID
 	elseif class == "instance" then
-		return (record.link or tostring(record.itemID)) .. (record.isBound and "#b" or "#u")
+		return (record.link or tostring(record.itemID)) .. (record.isBound and "#b" or (record.isWUE and "#uw" or "#u"))
 	end
 	return nil
 end

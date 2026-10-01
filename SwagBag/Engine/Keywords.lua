@@ -64,7 +64,7 @@ function K.RegisterAll()
 	kw("rune", "static", subIs(C.Consumable, CS.VantusRune))
 	kw("reagent", "static", function(r)
 		if r.classID == C.Reagent then
-			return true
+			return not r.isKeystone
 		end
 		if r.pending then
 			return nil
@@ -147,7 +147,7 @@ function K.RegisterAll()
 	end
 
 	-- Binding (instance) -------------------------------------------------------
-	local ACCOUNT = has({ "account", "warbound", "wue" })
+	local ACCOUNT = has({ "account", "warbound" })
 	local function bindKnown(test)
 		return function(r)
 			if r.bind == nil then
@@ -163,7 +163,7 @@ function K.RegisterAll()
 		return r.bind == "pickup"
 	end))
 	kw("warbound", "instance", bindKnown(function(r)
-		return ACCOUNT[r.bind] == true or r.isWUE == true
+		return ACCOUNT[r.bind] == true or (r.isWUE == true and not r.isBound)
 	end), { "boa" })
 	kw("wue", "instance", function(r)
 		return r.isWUE == true or (r.bind == "wue" and not r.isBound)
@@ -174,8 +174,16 @@ function K.RegisterAll()
 	kw("soulbound", "instance", bindKnown(function(r)
 		return r.isBound == true and not ACCOUNT[r.bind]
 	end))
+	-- Tradeable = can be given to another player / listed on the AH: not bound, not
+	-- warbound-until-equipped, not account/warbound, not a quest item.
 	kw("tradeable", "instance", function(r)
-		return not r.isBound
+		if r.isBound or r.isWUE or r.isQuestItem then
+			return false
+		end
+		if r.bind == nil then
+			return nil
+		end
+		return not (ACCOUNT[r.bind] or r.bind == "wue" or r.bind == "quest")
 	end)
 
 	-- Numeric -------------------------------------------------------------------
