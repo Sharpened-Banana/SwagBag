@@ -42,7 +42,10 @@ function Cons.List()
 	local out = {}
 	for _, e in ipairs(src) do
 		if valid(e) then
-			out[#out + 1] = { query = e.query, itemID = e.itemID, threshold = e.threshold, name = e.name }
+			-- A damaged saved name (a boolean, a table, an unknown key) falls back to the query: Lua 5.1's
+			-- %s rejects non-strings (W4-18).
+			local name = type(e.name) == "string" and rawget(SB.L, e.name) and e.name or nil
+			out[#out + 1] = { query = e.query, itemID = e.itemID, threshold = e.threshold, name = name }
 		end
 	end
 	return out
@@ -66,33 +69,46 @@ local function compiled(query)
 	return c
 end
 
--- How many of an entry the bags hold (backpack, bags and the reagent bag).
-function Cons.Count(e)
-	local n = 0
-	local c = e.query and compiled(e.query)
+-- How many of each entry the bags hold (backpack, bags and the reagent bag): one pass, each
+-- slot described once and tested against every entry. Returns counts in the order of `list`.
+local function countAll(list)
+	local counts, comp = {}, {}
+	for i, e in ipairs(list) do
+		counts[i] = 0
+		comp[i] = e.query and compiled(e.query) or false
+	end
 	for bag, slot, s in SB.Inventory.Iterate("bags") do
 		if s then
-			if e.itemID then
-				if s.itemID == e.itemID then
-					n = n + (s.count or 1)
-				end
-			elseif c and c.fn then
-				local record = SB.Items.Describe(bag, slot)
-				if record and SB.Query.Eval(c, record) == true then
-					n = n + (s.count or 1)
+			local record, described
+			for i, e in ipairs(list) do
+				if e.itemID then
+					if s.itemID == e.itemID then
+						counts[i] = counts[i] + (s.count or 1)
+					end
+				elseif comp[i] and comp[i].fn then
+					if not described then
+						record, described = SB.Items.Describe(bag, slot), true
+					end
+					if record and SB.Query.Eval(comp[i], record) == true then
+						counts[i] = counts[i] + (s.count or 1)
+					end
 				end
 			end
 		end
 	end
-	return n
+	return counts
+end
+
+function Cons.Count(e)
+	return countAll({ e })[1]
 end
 
 function Cons.Low()
-	local low = {}
-	for _, e in ipairs(Cons.List()) do
-		local have = Cons.Count(e)
-		if have < e.threshold then
-			low[#low + 1] = { name = Cons.Name(e), have = have, need = e.threshold }
+	local low, list = {}, Cons.List()
+	local counts = countAll(list)
+	for i, e in ipairs(list) do
+		if counts[i] < e.threshold then
+			low[#low + 1] = { name = Cons.Name(e), have = counts[i], need = e.threshold }
 		end
 	end
 	return low
@@ -113,7 +129,7 @@ function Cons.Check(trigger, force)
 	local low = Cons.Low()
 	if #low == 0 then
 		if force then
-			SB.Print(L.CONSUMABLES_OK)
+			SB.Print(#Cons.List() == 0 and L.CONSUMABLES_NONE or L.CONSUMABLES_OK)
 		end
 		return low
 	end
@@ -166,7 +182,11 @@ function Cons.SetThreshold(index, n)
 	if not list[index] or type(n) ~= "number" then
 		return false, "invalid"
 	end
-	list[index].threshold = math.max(1, math.min(Cons.MAX_THRESHOLD, math.floor(n)))
+	local clamped = math.max(1, math.min(Cons.MAX_THRESHOLD, math.floor(n)))
+	if list[index].threshold == clamped then
+		return false, "same" -- nothing to save
+	end
+	list[index].threshold = clamped
 	return save(list)
 end
 
@@ -181,6 +201,8 @@ function Cons.ReasonText(reason)
 		return L.SETTINGS_READONLY
 	elseif reason == "known" then
 		return L.SET_WATCH_KNOWN
+	elseif reason == "same" then
+		return L.SET_WATCH_SAME
 	end
 	return L.SET_WATCH_INVALID
 end
@@ -190,7 +212,7 @@ function Cons.Summary()
 	for i, e in ipairs(Cons.List()) do
 		parts[i] = L.CONSUMABLES_ENTRY:format(Cons.Name(e), e.threshold)
 	end
-	return #parts > 0 and table.concat(parts, ", ") or L.REPORT_NONE
+	return #parts > 0 and table.concat(parts, ", ") or L.CONSUMABLES_NONE_SHORT
 end
 
 ---------------------------------------------------------------------------
@@ -210,8 +232,12 @@ on("CHALLENGE_MODE_START", function()
 	Cons.Check("start")
 end)
 
-on("PLAYER_ENTERING_WORLD", function()
+-- A /reload inside a running key is not a zone-in: the key already started (W4-20).
+on("PLAYER_ENTERING_WORLD", function(_, _, isReload)
 	local s = SB.Focus.signals
+	if isReload and s.challengeMode then
+		return
+	end
 	if s.instanceType == "party" and (s.challengeMode or (s.mythic and s.keystone)) then
 		Cons.Check("enter")
 	end
@@ -232,7 +258,10 @@ SB.Slash.Register("consumables", SB.L.HELP_CONSUMABLES, function(arg)
 	local L, C = SB.L, SB.Config
 	arg = (arg or ""):lower()
 	if arg == "" then
-		return L.CONSUMABLES_LIST:format(C.Get("consumables.warn") and L.OVERLAY_ON or L.OVERLAY_OFF, Cons.Summary())
+		if #Cons.List() == 0 then
+			return L.CONSUMABLES_NONE
+		end
+		return L.CONSUMABLES_LIST:format(C.Get("consumables.warn") and L.CONSUMABLES_STATE_ON or L.CONSUMABLES_STATE_OFF, Cons.Summary())
 	elseif arg == "check" then
 		Cons.Check("manual", true)
 		return {}
