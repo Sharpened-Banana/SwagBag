@@ -21,9 +21,12 @@ Core/Checks.lua
 Core/Blocked.lua
 Core/Report.lua
 Core/Slash.lua
+Core/Commands.lua
 
 # Engine
 
 # UI
+UI/ReportBox.lua
 
 # Start-up (keep last)
+Core/Boot.lua
