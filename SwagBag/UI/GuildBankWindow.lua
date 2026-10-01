@@ -328,12 +328,11 @@ function GW.OnQueryEvent(tab)
 	SB.Debounce("guild.queryNext", 0.05, GW.QueryNext, "bank")
 end
 
--- Ask a tab again (it answered, but now reads empty while the cache has items: W3-31).
+-- Ask a tab again (it answered, but now reads empty while the cache has items: W3-31). It
+-- goes to the end of the queue even while it is the tab being queried: its answer already
+-- came, and the queue moves past it 0.05 s later (fix round 2). Never queued twice.
 function GW.Requery(tab)
 	GW.answered[tab], GW.retried[tab], GW.emptySeen[tab], GW.confirmedEmpty[tab] = nil, nil, nil, nil
-	if GW.querying == tab then
-		return
-	end
 	for _, t in ipairs(GW.queue) do
 		if t == tab then
 			return

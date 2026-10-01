@@ -850,6 +850,111 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal("load", GW.view.stats.lastLayoutReason)
 		assert.truthy(header("tab1:c_herbs"))
 	end)
+
+	-- Fix round 2.
+	-- W3-30: known empty needs an empty read in the first query AND in the retry. Mutation:
+	-- `elseif GW.retried[tab] then` (drop the emptySeen test) in GW.OnQueryEvent.
+	it("W3-30: a first query with no answer and a retry that only sees a foreign empty read leave the tab unanswered", function()
+		openVault()
+		answerQueries()
+		closeVault()
+		local g = SB.Config.db.guilds[KEY]
+		local saved = g.snapshot.containers[2].s
+		A.guild.slots[2] = {}
+		openVault()
+		fire() -- tab 1
+		A.Advance(0.06) -- tab 2 asked; no event comes
+		A.Advance(GW.QUERY_GAP)
+		assert.same({ 1, 2, 1, 2, 2 }, A.guild.queried, "tab 2 asked once more")
+		fire() -- someone else's change during the retry: tab 2 reads empty
+		assert.falsy(GW.answered[2])
+		assert.equal(Fixtures.BOE_RING, button(2, 1).icon, "cache kept")
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+		local n = #A.Lines()
+		Fake.Fire(button(2, 1), "OnClick", "LeftButton")
+		assert.same({}, A.guild.picked)
+		assert.equal("Still loading Gear - try again in a moment.", A.Lines()[n + 1])
+		closeVault()
+		A.Advance(2)
+		assert.equal(saved, g.snapshot.containers[2].s, "snapshot unchanged")
+	end)
+
+	-- Mutations: restore `if GW.querying == tab then return end` at the top of GW.Requery; or
+	-- delete its already-queued check.
+	it("a tab that reads empty within 0.05 s of its answer is asked again and recovers when items arrive", function()
+		local gear = A.guild.slots[2]
+		openVault()
+		fire() -- tab 1
+		A.Advance(0.06)
+		fire() -- tab 2's answer (the ring)
+		A.guild.slots[2] = {}
+		fire() -- 0 s later tab 2 reads empty: unconfirmed
+		assert.equal(Fixtures.BOE_RING, button(2, 1).icon)
+		GW.Requery(2) -- a second request for the same tab is not queued twice
+		A.Advance(0.06)
+		assert.same({ 1, 2, 2 }, A.guild.queried, "asked again")
+		A.guild.slots[2] = gear
+		fire() -- its answer carries the ring
+		assert.truthy(GW.answered[2])
+		Fake.Fire(button(2, 1), "OnClick", "LeftButton")
+		assert.same({ { 2, 1 } }, A.guild.picked, "clickable again")
+		A.Advance(1)
+		local count = 0
+		for _, t in ipairs(A.guild.queried) do
+			count = count + (t == 2 and 1 or 0)
+		end
+		assert.equal(2, count, "queued once, not twice")
+	end)
+
+	-- Mutations: drop the `key ~= GW.cacheKey` test in the open-visit branch of the
+	-- PLAYER_GUILD_UPDATE handler (always clear); or delete its body (never clear).
+	it("PLAYER_GUILD_UPDATE during a visit keeps the cache for the same guild and clears it for another (W3-32)", function()
+		openVault()
+		answerQueries()
+		A.guild.queried = {}
+		SB.eventFrame:Fire("PLAYER_GUILD_UPDATE")
+		assert.equal(Fixtures.HERB, button(1, 1).icon, "same guild: kept")
+		assert.same({}, A.guild.queried)
+		assert.truthy(GW.answered[1])
+		A.guild.key = "Other-Realm"
+		SB.eventFrame:Fire("PLAYER_GUILD_UPDATE")
+		assert.is_nil(rawget(button(1, 1), "icon"), "another guild: cleared")
+		assert.truthy(loadingText("#tab1"))
+		assert.same({ 1 }, A.guild.queried, "queried again")
+		assert.falsy(GW.answered[1])
+	end)
+
+	-- Mutation: compare only the itemID in sameItem (drop `and a.link == b.link`).
+	it("W3-33: a right-click on a slot whose item kept its id but changed its link refreshes instead", function()
+		openVault()
+		answerQueries()
+		A.guild.slots[1][1] = { itemID = Fixtures.HERB, count = 20, link = "item:" .. Fixtures.HERB .. ":2" }
+		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		assert.same({}, A.guild.withdrawn)
+		assert.same({ SB.L.GUILD_SLOT_CHANGED }, A.Lines())
+	end)
+
+	-- Mutation: delete `GW.confirmedEmpty[tab] = nil` in GW.Refresh.
+	it("a confirmed empty tab that later gets items is protected again from an unconfirmed empty read", function()
+		A.guild.slots[2] = {}
+		openVault()
+		fire()
+		A.Advance(0.06)
+		fire()
+		A.Advance(GW.QUERY_GAP)
+		fire() -- known empty
+		assert.equal("- Gear (0) - no withdrawals left today", header("#tab2").text.text)
+		A.Advance(1)
+		A.guild.slots[2] = { [1] = { itemID = Fixtures.BOE_RING } }
+		fire() -- a deposit
+		assert.equal(Fixtures.BOE_RING, button(2, 1).icon)
+		A.guild.queried = {}
+		A.guild.slots[2] = {}
+		fire() -- an empty read nobody confirmed
+		assert.equal(Fixtures.BOE_RING, button(2, 1).icon, "kept")
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+		assert.same({ 2 }, A.guild.queried, "asked again")
+	end)
 end)
 
 describe("GuildBankWindow load order", function()
