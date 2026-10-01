@@ -84,7 +84,7 @@ local function onOpenAll(frame)
 	end
 	local W = SB.BagsWindow
 	local now = SB.Adapter.Now()
-	if now == Hooks.lastAt then
+	if now == Hooks.lastAt and Hooks.lastKind ~= "closed" then
 		-- A toggle hook ran inside this OpenAllBags. If it opened the window, the game
 		-- opened it; if it closed a window the user had open, open it again.
 		if Hooks.lastKind == "toggle" then

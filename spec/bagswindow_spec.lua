@@ -184,8 +184,17 @@ describe("BagsWindow", function()
 		local closed = 0
 		SB.On("SB_BAGS_CLOSED", function() closed = closed + 1 end)
 		W.Open()
+		W.Close()
 		W.frame.scripts.OnHide(W.frame)
 		assert.equal(1, closed)
+	end)
+
+	it("OnHide while the frame is still shown (Alt+Z hiding UIParent) emits nothing", function()
+		local closed = 0
+		SB.On("SB_BAGS_CLOSED", function() closed = closed + 1 end)
+		W.Open()
+		W.frame.scripts.OnHide(W.frame)
+		assert.equal(0, closed)
 	end)
 
 	it("runs its handlers inside the error trap", function()

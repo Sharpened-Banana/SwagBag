@@ -224,6 +224,30 @@ describe("SafeModeHooks", function()
 		assert.equal(0, toggles)
 	end)
 
+	it("a vendor closing and a mailbox opening in the same frame leaves the window open for the mailbox", function()
+		hooks.OpenAllBags(named("MerchantFrame"))
+		A.Advance(1)
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.falsy(windowOpen)
+		hooks.OpenAllBags(named("MailFrame"))
+		assert.truthy(windowOpen)
+		assert.equal("MailFrame", SB.SafeModeHooks.autoOpenedBy)
+	end)
+
+	it("after Esc on a vendor-opened window, a later B press survives the vendor closing", function()
+		realToggle()
+		hooks.OpenAllBags(named("MerchantFrame"))
+		assert.truthy(windowOpen)
+		windowOpen = false
+		SB.Emit("SB_BAGS_CLOSED") -- Esc
+		A.Advance(1)
+		hooks.OpenAllBags() -- inner call of the bag key
+		hooks.ToggleAllBags()
+		assert.truthy(windowOpen)
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.truthy(windowOpen)
+	end)
+
 	it("closing the window with Esc or X forgets that the game opened it", function()
 		hooks.OpenAllBags(named("MerchantFrame"))
 		assert.equal("MerchantFrame", SB.SafeModeHooks.autoOpenedBy)

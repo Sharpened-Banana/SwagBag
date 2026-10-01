@@ -36,7 +36,11 @@ W.frame = frame
 table.insert(UISpecialFrames, "SwagBagBagsWindow")
 
 -- Esc, the X button and W.Close() all hide the frame; listeners forget per-open state.
-frame:SetScript("OnHide", SB.ErrorTrap.Guard("bags.hide", function()
+-- Alt+Z hides UIParent, which fires OnHide while the frame itself is still shown: ignore it.
+frame:SetScript("OnHide", SB.ErrorTrap.Guard("bags.hide", function(self)
+	if self:IsShown() then
+		return
+	end
 	SB.Emit("SB_BAGS_CLOSED")
 end, "bags"))
 
