@@ -1,5 +1,6 @@
 -- SwagBag query tokenizer (spec 7.2). Pure Lua.
 -- Token: { type, value, s, e } with 1-based character span s..e.
+-- Spans are byte offsets, not UTF-8 character positions.
 -- Types: WORD, STRING, OP (= < <= > >=), AND (&), OR (|), NOT (!), LPAREN, RPAREN,
 --        HASH (#), EOF. A WORD is any run of characters that are not whitespace
 --        and not one of  & | ! ( ) # " = < >
@@ -13,6 +14,7 @@ local SINGLE = { ["&"] = "AND", ["|"] = "OR", ["!"] = "NOT", ["("] = "LPAREN", [
 local STOP = "[%s&|!()#\"=<>]"
 
 function Lexer.Tokenize(text)
+	text = text or ""
 	local tokens, i, n = {}, 1, #text
 	while i <= n do
 		local c = text:sub(i, i)

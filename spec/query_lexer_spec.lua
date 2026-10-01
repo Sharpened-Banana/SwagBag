@@ -49,4 +49,47 @@ describe("Query lexer", function()
 		assert.same({ "EOF:@1-1" }, brief(Lexer.Tokenize("")))
 		assert.same({ "EOF:@4-4" }, brief(Lexer.Tokenize("   ")))
 	end)
+
+	-- Review Focus #5: odd input never throws
+	it("does not throw on pattern characters", function()
+		assert.truthy(Lexer.Tokenize("100%"))
+		assert.truthy(Lexer.Tokenize("[a-z]"))
+		assert.truthy(Lexer.Tokenize("%1 ("))
+	end)
+
+	it("keeps apostrophes and hyphens in multi-word compound names", function()
+		assert.same({ "WORD:Hunter's@1-8", "WORD:Jack-o'-Lantern@10-24", "EOF:@25-25" },
+			brief(Lexer.Tokenize("Hunter's Jack-o'-Lantern")))
+	end)
+
+	it("reports error for a lone unterminated quote", function()
+		local tokens, err = Lexer.Tokenize("\"")
+		assert.is_nil(tokens)
+		assert.same({ position = 2, expected = "QUOTE", got = "" }, err)
+	end)
+
+	it("handles quotes within mixed text", function()
+		assert.same({ "WORD:a@1-1", "STRING:b@2-4", "WORD:c@5-5", "EOF:@6-6" },
+			brief(Lexer.Tokenize("a\"b\"c")))
+	end)
+
+	it("tokenizes empty quoted strings", function()
+		assert.same({ "STRING:@1-2", "EOF:@3-3" }, brief(Lexer.Tokenize("\"\"")))
+	end)
+
+	it("tokenizes operators at the end of text", function()
+		assert.same({ "OP:<@1-1", "EOF:@2-2" }, brief(Lexer.Tokenize("<")))
+		assert.same({ "OP:>@1-1", "EOF:@2-2" }, brief(Lexer.Tokenize(">")))
+		assert.same({ "OP:>=@1-2", "EOF:@3-3" }, brief(Lexer.Tokenize(">=")))
+		assert.same({ "OP:<=@1-2", "EOF:@3-3" }, brief(Lexer.Tokenize("<=")))
+	end)
+
+	it("handles nil input by treating it as empty", function()
+		assert.same({ "EOF:@1-1" }, brief(Lexer.Tokenize(nil)))
+	end)
+
+	it("uses byte offsets, not UTF-8 character positions", function()
+		assert.same({ "WORD:café@1-5", "WORD:x@7-7", "EOF:@8-8" },
+			brief(Lexer.Tokenize("café x")))
+	end)
 end)
