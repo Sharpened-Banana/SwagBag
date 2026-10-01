@@ -109,6 +109,10 @@ function Report.Build()
 	if bank then
 		lines[#lines + 1] = L.REPORT_BANK:format(bank.Mode(), tostring(bank.lastVisit or L.REPORT_NONE),
 			bank.target and bank.GroupName(bank.target) or L.REPORT_NONE)
+		local bankStats = bank.view and bank.view.stats
+		if bankStats and bankStats.lastLayoutMs then -- spec 9: first bank open <= 80 ms
+			lines[#lines + 1] = L.REPORT_BANK_LAYOUT:format(bankStats.lastLayoutMs, tostring(bankStats.lastLayoutReason))
+		end
 	end
 	local guild = SB.GuildBankWindow
 	if guild then

@@ -74,6 +74,8 @@ describe("Report", function()
 			GroupName = function() return "Warband bank" end }
 		assert.truthy(SB.Report.Build():find("\nBank: setting tiny, last visit beside, last deposit target Warband bank",
 			1, true))
+		SB.BankWindow.view = { stats = { lastLayoutMs = 61.27, lastLayoutReason = "open" } }
+		assert.truthy(SB.Report.Build():find("\nLast bank layout: 61.3 ms (open)", 1, true), "spec 9: first bank open")
 	end)
 
 	it("shows the guild bank setting and the last visit (check G1)", function()

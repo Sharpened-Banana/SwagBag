@@ -3,9 +3,9 @@
 -- target, Esc, Safe Mode. The bank contents are covered by spec/bankwindow_groups_spec.lua.
 local Loader = dofile("spec/helpers/loader.lua")
 local Fake = dofile("spec/helpers/fakeframe.lua")
+local Env = dofile("spec/helpers/uienv.lua")
 
-local FILES = { "SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua",
-	"SwagBag/Core/Config.lua", "SwagBag/Core/Slash.lua" }
+local FILES = Env.ENGINE
 
 -- Blizzard's bank as Blizzard shows it: parented to UIParent, two real tabs underneath.
 -- All four are STRICT fakes (ruling W3-2): every method SwagBag calls on them is logged.
@@ -69,14 +69,13 @@ describe("BankWindow frames (check V2)", function()
 		bf = blizzardBank()
 		A.frames.BankFrame = bf
 		A.activeBankType = "bank"
-		SB.BagsWindow = { frame = Fake.New("Frame", UIParent), sortButton = Fake.New("Button") }
-		Loader.LoadFile(SB, "SwagBag/UI/TinyHost.lua")
-		Loader.LoadFile(SB, "SwagBag/UI/BankWindow.lua")
-		BW = SB.BankWindow
+		Env.PaintGlobals()
+		BW = Env.LoadBank(SB)
 	end)
 
 	after_each(function()
 		Fake.Uninstall()
+		Env.ClearPaintGlobals()
 	end)
 
 	local function openBank()
@@ -381,9 +380,7 @@ describe("BankWindow load order", function()
 		SB.Config.Get = function() error("Config.Get called while loading") end
 		SB.Config.UI = function() error("Config.UI called while loading") end
 		Fake.Install()
-		SB.BagsWindow = { frame = Fake.New("Frame", UIParent), sortButton = Fake.New("Button") }
-		Loader.LoadFile(SB, "SwagBag/UI/TinyHost.lua")
-		local ok, err = pcall(Loader.LoadFile, SB, "SwagBag/UI/BankWindow.lua")
+		local ok, err = pcall(Env.LoadBank, SB)
 		Fake.Uninstall()
 		assert.truthy(ok, tostring(err))
 	end)

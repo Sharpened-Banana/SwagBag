@@ -171,6 +171,13 @@ L.BANK_MODE_BESIDE = "Bank: Blizzard's bank is shown, with SwagBag's bank window
 L.BANK_MODE_SAVED_NEXT = "Bank: saved; it applies on your next bank visit."
 L.SETTINGS_READONLY = "SwagBag's saved settings are read-only, so nothing was changed."
 L.REPORT_BANK = "Bank: setting %s, last visit %s, last deposit target %s"
+L.BANK_GROUP_LABEL = "%s %s (%d)"
+L.BANK_GROUP_TARGET = "  - deposits go here"
+L.BTN_SORT_BANK = "Sort bank"
+L.BTN_SORT_WARBAND = "Sort warband"
+L.BANK_VIEW_GRID = "SwagBag bank - grid view"
+L.BANK_VIEW_SECTIONS = "SwagBag bank - category view"
+L.REPORT_BANK_LAYOUT = "Last bank layout: %.1f ms (%s)"
 
 -- Guild bank window (spec F16)
 L.GUILD_TITLE = "SwagBag guild bank"
