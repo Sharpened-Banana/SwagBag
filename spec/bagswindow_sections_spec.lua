@@ -262,6 +262,213 @@ describe("BagsWindow category view", function()
 		assert.equal(7, #headers())
 		assert.equal(SB.L.VIEW_TO_GRID, W.viewButton.text)
 	end)
+
+	-- Change the mock bags, then deliver the events the client would send.
+	local function bagUpdate(bag)
+		SB.eventFrame:Fire("BAG_UPDATE", bag or 0)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.06)
+	end
+
+	local function placedCounts()
+		local out = {}
+		for slot = 1, 16 do
+			out[slot] = B.Get(0, slot).placed
+		end
+		return out
+	end
+
+	it("using up an item leaves a placeholder with its icon; its button goes to Free; nothing else moves", function()
+		W.Open()
+		local potionAt, counts = at(0, 1), placedCounts()
+		A.Clear(0, 1)
+		bagUpdate()
+		assert.equal(1, #B.placeholders)
+		assert.same({ Fixtures.HEALING_POTION, potionAt[1], potionAt[2] },
+			{ B.placeholders[1].icon, B.placeholders[1].x, B.placeholders[1].y })
+		assert.equal(counts[1] + 1, B.Get(0, 1).placed, "the emptied button moved once")
+		for slot = 2, 16 do
+			assert.equal(counts[slot], B.Get(0, slot).placed, "slot " .. slot .. " did not move")
+		end
+		assert.equal("- Free (11)", header("free").text.text)
+		assert.truthy(W.state.needsReflow)
+	end)
+
+	it("a drag to an empty slot and a stack split in one update: one placeholder, both show in New (Review Focus 1)",
+		function()
+			W.Open()
+			local counts = placedCounts()
+			local ringAt = at(0, 3)
+			A.Clear(0, 3) -- the ring is dragged ...
+			A.Put(0, 7, Fixtures.BOE_RING, 1) -- ... to an empty slot
+			A.Put(0, 1, Fixtures.HEALING_POTION, 3) -- two potions are split off ...
+			A.Put(0, 8, Fixtures.HEALING_POTION, 2) -- ... into another empty slot
+			bagUpdate()
+			assert.equal(1, #B.placeholders)
+			assert.same(ringAt, { B.placeholders[1].x, B.placeholders[1].y })
+			assert.same({ 4, -24 }, at(0, 7), "the ring shows first in New")
+			assert.same({ 45, -24 }, at(0, 8), "the split stack second")
+			for _, slot in ipairs({ 1, 2, 4, 5, 6, 9, 10 }) do
+				assert.equal(counts[slot], B.Get(0, slot).placed, "slot " .. slot .. " did not move")
+			end
+		end)
+
+	it("a looted item goes to New; New's header counts it", function()
+		W.Open()
+		A.Put(0, 10, Fixtures.HERB, 20)
+		bagUpdate()
+		assert.same({ 4, -24 }, at(0, 10), "first cell of New")
+		assert.equal("- New (1)", header("new").text.text)
+		assert.equal(0, #B.placeholders, "it came from Free: no placeholder")
+	end)
+
+	it("a stack count change only repaints", function()
+		W.Open()
+		local counts = placedCounts()
+		A.Put(0, 1, Fixtures.HEALING_POTION, 2)
+		bagUpdate()
+		assert.same(counts, placedCounts())
+		assert.equal(0, #B.placeholders)
+	end)
+
+	it("a button under the mouse does not move; it moves 300 ms after the mouse leaves", function()
+		W.Open()
+		local potion = B.Get(0, 1)
+		local before = at(0, 1)
+		potion.mouseOver = true
+		A.Clear(0, 1)
+		bagUpdate()
+		assert.same(before, at(0, 1))
+		A.Advance(0.3)
+		assert.same(before, at(0, 1), "still under the mouse")
+		potion.mouseOver = false
+		A.Advance(0.3)
+		assert.truthy(at(0, 1)[2] < before[2], "moved down to Free")
+		assert.equal(1, #B.placeholders)
+	end)
+
+	it("an item on the cursor holds every move until it is put down", function()
+		W.Open()
+		A.cursor = { itemID = Fixtures.FLASK }
+		local before = at(0, 1)
+		A.Clear(0, 1)
+		bagUpdate()
+		assert.same(before, at(0, 1))
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.truthy(at(0, 1)[2] < before[2])
+	end)
+
+	it("closing while a move is held back under the mouse is safe; the next open is clean (Review Focus 3)", function()
+		W.Open()
+		B.Get(0, 1).mouseOver = true
+		A.Clear(0, 1)
+		bagUpdate()
+		assert.equal(1, #W.state.deferred, "exactly one change is held back")
+		assert.equal(0, #B.placeholders, "nothing was placed yet")
+		W.Close()
+		assert.is_nil(W.state)
+		B.Get(0, 1).mouseOver = false
+		A.Advance(1)
+		assert.equal(0, #B.placeholders)
+		assert.equal(0, #SB.ErrorTrap.Recent())
+		W.Open()
+		assert.equal("- Consumables (1)", header("c_consumables").text.text)
+	end)
+
+	it("an item whose data loads stays in New until the next open, then joins its section", function()
+		W.Open()
+		A.Put(0, 10, Fixtures.UNLOADED, 1)
+		bagUpdate()
+		assert.same({ 4, -24 }, at(0, 10))
+		A.items[Fixtures.UNLOADED] = { name = "Robe", classID = A.ITEM_CLASS.Armor, subclassID = 0, quality = 3,
+			equipLoc = "INVTYPE_CHEST", ilvl = 280, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
+		assert.same({ 4, -24 }, at(0, 10), "loaded: still in New while open")
+		W.Close()
+		W.Open()
+		assert.equal("- BoE gear (2)", header("c_boe").text.text)
+	end)
+
+	it("closing after changes releases the placeholders; reopening regroups everything", function()
+		W.Open()
+		A.Clear(0, 1)
+		bagUpdate()
+		assert.equal(1, #B.placeholders)
+		W.Close()
+		assert.equal(0, #B.placeholders)
+		W.Open()
+		assert.equal(0, #B.placeholders)
+		assert.equal("- Consumables (1)", header("c_consumables").text.text)
+		assert.falsy(W.state.needsReflow)
+	end)
+
+	it("a cooldown search stays correct: cooldown events refresh only while the search uses cooldown", function()
+		W.Open()
+		local updated = 0
+		SB.On("SB_BAGS_UPDATED", function() updated = updated + 1 end)
+		SB.Search.SetText("potion")
+		A.slots[0][1].onCooldown = true
+		SB.eventFrame:Fire("BAG_UPDATE_COOLDOWN")
+		assert.equal(false, W.records[0][1].onCooldown, "no refresh for a search without cooldown")
+		assert.equal(0, updated)
+		SB.Search.SetText("cooldown")
+		SB.eventFrame:Fire("BAG_UPDATE_COOLDOWN")
+		assert.equal(true, W.records[0][1].onCooldown)
+		assert.equal(1, updated)
+	end)
+
+	it("a new item matches the `new` search as soon as it arrives", function()
+		W.Open()
+		A.Put(0, 10, Fixtures.HERB, 20)
+		bagUpdate()
+		assert.equal(true, SB.Query.Eval(SB.Query.Compile("new"), W.records[0][10]))
+	end)
+
+	it("a bag equipped while open adds its slots at the end of Free", function()
+		W.Open()
+		local counts = placedCounts()
+		A.SetBagSize(1, 4)
+		bagUpdate(1)
+		assert.equal("- Free (14)", header("free").text.text)
+		assert.truthy(B.Get(1, 4).shown)
+		assert.same(counts, placedCounts(), "nothing in the backpack moved")
+		assert.equal("open", W.stats.lastLayoutReason, "no full regroup")
+	end)
+
+	it("a refresh for a cooldown search never moves a button or relayouts while open (P5)", function()
+		W.Open()
+		SB.Search.SetText("cooldown")
+		local counts, released = placedCounts(), B.released
+		A.slots[0][1].onCooldown = true
+		SB.eventFrame:Fire("BAG_UPDATE_COOLDOWN")
+		assert.same(counts, placedCounts())
+		assert.equal(released, B.released, "no re-render")
+		assert.equal("open", W.stats.lastLayoutReason)
+		assert.falsy(W.state.needsReflow)
+	end)
+
+	it("a bag change in the grid view waits while the mouse is over the window (rule 5)", function()
+		SB.Config.Set("bags.view", "grid")
+		W.Open()
+		W.scroll.mouseOver = true
+		A.SetBagSize(1, 4)
+		bagUpdate(1)
+		assert.equal("open", W.stats.lastLayoutReason)
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("size", W.stats.lastLayoutReason)
+	end)
+
+	it("the grid view only repaints: no placeholders, nothing moves", function()
+		SB.Config.Set("bags.view", "grid")
+		W.Open()
+		local counts = placedCounts()
+		A.Clear(0, 1)
+		bagUpdate()
+		assert.equal(0, #B.placeholders)
+		assert.same(counts, placedCounts())
+	end)
 end)
 
 describe("BagsWindow load order", function()
