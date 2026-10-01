@@ -29,6 +29,7 @@ Engine/Inventory.lua
 
 # UI
 UI/ReportBox.lua
+UI/Buttons.lua
 
 # Start-up (keep last)
 Core/Boot.lua
