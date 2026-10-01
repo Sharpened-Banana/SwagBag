@@ -1,0 +1,150 @@
+local Loader = dofile("spec/helpers/loader.lua")
+local Fixtures = dofile("spec/fixtures/items.lua")
+
+local FILES = {
+	"SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Events.lua", "SwagBag/Engine/Inventory.lua",
+}
+
+describe("Inventory", function()
+	local SB, A, Inv, R, calls
+	before_each(function()
+		SB = Loader.New(FILES)
+		A, Inv = SB.Adapter, SB.Inventory
+		R = Inv.R
+		Fixtures.SmallBags(A)
+		SB.Emit("SB_LOGIN")
+		calls = {}
+		Inv.OnChanged(function(mask, changes) calls[#calls + 1] = { mask = mask, changes = changes } end)
+	end)
+
+	local function fire(event, ...)
+		SB.eventFrame:Fire(event, ...)
+	end
+
+	it("Has and Or combine reason flags without bit operators", function()
+		local m = Inv.Or(R.COUNT, R.ITEM)
+		assert.equal(3, m)
+		assert.truthy(Inv.Has(m, R.ITEM))
+		assert.falsy(Inv.Has(m, R.SIZE))
+		assert.equal(3, Inv.Or(m, R.COUNT))
+	end)
+
+	it("DiffSlot tells ITEM from COUNT from nothing", function()
+		local a = { itemID = 1, link = "x", count = 1 }
+		assert.equal(0, Inv.DiffSlot(nil, nil))
+		assert.equal(R.ITEM, Inv.DiffSlot(nil, a))
+		assert.equal(R.ITEM, Inv.DiffSlot(a, { itemID = 2, link = "y", count = 1 }))
+		assert.equal(R.COUNT, Inv.DiffSlot(a, { itemID = 1, link = "x", count = 4 }))
+		assert.equal(0, Inv.DiffSlot(a, { itemID = 1, link = "x", count = 1 }))
+	end)
+
+	it("the login scan fills the model without marking anything new", function()
+		assert.equal(16, Inv.Size(0))
+		assert.equal(Fixtures.HEALING_POTION, Inv.GetSlot(0, 1).itemID)
+		assert.is_nil(Inv.GetSlot(0, 16))
+		assert.falsy(Inv.IsNew(0, 1))
+	end)
+
+	it("BAG_UPDATE only marks dirty; BAG_UPDATE_DELAYED flushes once after 50 ms", function()
+		A.Put(0, 1, Fixtures.HEALING_POTION, 4)
+		fire("BAG_UPDATE", 0)
+		fire("BAG_UPDATE", 0)
+		assert.equal(0, #calls)
+		fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.04)
+		assert.equal(0, #calls)
+		A.Advance(0.02)
+		assert.equal(1, #calls)
+		assert.equal(R.COUNT, calls[1].mask)
+		assert.same({ { bag = 0, slot = 1, reasons = R.COUNT } }, calls[1].changes)
+		assert.equal("delayed", Inv.lastFlush)
+		A.Advance(1)
+		assert.equal(1, #calls, "the failsafe must not flush a second time")
+	end)
+
+	it("the 250 ms failsafe flushes when BAG_UPDATE_DELAYED never comes", function()
+		A.Clear(0, 6)
+		fire("BAG_UPDATE", 0)
+		A.Advance(0.2)
+		assert.equal(0, #calls)
+		A.Advance(0.1)
+		assert.equal(1, #calls)
+		assert.equal(R.ITEM, calls[1].mask)
+		assert.equal("failsafe", Inv.lastFlush)
+	end)
+
+	it("an item arriving after login is new; leaving clears it", function()
+		A.Put(0, 12, Fixtures.HERB, 10)
+		fire("BAG_UPDATE", 0)
+		fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.1)
+		assert.truthy(Inv.IsNew(0, 12))
+		A.Clear(0, 12)
+		fire("BAG_UPDATE", 0)
+		fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.1)
+		assert.falsy(Inv.IsNew(0, 12))
+	end)
+
+	it("a bag size change reports SIZE but doesn't affect slot tracking", function()
+		A.SetBagSize(1, 4)
+		fire("BAG_UPDATE", 1)
+		fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.1)
+		assert.equal(1, #calls)
+		assert.truthy(Inv.Has(calls[1].mask, R.SIZE))
+		assert.equal(4, Inv.Size(1))
+	end)
+
+	it("ITEM_LOCK_CHANGED reports LOCK for that slot and updates the snapshot", function()
+		A.slots[0][1].isLocked = true
+		fire("ITEM_LOCK_CHANGED", 0, 1)
+		assert.equal(R.LOCK, calls[1].mask)
+		assert.same({ { bag = 0, slot = 1, reasons = R.LOCK } }, calls[1].changes)
+		assert.equal(true, Inv.GetSlot(0, 1).isLocked)
+		fire("ITEM_LOCK_CHANGED", 16, nil)
+		assert.equal(1, #calls, "equipment-slot locks are ignored")
+	end)
+
+	it("BAG_UPDATE_COOLDOWN reports COOLDOWN without rescanning", function()
+		fire("BAG_UPDATE_COOLDOWN")
+		assert.equal(R.COOLDOWN, calls[1].mask)
+		assert.same({}, calls[1].changes)
+	end)
+
+	it("item data arriving for a pending item reports LOADED for its slots", function()
+		A.Put(0, 7, Fixtures.UNLOADED, 1)
+		A.Put(0, 8, Fixtures.UNLOADED, 1)
+		fire("BAG_UPDATE", 0)
+		fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.1)
+		Inv.MarkPending(Fixtures.UNLOADED)
+		fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
+		local last = calls[#calls]
+		assert.equal(R.LOADED, last.mask)
+		assert.same({ { bag = 0, slot = 7, reasons = R.LOADED }, { bag = 0, slot = 8, reasons = R.LOADED } }, last.changes)
+		local n = #calls
+		fire("GET_ITEM_INFO_RECEIVED", Fixtures.UNLOADED, true)
+		assert.equal(n, #calls, "only once per pending item")
+	end)
+
+	it("Iterate walks every slot of a kind in bag order", function()
+		A.SetBagSize(1, 2)
+		Inv.ScanBag(1)
+		local seen = 0
+		local last
+		for bag, slot in Inv.Iterate("bags") do
+			seen = seen + 1
+			last = bag .. ":" .. slot
+		end
+		assert.equal(18, seen)
+		assert.equal("1:2", last)
+	end)
+
+	it("a listener error is trapped and flips bags to Safe Mode", function()
+		Inv.OnChanged(function() error("listener broke") end)
+		fire("BAG_UPDATE_COOLDOWN")
+		assert.truthy(SB.SafeMode.IsOn("bags"))
+		assert.equal("inventory.listener", SB.ErrorTrap.Recent()[1].label)
+	end)
+end)
