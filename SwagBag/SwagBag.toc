@@ -32,6 +32,7 @@ Engine/GridLayout.lua
 UI/ReportBox.lua
 UI/Buttons.lua
 UI/BagsWindow.lua
+UI/SafeModeHooks.lua
 
 # Start-up (keep last)
 Core/Boot.lua
