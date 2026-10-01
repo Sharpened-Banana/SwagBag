@@ -92,15 +92,19 @@ end
 local RANK = { ok = 1, new = 2, migrated = 3, reset = 4 }
 
 function Config.Init(db, charDB)
+	Config.lastError = nil
 	Config.source = { db = db, charDB = charDB }
-	local a, sa, ea = upgrade(db, Config.migrations, newDB)
-	local c, sc, ec = upgrade(charDB, Config.charMigrations, newCharDB)
-	if sa == "newer" or sc == "newer" then
+	-- Check schema versions BEFORE upgrading: if either is newer, don't touch either table
+	local dbVersion = type(db) == "table" and (tonumber(db.schemaVersion) or 0) or 0
+	local charVersion = type(charDB) == "table" and (tonumber(charDB.schemaVersion) or 0) or 0
+	if dbVersion > Config.CURRENT or charVersion > Config.CURRENT then
 		Config.status = "newer"
 		Config.readOnly = true
 		Config.db, Config.charDB = newDB(), newCharDB() -- in memory only; saved tables untouched
 		return Config.status
 	end
+	local a, sa, ea = upgrade(db, Config.migrations, newDB)
+	local c, sc, ec = upgrade(charDB, Config.charMigrations, newCharDB)
 	Config.readOnly = false
 	Config.db, Config.charDB = a, c
 	Config.status = RANK[sa] >= RANK[sc] and sa or sc
@@ -185,16 +189,40 @@ end
 -- Wipe both DBs after keeping a copy of the saved data. Returns the new tables,
 -- which the caller assigns to SwagBagDB / SwagBagCharDB.
 function Config.Reset()
-	local src = Config.source or {}
-	local oldDB = type(src.db) == "table" and copy(src.db) or nil
-	local oldChar = type(src.charDB) == "table" and copy(src.charDB) or nil
-	if oldDB then
-		oldDB.backups = nil
+	if Config.readOnly then
+		-- When read-only (newer schema), back up the saved tables without touching them
+		local src = Config.source or {}
+		local oldDB = type(src.db) == "table" and copy(src.db) or nil
+		local oldChar = type(src.charDB) == "table" and copy(src.charDB) or nil
+		if oldDB then
+			oldDB.backups = nil
+		end
+		if oldChar then
+			oldChar.backups = nil
+		end
+		Config.db, Config.charDB = newDB(), newCharDB()
+		Config.db.backups.reset = oldDB
+		Config.charDB.backups.reset = oldChar
+		Config.source = { db = Config.db, charDB = Config.charDB }
+		Config.readOnly = false
+		Config.status = "ok"
+		return Config.db, Config.charDB
 	end
-	if oldChar then
-		oldChar.backups = nil
-	end
+	-- When not read-only, back up the LIVE tables and preserve existing backups
+	local oldDB = copy(Config.db)
+	local oldChar = copy(Config.charDB)
+	local existingDBBackups = oldDB.backups or {}
+	local existingCharBackups = oldChar.backups or {}
+	oldDB.backups = nil
+	oldChar.backups = nil
 	Config.db, Config.charDB = newDB(), newCharDB()
+	-- Carry over existing backups (e.g., v<N> from failed migrations)
+	for k, v in pairs(existingDBBackups) do
+		Config.db.backups[k] = v
+	end
+	for k, v in pairs(existingCharBackups) do
+		Config.charDB.backups[k] = v
+	end
 	Config.db.backups.reset = oldDB
 	Config.charDB.backups.reset = oldChar
 	Config.source = { db = Config.db, charDB = Config.charDB }
