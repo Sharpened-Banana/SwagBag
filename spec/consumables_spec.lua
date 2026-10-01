@@ -1,3 +1,4 @@
+-- luacheck: ignore 122
 -- The low-consumables warning (spec 6.6, F11; check V11): counting, the three triggers, the
 -- 60 s rate limit, the watch list (defaults, edits, read-only, damaged saved data), and
 -- /swagbag consumables.
@@ -14,7 +15,19 @@ local FILES = {
 
 describe("Consumables", function()
 	local SB, A, C
+	-- Lua 5.1's %s takes only strings and numbers; LuaJIT is more lenient and hides W4-18.
+	local realFormat = string.format
 	before_each(function()
+		string.format = function(fmt, ...)
+			local args, i = { ... }, 0
+			for spec in fmt:gmatch("%%[%-%d%.]*(%a)") do
+				i = i + 1
+				if spec == "s" and type(args[i]) ~= "string" and type(args[i]) ~= "number" then
+					error("bad argument #" .. (i + 1) .. " to 'format' (string expected, got " .. type(args[i]) .. ")", 2)
+				end
+			end
+			return realFormat(fmt, ...)
+		end
 		SB = Loader.New(FILES)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
@@ -207,5 +220,81 @@ describe("Consumables", function()
 		assert.equal(SB.L.SET_WATCH_KNOWN, C.ReasonText("known"))
 		assert.equal(SB.L.SETTINGS_READONLY, C.ReasonText("readonly"))
 		assert.truthy(SB.L.SET_WATCH_INVALID ~= SB.L.DROP_INVALID)
+	end)
+
+	after_each(function()
+		string.format = realFormat
+	end)
+
+	-- Mutation (W4-18): in List(), keep `name = e.name` unchecked.
+	it("W4-18: a damaged saved name (a boolean, an unknown key) falls back to the query and never errors", function()
+		SB.Config.Set("consumables.watch", { { query = "food", threshold = 5, name = true },
+			{ query = "flask", threshold = 5, name = "BOGUS" }, { query = "potion", threshold = 9, name = {} } })
+		fire("CHALLENGE_MODE_START")
+		assert.same({ "Low: food (0/5), flask (2/5), potion (5/9)" }, A.screen)
+		assert.same({}, SB.ErrorTrap.Recent())
+	end)
+
+	-- Mutation (W4-19): remove the `excludes` check in FocusData.Matches.
+	it("W4-19: Path of Frost (Death Knight) is not a dungeon teleport", function()
+		A.spellNames[3714] = "path of frost"
+		fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 3714)
+		assert.same({}, A.screen)
+	end)
+
+	-- Mutation (W4-20): remove the isReload test in the PLAYER_ENTERING_WORLD handler.
+	it("W4-20: a /reload inside a running key does not warn; a real zone-in during a key does", function()
+		A.instance = { instanceType = "party", difficultyID = 8 }
+		A.challengeMode = true
+		fire("PLAYER_ENTERING_WORLD", false, true)
+		assert.same({}, A.screen)
+		fire("PLAYER_ENTERING_WORLD", false, false)
+		assert.same({ "Low: Food (0/5)" }, A.screen)
+	end)
+
+	it("a Mythic dungeon without a keystone in the bags does not warn", function()
+		A.Put(0, 5, nil, 0)
+		A.instance = { instanceType = "party", difficultyID = 23 }
+		fire("PLAYER_ENTERING_WORLD", false, false)
+		assert.same({}, A.screen)
+	end)
+
+	it("/swagbag consumables on answers with the on line", function()
+		SB.Slash.Dispatch("consumables on")
+		assert.same({ SB.L.CONSUMABLES_ON }, A.Lines())
+	end)
+
+	it("an item in the bank is not counted", function()
+		A.bagIDs.bank = { 6 }
+		A.SetBagSize(6, 4)
+		A.Put(6, 1, Fixtures.HEALING_POTION, 10)
+		assert.equal(5, C.Count({ query = "potion", threshold = 5 }))
+		assert.equal(5, C.Count({ itemID = Fixtures.HEALING_POTION, threshold = 5 }))
+	end)
+
+	it("an empty watch list says nothing is watched, by list and by check", function()
+		SB.Config.Set("consumables.watch", {})
+		SB.Slash.Dispatch("consumables")
+		SB.Slash.Dispatch("consumables check")
+		assert.same({ SB.L.CONSUMABLES_NONE, SB.L.CONSUMABLES_NONE }, A.Lines())
+	end)
+
+	-- Mutation (d6): drop the unchanged-value test in SetThreshold.
+	it("d6: SetThreshold with the same (clamped) value saves nothing", function()
+		assert.same({ false, "same" }, { C.SetThreshold(1, 1) })
+		assert.same({ false, "same" }, { C.SetThreshold(2, 5.7) })
+		assert.is_nil(SB.Config.Get("consumables.watch"))
+		assert.truthy(C.SetThreshold(2, 6))
+	end)
+
+	it("one pass: each bag slot is described once however many entries are watched", function()
+		local n, real = 0, SB.Items.Describe
+		SB.Items.Describe = function(...)
+			n = n + 1
+			return real(...)
+		end
+		C.Low()
+		SB.Items.Describe = real
+		assert.equal(6, n, "six filled slots, one description each")
 	end)
 end)

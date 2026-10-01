@@ -14,7 +14,9 @@ local FD = {
 	fishing = { ids = { [131474] = true }, names = { "fishing" }, prefixes = {} },
 	gathering = { ids = { [2366] = true, [2575] = true, [8613] = true },
 		names = { "herb gathering", "mining", "skinning" }, prefixes = {} },
-	teleports = { ids = {}, names = {}, prefixes = { "path of " } },
+	-- excludes: lower-case names that match a prefix but are not dungeon teleports (the Death
+	-- Knight's "Path of Frost", W4-19).
+	teleports = { ids = {}, names = {}, prefixes = { "path of " }, excludes = { ["path of frost"] = true } },
 }
 SB.FocusData = FD
 
@@ -38,6 +40,9 @@ function FD.Matches(list, spellID)
 			return false
 		end
 		FD.names[spellID] = name
+	end
+	if list.excludes and list.excludes[name] then
+		return false
 	end
 	for _, n in ipairs(list.names) do
 		if name == n then
