@@ -25,6 +25,7 @@ Core/Commands.lua
 
 # Engine
 Engine/Items.lua
+Engine/Inventory.lua
 
 # UI
 UI/ReportBox.lua
