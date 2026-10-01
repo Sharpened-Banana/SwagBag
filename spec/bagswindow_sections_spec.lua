@@ -1144,6 +1144,215 @@ describe("BagsWindow category view", function()
 	end)
 end)
 
+describe("BagsWindow focus modes (spec 6)", function()
+	local SB, A, W, B, F
+	before_each(function()
+		local files = { unpack(FILES) }
+		files[#files + 1] = "SwagBag/Engine/Focus.lua"
+		SB = Loader.New(files)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A) -- potion, flask, BoE ring, soulbound helm, keystone, junk
+		CreateFrame = function(kind) return newFake(kind) end
+		UIParent = newFake("Frame")
+		UIParent.h = 2000
+		UISpecialFrames = {}
+		IsControlKeyDown = function() return false end
+		B = fakeButtons()
+		SB.Buttons = B
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+		W, F = SB.BagsWindow, SB.Focus
+		SB.Emit("SB_LOGIN")
+	end)
+
+	after_each(function()
+		UIParent, UISpecialFrames, IsControlKeyDown = nil, nil, nil
+	end)
+
+	local function headers()
+		local out = {}
+		for i, h in ipairs(SB.SectionHeaders.inUse) do
+			out[i] = h.text.text
+		end
+		return out
+	end
+
+	local function header(id)
+		for _, h in ipairs(SB.SectionHeaders.inUse) do
+			if h.sectionId == id then
+				return h
+			end
+		end
+	end
+
+	local function bagUpdate(bag)
+		SB.eventFrame:Fire("BAG_UPDATE", bag or 0)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.06)
+	end
+
+	local M_PLUS = { "- New (0)", "- Keystone & Crests (1)", "- Consumables (2)", "- Gear (1)", "+ BoE gear (1)",
+		"+ Junk (1)", "+ Free (10)" }
+
+	-- Mutation: return own (the saved set) from W.EffectiveCollapsed.
+	it("a key starting while the bag is open collapses all but the M+ sections; leaving restores the user's own", function()
+		W.Open()
+		W.ToggleSection("c_junk") -- the user's own choice, saved
+		F.SetSignal("challengeMode", true)
+		assert.same(M_PLUS, headers())
+		assert.falsy(B.Get(0, 3).shown, "BoE ring hidden")
+		assert.truthy(B.Get(0, 5).shown, "keystone shown")
+		assert.same({ c_junk = true }, SB.Config.UI().collapsed.bags, "a mode never writes the saved set")
+		F.SetSignal("challengeMode", false)
+		assert.same({ "- New (0)", "- Keystone & Crests (1)", "- Consumables (2)", "- Gear (1)", "- BoE gear (1)",
+			"+ Junk (1)", "- Free (10)" }, headers())
+	end)
+
+	-- Mutation: Restack calls render() instead of renderMoved(oldPos, pos).
+	it("a mode switch touches only the buttons that move or hide (Restack is incremental)", function()
+		W.Open()
+		local shows = {}
+		for slot = 1, 16 do
+			local b = B.Get(0, slot)
+			local show = b.Show
+			b.Show = function(self)
+				shows[slot] = (shows[slot] or 0) + 1
+				return show(self)
+			end
+		end
+		F.SetSignal("challengeMode", true)
+		assert.falsy(B.Get(0, 3).shown, "the switch happened: the BoE ring hides") -- preflight d1
+		assert.is_nil(shows[1], "the potion keeps its cell: no frame call")
+		assert.is_nil(shows[5], "the keystone keeps its cell: no frame call")
+	end)
+
+	-- Mutation: delete the Layout.Moves hover check in W.Restack (anyBusy).
+	it("W10 and P5: no button moves relative to its own header, and none moves under the mouse", function()
+		W.Open()
+		local junk = B.Get(0, 6)
+		local offset = junk.y - header("c_junk").points[1][5]
+		local gear = B.Get(0, 4)
+		gear.mouseOver = true -- Gear does not move (everything above it stays open)
+		F.SetSignal("merchantOpen", true) -- opens BoE gear, Trade Goods, Junk: Gear and Consumables collapse
+		local ring = B.Get(0, 3)
+		assert.equal("SwagBag — AH/Vendor/Bank", W.frame.title.text, "the title changes at once")
+		assert.truthy(gear.shown, "held: the hovered helm is still shown")
+		A.Advance(0.3)
+		assert.truthy(gear.shown, "still held while the mouse stays")
+		gear.mouseOver = false
+		A.Advance(0.3)
+		assert.falsy(gear.shown)
+		assert.truthy(ring.shown)
+		assert.equal(offset, junk.y - header("c_junk").points[1][5], "Junk's button kept its offset to its header")
+	end)
+
+	-- Ruling W4-1 (preflight F-1): loot while a switch is held under the mouse lays out with the view
+	-- that is drawn, so nothing jumps under the mouse. Mutation: ApplyChanges uses W.EffectiveCollapsed().
+	it("loot during a held switch moves nothing under the mouse; the switch applies once the mouse leaves", function()
+		W.Open()
+		local ring = B.Get(0, 3)
+		local x, y = ring.x, ring.y
+		ring.mouseOver = true -- the ring would hide under M+
+		F.SetSignal("challengeMode", true)
+		assert.truthy(ring.shown, "held")
+		A.Put(0, 10, Fixtures.HERB, 20) -- an arrival: ApplyChanges runs
+		bagUpdate()
+		assert.equal("- New (1)", header("new").text.text, "the arrival was drawn")
+		assert.truthy(ring.shown, "the hovered ring is still shown")
+		assert.same({ x, y }, { ring.x, ring.y }, "the hovered ring has not moved")
+		assert.equal("- BoE gear (1)", header("c_boe").text.text, "the old sections are still drawn")
+		assert.equal("- Junk (1)", header("c_junk").text.text)
+		ring.mouseOver = false
+		A.Advance(0.3)
+		assert.falsy(ring.shown, "the switch applied")
+		assert.equal("+ BoE gear (1)", header("c_boe").text.text)
+		assert.equal("+ Junk (1)", header("c_junk").text.text)
+	end)
+
+	-- Ruling W4-1, the same hole for the user's own header click: a collapse of New held under the
+	-- mouse must not send loot to Free. Mutation: Layout.Apply in ApplyChanges gets
+	-- W.EffectiveCollapsed() instead of W.view.
+	it("loot during a held collapse of New still lands in New (the drawn view decides)", function()
+		W.Open()
+		local keystone = B.Get(0, 5)
+		keystone.mouseOver = true -- collapsing New would move every section below it
+		W.ToggleSection("new")
+		assert.equal("- New (0)", header("new").text.text, "held")
+		A.Put(0, 10, Fixtures.HERB, 20)
+		bagUpdate()
+		assert.equal("- New (1)", header("new").text.text, "the herb is in New, as drawn")
+		assert.same({ 4, -24 }, { B.Get(0, 10).x, B.Get(0, 10).y }, "first cell of New")
+		keystone.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("+ New (1)", header("new").text.text, "the collapse applied once the mouse left")
+	end)
+
+	it("an item on the cursor holds the switch; it applies once the item is put down", function()
+		W.Open()
+		A.cursor = { itemID = 1 }
+		F.SetSignal("challengeMode", true)
+		assert.truthy(B.Get(0, 6).shown)
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.falsy(B.Get(0, 6).shown)
+	end)
+
+	it("a switch in combat applies at once (moving buttons is legal in combat)", function()
+		W.Open()
+		A.combat = true
+		F.SetSignal("challengeMode", true)
+		assert.same(M_PLUS, headers())
+	end)
+
+	it("a switch while the bag is closed is applied on the next open", function()
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		assert.same(M_PLUS, headers())
+	end)
+
+	it("in the grid view a switch changes only the title", function()
+		SB.Config.Set("bags.view", "grid")
+		W.Open()
+		F.SetSignal("challengeMode", true)
+		assert.equal("SwagBag — M+", W.frame.title.text)
+		assert.truthy(B.Get(0, 6).shown)
+	end)
+
+	it("AC8.5: the title names the mode, before the item level", function()
+		A.avgIlvl = 279.44
+		F.SetSignal("fishing", true)
+		W.Open()
+		assert.equal("SwagBag — Fishing — ilvl 279.4", W.frame.title.text)
+	end)
+
+	it("a flash is not cut short by a mode switch, and ends on the mode title", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		W.Flash("Sorted")
+		F.SetSignal("challengeMode", true)
+		assert.equal("Sorted", W.frame.title.text, "the flash stays up")
+		A.Advance(1.5)
+		assert.equal("SwagBag — M+ — ilvl 279.4", W.frame.title.text)
+	end)
+
+	-- Spec 6.5 "Apply with the window open <= 5 ms" (preflight e2), over the bags of the 1,290-slot
+	-- fixture (212 bag slots; the rest are bank tabs, which a mode never collapses).
+	it("a mode switch on the big fixture re-stacks within 5 ms", function()
+		local Big = dofile("spec/fixtures/big.lua")
+		Big.Install(A)
+		W.Open()
+		assert.equal(212, #W.cells)
+		local worst = 0
+		for _, on in ipairs({ true, false, true, false }) do
+			local t0 = os.clock()
+			F.SetSignal("challengeMode", on)
+			worst = math.max(worst, (os.clock() - t0) * 1000)
+		end
+		assert.truthy(worst <= 5, ("a mode switch took %.2f ms"):format(worst))
+	end)
+end)
+
 describe("BagsWindow load order", function()
 	it("loads before Config.Init without touching Config", function()
 		local SB = Loader.New(FILES)

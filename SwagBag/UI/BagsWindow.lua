@@ -18,6 +18,7 @@ local W = {
 	sortPending = false, -- a Sort was pressed and its bag updates are still settling
 	state = nil, -- sections view: Layout state while open (nil when closed or in grid view)
 	pos = nil, -- sections view: last Layout.Position result
+	view = nil, -- sections view: the collapsed lookup W.pos was built with (what is drawn, W4-1)
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
 	tiled = {}, -- [button] = true while it shows a free tile's number (plan D19)
 	size = { 100, 100 }, -- last content width, height
@@ -83,7 +84,7 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 	if self:IsShown() then
 		return
 	end
-	W.state, W.pos, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, false, false, false
+	W.state, W.pos, W.view, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, nil, false, false, false
 	W.ClearDropGuard()
 	SB.Buttons.ReleasePlaceholders(child)
 	SB.Emit("SB_BAGS_CLOSED")
@@ -97,12 +98,17 @@ local flashing = false
 
 -- The title at rest: "SwagBag — ilvl 279.4" (the average item level the character wears,
 -- one decimal) while bags.showIlvl is on and the client answers; otherwise "SwagBag" (D18).
+-- While a focus mode is active (or modes are paused) its name comes first: "SwagBag — M+ —
+-- ilvl 279.4", "SwagBag — Paused" (AC8.5, spec 6.1).
 function W.Title()
-	if SB.Config.Get("bags.showIlvl") then
-		local ilvl = SB.Adapter.EquippedItemLevel()
-		if ilvl then
-			return L.BAGS_TITLE_ILVL:format(ilvl)
-		end
+	local mode = SB.Focus and SB.Focus.Label()
+	local ilvl = SB.Config.Get("bags.showIlvl") and SB.Adapter.EquippedItemLevel() or nil
+	if mode and ilvl then
+		return L.BAGS_TITLE_MODE_ILVL:format(mode, ilvl)
+	elseif mode then
+		return L.BAGS_TITLE_MODE:format(mode)
+	elseif ilvl then
+		return L.BAGS_TITLE_ILVL:format(ilvl)
 	end
 	return L.BAGS_TITLE
 end
@@ -229,6 +235,28 @@ function W.Collapsed()
 	ui.collapsed = type(ui.collapsed) == "table" and ui.collapsed or {}
 	ui.collapsed.bags = type(ui.collapsed.bags) == "table" and ui.collapsed.bags or {}
 	return ui.collapsed.bags
+end
+
+-- What the layout treats as collapsed: the saved set above, or while a focus mode applies the
+-- mode's set with this session's peeks and pins (Engine/Focus.lua). The saved set is never
+-- written by a mode, so leaving the mode shows the user's own state again (AC8.2). Asked fresh
+-- for every layout and re-stack, never kept across a mode change.
+function W.EffectiveCollapsed()
+	local own = W.Collapsed()
+	return SB.Focus and SB.Focus.CollapsedView(own) or own
+end
+
+-- A frozen copy of a collapsed lookup for the sections in st (the only ids Layout reads), so
+-- W.view stays what is drawn: a later header toggle or mode switch changes only the live
+-- lookup, never the copy (ruling W4-1).
+local function snapshot(st, lookup)
+	local out = {}
+	for _, id in ipairs(st.order) do
+		if lookup[id] == true then
+			out[id] = true
+		end
+	end
+	return out
 end
 
 local function columns()
@@ -477,7 +505,8 @@ local function layoutSections(bags)
 	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
 		{ columns = columns(), newRows = SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
 			family = SB.Adapter.BagFamily })
-	W.pos = SB.Layout.Position(W.state, positionOpts(), W.Collapsed())
+	W.view = snapshot(W.state, W.EffectiveCollapsed())
+	W.pos = SB.Layout.Position(W.state, positionOpts(), W.view)
 	return render()
 end
 
@@ -499,7 +528,7 @@ function W.Layout(reason)
 			B.Get(bag, slot):Hide()
 		end
 	end
-	W.records, W.state, W.pos = {}, nil, nil
+	W.records, W.state, W.pos, W.view = {}, nil, nil, nil
 	B.ReleasePlaceholders(child)
 	SB.SectionHeaders.ReleaseAll(child)
 	local width, height
@@ -545,18 +574,25 @@ local function anyBusy(keys)
 	return false
 end
 
--- Collapse/expand re-stack (spec 6.4): same cells, new section offsets.
+-- Collapse/expand re-stack (spec 6.4): same cells, new section offsets, so no button moves
+-- relative to its own header. Only the buttons whose position changes are touched. It waits
+-- while an item is on the cursor or a button that would move is under the mouse, and retries
+-- every 300 ms. A focus-mode switch comes here too: whichever state is current when the retry
+-- runs is the one drawn (a switch that waits is never queued behind another). Only a re-stack
+-- that runs switches W.view, the lookup ApplyChanges lays out with (ruling W4-1).
 function W.Restack()
 	if not W.state then
 		return true
 	end
-	local pos = SB.Layout.Position(W.state, positionOpts(), W.Collapsed())
+	local view = snapshot(W.state, W.EffectiveCollapsed())
+	local pos = SB.Layout.Position(W.state, positionOpts(), view)
 	if anyBusy(SB.Layout.Moves(W.pos, pos)) then
 		SB.Debounce("bags.restack", W.RETRY, W.Restack, "bags")
 		return false
 	end
-	W.pos = pos
-	local width, height = render()
+	local oldPos = W.pos
+	W.pos, W.view = pos, view
+	local width, height = renderMoved(oldPos, pos)
 	sizeFrame(width, height, true)
 	SB.Emit("SB_BAGS_UPDATED")
 	return true
@@ -793,13 +829,15 @@ function W.ApplyChanges(changes)
 	end
 	local newSec = st.sections[SB.Layout.NEW]
 	local overflowBefore = newSec and newSec.overflow or 0
-	local result = SB.Layout.Apply(st, changes, (busyCheck()), W.Collapsed())
+	-- The drawn view, never a fresh one: a mode switch or collapse held under the mouse must not
+	-- be drawn by loot or an emptied slot (ruling W4-1). The held Restack retry applies it.
+	local result = SB.Layout.Apply(st, changes, (busyCheck()), W.view)
 	newSec = st.sections[SB.Layout.NEW]
 	-- New's "+N more below" can change with no button moving, so the headers redraw then too.
 	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore then
 		result.rendered = true
 		local oldPos = W.pos
-		W.pos = SB.Layout.Position(st, positionOpts(), W.Collapsed())
+		W.pos = SB.Layout.Position(st, positionOpts(), W.view)
 		local width, height = renderMoved(oldPos, W.pos)
 		sizeFrame(width, height, true)
 	end
@@ -920,6 +958,17 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 		SB.Emit("SB_BAGS_UPDATED")
 	end
 end, "bags"))
+
+-- A focus mode switched, or a focus setting changed (Engine/Focus.lua): the title follows at
+-- once; the sections re-stack, held back while a button that would move is under the mouse or
+-- an item is on the cursor. In the grid view there are no sections, so only the title changes.
+-- A closed window picks the state up on its next open.
+SB.On("SB_FOCUS_CHANGED", function()
+	W.RefreshTitle()
+	if frame:IsShown() and W.state then
+		W.Restack()
+	end
+end, "bags")
 
 -- /swagbag free tile|all (Core/Commands.lua): regroup now, or once the mouse leaves the items.
 SB.On("SB_FREE_TILE_CHANGED", function()
