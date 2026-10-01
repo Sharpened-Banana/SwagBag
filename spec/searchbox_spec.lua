@@ -28,6 +28,8 @@ local function newFake()
 				return function(self) return #(self.text or "") * 5 end
 			elseif name == "GetTextInsets" then
 				return function() return 16 end
+			elseif name == "SetPoint" then
+				return function(self, ...) self.points[#self.points + 1] = { ... } end
 			elseif name == "CreateFontString" or name == "CreateTexture" then
 				return function(self)
 					local fs = newFake()
@@ -163,5 +165,18 @@ describe("SearchBox", function()
 		assert.truthy(errorLine)
 		assert.equal(true, errorLine.calls.SetWordWrap[1])
 		assert.equal(2, errorLine.calls.SetMaxLines[1])
+	end)
+
+	it("the error line is top-aligned right of the box and never stretches over the items", function()
+		local errorLine
+		for _, fs in ipairs(window.frame.created) do
+			if fs.calls.SetWordWrap then
+				errorLine = fs
+			end
+		end
+		assert.equal(2, #errorLine.points)
+		assert.same({ "TOPLEFT", Box.editBox, "TOPRIGHT", 8, 4 }, errorLine.points[1])
+		assert.same({ "TOPRIGHT", window.frame, "TOPRIGHT", -8, -26 }, errorLine.points[2])
+		assert.equal("TOP", errorLine.calls.SetJustifyV[1])
 	end)
 end)

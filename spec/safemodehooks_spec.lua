@@ -156,4 +156,78 @@ describe("SafeModeHooks", function()
 		hooks.ToggleBackpack()
 		assert.equal(1, toggles)
 	end)
+
+	-- A Toggle that really opens and closes the fake window.
+	local function realToggle()
+		SB.BagsWindow.Toggle = function()
+			toggles = toggles + 1
+			windowOpen = not windowOpen
+		end
+	end
+
+	it("ToggleBag ignores anything that is not a bag number 0-5 (no toggle, no Safe Mode)", function()
+		hooks.ToggleBag(nil)
+		hooks.ToggleBag("1")
+		hooks.ToggleBag(-1)
+		hooks.ToggleBag(6)
+		assert.equal(0, toggles)
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	it("an OpenAllBags that toggles the backpack inside still counts as the game's open", function()
+		realToggle()
+		hooks.ToggleBackpack() -- inner call, same frame
+		hooks.OpenAllBags(named("MerchantFrame"))
+		assert.equal("MerchantFrame", SB.SafeModeHooks.autoOpenedBy)
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.falsy(windowOpen)
+	end)
+
+	it("an OpenAllBags whose inner toggle closed a user-opened window opens it again, still the user's", function()
+		realToggle()
+		windowOpen = true -- opened with B earlier
+		A.Advance(1)
+		hooks.ToggleBackpack() -- inner call closes it
+		hooks.OpenAllBags(named("MerchantFrame"))
+		assert.truthy(windowOpen)
+		assert.is_nil(SB.SafeModeHooks.autoOpenedBy)
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.truthy(windowOpen)
+	end)
+
+	it("a bag key whose ToggleAllBags opens through OpenAllBags is the user's window", function()
+		realToggle()
+		hooks.OpenAllBags() -- inner call, same frame
+		hooks.ToggleAllBags()
+		assert.truthy(windowOpen)
+		assert.equal(0, toggles)
+		assert.is_nil(SB.SafeModeHooks.autoOpenedBy)
+	end)
+
+	it("a bag key whose ToggleAllBags runs OpenAllBags inside, with the window open, still closes it", function()
+		realToggle()
+		windowOpen = true
+		A.Advance(1)
+		hooks.OpenAllBags() -- inner call finds the window open and does nothing
+		hooks.ToggleAllBags()
+		assert.falsy(windowOpen)
+		assert.equal(1, toggles)
+	end)
+
+	it("a bag key whose ToggleAllBags closes through CloseAllBags() does not reopen", function()
+		realToggle()
+		windowOpen = true
+		A.Advance(1)
+		hooks.CloseAllBags() -- inner call, same frame
+		hooks.ToggleAllBags()
+		assert.falsy(windowOpen)
+		assert.equal(0, toggles)
+	end)
+
+	it("closing the window with Esc or X forgets that the game opened it", function()
+		hooks.OpenAllBags(named("MerchantFrame"))
+		assert.equal("MerchantFrame", SB.SafeModeHooks.autoOpenedBy)
+		SB.Emit("SB_BAGS_CLOSED")
+		assert.is_nil(SB.SafeModeHooks.autoOpenedBy)
+	end)
 end)

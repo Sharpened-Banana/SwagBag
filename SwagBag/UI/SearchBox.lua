@@ -19,9 +19,12 @@ box:SetAutoFocus(false)
 Box.editBox = box
 
 local errorLine = W.frame:CreateFontString(nil, "OVERLAY", "GameFontRedSmall")
+-- Two lines at most, between the box and the window's right edge, top-aligned with
+-- the box. Anchored TOPRIGHT (not RIGHT) so it never stretches down over the items.
 errorLine:SetPoint("TOPLEFT", box, "TOPRIGHT", 8, 4)
-errorLine:SetPoint("RIGHT", W.frame, "RIGHT", -8, 0)
+errorLine:SetPoint("TOPRIGHT", W.frame, "TOPRIGHT", -8, -26)
 errorLine:SetJustifyH("LEFT")
+errorLine:SetJustifyV("TOP")
 errorLine:SetWordWrap(true)
 if errorLine.SetMaxLines then
 	errorLine:SetMaxLines(2)
