@@ -14,7 +14,7 @@
 -- which re-draws the open windows (spec AC9.3).
 -- /swagbag overlays also switches the item level in the bags window's title (bags.showIlvl).
 --   Overlays.Apply(button, record, bag)   record nil = empty slot
---   Overlays.RefreshAll()                 re-draw the open bags window's buttons
+--   Overlays.RefreshAll()                 re-draw every open window's buttons
 local _, SB = ...
 
 local L = SB.L
@@ -142,16 +142,22 @@ function Ov.Apply(button, record, bag)
 	show(r.reagent, reagentEmpty)
 end
 
--- Re-draw the buttons of the open bags window (equipment or settings changed).
+-- Re-draw the buttons of every open window (equipment or settings changed).
 function Ov.RefreshAll()
 	local function each(fn)
 		fn(function(button, record, bag)
 			Ov.Apply(button, record, bag)
 		end)
 	end
-	local bags = SB.BagsWindow
+	local bags, bank, guild = SB.BagsWindow, SB.BankWindow, SB.GuildBankWindow
 	if bags and bags.IsOpen() then
 		each(bags.ForEachSlot)
+	end
+	if bank and bank.IsOpen() then
+		each(bank.view.ForEachSlot)
+	end
+	if guild and guild.IsOpen() then
+		each(guild.view.ForEachSlot)
 	end
 end
 

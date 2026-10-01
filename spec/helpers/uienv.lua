@@ -13,6 +13,7 @@ Env.ENGINE = {
 	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
 	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
+	"SwagBag/Engine/OverlayData.lua",
 }
 
 -- SetItemButton* record what they were given on the fake button.
@@ -44,7 +45,7 @@ function Env.LoadBank(SB)
 		Env.FakeBags(SB)
 	end
 	for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/SearchBox.lua",
-		"SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua" }) do
+		"SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua", "SwagBag/UI/Overlays.lua" }) do
 		Loader.LoadFile(SB, path)
 	end
 	return SB.BankWindow
@@ -57,7 +58,7 @@ function Env.LoadGuild(SB)
 	end
 	for _, path in ipairs({ "SwagBag/Engine/Snapshots.lua", "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua",
 		"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/GuildButtons.lua",
-		"SwagBag/UI/GuildBankWindow.lua" }) do
+		"SwagBag/UI/GuildBankWindow.lua", "SwagBag/UI/Overlays.lua" }) do
 		Loader.LoadFile(SB, path)
 	end
 	return SB.GuildBankWindow

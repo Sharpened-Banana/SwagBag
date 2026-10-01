@@ -90,6 +90,12 @@ describe("BankWindow contents", function()
 		assert.equal("open", BW.view.stats.lastLayoutReason)
 	end)
 
+	it("bank items get their overlays (the BoE ring's item level and badge)", function()
+		openBank()
+		local r = SB.Overlays.regions[B.Get(12, 2)]
+		assert.same({ "285", "BoE" }, { r.topLeft.text, r.bind.text })
+	end)
+
 	-- Fix round 1: the click only relabels. Mutation: v.Relabel() -> v.Layout("target") in BW.RefreshTarget.
 	it("the group that receives deposits is tinted; a tab click moves the highlight to the other group", function()
 		openBank()

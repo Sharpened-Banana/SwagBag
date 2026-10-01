@@ -436,7 +436,11 @@ local function describe(bag, slot)
 	if button then
 		SB.GuildButtons.Paint(button, info)
 	end
-	return info and SB.Items.DescribeLink(info, bag, slot, tab) or nil
+	local record = info and SB.Items.DescribeLink(info, bag, slot, tab) or nil
+	if SB.Overlays then
+		SB.Overlays.Apply(button, record, bag)
+	end
+	return record
 end
 
 local searchBox
@@ -558,7 +562,11 @@ function GW.Refresh()
 						B.Paint(button, b)
 					end
 					if GW.view.IsOpen() then
-						GW.view.SetRecord(bag, slot, b and SB.Items.DescribeLink(b, bag, slot, tab) or nil)
+						local record = b and SB.Items.DescribeLink(b, bag, slot, tab) or nil
+						GW.view.SetRecord(bag, slot, record)
+						if SB.Overlays then
+							SB.Overlays.Apply(button, record, bag)
+						end
 					end
 					if (a and a.itemID) ~= (b and b.itemID) then
 						byTab[tab] = byTab[tab] or {}

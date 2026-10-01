@@ -354,6 +354,13 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal(header("tab1:new").points[1][5] - 20, at(button(1, 7))[2], "the deposit is first in New")
 	end)
 
+	it("guild items get their overlays (the BoE ring's item level and badge)", function()
+		openVault()
+		answerQueries()
+		local r = SB.Overlays.regions[button(2, 1)]
+		assert.same({ "285", "BoE" }, { r.topLeft.text, r.bind.text })
+	end)
+
 	-- Ruling W3-10: off until check G1 proves the client withdraws from the tab it is given.
 	-- Mutation: default guildBank.withdrawAnyTab = true in Config.Defaults.
 	it("withdrawAnyTab is off by default: a right-click withdraws from the tab Blizzard has selected", function()
