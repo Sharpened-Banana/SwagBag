@@ -314,5 +314,8 @@ SB.Slash.Register("bank", L.HELP_BANK, function(arg)
 	if frame:IsShown() then
 		BW.ApplyMode()
 	end
+	if SB.Adapter.InCombat() then -- this visit may not follow it (ruling W3-1)
+		return L.BANK_MODE_SAVED_NEXT
+	end
 	return arg == "tiny" and L.BANK_MODE_TINY or L.BANK_MODE_BESIDE
 end, "bank")

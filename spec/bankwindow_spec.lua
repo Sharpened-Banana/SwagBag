@@ -25,6 +25,8 @@ end
 -- Tiny mode may only move Blizzard's frames: parent and anchors. Tabs may also be hooked.
 -- Getters (Get*, Is*) are reads. Anything else in the log is a write SwagBag must not make.
 local MOVES = { SetParent = true, ClearAllPoints = true, SetPoint = true }
+-- Fix round 1: BankFrame itself only ever gets a new parent; its anchors stay Blizzard's.
+local PARENT_ONLY = { SetParent = true }
 local HOOK = { HookScript = true }
 
 local function writesOn(f, who, allowed, out)
@@ -38,7 +40,7 @@ end
 
 local function blizzardWrites(bf)
 	local out = {}
-	writesOn(bf, "BankFrame", MOVES, out)
+	writesOn(bf, "BankFrame", PARENT_ONLY, out)
 	writesOn(bf.TabSystem, "TabSystem", MOVES, out)
 	for i, tab in ipairs(bf.TabSystem.tabs) do
 		writesOn(tab, "tab" .. i, HOOK, out)
@@ -153,11 +155,20 @@ describe("BankWindow frames (check V2)", function()
 		assert.equal(SB.L.BANK_TITLE, BW.frame.title.text)
 	end)
 
+	it("in combat /swagbag bank tiny and /swagbag bank beside say the setting is saved for the next visit", function()
+		A.combat = true
+		SB.Slash.Dispatch("bank beside")
+		SB.Slash.Dispatch("bank tiny")
+		assert.same({ SB.L.BANK_MODE_SAVED_NEXT, SB.L.BANK_MODE_SAVED_NEXT }, A.Lines())
+		assert.equal("tiny", SB.Config.Get("bank.blizzardFrame"))
+	end)
+
 	it("/swagbag bank beside in combat during a tiny visit saves the setting but keeps this visit tiny (W3-1)", function()
 		openBank()
 		A.combat = true
 		SB.Slash.Dispatch("bank beside")
 		assert.equal("beside", SB.Config.Get("bank.blizzardFrame"))
+		assert.equal(SB.L.BANK_MODE_SAVED_NEXT, A.Lines()[#A.Lines()])
 		assert.equal("tiny", BW.VisitMode())
 		assert.equal(SB.TinyHost.Parent(), bf.parent)
 		assert.same({ "TOPLEFT", UIParent, "TOPLEFT", 60, -120 }, BW.frame.points[#BW.frame.points])
@@ -228,6 +239,8 @@ describe("BankWindow frames (check V2)", function()
 		A.combat = false
 		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
 		assert.equal(UIParent, bf.parent)
+		assert.equal(bf, bf.TabSystem.parent)
+		assert.same({ { "TOPLEFT", bf, "BOTTOMLEFT", 22, 2 } }, bf.TabSystem.points)
 	end)
 
 	it("a visit that starts in combat leaves Blizzard's bank visible and puts ours beside it", function()
@@ -284,11 +297,11 @@ describe("BankWindow frames (check V2)", function()
 			"Use /swagbag bank tiny or /swagbag bank beside (now: tiny)." }, A.Lines())
 	end)
 
-	it("Esc hides only SwagBag's window; the bags window offers 'Bank still open', which reopens it", function()
+	it("the X button hides only SwagBag's window; the bags window offers 'Bank still open', which reopens it", function()
 		openBank()
 		assert.equal("SwagBagBankWindow", UISpecialFrames[1])
 		assert.falsy(BW.stillOpenButton.shown)
-		BW.frame:Hide() -- what Esc and the X button do
+		BW.frame:Hide() -- what the X button does
 		assert.equal(SB.TinyHost.Parent(), bf.parent, "the bank visit is untouched")
 		assert.truthy(BW.stillOpenButton.shown)
 		assert.equal(SB.BagsWindow.frame, BW.stillOpenButton.parent)

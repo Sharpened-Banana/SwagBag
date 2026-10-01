@@ -58,6 +58,26 @@ describe("TinyHost (spec 5.2 tiny mode)", function()
 		assert.falsy(host.IsActive())
 	end)
 
+	-- Fix round 1: Shrink saves and restores the PARENT only. Blizzard may re-anchor its own frame
+	-- while it is tiny; Restore must keep Blizzard's live anchor and write nothing but the parent.
+	-- Mutation: restore the saved points for shrunk frames too.
+	it("Restore gives a shrunk frame back its parent only and keeps Blizzard's own new anchor", function()
+		host.Shrink(panel)
+		panel:ClearAllPoints() -- Blizzard re-anchors its frame while it is tiny
+		panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 300, -50)
+		Fake.Strict(panel)
+		assert.truthy(host.Restore())
+		assert.equal(UIParent, panel.parent)
+		assert.same({ { "TOPLEFT", UIParent, "TOPLEFT", 300, -50 } }, panel.points)
+		local writes = {}
+		for _, c in ipairs(panel.log) do
+			if not (c.name:find("^Get") or c.name:find("^Is")) then
+				writes[#writes + 1] = c.name
+			end
+		end
+		assert.same({ "SetParent" }, writes)
+	end)
+
 	-- Ruling W3-3: the reverse-order Restore hides a second saved entry, so the parents alone
 	-- cannot catch it. Mutation: delete the `if not h.byFrame[frame]` guard in remember().
 	it("a second Shrink or Rehost never saves SwagBag's own parent as the original", function()

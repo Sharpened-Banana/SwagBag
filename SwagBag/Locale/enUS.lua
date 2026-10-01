@@ -167,6 +167,7 @@ L.HELP_BANK = "bank tiny|beside: hide Blizzard's bank (tiny) or show it beside S
 L.BANK_USAGE = "Use /swagbag bank tiny or /swagbag bank beside (now: %s)."
 L.BANK_MODE_TINY = "Bank: Blizzard's bank is hidden; its tabs are under SwagBag's bank window."
 L.BANK_MODE_BESIDE = "Bank: Blizzard's bank is shown, with SwagBag's bank window beside it."
+L.BANK_MODE_SAVED_NEXT = "Bank: saved; it applies on your next bank visit."
 L.SETTINGS_READONLY = "SwagBag's saved settings are read-only, so nothing was changed."
 L.REPORT_BANK = "Bank: setting %s, last visit %s, last deposit target %s"
 
