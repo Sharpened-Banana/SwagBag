@@ -35,6 +35,7 @@ Engine/Search.lua
 Engine/CategoryDefaults.lua
 Engine/Categories.lua
 Engine/Categorizer.lua
+Engine/Layout.lua
 
 # UI
 UI/ReportBox.lua
