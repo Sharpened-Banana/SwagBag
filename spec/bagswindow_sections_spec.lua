@@ -301,6 +301,43 @@ describe("BagsWindow category view", function()
 			"screen position unchanged after the scale change")
 	end)
 
+	it("a Ctrl+wheel scale change saves the new corner; a second notch from 120 % keeps it on screen", function()
+		SB.Config.Set("bags.scale", 1.2)
+		SB.Config.UI().positions.bags = { "TOPLEFT", "BOTTOMLEFT", 100, 900 }
+		W.Open()
+		IsControlKeyDown = function() return true end
+		W.scroll.scripts.OnMouseWheel(W.scroll, 1)
+		W.scroll.scripts.OnMouseWheel(W.scroll, 1)
+		assert.truthy(math.abs(SB.Config.Get("bags.scale") - 1.3) < 1e-9)
+		local saved = SB.Config.UI().positions.bags
+		assert.equal("TOPLEFT", saved[1])
+		assert.truthy(math.abs(saved[3] * 1.3 - 100 * 1.2) < 1e-6 and math.abs(saved[4] * 1.3 - 900 * 1.2) < 1e-6,
+			"the saved corner is the same screen spot, in the new scale")
+		W.Close()
+		W.Open()
+		local p = W.frame.points[1]
+		assert.same({ "TOPLEFT", "BOTTOMLEFT" }, { p[1], p[3] })
+		assert.truthy(math.abs(p[4] * 1.3 - 120) < 1e-6, "a reopen lands where the window was")
+	end)
+
+	it("while the window is dragged a scale change does not re-anchor it; the drop saves the corner", function()
+		SB.Config.UI().positions.bags = { "TOPLEFT", "BOTTOMLEFT", 100, 900 }
+		W.Open()
+		W.frame.scripts.OnDragStart(W.frame)
+		local setPoints, realSetPoint = 0, W.frame.SetPoint
+		W.frame.SetPoint = function(self, ...)
+			setPoints = setPoints + 1
+			return realSetPoint(self, ...)
+		end
+		IsControlKeyDown = function() return true end
+		W.scroll.scripts.OnMouseWheel(W.scroll, 1)
+		assert.equal(1.05, W.frame.scale)
+		assert.equal(0, setPoints, "no SetPoint during the drag")
+		W.frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 300, 700) -- where the client moved it
+		W.frame.scripts.OnDragStop(W.frame)
+		assert.same({ "TOPLEFT", "BOTTOMLEFT", 300, 700 }, SB.Config.UI().positions.bags)
+	end)
+
 	it("Ctrl+wheel scaling only resizes; it does not regroup", function()
 		W.Open()
 		IsControlKeyDown = function() return true end
@@ -403,6 +440,42 @@ describe("BagsWindow category view", function()
 		assert.same({ 4, -24 }, at(0, 10), "first cell of New")
 		assert.equal("- New (1)", header("new").text.text)
 		assert.equal(0, #B.placeholders, "it came from Free: no placeholder")
+	end)
+
+	it("a live change touches only the moved button's frame, not every slot (incremental render)", function()
+		W.Open()
+		local gets, realGet = 0, B.Get
+		B.Get = function(bag, slot)
+			gets = gets + 1
+			return realGet(bag, slot)
+		end
+		A.Clear(0, 1)
+		bagUpdate()
+		B.Get = realGet
+		assert.equal(1, #B.placeholders)
+		-- the changed slot's repaint, its overlay, the one button that moved and the free tile's number
+		assert.truthy(gets <= 5, "Buttons.Get called " .. gets .. " times for one change in 16 slots")
+		assert.equal(16, #W.cells, "search still sees every slot")
+	end)
+
+	it("a slot past the bag's size is never shown again while its removal is held back", function()
+		everyFreeSlot() -- with the free tile, bag 1's empty slots would be hidden spares anyway
+		A.SetBagSize(1, 4)
+		SB.Inventory.ScanAll()
+		W.Open()
+		A.cursor = { itemID = Fixtures.FLASK } -- holds every move
+		A.SetBagSize(1, 0)
+		bagUpdate(1)
+		assert.equal(4, #W.state.deferred, "the removals wait")
+		W.Render()
+		for slot = 1, 4 do
+			assert.falsy(B.Get(1, slot).shown, "slot " .. slot)
+		end
+		assert.equal(16, #W.cells, "only the backpack is searchable")
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.equal(0, #W.state.deferred)
+		assert.falsy(B.Get(1, 4).shown)
 	end)
 
 	it("bag items get their overlays; an empty reagent-bag slot is tinted in Free", function()

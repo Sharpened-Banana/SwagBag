@@ -83,9 +83,9 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 	if self:IsShown() then
 		return
 	end
-	W.state, W.pos, W.sortPending, W.sortSawUpdate = nil, nil, false, false
+	W.state, W.pos, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, false, false, false
 	W.ClearDropGuard()
-	SB.Buttons.ReleasePlaceholders()
+	SB.Buttons.ReleasePlaceholders(child)
 	SB.Emit("SB_BAGS_CLOSED")
 end, "bags"))
 
@@ -158,10 +158,14 @@ local function savePosition()
 	end
 end
 
+-- While the window is being dragged nothing re-anchors it (a scale change or a resize waits
+-- for the drop; the drop saves the new corner).
 frame:SetScript("OnDragStart", Guard("bags.dragStart", function()
+	W.dragging = true
 	frame:StartMoving()
 end, "bags"))
 frame:SetScript("OnDragStop", Guard("bags.dragStop", function()
+	W.dragging = false
 	frame:StopMovingOrSizing()
 	savePosition()
 end, "bags"))
@@ -176,23 +180,25 @@ local function sizeFrame(width, height, keepTop)
 	local maxHeight = UIParent:GetHeight() * W.MAX_HEIGHT_FRACTION / frame:GetScale()
 	local viewHeight = math.min(height, maxHeight - W.HEADER - W.FOOTER)
 	frame:SetSize(width + 8, viewHeight + W.HEADER + W.FOOTER)
-	if keepTop and left and top then
+	if keepTop and left and top and not W.dragging then
 		frame:ClearAllPoints()
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 	end
 	W.ClampScroll()
 end
 
--- Scaling only resizes the window; nothing is regrouped.
+-- Scaling only resizes the window; nothing is regrouped. The new corner is saved at once, so
+-- a reopen lands where the window is now (the saved offsets are in the new scale).
 function W.SetScale(scale)
 	scale = SB.GridLayout.ClampScale(scale)
 	SB.Config.Set("bags.scale", scale)
 	-- Offsets are in the frame's own scale, so keep the corner's screen position across the change.
 	local oldScale, left, top = frame:GetScale(), frame:GetLeft(), frame:GetTop()
 	frame:SetScale(scale)
-	if left and top and frame:IsShown() then
+	if left and top and frame:IsShown() and not W.dragging then
 		frame:ClearAllPoints()
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * oldScale / scale, top * oldScale / scale)
+		savePosition()
 	end
 	W.Flash(L.BAGS_SCALE:format(math.floor(scale * 100 + 0.5)))
 	if frame:IsShown() then
@@ -339,37 +345,92 @@ local function layoutGrid(bags)
 	return g.width, g.height
 end
 
--- Put buttons, placeholders and headers where W.pos says. Returns width, height.
-local function render()
-	local B, H, pos = SB.Buttons, SB.SectionHeaders, W.pos
-	W.cells = {}
-	for _, c in ipairs(pos.cells) do
-		local button = B.Get(c.bag, c.slot)
-		if button then
-			if c.shown then
-				place(button, c.x, c.y)
-				button:Show()
-			else
-				button:Hide()
-			end
-			W.cells[#W.cells + 1] = c
-		end
+-- A cell whose slot is past the bag's current size (the bag shrank and the "removed" change
+-- is still held back) is never shown.
+local function inBag(c)
+	return c.slot <= (W.sizes[c.bag] or 0)
+end
+
+local function showAt(button, c)
+	if c.shown and inBag(c) then
+		place(button, c.x, c.y)
+		button:Show()
+	else
+		button:Hide()
 	end
-	B.ReleasePlaceholders()
+end
+
+-- Placeholders and headers (a handful) are redrawn whole; they live in this window's child,
+-- so nothing another window drew is released.
+local function renderExtras(pos)
+	local B, H = SB.Buttons, SB.SectionHeaders
+	B.ReleasePlaceholders(child)
 	for _, p in ipairs(pos.placeholders) do
 		if p.shown then
 			B.AcquirePlaceholder(child, p.icon, W.SLOT, p.x, p.y)
 		end
 	end
-	H.ReleaseAll()
+	H.ReleaseAll(child)
 	for _, h in ipairs(pos.headers) do
 		H.Acquire(child, h.id, H.Label(SB.Categories.Name(h.id), h.count, h.collapsed, h.overflow), W.PAD, h.y,
 			pos.width - 2 * W.PAD)
 	end
+end
+
+local function cellsOf(pos)
+	local cells = {}
+	for _, c in ipairs(pos.cells) do
+		if inBag(c) then
+			cells[#cells + 1] = c
+		end
+	end
+	return cells
+end
+
+-- Put buttons, placeholders and headers where W.pos says. Returns width, height.
+local function render()
+	local B, pos = SB.Buttons, W.pos
+	W.cells = {}
+	for _, c in ipairs(pos.cells) do
+		local button = B.Get(c.bag, c.slot)
+		if button then
+			showAt(button, c)
+			if inBag(c) then
+				W.cells[#W.cells + 1] = c
+			end
+		end
+	end
+	renderExtras(pos)
 	paintTiles(pos)
 	return pos.width, pos.height
 end
 W.Render = render
+
+-- After Layout.Apply only the buttons whose cell changed are touched (Layout.Moves), plus the
+-- placeholders, the headers and the free tiles' numbers: a few frame calls however many slots
+-- the window holds (spec 9).
+local function renderMoved(oldPos, newPos)
+	local B = SB.Buttons
+	for _, key in ipairs(SB.Layout.Moves(oldPos, newPos)) do
+		local c = newPos.byKey[key]
+		local button = B.Get(c.bag, c.slot)
+		if button then
+			showAt(button, c)
+		end
+	end
+	for key, c in pairs(oldPos.byKey) do
+		if not newPos.byKey[key] then -- a removed slot (the bag shrank)
+			local button = B.Get(c.bag, c.slot)
+			if button then
+				button:Hide()
+			end
+		end
+	end
+	W.cells = cellsOf(newPos)
+	renderExtras(newPos)
+	paintTiles(newPos)
+	return newPos.width, newPos.height
+end
 
 local function layoutSections(bags)
 	local A, B = SB.Adapter, SB.Buttons
@@ -409,8 +470,8 @@ function W.Layout(reason)
 		end
 	end
 	W.records, W.state, W.pos = {}, nil, nil
-	B.ReleasePlaceholders()
-	SB.SectionHeaders.ReleaseAll()
+	B.ReleasePlaceholders(child)
+	SB.SectionHeaders.ReleaseAll(child)
 	local width, height
 	if W.View() == "grid" then
 		width, height = layoutGrid(bags)
@@ -693,8 +754,9 @@ function W.ApplyChanges(changes)
 	-- New's "+N more below" can change with no button moving, so the headers redraw then too.
 	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore then
 		result.rendered = true
+		local oldPos = W.pos
 		W.pos = SB.Layout.Position(st, positionOpts(), W.Collapsed())
-		local width, height = render()
+		local width, height = renderMoved(oldPos, W.pos)
 		sizeFrame(width, height, true)
 	end
 	if result.deferred > 0 then
@@ -800,13 +862,14 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 			end
 		end
 	end
-	if W.state then
-		-- Repaint tiles: a held drop picked back up shows its number again at once (Paint hides
-		-- the number on a filled button but never restores it).
-		paintTiles(W.pos)
-	end
+	local applied
 	if W.state and (#moves > 0 or #W.state.deferred > 0) then
-		W.ApplyChanges(moves)
+		applied = W.ApplyChanges(moves)
+	end
+	if W.state and not (applied and applied.rendered) then
+		-- Repaint tiles: a held drop picked back up shows its number again at once (Paint hides
+		-- the number on a filled button but never restores it). A redraw already did it.
+		paintTiles(W.pos)
 	end
 	if touched then
 		SB.Emit("SB_BAGS_UPDATED")

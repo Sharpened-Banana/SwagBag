@@ -26,10 +26,20 @@ local function kindOf(bag)
 end
 Buttons.KindOf = kindOf
 
--- The bags window registers its scroll child here at load time. Bank kinds get a
--- hidden holder frame until the bank window exists (week 3).
+-- Each window registers its scroll child here at load time ("bags"; "bank" and "warband"
+-- share the bank window's). A kind without a window gets a hidden holder frame. Bag frames
+-- made before the call move to the new parent, out of combat; only the bag frames move,
+-- their item buttons stay parented to them (spec 4.1).
 function Buttons.SetParentFor(kind, frame)
 	Buttons.parents[kind] = frame
+	SB.OutOfCombat(function()
+		for bag, f in pairs(Buttons.frames) do
+			if kindOf(bag) == kind and f:GetParent() ~= frame then
+				f:SetParent(frame)
+				f:SetAllPoints(frame)
+			end
+		end
+	end, "buttons.parent." .. kind, "bags")
 end
 
 local function parentFor(kind)
@@ -81,11 +91,18 @@ local function createButton(bag, slot)
 	return b
 end
 
--- Ensure `bag` has at least n buttons. In combat the growth is queued (policy).
+-- Ensure `bag` has at least n buttons. In combat the growth is queued (policy); several
+-- requests for one bag during combat keep the largest.
+Buttons.pendingGrow = {} -- [bag] = largest size asked for during combat
 function Buttons.EnsureCapacity(bag, n)
 	if SB.Adapter.InCombat() then
+		Buttons.pendingGrow[bag] = math.max(Buttons.pendingGrow[bag] or 0, n)
 		SB.OutOfCombat(function()
-			Buttons.EnsureCapacity(bag, n)
+			local want = Buttons.pendingGrow[bag]
+			Buttons.pendingGrow[bag] = nil
+			if want then
+				Buttons.EnsureCapacity(bag, want)
+			end
 		end, "buttons.grow." .. bag, "bags")
 		return 0
 	end
@@ -113,14 +130,24 @@ function Buttons.CreateAll()
 	for _, bag in ipairs(A.GetBagIDs("bags")) do
 		Buttons.EnsureCapacity(bag, math.max(A.NumSlots(bag), A.BAG_CAPACITY))
 	end
-	for _, kind in ipairs({ "bank", "warband" }) do
-		for _, bag in ipairs(A.GetBagIDs(kind)) do
-			Buttons.EnsureCapacity(bag, math.max(A.NumSlots(bag), A.BANK_TAB_CAPACITY))
-		end
-	end
+	Buttons.EnsureBankTabs()
 	Buttons.stats.createMs = A.ProfileMs() - t0
 	Buttons.created = true
 	SB.Emit("SB_BUTTONS_READY")
+end
+
+-- Buttons for every purchased bank tab: max(size, 98) per tab (spec 4.1). Runs at login and
+-- whenever the bank opens, so a tab bought after login gets its buttons too.
+function Buttons.EnsureBankTabs()
+	local A = SB.Adapter
+	for _, kind in ipairs({ "bank", "warband" }) do
+		for _, bag in ipairs(A.GetBagIDs(kind)) do
+			local want = math.max(A.NumSlots(bag), A.BANK_TAB_CAPACITY)
+			if Buttons.Count(bag) < want then
+				Buttons.EnsureCapacity(bag, want)
+			end
+		end
+	end
 end
 
 function Buttons.Get(bag, slot)
@@ -187,6 +214,7 @@ end
 -- Plain frames, so creating one in combat is allowed (ruling P9).
 ---------------------------------------------------------------------------
 Buttons.placeholderPool, Buttons.placeholdersInUse = {}, {}
+local placeholderParent = {} -- [placeholder] = the frame it was acquired in
 Buttons.PLACEHOLDER_ALPHA = 0.5
 
 local function placeholderTip(self)
@@ -223,6 +251,7 @@ end
 function Buttons.AcquirePlaceholder(parent, icon, size, x, y)
 	local p = table.remove(Buttons.placeholderPool) or createPlaceholder(parent)
 	p:SetParent(parent)
+	placeholderParent[p] = parent
 	p:SetSize(size, size)
 	p.icon:SetTexture(icon)
 	p:ClearAllPoints()
@@ -232,15 +261,32 @@ function Buttons.AcquirePlaceholder(parent, icon, size, x, y)
 	return p
 end
 
-function Buttons.ReleasePlaceholders()
+-- Release the placeholders inside parent; every placeholder when parent is nil. Windows pass
+-- their own scroll child, so the bags window never releases the bank window's placeholders.
+function Buttons.ReleasePlaceholders(parent)
 	for i = #Buttons.placeholdersInUse, 1, -1 do
 		local p = Buttons.placeholdersInUse[i]
-		p:Hide()
-		Buttons.placeholdersInUse[i] = nil
-		Buttons.placeholderPool[#Buttons.placeholderPool + 1] = p
+		if parent == nil or placeholderParent[p] == parent then
+			p:Hide()
+			placeholderParent[p] = nil
+			table.remove(Buttons.placeholdersInUse, i)
+			Buttons.placeholderPool[#Buttons.placeholderPool + 1] = p
+		end
 	end
 end
 
 SB.On("SB_LOGIN", function()
 	Buttons.CreateAll()
 end, "bags")
+
+-- A login that failed half-way switched the bags to Safe Mode; switching it off tries again
+-- (EnsureCapacity carries on where it stopped).
+SB.On("SB_SAFEMODE_CHANGED", function(_, window, on)
+	if window == "bags" and not on and not Buttons.created then
+		Buttons.CreateAll()
+	end
+end, "bags")
+
+SB.On("BANKFRAME_OPENED", function()
+	Buttons.EnsureBankTabs()
+end, "bank")
