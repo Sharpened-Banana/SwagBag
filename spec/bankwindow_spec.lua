@@ -144,8 +144,9 @@ describe("BankWindow frames (check V2)", function()
 	-- only restores our own position. Mutation: delete the host.IsActive() branch in BW.ApplyMode.
 	it("'Bank still open' in combat while Blizzard's bank is tiny stays tiny (ruling W3-1)", function()
 		openBank()
-		BW.frame:Hide()
 		A.combat = true
+		BW.frame:Hide() -- in combat the restore waits, so Blizzard's bank is still tiny
+		assert.equal(SB.TinyHost.Parent(), bf.parent)
 		Fake.Fire(BW.stillOpenButton, "OnClick")
 		assert.truthy(BW.IsOpen())
 		assert.equal("tiny", BW.VisitMode())
@@ -302,15 +303,34 @@ describe("BankWindow frames (check V2)", function()
 		assert.equal("SwagBagBankWindow", UISpecialFrames[1])
 		assert.falsy(BW.stillOpenButton.shown)
 		BW.frame:Hide() -- what the X button does
-		assert.equal(SB.TinyHost.Parent(), bf.parent, "the bank visit is untouched")
+		assert.equal(UIParent, bf.parent, "Blizzard's bank is visible again: no invisible deposit target")
+		assert.equal(true, bf.shown, "the bank visit is still open")
 		assert.truthy(BW.stillOpenButton.shown)
 		assert.equal(SB.BagsWindow.frame, BW.stillOpenButton.parent)
 		Fake.Fire(BW.stillOpenButton, "OnClick")
 		assert.truthy(BW.IsOpen())
+		assert.equal(SB.TinyHost.Parent(), bf.parent, "tiny again")
 		assert.falsy(BW.stillOpenButton.shown)
 		BW.frame:Hide()
 		closeBank()
 		assert.falsy(BW.stillOpenButton.shown, "the visit is over")
+	end)
+
+	-- Fix round 1: hiding SwagBag's bank window mid-visit must not leave an invisible bank that
+	-- takes bag right-clicks. Mutation: delete the host.Restore() in the OnHide handler.
+	it("hiding SwagBag's bank window mid-visit makes Blizzard's bank visible again (now, or when combat ends)", function()
+		openBank()
+		BW.frame:Hide()
+		assert.equal(UIParent, bf.parent)
+		assert.equal(bf, bf.TabSystem.parent)
+		assert.same({ { "TOPLEFT", bf, "BOTTOMLEFT", 22, 2 } }, bf.TabSystem.points)
+		Fake.Fire(BW.stillOpenButton, "OnClick")
+		A.combat = true
+		BW.frame:Hide()
+		assert.equal(SB.TinyHost.Parent(), bf.parent, "parents never change in combat")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal(UIParent, bf.parent)
 	end)
 
 	it("OnHide while the window is still shown (Alt+Z hiding UIParent) does nothing", function()

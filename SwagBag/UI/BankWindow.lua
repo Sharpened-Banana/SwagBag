@@ -9,8 +9,8 @@
 -- (/swagbag bank tiny|beside).
 -- Read only (spec 5.2, 5.3): the deposit target is whatever bank type Blizzard has selected
 -- (Adapter.ActiveBankType); SwagBag shows it and never sets it. Esc or the X hides SwagBag's
--- window and nothing else (spec 5.6); if the bank is still open, the bags window shows
--- "Bank still open", which only shows this window again.
+-- window (spec 5.6) and gives Blizzard's bank back its parent, so it is visible while the
+-- visit lasts; the bags window shows "Bank still open", which shows this window again.
 local _, SB = ...
 
 local L = SB.L
@@ -251,11 +251,15 @@ function BW.Close()
 	frame:Hide()
 end
 
--- Esc, the X button and BW.Close() hide only SwagBag's window. The OnHide guard comes first:
+-- Esc, the X button and BW.Close() hide only SwagBag's window; during a visit Blizzard's bank is
+-- then made visible again (no invisible bank taking bag right-clicks). The OnHide guard comes first:
 -- Alt+Z hides UIParent, which fires OnHide while the frame itself is still shown.
 frame:SetScript("OnHide", Guard("bank.hide", function(self)
 	if self:IsShown() then
 		return
+	end
+	if BW.interaction then -- the visit is still open: make Blizzard's bank visible again
+		host.Restore()
 	end
 	SB.Emit("SB_BANK_CLOSED")
 	BW.RefreshStillOpen()

@@ -326,19 +326,46 @@ describe("GuildBankWindow (check G1)", function()
 		assert.same({ 1 }, A.guild.queried)
 	end)
 
-	it("a right-click withdraws to the bags, from any tab by default", function()
+	-- Ruling W3-10: off until check G1 proves the client withdraws from the tab it is given.
+	-- Mutation: default guildBank.withdrawAnyTab = true in Config.Defaults.
+	it("withdrawAnyTab is off by default: a right-click withdraws from the tab Blizzard has selected", function()
+		assert.equal(false, SB.Config.Get("guildBank.withdrawAnyTab"))
+		openVault()
+		answerQueries()
+		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		assert.same({ { 1, 1 } }, A.guild.withdrawn)
+		assert.same({}, A.Lines())
+	end)
+
+	it("/swagbag guild anytab on: a right-click withdraws from any tab; off turns it back off", function()
 		A.guild.tabs[2].withdrawals = 3
+		SB.Slash.Dispatch("guild anytab on")
+		assert.equal(true, SB.Config.Get("guildBank.withdrawAnyTab"))
 		openVault()
 		answerQueries()
 		Fake.Fire(button(1, 1), "OnClick", "RightButton")
 		Fake.Fire(button(2, 1), "OnClick", "RightButton")
 		assert.same({ { 1, 1 }, { 2, 1 } }, A.guild.withdrawn)
-		assert.same({}, A.Lines())
+		SB.Slash.Dispatch("guild anytab off")
+		assert.equal(false, SB.Config.Get("guildBank.withdrawAnyTab"))
+		SB.Slash.Dispatch("guild anytab maybe")
+		assert.same({ SB.L.GUILD_ANYTAB_ON, SB.L.GUILD_ANYTAB_OFF,
+			"Use /swagbag guild anytab on or /swagbag guild anytab off (now: off)." }, A.Lines())
+	end)
+
+	-- Mutation: delete the A.GuildWithdraw / A.GuildPickup result checks in ClickSlot and DragSlot.
+	it("a withdraw or pickup the client refuses says so in chat (P2)", function()
+		openVault()
+		answerQueries()
+		A.GuildWithdraw = function() return false end
+		A.GuildPickup = function() return false end
+		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		Fake.Fire(button(1, 2), "OnDragStart")
+		assert.same({ SB.L.GUILD_ACTION_FAILED, SB.L.GUILD_ACTION_FAILED }, A.Lines())
 	end)
 
 	it("with withdrawAnyTab off, a right-click in a tab Blizzard has not selected says which tab to click", function()
 		A.guild.tabs[2].withdrawals = 3
-		SB.Config.Set("guildBank.withdrawAnyTab", false)
 		openVault()
 		answerQueries()
 		Fake.Fire(button(2, 1), "OnClick", "RightButton")
@@ -433,12 +460,41 @@ describe("GuildBankWindow (check G1)", function()
 		assert.same({ { "TOPLEFT", tabs[1], "BOTTOMLEFT", 0, -17 } }, tabs[2].points)
 	end)
 
-	it("Esc hides only SwagBag's window; Blizzard's frame keeps the visit open", function()
+	-- Fix round 1: a hidden SwagBag window must not leave an invisible open vault that eats bag
+	-- right-clicks. Mutation: delete the host.Restore() in the OnHide handler.
+	it("Esc or the X hides SwagBag's window and makes Blizzard's guild bank visible again (visit still open)", function()
 		openVault()
 		assert.equal("SwagBagGuildBankWindow", UISpecialFrames[1])
 		GW.frame:Hide()
-		assert.equal(SB.TinyHost.Parent(), gf.parent)
+		assert.equal(UIParent, gf.parent)
+		assert.equal(gf, tabs[1].parent)
+		assert.equal(true, gf.shown)
 		assert.same({}, gf.calls)
+		Fake.Fire(gf, "OnShow") -- a later signal for the same visit does not shrink it again
+		assert.equal(UIParent, gf.parent)
+		assert.falsy(GW.IsOpen())
+	end)
+
+	it("hiding SwagBag's window in combat makes Blizzard's guild bank visible as soon as combat ends", function()
+		openVault()
+		A.combat = true
+		GW.frame:Hide()
+		assert.equal(SB.TinyHost.Parent(), gf.parent, "parents never change in combat")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal(UIParent, gf.parent)
+	end)
+
+	-- Ruling W3-3: Safe Mode for the bank keeps every guild visit Blizzard's, whichever signal
+	-- arrives first. Mutation: delete the frame:IsShown() / Safe Mode guard at the top of GW.ApplyMode.
+	it("Safe Mode on before the visit: OnShow and the vault event leave Blizzard's guild bank as it is", function()
+		SB.SafeMode.Enable("bank", "manual")
+		Fake.Fire(gf, "OnShow")
+		openVault()
+		SB.eventFrame:Fire("GUILDBANKFRAME_OPENED")
+		assert.falsy(GW.IsOpen())
+		assert.equal(UIParent, gf.parent)
+		assert.equal(gf, tabs[1].parent)
 	end)
 
 	it("works when Blizzard's guild bank UI loads on demand during the visit", function()
