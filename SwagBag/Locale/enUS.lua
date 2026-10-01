@@ -257,6 +257,17 @@ L.FREE_USAGE = "Use /swagbag free tile or /swagbag free all (now: %s)."
 L.FREE_MODE_TILE = "Free slots now show as one slot with the number of free slots."
 L.FREE_MODE_ALL = "Every free slot is shown again."
 
+-- Focus modes (spec 6)
+L.MODE_MPLUS = "M+"
+L.MODE_RAID = "Raid"
+L.MODE_DELVES = "Delves"
+L.MODE_GATHERING = "Gathering"
+L.MODE_FISHING = "Fishing"
+L.MODE_MARKET = "AH/Vendor/Bank"
+L.FOCUS_PAUSED = "Paused"
+L.FOCUS_NONE = "no mode"
+L.FOCUS_ANNOUNCE = "Focus mode: %s"
+
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
 L.V1_SHOWN = "V1 strip shown with %d usable items. Enter combat, right-click them 3 times, then /swagbag report."
