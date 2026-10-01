@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** By the end of week 3 the user banks, uses the warband bank and the guild bank through SwagBag every day: one bank window with the character bank and the warband bank stacked, a full guild bank window, item overlays with an upgrade arrow, per-category gold totals from Auctionator, and bank/guild snapshots saved on every visit. The two first-day checks (V2, G1) run on Oct 15, and each has a fallback that is one setting.
+**Goal:** By the end of week 3 the user banks, uses the warband bank and the guild bank through SwagBag every day: one bank window with the character bank and the warband bank stacked, a full guild bank window, item overlays with an upgrade arrow (on the bags from day 2), the average equipped item level in the bags title, per-category gold totals from Auctionator, and bank/guild snapshots saved on every visit. The two first-day checks (V2, G1) run on Oct 15, and each has a fallback that is one setting.
 
-**Architecture:** Blizzard's bank and guild bank frames stay open the whole visit. They are parented to an invisible 0.001-scale frame (`UI/TinyHost.lua`), and their real tab buttons are moved onto SwagBag's windows. SwagBag only reads which tab is selected. The bank and guild bank contents are drawn by a new multi-group view, `UI/GroupView.lua`: a stack of groups (character bank and warband bank, or one group per guild tab), each with its own week-2 `Layout` state, the same hover guard, and redraws that touch only the buttons that moved. Pure engine modules add snapshots (`Engine/Snapshots.lua`), prices (`Engine/Prices.lua` plus `Providers/Auctionator.lua`) and overlay data with the upgrade arrow (`Engine/OverlayData.lua`). `UI/Overlays.lua` draws them on bag, bank and guild buttons.
+**Architecture:** Blizzard's bank and guild bank frames stay open the whole visit. They are parented to an invisible 0.001-scale frame (`UI/TinyHost.lua`), and their real tab buttons are moved onto SwagBag's windows. SwagBag only reads which tab is selected. The bank and guild bank contents are drawn by a new multi-group view, `UI/GroupView.lua`: a stack of groups (character bank and warband bank, or one group per guild tab), each with its own week-2 `Layout` state, the same hover guard, and redraws that touch only the buttons that moved. Pure engine modules add snapshots (`Engine/Snapshots.lua`), prices (`Engine/Prices.lua` plus `Providers/Auctionator.lua`) and overlay data with the upgrade arrow (`Engine/OverlayData.lua`). `UI/Overlays.lua` draws them on bag buttons first (Task 4), then on bank and guild buttons (Task 11). The bags window's title shows the average equipped item level (`SwagBag — ilvl 279.4`).
 
 **Tech Stack:** Lua 5.1 (WoW Retail 12.1.x, Interface 120100/120105). LuaJIT 2.1 for tests. The in-repo runner `spec/runner.lua`. luacheck. bash `scripts/check.sh`. git.
 
@@ -18,7 +18,7 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 
 **Branch:** `week3-banks`. The controller creates it before Task 1. No task creates or switches branches.
 
-**The code on `main` (commit `7beafdc`, 427 tests) is the source of truth.** Every interface below was read from the merged week-2 code:
+**The code on `main` (commit `5be2c2b`, 427 tests; it only adds this plan on top of week 2's `7beafdc`) is the source of truth.** Every interface below was read from the merged week-2 code:
 - `Buttons.Get/Count/EnsureCapacity/Place/Paint/SetDimmed/AcquirePlaceholder/ReleasePlaceholders/KindOf/SetParentFor/CreateAll` and `Buttons.created`.
 - `SectionHeaders.Acquire(parent, id, label, x, y, width)` and `ReleaseAll()`, whose clicks call the module-level `onClick`/`onDrop` (the bags window's).
 - `BagsWindow`: `busyCheck`, `sizeFrame(width, height, keepTop)`, `Sort`/`Reflow`/`RequestLayout`/`ApplyChanges`/`DropOnSection`/`ForEachSlot`, and `W.records[bag][slot]`.
@@ -59,11 +59,11 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 
 ## Review Focus
 
-1. **The bags window and the bank window open at the same time.** At a banker both are open, and the bags window redraws often (deposits, Reflow). Expected: a redraw of one window never takes the other window's section headers or placeholders. Week 2's pools released *every* header and placeholder. Pinned by Task 3 (`buttons_spec` "ReleasePlaceholders(parent) releases only the placeholders inside that parent", "ReleaseAll(parent) releases only that window's headers…") and Task 6 (`bankwindow_groups_spec` "a bags redraw (Reflow, a bag change) never takes the bank window's headers or placeholders").
-2. **The bank or guild vault closing in combat, the player logging out with the bank open, or Safe Mode switching on mid-visit.** Expected: Blizzard's frames get their parents and anchors back exactly. In combat they get them back the moment combat ends. Nothing stays invisible. Pinned by Task 1 (`tinyhost_spec` "Restore in combat waits for combat to end…", `bankwindow_spec` "a bank closed in combat is put back as soon as combat ends", "logging out during a visit puts Blizzard's bank back (spec 8.6)", "Safe Mode for the bank…") and Task 8 (`guildbank_spec` "closing the vault puts Blizzard's frame and its tabs back exactly…").
-3. **Guild bank tab answers that arrive late, out of order, or never.** The client answers `QueryGuildBankTab` one tab at a time, and reading a tab before its answer may return nothing. Expected: a tab never looks empty because its answer is still on the way; an unanswered tab is asked once more; a reopen shows the session's cached contents at once. Pinned by Task 8 (`guildbank_spec` "a reopen shows the session's cached contents at once; a tab whose answer is on its way is not read", "a query that gets no answer moves on after QUERY_GAP and is asked once more at the end").
-4. **Items moving in the upper bank group while the mouse rests on the lower group.** A withdrawal adds a row to the character bank's Free section, which pushes the warband group down. Expected: the push waits until the mouse leaves the pushed buttons, and no button ever moves under the mouse. Pinned by Task 5 (`groupview_spec` "a group that grows a row pushes the groups below, but not while one of them is under the mouse", and the randomized "never moves a hovered button, and after each drain every category cell holds its own item").
-5. **Damaged or oversized saved snapshot data** (a hand-edited `chars` that is a string, a warband entry that is a number, many alts' banks). Expected: saving never errors; damaged parts are replaced; over 1.5 MB the bank snapshots of the characters seen longest ago are dropped first (never the current character's), with one chat line. Pinned by Task 7 (`snapshots_spec` "damaged saved snapshot tables never break a save", "over 1.5 MB, other characters' bank snapshots go first, seen longest ago first, ties by name").
+1. **The bags window and the bank window open at the same time.** At a banker both are open, and the bags window redraws often (deposits, Reflow). Expected: a redraw of one window never takes the other window's section headers or placeholders. Week 2's pools released *every* header and placeholder. Pinned by Task 5 (`buttons_spec` "ReleasePlaceholders(parent) releases only the placeholders inside that parent", "ReleaseAll(parent) releases only that window's headers…") and Task 8 (`bankwindow_groups_spec` "a bags redraw (Reflow, a bag change) never takes the bank window's headers or placeholders").
+2. **The bank or guild vault closing in combat, the player logging out with the bank open, or Safe Mode switching on mid-visit.** Expected: Blizzard's frames get their parents and anchors back exactly. In combat they get them back the moment combat ends. Nothing stays invisible. Pinned by Task 1 (`tinyhost_spec` "Restore in combat waits for combat to end…", `bankwindow_spec` "a bank closed in combat is put back as soon as combat ends", "logging out during a visit puts Blizzard's bank back (spec 8.6)", "Safe Mode for the bank…") and Task 10 (`guildbank_spec` "closing the vault puts Blizzard's frame and its tabs back exactly…").
+3. **Guild bank tab answers that arrive late, out of order, or never.** The client answers `QueryGuildBankTab` one tab at a time, and reading a tab before its answer may return nothing. Expected: a tab never looks empty because its answer is still on the way; an unanswered tab is asked once more; a reopen shows the session's cached contents at once. Pinned by Task 10 (`guildbank_spec` "a reopen shows the session's cached contents at once; a tab whose answer is on its way is not read", "a query that gets no answer moves on after QUERY_GAP and is asked once more at the end").
+4. **Items moving in the upper bank group while the mouse rests on the lower group.** A withdrawal adds a row to the character bank's Free section, which pushes the warband group down. Expected: the push waits until the mouse leaves the pushed buttons, and no button ever moves under the mouse. Pinned by Task 7 (`groupview_spec` "a group that grows a row pushes the groups below, but not while one of them is under the mouse", and the randomized "never moves a hovered button, and after each drain every category cell holds its own item").
+5. **Damaged or oversized saved snapshot data** (a hand-edited `chars` that is a string, a warband entry that is a number, many alts' banks). Expected: saving never errors; damaged parts are replaced; over 1.5 MB the bank snapshots of the characters seen longest ago are dropped first (never the current character's), with one chat line. Pinned by Task 9 (`snapshots_spec` "damaged saved snapshot tables never break a save", "over 1.5 MB, other characters' bank snapshots go first, seen longest ago first, ties by name").
 
 ## Decisions and deviations from the spec (read before Task 1)
 
@@ -86,6 +86,7 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 | D15 | — (not in spec) | A `Blizzard bank` button shows Blizzard's bank for this visit only. | In tiny mode, tab purchase (`PurchaseBankTab` stays Blizzard's) and warband gold live in Blizzard's hidden frame. |
 | D16 | §7.3 numeric `gold`/`value` | Registered now (`value>100`), volatile, from `Prices`. | The spec §7.4 example `value>100 & tradegoods` works this week. |
 | D17 | F16 "Tab contents load on demand" | A tab read for the first time in the session is laid out in full (held back while the mouse is over the items). Later changes follow spec §4.3 (placeholder, New, Free). | Otherwise a tab's first answer would put every item in New. |
+| D18 | §12.2 week 3 order (overlays after the banks); title not in spec | **The user's decisions of 2026-10-02.** (1) Overlays move to the front: overlay data and the arrow (Task 3) and overlays on the bags (Task 4) come right after V2 and G1; bank and guild buttons get theirs in Task 11, once those windows have contents. (2) New: the bags window's title shows the character's average **equipped** item level with one decimal, `SwagBag — ilvl 279.4`, from `GetAverageItemLevel()`'s second value (feature-detected; plain `SwagBag` without it, no error). It is read on open, `PLAYER_EQUIPMENT_CHANGED` and `PLAYER_AVG_ITEM_LEVEL_UPDATE`; a title flash (`SwagBag 105%`, `Regrouped`, …) is never cut short, and the item-level title comes back after it. Setting `bags.showIlvl` (default on), switched with `/swagbag overlays title on|off`. | The user wants overlays and the item level on the bags within days. The overlays need only the bags' item records, so nothing from Tasks 5–12 moves with them, and prices (Task 12) are never read by an overlay. |
 
 ---
 
@@ -107,7 +108,7 @@ SwagBag/Engine/OverlayData.lua       NEW  record -> overlay data; the AC9.3 upgr
 SwagBag/Engine/Crests.lua            NEW  crest data (spec 7.3, 13.2 item 4)
 SwagBag/UI/Buttons.lua               MOD  growth max-merge, CreateAll retry, SetParentFor moves bag frames, EnsureBankTabs, per-parent placeholders
 SwagBag/UI/SectionHeaders.lua        MOD  per-window owners and release; value in the label; Totals/IsVendor
-SwagBag/UI/BagsWindow.lua            MOD  incremental ApplyChanges, cells past a bag's size, scale saves position, drag guard, totals, overlays
+SwagBag/UI/BagsWindow.lua            MOD  incremental ApplyChanges, cells past a bag's size, scale saves position, drag guard, totals, overlays, item-level title
 SwagBag/UI/SearchBox.lua             REWRITE  SearchBox.New(o) factory; the bags box is built through it
 SwagBag/Engine/Search.lua            REWRITE  SearchState.New() instances; SB.Search is the bags window's
 SwagBag/Engine/Layout.lua            MOD  Position(opts.top)
@@ -115,8 +116,8 @@ SwagBag/Engine/Inventory.lua         MOD  ScanKind (no "new" marks) on BANKFRAME
 SwagBag/Engine/Items.lua             MOD  DescribeLink (guild records), track, hasNoValue
 SwagBag/Engine/Keywords.lua          MOD  value/gold, crest/upgrade currency
 SwagBag/Engine/CategoryDefaults.lua  MOD  Keystone & Crests = "keystone | crest"
-SwagBag/Core/Adapter.lua             MOD  bank, guild bank, sort bank, time/char, Auctionator, overlay reads; optional checks
-SwagBag/Core/Config.lua              MOD  bank, guildBank, prices, overlays defaults (schema stays 2)
+SwagBag/Core/Adapter.lua             MOD  bank, guild bank, sort bank, time/char, Auctionator, overlay reads, average item level; optional checks
+SwagBag/Core/Config.lua              MOD  bank, guildBank, prices, overlays, bags.showIlvl defaults (schema stays 2)
 SwagBag/Core/Report.lua              MOD  Bank, Last bank layout, Prices, Snapshots, Guild bank lines
 SwagBag/Core/Init.lua, SwagBag.toc, Locale/enUS.lua, .luacheckrc   MOD
 spec/helpers/fakeframe.lua, spec/helpers/uienv.lua               NEW  fake frames; shared window test set-up
@@ -129,19 +130,20 @@ spec/snapshots_spec.lua, prices_spec.lua, overlaydata_spec.lua, overlays_spec.lu
 | Day | Tasks | User in game? |
 |---|---|---|
 | Thu Oct 15 | 1, 2 | **yes, first day:** session V2 (Task 1, bank, about 10 minutes) and session G1 (Task 2, guild vault, about 10 minutes) |
-| Fri Oct 16 | 3, 4, 5 | **yes:** session S3 (Task 3, 2 minutes). **Day 2:** if V2 or G1 failed, its fallback becomes the default today (one line in `Config.Defaults`, see the session's "If it fails") |
-| Sat Oct 17 | 6, 7 | **yes:** session B1 (bank contents, sort, snapshots), about 15 minutes |
-| Sun Oct 18 | 8 | **yes:** session G2 (guild bank contents), about 10 minutes |
-| Mon Oct 19 | 9, 10, 11 | **yes:** session O1 (overlays, upgrade arrow, gold totals), about 15 minutes |
-| Tue–Wed Oct 20–21 | fixes from the user's reports | **yes:** daily bank check (5 minutes); **Week 3 exit check** on Oct 21 |
+| Fri Oct 16 | 3, 4 | **yes:** session O1 (Task 4: overlays and the item level in the title, on the bags; about 10 minutes). **Day 2:** if V2 or G1 failed, its fallback becomes the default today (one line in `Config.Defaults`, see the session's "If it fails") |
+| Sat Oct 17 | 5, 6, 7 | **yes:** session S3 (Task 5, 2 minutes) |
+| Sun Oct 18 | 8, 9 | **yes:** session B1 (Task 9: bank contents, sort, snapshots), about 15 minutes |
+| Mon Oct 19 | 10, 11 | **yes:** session G2 (Task 11: guild bank contents, overlays in the bank and guild windows), about 15 minutes |
+| Tue Oct 20 | 12 | **yes:** session P1 (Task 12: gold totals, 5 minutes); daily bank check (5 minutes) |
+| Wed Oct 21 | fixes from the user's reports | **yes:** daily bank check (5 minutes); **Week 3 exit check** |
 
-Tasks 1 and 2 come first because no in-game session has run yet: V2 and G1 are the riskiest unknowns (spec §13.1), and their fallbacks are setting switches, so a failure never blocks Tasks 3–11.
+Tasks 1 and 2 come first because no in-game session has run yet: V2 and G1 are the riskiest unknowns (spec §13.1), and their fallbacks are setting switches, so a failure never blocks Tasks 3–12. Tasks 3 and 4 come next by the user's choice (D18): overlays and the item-level title on the bags within days. They need nothing from the bank work. The bank and guild buttons get their overlays in Task 11, after both windows have contents (Tasks 8 and 10). Prices come last (Task 12); no earlier task reads a price.
 
-Cumulative `scripts/check.sh` test totals when tasks run in numeric order (verified by replaying every task's blocks from this file on a fresh clone of `main`): start 427 · T1 451 passed, 0 failed · T2 476 passed, 0 failed · T3 488 passed, 0 failed · T4 490 passed, 0 failed · T5 506 passed, 0 failed · T6 524 passed, 0 failed · T7 538 passed, 0 failed · T8 544 passed, 0 failed · T9 556 passed, 0 failed · T10 570 passed, 0 failed · T11 582 passed, 0 failed.
+Cumulative `scripts/check.sh` test totals when tasks run in numeric order (verified by replaying every task's blocks from this file on a fresh clone of `main`): start 427 · T1 451 passed, 0 failed · T2 476 passed, 0 failed · T3 490 passed, 0 failed · T4 506 passed, 0 failed · T5 518 passed, 0 failed · T6 520 passed, 0 failed · T7 536 passed, 0 failed · T8 554 passed, 0 failed · T9 568 passed, 0 failed · T10 574 passed, 0 failed · T11 578 passed, 0 failed · T12 590 passed, 0 failed.
 
 ## How the TOC grows
 
-Each task's TOC block shows exactly where its new lines go. `scripts/check.sh` prints `TOC OK (N files)`: 32 on `main`, 34 after Task 1, 36 after Tasks 2–4, 37 after Tasks 5–6, 38 after Tasks 7–8, 40 after Task 9, 42 after Task 10 and 43 after Task 11. Final order of the changed sections:
+Each task's TOC block shows exactly where its new lines go. `scripts/check.sh` prints `TOC OK (N files)`: 32 on `main`, 34 after Task 1, 36 after Task 2, 38 after Task 3, 39 after Tasks 4–6, 40 after Tasks 7–8, 41 after Tasks 9–11 and 43 after Task 12. Final order of the changed sections:
 
 ```
 # Engine
@@ -196,11 +198,11 @@ UI/DebugV1.lua
 
 Spec §5.2 and §11.3 V2: SwagBag shows the bank while Blizzard's bank frame stays open and invisible ("tiny mode"). Deposits must still land in whichever bank type Blizzard has selected, and a Hearthstone must work afterwards. Nobody has tested this in game yet. This task builds the smallest real piece that lets the user test it today:
 - `UI/TinyHost.lua`, which keeps a Blizzard frame shown at scale 0.001 and re-hosts its tab buttons;
-- the `SwagBag bank` window, still without contents (those come in Task 6), with the deposit line read from Blizzard and the `Blizzard bank` button;
+- the `SwagBag bank` window, still without contents (those come in Task 8), with the deposit line read from Blizzard and the `Blizzard bank` button;
 - the fallback setting `bank.blizzardFrame = "tiny" | "beside"` (spec §5.4, AC2.6) with `/swagbag bank tiny|beside`;
 - the "Bank still open" button on the bags window (spec §5.6).
 
-The code is not throwaway: Task 6 fills this window.
+The code is not throwaway: Task 8 fills this window.
 
 The task also adds `spec/helpers/fakeframe.lua`, a fake frame that every week-3 UI spec uses. It records shown state, parent, anchors, scripts and hooks; `Show`/`Hide` fire `OnShow`/`OnHide`; and every other method is a recorded no-op (`f.calls[name]`). That is how the tests prove "no call on BankFrame besides moving it". The version goes to 0.3.0, so the loaded line and the report show the week-3 build.
 
@@ -750,7 +752,7 @@ Expected: `6 passed, 24 failed`. `UI/TinyHost.lua` and `UI/BankWindow.lua` do no
 
 Critical tests and the mutation that must make each fail:
 - `bankwindow_spec` "opens at the banker; Blizzard's bank stays shown inside the 0.001 parent…": add `bf:Hide()` before `if host.Shrink(bf) then` in `BW.ApplyMode`.
-- `bankwindow_spec` "never writes Blizzard's bank state…": the same mutation, or any call on `BankFrame` (it is recorded in `bf.calls`).
+- `bankwindow_spec` "never writes Blizzard's bank state…": the same mutation, or a call the fake frame does not model, for example `bf:UpdateTabs()` before `if host.Shrink(bf) then` (such calls are recorded in `bf.calls`; `Show`, `SetAlpha` and the other modelled methods are not).
 - `tinyhost_spec` "Restore puts every parent and every anchor point back exactly" and `bankwindow_spec` "closing the bank puts Blizzard's bank and its tabs back exactly…": delete `restorePoints(e.frame, e.points)` in `host.Restore`.
 - `bankwindow_spec` "shows where deposits go, read from Blizzard's selected tab on the frame after a tab click": replace the `SB.Adapter.After(0, …)` in the tab hook with a direct `BW.RefreshTarget()`.
 - `bankwindow_spec` "a visit that starts in combat leaves Blizzard's bank visible…": drop the `SB.Adapter.InCombat()` test from `host.Shrink`.
@@ -1447,7 +1449,7 @@ Spec F16 and §11.3 G1: SwagBag's guild bank window replaces Blizzard's. Blizzar
 - the `Blizzard guild bank` button (gold, log, permissions; AC16.5);
 - the fallback setting `guildBank.mode = "full" | "view"` (AC16.6) with `/swagbag guild full|view`, and `guildBank.withdrawAnyTab` (D5).
 
-Blizzard's guild bank UI is load-on-demand. The window hooks `GuildBankFrame`'s `OnShow` once the frame exists (`ADDON_LOADED` "Blizzard_GuildBankUI", or at login if it is already loaded). It listens to `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE` for the vault, and to the older `GUILDBANKFRAME_OPENED/CLOSED` when the client still has them (a registration that fails is silent). The guild bank shares the `bank` Safe Mode flag (D2). Task 8 replaces this task's simple grid with category sections.
+Blizzard's guild bank UI is load-on-demand. The window hooks `GuildBankFrame`'s `OnShow` once the frame exists (`ADDON_LOADED` "Blizzard_GuildBankUI", or at login if it is already loaded). It listens to `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE` for the vault, and to the older `GUILDBANKFRAME_OPENED/CLOSED` when the client still has them (a registration that fails is silent). The guild bank shares the `bank` Safe Mode flag (D2). Task 10 replaces this task's simple grid with category sections.
 
 **Files:**
 - Create: `SwagBag/UI/GuildButtons.lua`, `SwagBag/UI/GuildBankWindow.lua`
@@ -1932,7 +1934,7 @@ Run: `luajit spec/runner.lua spec/guildbank_spec.lua spec/report_spec.lua`
 Expected: `7 passed, 25 failed`. The guild bank files do not exist yet, and the report has no guild line.
 
 Critical tests and the mutation that must make each fail:
-- "never calls a method on Blizzard's guild bank frame or its tabs…": add any call on `gf` (it is recorded).
+- "never calls a method on Blizzard's guild bank frame or its tabs…": add `gf:UpdateTabs()` before `if host.Shrink(gf) then` in `GW.ApplyMode`. A method the fake frame does not model is recorded in `gf.calls`; `Show`, `SetAlpha` and the other modelled methods are not.
 - "a tab with no withdrawals left refuses with a message and calls nothing (AC16.2)": change `if t and t.withdrawals == 0 then` to `if false then`.
 - "view mode … ours is read-only beside it": delete the `GW.VisitMode() == "view"` block in `ClickSlot`.
 - "a modified click (shift: link to chat) is Blizzard's…": delete the `A.ModifiedClick` check.
@@ -2998,7 +3000,1892 @@ Pass: steps 5, 6 and 8 moved the items as described, step 13 cast with no red me
 If it fails: tell Claude which step. If step 5, 6 or 8 failed, or the report lists a blocked action, type `/swagbag guild view`. SwagBag's window then only shows the guild bank, and you move items in Blizzard's window. On Oct 16 Claude makes "view" the default (spec AC16.6): one line in `SwagBag/Core/Config.lua`, `guildBank = { mode = "view", … }`. If only step 7 failed, Claude makes `withdrawAnyTab = false` the default instead: a right-click in another tab then says `Click the <tab> tab on the right first, then right-click the item again.`
 
 ---
-### Task 3: Button pool and bags-window fixes from the ledgers (growth, retry, parents, bank tabs, per-window pools, incremental redraw, scale)
+### Task 3: Overlay data and the upgrade arrow (AC9.3); the crest keyword and data file
+
+Spec F9 (AC9.1, AC9.3). This task and Task 4 come right after the first-day checks (D18): they need only the bags' item records, so the user gets overlays on the bags within days. `Engine/OverlayData.lua` is pure: an item record goes in, and what to draw on its button comes out:
+- the item level on equippable gear;
+- the upgrade track as `H3/6` (initial, level, maximum), from `C_Item.GetItemUpgradeInfo` through the Adapter, never from the tooltip;
+- the keystone's level and a short dungeon name from its link (`O.Short`: the initials of the words that matter, or 3 letters of a one-word name);
+- the junk coin (gray, and a vendor pays for it);
+- a `BoE` / `WuE` badge until the item is bound;
+- the **upgrade arrow**.
+
+**The arrow (AC9.3).** The item must beat the lowest-ilvl item equipped in the matching slot(s); an empty slot counts as 0.
+- Rings and trinkets compare with both slots.
+- A two-hander compares by summed item level (2 × its level against main hand plus off hand).
+- A one-hander also compares with the off hand when the off hand holds a one-hand weapon. An off-hand item never beats a two-hander (D10).
+- Gear the character cannot use (`C_PlayerInfo.CanUseItem`, feature-detected) and items still loading never get an arrow.
+- With "Use Pawn", Pawn's verdict replaces the item-level rule when Pawn gives one.
+
+**Records.** `Items.Describe` records gain `record.track` and `record.hasNoValue`. (Guild bank records get the same two fields when Task 10 adds `Items.DescribeLink`.)
+
+**Crests (D8).** `Engine/Crests.lua` holds the season's crest item IDs (empty until session O1 confirms them) and the name words `crest` and `valorstone`. The keyword `crest` (alias `upgrade currency`) matches an ID, else a non-gear item whose name contains a word. A loading item is "not a crest", because a nil in Keystone & Crests (priority 95) would hold every loading item in New. `c_keystone`'s query becomes `keystone | crest`. That changes a built-in default, so users' diffs (spec §8.5) stay intact.
+
+**Files:**
+- Create: `SwagBag/Engine/OverlayData.lua`, `SwagBag/Engine/Crests.lua`
+- Modify:
+  - `SwagBag/Core/Adapter.lua`: `UpgradeInfo`, `DungeonName`, `EquippedItems`, `CanUse`, `PawnUpgrade`, optional checks;
+  - `.luacheckrc`;
+  - `SwagBag/Engine/Items.lua` (`track`, `hasNoValue`), `SwagBag/Engine/Keywords.lua` (`crest`), `SwagBag/Engine/CategoryDefaults.lua`;
+  - `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`.
+- Test: `spec/mock_adapter.lua`, `spec/overlaydata_spec.lua` (new), `spec/keywords_spec.lua`, `spec/categorizer_spec.lua`, `spec/categories_spec.lua`
+
+**Interfaces:**
+- Consumes: item records (`classID`, `equipLoc`, `ilvl`, `pending`, `isBound`, `isWUE`, `bind`, `quality`, `isKeystone`, `link`), `SB.Adapter.ITEM_CLASS`.
+- Produces:
+  - `SB.OverlayData.For(record, ctx) -> { ilvl, track, keystone = { level, dungeon }, junk, bind, upgrade }`, with `ctx = { equipped, canUse, dungeonName, pawn }`.
+  - `SB.OverlayData.IsUpgrade(record, equipped, canUse) -> bool`, `.Short(name) -> text`, `.SLOTS`.
+  - `SB.Crests = { ids = {}, words = { "crest", "valorstone" } }`.
+  - `SB.Adapter.UpgradeInfo(link) -> { track, level, max } | nil`, `.DungeonName(mapID)`, `.EquippedItems() -> { [invSlot] = { ilvl, equipLoc } }`, `.CanUse(itemID) -> bool`, `.PawnUpgrade(bag, slot) -> bool | nil`.
+  - Records gain `track` and `hasNoValue`. Keyword `crest` (alias `upgrade currency`).
+
+- [ ] **Step 1: Write the failing tests**
+
+<!-- sbw3:edit T3 s01 spec/mock_adapter.lua -->
+In `spec/mock_adapter.lua`, find:
+
+```lua
+			isBound = s.isBound == true,
+			name = (not it.pending) and it.name or nil,
+			hasNoValue = false,
+		}
+	end
+```
+
+and replace it with:
+
+```lua
+			isBound = s.isBound == true,
+			name = (not it.pending) and it.name or nil,
+			hasNoValue = s.hasNoValue == true,
+		}
+	end
+```
+
+<!-- sbw3:edit T3 s02 spec/mock_adapter.lua -->
+In `spec/mock_adapter.lua`, find:
+
+```lua
+	end
+
+	function m.IsWarboundUntilEquip(bag, slot)
+		local s = slotOf(bag, slot)
+```
+
+and replace it with:
+
+```lua
+	end
+
+	-- Overlays: m.tracks[link] = { track, level, max }; m.dungeons[mapID] = name;
+	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
+	m.tracks, m.dungeons, m.equipped, m.cannotUse, m.pawn = {}, {}, {}, {}, nil
+	function m.UpgradeInfo(link)
+		return m.tracks[link]
+	end
+
+	function m.DungeonName(mapID)
+		return m.dungeons[mapID]
+	end
+
+	function m.EquippedItems()
+		local out = {}
+		for slot, e in pairs(m.equipped) do
+			out[slot] = { ilvl = e.ilvl, equipLoc = e.equipLoc }
+		end
+		return out
+	end
+
+	function m.CanUse(itemID)
+		return not m.cannotUse[itemID]
+	end
+
+	function m.PawnUpgrade(bag, slot)
+		if m.pawn == nil then
+			return nil
+		end
+		return m.pawn[bag .. ":" .. slot] == true
+	end
+
+	function m.IsWarboundUntilEquip(bag, slot)
+		local s = slotOf(bag, slot)
+```
+
+<!-- sbw3:edit T3 s03 spec/categories_spec.lua -->
+In `spec/categories_spec.lua`, find:
+
+```lua
+-- c_fish (name search by design), c_other (fallback) are exempt; c_tools also has an item list.
+local EXPECTED = {
+	c_keystone = { "keystone" }, c_consumables = { "consumable" }, c_gear = { "gear" },
+	c_boe = { "boe", "gear" }, c_tradegoods = { "reagent", "tradegoods" }, c_herbs = { "herb" }, c_ore = { "ore" },
+	c_leathercloth = { "cloth", "leather" }, c_enchanting = { "enchanting" }, c_cooking = { "cooking" },
+```
+
+and replace it with:
+
+```lua
+-- c_fish (name search by design), c_other (fallback) are exempt; c_tools also has an item list.
+local EXPECTED = {
+	c_keystone = { "crest", "keystone" }, c_consumables = { "consumable" }, c_gear = { "gear" },
+	c_boe = { "boe", "gear" }, c_tradegoods = { "reagent", "tradegoods" }, c_herbs = { "herb" }, c_ore = { "ore" },
+	c_leathercloth = { "cloth", "leather" }, c_enchanting = { "enchanting" }, c_cooking = { "cooking" },
+```
+
+<!-- sbw3:edit T3 s04 spec/categorizer_spec.lua -->
+In `spec/categorizer_spec.lua`, find:
+
+```lua
+		assert.equal(before + 2, #SB.ErrorTrap.Recent())
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		assert.equal(before + 2, #SB.ErrorTrap.Recent())
+	end)
+
+	it("Keystone & Crests files the keystone and crest items (spec 7.6)", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Crests.lua")
+		A.AddItem(500001, { name = "Weathered Harbinger Crest", classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0,
+			quality = 2, maxStack = 99, bind = "pickup" })
+		A.Put(0, 7, 500001, 12)
+		C.Load()
+		assert.equal("c_keystone", at(5))
+		assert.equal("c_keystone", at(7))
+	end)
+end)
+```
+
+<!-- sbw3:edit T3 s05 spec/keywords_spec.lua -->
+In `spec/keywords_spec.lua`, find:
+
+```lua
+		end
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		end
+	end)
+
+	it("crest: the season's item IDs, else a crest or valorstone name, never gear, never 'unknown'", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Crests.lua")
+		local A = SB.Adapter
+		A.AddItem(500001, { name = "Gilded Harbinger Crest", classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0,
+			quality = 4, maxStack = 99, bind = "pickup" })
+		A.AddItem(500002, { name = "Crest of the Tides", classID = A.ITEM_CLASS.Armor, subclassID = 1,
+			equipLoc = "INVTYPE_CLOAK", quality = 3, ilvl = 280, maxStack = 1, bind = "equip" })
+		A.AddItem(500003, { name = "Shiny Token", classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0, quality = 3 })
+		A.AddItem(500004, { classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0, pending = true })
+		SB.Crests.ids[500003] = true
+		A.SetBagSize(1, 4)
+		for i = 1, 4 do
+			A.Put(1, i, 500000 + i, 1)
+		end
+		local q = Q.Compile("crest")
+		local function at(slot)
+			return Q.Eval(q, SB.Items.Describe(1, slot))
+		end
+		assert.same({ true, false, true, false }, { at(1), at(2), at(3), at(4) })
+		assert.equal(true, Q.Eval(Q.Compile("upgrade currency"), SB.Items.Describe(1, 1)))
+	end)
+end)
+```
+
+<!-- sbw3:file T3 s06 spec/overlaydata_spec.lua -->
+Create `spec/overlaydata_spec.lua`:
+
+```lua
+local Loader = dofile("spec/helpers/loader.lua")
+local Fixtures = dofile("spec/fixtures/items.lua")
+
+describe("OverlayData (spec F9)", function()
+	local SB, A, O
+	before_each(function()
+		SB = Loader.New({ "SwagBag/Engine/Items.lua", "SwagBag/Engine/OverlayData.lua" })
+		A, O = SB.Adapter, SB.OverlayData
+		Fixtures.SmallBags(A)
+	end)
+
+	local function gear(equipLoc, ilvl, extra)
+		local r = { itemID = 400000, classID = A.ITEM_CLASS.Armor, equipLoc = equipLoc, ilvl = ilvl, pending = false }
+		for k, v in pairs(extra or {}) do
+			r[k] = v
+		end
+		return r
+	end
+
+	local function weapon(equipLoc, ilvl)
+		return { itemID = 400001, classID = A.ITEM_CLASS.Weapon, equipLoc = equipLoc, ilvl = ilvl, pending = false }
+	end
+
+	local function worn(list)
+		local out = {}
+		for slot, e in pairs(list) do
+			out[slot] = { ilvl = e[1], equipLoc = e[2] }
+		end
+		return out
+	end
+
+	it("item level only on equippable gear", function()
+		assert.equal(285, O.For(SB.Items.Describe(0, 3)).ilvl, "the ring")
+		assert.is_nil(O.For(SB.Items.Describe(0, 1)).ilvl, "a potion")
+		assert.is_nil(O.For({ classID = A.ITEM_CLASS.Armor, equipLoc = "INVTYPE_BAG", ilvl = 1 }).ilvl, "a bag")
+		assert.is_nil(O.For(gear("INVTYPE_FINGER", nil, { pending = true })).ilvl, "still loading")
+	end)
+
+	it("the upgrade track as initial, level and maximum", function()
+		assert.equal("H3/6", O.For(gear("INVTYPE_HEAD", 280, { track = { track = "Hero", level = 3, max = 6 } })).track)
+		assert.is_nil(O.For(gear("INVTYPE_HEAD", 280)).track)
+	end)
+
+	it("the keystone's level and a short dungeon name from its link", function()
+		local r = SB.Items.Describe(0, 5)
+		assert.same({ level = 12, dungeon = "AKCE" },
+			O.For(r, { dungeonName = function(id) return id == 503 and "Ara-Kara, City of Echoes" or nil end }).keystone)
+		assert.same({ level = 12 }, O.For(r, {}).keystone, "no name known: the level alone")
+	end)
+
+	it("short dungeon names: initials of the words that matter, or three letters of a one-word name", function()
+		assert.same({ "DC", "AKCE", "PSF", "Roo", "OF", "TP" }, { O.Short("Darkflame Cleft"),
+			O.Short("Ara-Kara, City of Echoes"), O.Short("Priory of the Sacred Flame"), O.Short("The Rookery"),
+			O.Short("Operation: Floodgate"), O.Short("Theater of Pain") })
+		assert.is_nil(O.Short(nil))
+	end)
+
+	it("a junk coin on gray items a vendor pays for", function()
+		assert.equal(true, O.For(SB.Items.Describe(0, 6)).junk)
+		A.Put(0, 6, Fixtures.JUNK, 3, { hasNoValue = true })
+		assert.equal(false, O.For(SB.Items.Describe(0, 6)).junk)
+		assert.equal(false, O.For(SB.Items.Describe(0, 1)).junk)
+	end)
+
+	it("BoE and WuE badges until the item is bound", function()
+		assert.equal("BoE", O.For(SB.Items.Describe(0, 3)).bind)
+		assert.equal("WuE", O.For(gear("INVTYPE_HEAD", 1, { bind = "equip", isWUE = true })).bind)
+		assert.is_nil(O.For(gear("INVTYPE_HEAD", 1, { bind = "equip", isBound = true })).bind)
+		assert.is_nil(O.For(SB.Items.Describe(0, 4)).bind, "soulbound helm")
+	end)
+
+	it("upgrade arrow, one slot: beats the item worn there; an empty slot is always beaten (AC9.3)", function()
+		local up = O.IsUpgrade
+		assert.equal(true, up(gear("INVTYPE_HEAD", 280), worn({ [1] = { 270, "INVTYPE_HEAD" } })))
+		assert.equal(false, up(gear("INVTYPE_HEAD", 280), worn({ [1] = { 285, "INVTYPE_HEAD" } })))
+		assert.equal(false, up(gear("INVTYPE_HEAD", 280), worn({ [1] = { 280, "INVTYPE_HEAD" } })), "equal is not up")
+		assert.equal(true, up(gear("INVTYPE_HEAD", 280), worn({})))
+		assert.equal(true, up(gear("INVTYPE_ROBE", 281), worn({ [5] = { 280, "INVTYPE_CHEST" } })))
+	end)
+
+	it("rings and trinkets compare with the lower of both slots", function()
+		local up = O.IsUpgrade
+		assert.equal(true, up(gear("INVTYPE_FINGER", 285), worn({ [11] = { 290, "INVTYPE_FINGER" },
+			[12] = { 280, "INVTYPE_FINGER" } })))
+		assert.equal(false, up(gear("INVTYPE_FINGER", 285), worn({ [11] = { 290, "INVTYPE_FINGER" },
+			[12] = { 286, "INVTYPE_FINGER" } })))
+		assert.equal(true, up(gear("INVTYPE_TRINKET", 270), worn({ [13] = { 300, "INVTYPE_TRINKET" } })),
+			"the second trinket slot is empty")
+		assert.equal(false, up(gear("INVTYPE_TRINKET", 270), worn({ [13] = { 300, "INVTYPE_TRINKET" },
+			[14] = { 270, "INVTYPE_TRINKET" } })))
+	end)
+
+	it("a two-hander compares by summed item level against main and off hand", function()
+		local up = O.IsUpgrade
+		local dual = worn({ [16] = { 290, "INVTYPE_WEAPON" }, [17] = { 280, "INVTYPE_SHIELD" } })
+		assert.equal(true, up(weapon("INVTYPE_2HWEAPON", 286), dual), "572 > 570")
+		assert.equal(false, up(weapon("INVTYPE_2HWEAPON", 285), dual), "570 = 570")
+		assert.equal(false, up(weapon("INVTYPE_2HWEAPON", 289), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
+		assert.equal(true, up(weapon("INVTYPE_2HWEAPON", 291), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
+		assert.equal(true, up(weapon("INVTYPE_RANGEDRIGHT", 200), worn({})))
+	end)
+
+	it("one-handers: the main hand, plus the off hand when it holds a one-hand weapon; off-hands never beat a two-hander",
+		function()
+			local up = O.IsUpgrade
+			local shield = worn({ [16] = { 280, "INVTYPE_WEAPON" }, [17] = { 260, "INVTYPE_SHIELD" } })
+			assert.equal(false, up(weapon("INVTYPE_WEAPON", 275), shield), "the shield slot is not a weapon slot")
+			local dual = worn({ [16] = { 290, "INVTYPE_WEAPON" }, [17] = { 280, "INVTYPE_WEAPON" } })
+			assert.equal(true, up(weapon("INVTYPE_WEAPON", 285), dual))
+			assert.equal(true, up(gear("INVTYPE_SHIELD", 270), shield))
+			assert.equal(false, up(gear("INVTYPE_HOLDABLE", 400), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
+			assert.equal(true, up(weapon("INVTYPE_WEAPONMAINHAND", 300), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
+		end)
+
+	it("no arrow on gear the character cannot use, on items still loading, or on things that are not worn gear", function()
+		local up = O.IsUpgrade
+		assert.equal(false, up(gear("INVTYPE_HEAD", 400), worn({}), function() return false end))
+		assert.equal(false, up(gear("INVTYPE_HEAD", 400, { pending = true }), worn({})))
+		assert.equal(false, up(gear("INVTYPE_BODY", 400), worn({})), "a shirt")
+		assert.equal(false, up({ classID = A.ITEM_CLASS.Consumable, equipLoc = "", ilvl = 400 }, worn({})))
+	end)
+
+	it("with Pawn the verdict is Pawn's; without an answer from Pawn the item-level rule decides", function()
+		local helm = gear("INVTYPE_HEAD", 200)
+		local worse = worn({ [1] = { 300, "INVTYPE_HEAD" } })
+		assert.equal(true, O.For(helm, { equipped = worse, pawn = function() return true end }).upgrade)
+		assert.equal(false, O.For(gear("INVTYPE_HEAD", 400), { equipped = worse, pawn = function() return false end }).upgrade)
+		assert.equal(false, O.For(helm, { equipped = worse, pawn = function() return nil end }).upgrade)
+		assert.equal(true, O.For(gear("INVTYPE_HEAD", 301), { equipped = worse, pawn = function() return nil end }).upgrade)
+	end)
+end)
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `luajit spec/runner.lua spec/categories_spec.lua spec/categorizer_spec.lua spec/keywords_spec.lua spec/overlaydata_spec.lua`
+Expected: `52 passed, 15 failed`. `Engine/OverlayData.lua`, `Engine/Crests.lua` and the `crest` keyword do not exist, and `c_keystone` still reads `keystone`.
+
+Critical tests and the mutation that must make each fail:
+- "a two-hander compares by summed item level against main and off hand": `return ilvl > math.min(main, off)` in the two-hander branch.
+- "rings and trinkets compare with the lower of both slots": take the highest slot instead of the lowest.
+- "one-handers: the main hand, plus the off hand when it holds a one-hand weapon…": drop `ONE_HAND_WEAPON[off.equipLoc]`, or delete the `mainIsTwoHand` refusal.
+- "no arrow on gear the character cannot use…": `if false then` for the `canUse` test.
+- "with Pawn the verdict is Pawn's…": `if verdict then` instead of `if verdict ~= nil then`.
+- `keywords_spec` "crest: … never 'unknown'": return `nil` for a loading item.
+- `categorizer_spec` "a loading item that instant facts already decide is filed directly (tri-state, spec 7.7)" (a week-2 test): the same mutation. It is why the crest rule returns false.
+
+- [ ] **Step 3: Implement**
+
+<!-- sbw3:edit T3 i01 SwagBag/SwagBag.toc -->
+In `SwagBag/SwagBag.toc`, find:
+
+```text
+Engine/Query/Parser.lua
+Engine/Query/Query.lua
+Engine/Keywords.lua
+Engine/Search.lua
+```
+
+and replace it with:
+
+```text
+Engine/Query/Parser.lua
+Engine/Query/Query.lua
+Engine/Crests.lua
+Engine/Keywords.lua
+Engine/Search.lua
+```
+
+<!-- sbw3:edit T3 i02 SwagBag/SwagBag.toc -->
+In `SwagBag/SwagBag.toc`, find:
+
+```text
+Engine/Categorizer.lua
+Engine/Layout.lua
+
+# UI
+```
+
+and replace it with:
+
+```text
+Engine/Categorizer.lua
+Engine/Layout.lua
+Engine/OverlayData.lua
+
+# UI
+```
+
+<!-- sbw3:edit T3 i03 .luacheckrc -->
+In `.luacheckrc`, find:
+
+```lua
+	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
+	"IsModifiedClick", "HandleModifiedItemClick",
+}
+
+```
+
+and replace it with:
+
+```lua
+	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
+	"IsModifiedClick", "HandleModifiedItemClick",
+	"C_ChallengeMode", "C_PlayerInfo", "GetInventoryItemLink",
+}
+
+```
+
+<!-- sbw3:edit T3 i04 SwagBag/Core/Adapter.lua -->
+In `SwagBag/Core/Adapter.lua`, find:
+
+```lua
+	end
+	return (info.maxLevel or info.maxUpgradeLevel or 0) > 0 or (info.trackString or "") ~= ""
+end
+
+```
+
+and replace it with:
+
+```lua
+	end
+	return (info.maxLevel or info.maxUpgradeLevel or 0) > 0 or (info.trackString or "") ~= ""
+end
+
+-- Upgrade track of an item link: { track = "Hero", level = 3, max = 6 }, or nil when the
+-- item has none (or the API is missing). Real API only; no tooltip reading (spec P7).
+function A.UpgradeInfo(link)
+	if type(link) ~= "string" or not (C_Item and C_Item.GetItemUpgradeInfo) then
+		return nil
+	end
+	local ok, info = pcall(C_Item.GetItemUpgradeInfo, link)
+	if not ok or type(info) ~= "table" then
+		return nil
+	end
+	local track, level, max = info.trackString, info.currentLevel, info.maxLevel or info.maxUpgradeLevel
+	if type(track) ~= "string" or track == "" or isSecret(track) or type(level) ~= "number" or type(max) ~= "number" then
+		return nil
+	end
+	return { track = track, level = level, max = max }
+end
+
+-- Name of a Mythic+ dungeon (keystone link map ID), or nil.
+function A.DungeonName(mapID)
+	if not (C_ChallengeMode and C_ChallengeMode.GetMapUIInfo) then
+		return nil
+	end
+	local ok, name = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
+	if ok and type(name) == "string" and not isSecret(name) then
+		return name
+	end
+	return nil
+end
+
+-- What the character wears: [inventory slot 1-17] = { ilvl, equipLoc } (nil = empty slot).
+function A.EquippedItems()
+	local out = {}
+	for slot = 1, 17 do
+		local okL, link = pcall(GetInventoryItemLink, "player", slot)
+		if okL and type(link) == "string" and not isSecret(link) then
+			local inst = A.GetItemInstant(link)
+			local okI, ilvl = pcall(function()
+				return C_Item.GetCurrentItemLevel(ItemLocation:CreateFromEquipmentSlot(slot))
+			end)
+			out[slot] = { ilvl = (okI and type(ilvl) == "number" and not isSecret(ilvl)) and ilvl or 0,
+				equipLoc = inst and inst.equipLoc or "" }
+		end
+	end
+	return out
+end
+
+-- True unless the client says this character cannot use the item (feature-detected).
+function A.CanUse(itemID)
+	if not (C_PlayerInfo and C_PlayerInfo.CanUseItem) then
+		return true
+	end
+	local ok, yes = pcall(C_PlayerInfo.CanUseItem, itemID)
+	return not ok or yes ~= false
+end
+
+-- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
+function A.PawnUpgrade(bag, slot)
+	local fn = _G.PawnIsContainerItemAnUpgrade
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, yes = pcall(fn, bag, slot)
+	if not ok then
+		return nil
+	end
+	return yes and true or false
+end
+
+```
+
+<!-- sbw3:edit T3 i05 SwagBag/Core/Adapter.lua -->
+In `SwagBag/Core/Adapter.lua`, find:
+
+```lua
+	{ path = "Enum.AddOnRestrictionType", window = "bags", required = false },
+	{ path = "C_ChallengeMode.IsChallengeModeActive", window = "bags", required = false },
+	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
+	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
+```
+
+and replace it with:
+
+```lua
+	{ path = "Enum.AddOnRestrictionType", window = "bags", required = false },
+	{ path = "C_ChallengeMode.IsChallengeModeActive", window = "bags", required = false },
+	{ path = "C_ChallengeMode.GetMapUIInfo", window = "bags", required = false },
+	{ path = "C_PlayerInfo.CanUseItem", window = "bags", required = false },
+	{ path = "GetInventoryItemLink", window = "bags", required = false },
+	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
+	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
+```
+
+<!-- sbw3:edit T3 i06 SwagBag/Locale/enUS.lua -->
+In `SwagBag/Locale/enUS.lua`, find:
+
+```lua
+L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
+
+-- In-game check V1 (optional)
+L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
+```
+
+and replace it with:
+
+```lua
+L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
+
+-- Overlays (spec F9)
+L.OVERLAY_TRACK = "%s%d/%d"
+L.BADGE_BOE = "BoE"
+L.BADGE_WUE = "WuE"
+
+-- In-game check V1 (optional)
+L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
+```
+
+<!-- sbw3:edit T3 i07 SwagBag/Engine/CategoryDefaults.lua -->
+In `SwagBag/Engine/CategoryDefaults.lua`, find:
+
+```lua
+
+SB.CategoryDefaults = {
+	{ id = "c_keystone", name = L.CAT_KEYSTONE, query = "keystone", priority = 95, displayOrder = 10 },
+	{ id = "c_consumables", name = L.CAT_CONSUMABLES, query = "consumable", priority = 65, displayOrder = 20 },
+	{ id = "c_gear", name = L.CAT_GEAR, query = "gear", priority = 70, displayOrder = 30 },
+```
+
+and replace it with:
+
+```lua
+
+SB.CategoryDefaults = {
+	{ id = "c_keystone", name = L.CAT_KEYSTONE, query = "keystone | crest", priority = 95, displayOrder = 10 },
+	{ id = "c_consumables", name = L.CAT_CONSUMABLES, query = "consumable", priority = 65, displayOrder = 20 },
+	{ id = "c_gear", name = L.CAT_GEAR, query = "gear", priority = 70, displayOrder = 30 },
+```
+
+<!-- sbw3:file T3 i08 SwagBag/Engine/Crests.lua -->
+Create `SwagBag/Engine/Crests.lua`:
+
+```lua
+-- SwagBag crest data (spec 7.3 "crest", 13.2 item 4): what files into "Keystone & Crests"
+-- besides the keystone. Per season, updated with patches.
+--   ids    item IDs of the season's upgrade-currency items, confirmed in game
+--   words  lower-case name words for the rest (never matched on gear, so a cloak named
+--          "...Crest..." stays in Gear)
+-- An item the user drops on the Keystone & Crests header joins it whatever this file says
+-- (spec AC4.3); Claude moves confirmed IDs into `ids` when the user reports them.
+local _, SB = ...
+
+SB.Crests = {
+	ids = {},
+	words = { "crest", "valorstone" },
+}
+```
+
+<!-- sbw3:edit T3 i09 SwagBag/Engine/Items.lua -->
+In `SwagBag/Engine/Items.lua`, find:
+
+```lua
+--   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"
+--   tab             bank tab number (1-based) | nil
+--   pending         true while the item's data has not loaded
+-- }
+```
+
+and replace it with:
+
+```lua
+--   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"
+--   tab             bank tab number (1-based) | nil
+--   track           { track, level, max } upgrade track | nil (overlays)
+--   hasNoValue      boolean: a vendor pays nothing for it
+--   pending         true while the item's data has not loaded
+-- }
+```
+
+<!-- sbw3:edit T3 i10 SwagBag/Engine/Items.lua -->
+In `SwagBag/Engine/Items.lua`, find:
+
+```lua
+		inEquipmentSet = A.InEquipmentSet(bag, slot),
+		hasUpgradeTrack = A.HasUpgradeTrack(bag, slot),
+		isUsable = A.IsUsable(s.itemID),
+		isToy = A.IsToy(s.itemID),
+```
+
+and replace it with:
+
+```lua
+		inEquipmentSet = A.InEquipmentSet(bag, slot),
+		hasUpgradeTrack = A.HasUpgradeTrack(bag, slot),
+		track = A.UpgradeInfo(s.link),
+		hasNoValue = s.hasNoValue == true,
+		isUsable = A.IsUsable(s.itemID),
+		isToy = A.IsToy(s.itemID),
+```
+
+<!-- sbw3:edit T3 i11 SwagBag/Engine/Keywords.lua -->
+In `SwagBag/Engine/Keywords.lua`, find:
+
+```lua
+-- strings (desk spike F, docs/research/2026-10-syndicator-grammar-diff.md).
+-- Not yet registered (need later modules): expansion, gold/value, crafting quality,
+-- collection, crest / upgrade currency.
+local _, SB = ...
+
+```
+
+and replace it with:
+
+```lua
+-- strings (desk spike F, docs/research/2026-10-syndicator-grammar-diff.md).
+-- Not yet registered (need later modules): expansion, gold/value, crafting quality,
+-- collection.
+local _, SB = ...
+
+```
+
+<!-- sbw3:edit T3 i12 SwagBag/Engine/Keywords.lua -->
+In `SwagBag/Engine/Keywords.lua`, find:
+
+```lua
+		return r.isKeystone == true
+	end)
+	kw("pet", "instance", function(r)
+		return r.isCagedPet == true or r.classID == C.Battlepet
+```
+
+and replace it with:
+
+```lua
+		return r.isKeystone == true
+	end)
+	-- Crests and other upgrade currency items (spec 7.3): the season's item IDs, else a name
+	-- word from the data file (Engine/Crests.lua). Gear is never a crest. A loading item with an
+	-- unknown ID is "not a crest" rather than "unknown": the rule sits in Keystone & Crests
+	-- (priority 95), and an unknown there would hold every loading item in New (spec 7.7 D3).
+	kw("crest", "static", function(r)
+		local list = SB.Crests or { ids = {}, words = {} }
+		if list.ids[r.itemID] then
+			return true
+		end
+		if isGear(r) or r.name == nil then
+			return false
+		end
+		local name = r.name:lower()
+		for _, word in ipairs(list.words) do
+			if name:find(word, 1, true) then
+				return true
+			end
+		end
+		return false
+	end, { "upgrade currency" })
+	kw("pet", "instance", function(r)
+		return r.isCagedPet == true or r.classID == C.Battlepet
+```
+
+<!-- sbw3:file T3 i13 SwagBag/Engine/OverlayData.lua -->
+Create `SwagBag/Engine/OverlayData.lua`:
+
+```lua
+-- SwagBag overlay data (spec F9: AC9.1, AC9.3). Pure: an item record in, what to draw on its
+-- button out. UI/Overlays.lua draws it and applies the per-overlay settings. Everything
+-- comes from the record (Items.lua: real APIs, no tooltip reading).
+--   OverlayData.For(record, ctx) -> {
+--     ilvl      number | nil    equippable gear only
+--     track     "H3/6" | nil    upgrade track initial, level / max
+--     keystone  { level, dungeon } | nil   from the keystone link; dungeon = short name
+--     junk      boolean         poor quality and a vendor pays for it
+--     bind      "BoE" | "WuE" | nil   bind on equip / warbound until equipped, not yet bound
+--     upgrade   boolean         the arrow (AC9.3, see IsUpgrade) }
+--   ctx = { equipped = { [invSlot] = { ilvl, equipLoc } }, canUse = fn(itemID) -> bool,
+--           dungeonName = fn(mapID) -> name | nil, pawn = fn(record) -> true | false | nil }
+--   OverlayData.IsUpgrade(record, equipped, canUse) -> boolean
+--   OverlayData.Short(name) -> short dungeon name ("Darkflame Cleft" -> "DC")
+local _, SB = ...
+
+local O = {}
+SB.OverlayData = O
+
+-- Equip location -> the inventory slots it can go in (spec AC9.3 "matching slot(s)").
+O.SLOTS = {
+	INVTYPE_HEAD = { 1 }, INVTYPE_NECK = { 2 }, INVTYPE_SHOULDER = { 3 }, INVTYPE_CHEST = { 5 }, INVTYPE_ROBE = { 5 },
+	INVTYPE_WAIST = { 6 }, INVTYPE_LEGS = { 7 }, INVTYPE_FEET = { 8 }, INVTYPE_WRIST = { 9 }, INVTYPE_HAND = { 10 },
+	INVTYPE_FINGER = { 11, 12 }, INVTYPE_TRINKET = { 13, 14 }, INVTYPE_CLOAK = { 15 },
+	INVTYPE_WEAPON = { 16 }, INVTYPE_WEAPONMAINHAND = { 16 }, INVTYPE_2HWEAPON = { 16 }, INVTYPE_RANGED = { 16 },
+	INVTYPE_RANGEDRIGHT = { 16 }, INVTYPE_WEAPONOFFHAND = { 17 }, INVTYPE_SHIELD = { 17 }, INVTYPE_HOLDABLE = { 17 },
+}
+local TWO_HAND = { INVTYPE_2HWEAPON = true, INVTYPE_RANGED = true, INVTYPE_RANGEDRIGHT = true }
+local ONE_HAND_WEAPON = { INVTYPE_WEAPON = true, INVTYPE_WEAPONOFFHAND = true }
+local MAIN, OFF = 16, 17
+
+local function ilvlAt(equipped, slot)
+	local e = equipped[slot]
+	return e and e.ilvl or 0
+end
+
+-- AC9.3: higher than the lowest-ilvl item equipped in the matching slot(s); an empty slot
+-- counts as 0. Rings and trinkets compare with both slots. A two-hander replaces the main and
+-- off hand, so it compares by summed item level (2 x its level against both). A one-hander
+-- also compares with the off hand when the off hand holds a one-hand weapon (dual wield).
+-- An off-hand item never beats a two-hander (it would leave the main hand empty).
+function O.IsUpgrade(record, equipped, canUse)
+	local A = SB.Adapter
+	local ilvl = record.ilvl
+	local slots = O.SLOTS[record.equipLoc or ""]
+	if not slots or record.pending or type(ilvl) ~= "number" then
+		return false
+	end
+	if record.classID ~= A.ITEM_CLASS.Armor and record.classID ~= A.ITEM_CLASS.Weapon then
+		return false
+	end
+	if canUse and not canUse(record.itemID) then
+		return false
+	end
+	local main, off = equipped[MAIN], equipped[OFF]
+	local mainIsTwoHand = main and TWO_HAND[main.equipLoc] or false
+	if TWO_HAND[record.equipLoc] then
+		if off then
+			return ilvl * 2 > ilvlAt(equipped, MAIN) + ilvlAt(equipped, OFF)
+		end
+		return ilvl > ilvlAt(equipped, MAIN)
+	end
+	if slots[1] == OFF then
+		if mainIsTwoHand then
+			return false
+		end
+		return ilvl > ilvlAt(equipped, OFF)
+	end
+	local lowest = math.huge
+	for _, slot in ipairs(slots) do
+		lowest = math.min(lowest, ilvlAt(equipped, slot))
+	end
+	if record.equipLoc == "INVTYPE_WEAPON" and off and ONE_HAND_WEAPON[off.equipLoc] then
+		lowest = math.min(lowest, ilvlAt(equipped, OFF))
+	end
+	return ilvl > lowest
+end
+
+local SMALL = { ["of"] = true, ["the"] = true, ["and"] = true }
+
+-- Initials of the meaningful words (up to 4), or the first 3 letters of a one-word name.
+function O.Short(name)
+	if type(name) ~= "string" then
+		return nil
+	end
+	local words = {}
+	for w in name:gmatch("[^%s%-,:']+") do
+		if not SMALL[w:lower()] then
+			words[#words + 1] = w
+		end
+	end
+	if #words == 0 then
+		return nil
+	elseif #words == 1 then
+		return words[1]:sub(1, 3)
+	end
+	local out = {}
+	for i = 1, math.min(4, #words) do
+		out[i] = words[i]:sub(1, 1):upper()
+	end
+	return table.concat(out)
+end
+
+local function isGear(r)
+	local C = SB.Adapter.ITEM_CLASS
+	return r.classID == C.Armor or r.classID == C.Weapon
+end
+
+function O.For(record, ctx)
+	local out = { junk = false, upgrade = false }
+	if not record then
+		return out
+	end
+	ctx = ctx or {}
+	local L = SB.L
+	if isGear(record) and O.SLOTS[record.equipLoc or ""] and type(record.ilvl) == "number" then
+		out.ilvl = record.ilvl
+	end
+	local t = record.track
+	if t and t.track and t.level and t.max then
+		out.track = L.OVERLAY_TRACK:format(t.track:sub(1, 1), t.level, t.max)
+	end
+	if record.isKeystone and record.link then
+		local mapID, level = record.link:match("keystone:%d+:(%d+):(%d+)")
+		if level then
+			local name = ctx.dungeonName and ctx.dungeonName(tonumber(mapID))
+			out.keystone = { level = tonumber(level), dungeon = O.Short(name) }
+		end
+	end
+	out.junk = record.quality == 0 and not record.hasNoValue
+	if not record.isBound then
+		if record.isWUE then
+			out.bind = L.BADGE_WUE
+		elseif record.bind == "equip" then
+			out.bind = L.BADGE_BOE
+		end
+	end
+	local verdict = ctx.pawn and ctx.pawn(record)
+	if verdict ~= nil then
+		out.upgrade = verdict and true or false
+	else
+		out.upgrade = O.IsUpgrade(record, ctx.equipped or {}, ctx.canUse)
+	end
+	return out
+end
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `luajit spec/runner.lua spec/categories_spec.lua spec/categorizer_spec.lua spec/keywords_spec.lua spec/overlaydata_spec.lua`
+Expected: `67 passed, 0 failed`
+
+- [ ] **Step 5: Run all checks**
+
+Run: `scripts/check.sh`
+Expected: `TOC OK (38 files)`, `490 passed, 0 failed`, `ALL CHECKS PASSED`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add spec/mock_adapter.lua \
+  spec/categories_spec.lua \
+  spec/categorizer_spec.lua \
+  spec/keywords_spec.lua \
+  spec/overlaydata_spec.lua \
+  SwagBag/SwagBag.toc \
+  .luacheckrc \
+  SwagBag/Core/Adapter.lua \
+  SwagBag/Locale/enUS.lua \
+  SwagBag/Engine/CategoryDefaults.lua \
+  SwagBag/Engine/Crests.lua \
+  SwagBag/Engine/Items.lua \
+  SwagBag/Engine/Keywords.lua \
+  SwagBag/Engine/OverlayData.lua
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 3: overlay data and the upgrade arrow, crest keyword and data file" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
+```
+
+---
+
+### Task 4: Overlays on bag buttons; the average item level in the bags title; Use Pawn; the reagent-bag cue; `/swagbag overlays`
+
+`UI/Overlays.lua` draws Task 3's data on an item button:
+- top left: the item level, or `+12` on a keystone;
+- bottom left: the track `H3/6`, or the keystone's dungeon;
+- left: `BoE` / `WuE`;
+- top right: a green upgrade arrow;
+- top left: a junk coin (only when nothing else is there).
+
+The stack count stays Blizzard's own. This task wires the overlays onto the **bags** window only, so the user has them on day 2 (D18). Task 11 wires the same `Overlays.Apply` onto the bank and guild bank buttons, once those windows have contents (Tasks 8 and 10).
+
+**How it draws.** Regions are font strings and textures on the button itself (no frames, so drawing is allowed in combat), made the first time a button needs one, in its OVERLAY layer. Dimming a button for search therefore dims its overlays too. An empty slot that never showed anything gets no regions, so a bank with many empties stays light later.
+
+**Free-section cue.** An empty reagent-bag slot gets a faint green tint, so it is clear which empty slots take only reagents (the week-2 ledger's "reagent-bag empties in Free (UI cue)").
+
+**When it redraws.** What the character wears is read once and kept until `PLAYER_EQUIPMENT_CHANGED`. A gear swap fires one event per slot, so the open bags window redraws once, 0.1 s after the last one (AC9.3 "re-evaluated on PLAYER_EQUIPMENT_CHANGED").
+
+**The average item level in the title (D18).** The bags window's title reads `SwagBag — ilvl 279.4`: the average item level the character has **equipped**, with one decimal. `Adapter.EquippedItemLevel()` returns the second value of `GetAverageItemLevel()` (warcraft.wiki.gg: `avgItemLevel, avgItemLevelEquipped, avgItemLevelPvp = GetAverageItemLevel()`), feature-detected and inside `pcall`. When the function is missing or gives no number, the title is the plain `SwagBag`, with no error. The title is read again on open, on `PLAYER_EQUIPMENT_CHANGED` and on `PLAYER_AVG_ITEM_LEVEL_UPDATE` (while the window is shown). Both events are registered through `SB.On`, which already skips an event the client does not know. The title's flash messages (`SwagBag 110%`, `Regrouped`, `Sorting...` and the rest) are untouched: an item-level change during a flash does not cut it short, and when the flash ends the title goes back to the item-level title, read fresh. The setting is `bags.showIlvl` (default on).
+
+**Switches.** Each overlay has its own switch (AC9.2), `overlays.ilvl/track/upgrade/keystone/junk/bind`, plus `overlays.usePawn`. Until the settings window arrives in week 4, `/swagbag overlays` lists them and `/swagbag overlays <name> on|off` switches one (P2: it always answers). The name `title` switches `bags.showIlvl`.
+
+**Wiring.** The bags window applies overlays in `describe` and when a loading item's data arrives (`refreshRecord`).
+
+**Files:**
+- Create: `SwagBag/UI/Overlays.lua`
+- Modify: `SwagBag/UI/BagsWindow.lua` (apply overlays; `Title`, `RefreshTitle`, flash back to the item-level title), `SwagBag/Core/Adapter.lua` (`EquippedItemLevel`, `HasPawn`, optional check), `SwagBag/Core/Config.lua` (`bags.showIlvl`, `overlays`), `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`
+- Test: `spec/mock_adapter.lua`, `spec/adapter_spec.lua`, `spec/bagswindow_spec.lua`, `spec/overlays_spec.lua` (new), `spec/bagswindow_sections_spec.lua`
+
+**Interfaces:**
+- Consumes:
+  - Task 3: `SB.OverlayData.For`, `SB.Adapter.EquippedItems/CanUse/DungeonName/PawnUpgrade`, records' `track` and `hasNoValue`;
+  - on `main`: `SB.BagsWindow.ForEachSlot` (`fn(button, record, bag, slot)`), `SB.BagsWindow.Flash`, `SB.On`, `SB.Debounce`, `SB.Slash.Register`, `SB.Adapter.BagKind`.
+- Produces:
+  - `SB.Overlays.Apply(button, record, bag)`, `.RefreshAll()` (the open bags window; Task 11 adds the bank and guild windows), `.Context()`, `.regions[button]` (`topLeft`, `bottomLeft`, `bind`, `arrow`, `junk`, `reagent`).
+  - `SB.Adapter.EquippedItemLevel() -> number | nil` and `SB.Adapter.HasPawn() -> bool`.
+  - `SB.BagsWindow.Title() -> text` and `SB.BagsWindow.RefreshTitle()` (does nothing while a flash shows).
+  - Settings `bags.showIlvl` and `overlays.*`. Slash command `overlays` (names `ilvl`, `track`, `upgrade`, `keystone`, `junk`, `bind`, `pawn`, `title`).
+
+- [ ] **Step 1: Write the failing tests**
+
+<!-- sbw3:edit T4 s01 spec/mock_adapter.lua -->
+In `spec/mock_adapter.lua`, find:
+
+```lua
+	end
+
+	function m.PawnUpgrade(bag, slot)
+		if m.pawn == nil then
+```
+
+and replace it with:
+
+```lua
+	end
+
+	-- m.avgIlvl: the average equipped item level (nil = the client gives none).
+	function m.EquippedItemLevel()
+		return m.avgIlvl
+	end
+
+	function m.HasPawn()
+		return m.pawn ~= nil
+	end
+
+	function m.PawnUpgrade(bag, slot)
+		if m.pawn == nil then
+```
+
+<!-- sbw3:edit T4 s02 spec/adapter_spec.lua -->
+In `spec/adapter_spec.lua`, find:
+
+```lua
+-- luacheck: globals GetCursorInfo ClearCursor C_Container
+-- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2.
+describe("Adapter cursor and sort helpers", function()
+```
+
+and replace it with:
+
+```lua
+-- luacheck: globals GetCursorInfo ClearCursor C_Container GetAverageItemLevel
+-- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2.
+describe("Adapter cursor and sort helpers", function()
+```
+
+<!-- sbw3:edit T4 s03 spec/adapter_spec.lua -->
+In `spec/adapter_spec.lua`, find:
+
+```lua
+
+	after_each(function()
+		GetCursorInfo, ClearCursor, C_Container = nil, nil, nil
+	end)
+
+```
+
+and replace it with:
+
+```lua
+
+	after_each(function()
+		GetCursorInfo, ClearCursor, C_Container, GetAverageItemLevel = nil, nil, nil, nil
+	end)
+
+```
+
+<!-- sbw3:edit T4 s04 spec/adapter_spec.lua -->
+In `spec/adapter_spec.lua`, find:
+
+```lua
+		assert.truthy(err)
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		assert.truthy(err)
+	end)
+
+	it("EquippedItemLevel is GetAverageItemLevel's equipped value, and nil without the API or on an error", function()
+		assert.is_nil(A.EquippedItemLevel())
+		GetAverageItemLevel = function() return 285.5, 279.44, 270 end
+		assert.equal(279.44, A.EquippedItemLevel())
+		GetAverageItemLevel = function() return 285.5 end
+		assert.is_nil(A.EquippedItemLevel())
+		GetAverageItemLevel = function() error("boom") end
+		assert.is_nil(A.EquippedItemLevel())
+	end)
+end)
+```
+
+<!-- sbw3:edit T4 s05 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+local FILES = {
+	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
+	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Inventory.lua", "SwagBag/Engine/GridLayout.lua",
+	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
+```
+
+and replace it with:
+
+```lua
+local FILES = {
+	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
+	"SwagBag/Core/Slash.lua", "SwagBag/Engine/OverlayData.lua",
+	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Inventory.lua", "SwagBag/Engine/GridLayout.lua",
+	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
+```
+
+<!-- sbw3:edit T4 s06 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+		W = SB.BagsWindow
+		SB.Emit("SB_LOGIN")
+```
+
+and replace it with:
+
+```lua
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/Overlays.lua")
+		W = SB.BagsWindow
+		SB.Emit("SB_LOGIN")
+```
+
+<!-- sbw3:edit T4 s07 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+		assert.equal("- New (1)", header("new").text.text)
+		assert.equal(0, #B.placeholders, "it came from Free: no placeholder")
+	end)
+
+```
+
+and replace it with:
+
+```lua
+		assert.equal("- New (1)", header("new").text.text)
+		assert.equal(0, #B.placeholders, "it came from Free: no placeholder")
+	end)
+
+	it("bag items get their overlays; an empty reagent-bag slot is tinted in Free", function()
+		A.SetBagSize(5, 2)
+		SB.Inventory.ScanAll()
+		W.Open()
+		local ring = SB.Overlays.regions[B.Get(0, 3)]
+		assert.same({ "285", "BoE" }, { ring.topLeft.text, ring.bind.text })
+		assert.truthy(SB.Overlays.regions[B.Get(5, 1)].reagent.shown)
+		assert.is_nil(SB.Overlays.regions[B.Get(0, 16)], "an ordinary empty slot gets nothing")
+		A.Clear(0, 3)
+		bagUpdate()
+		assert.equal("", ring.topLeft.text, "the emptied slot's overlays are cleared")
+	end)
+
+	it("an item whose data loads while open gets its overlays at once (it moves only on the next open)", function()
+		W.Open()
+		A.Put(0, 10, Fixtures.UNLOADED, 1)
+		bagUpdate()
+		assert.equal("", SB.Overlays.regions[B.Get(0, 10)].topLeft.text)
+		A.items[Fixtures.UNLOADED] = { name = "Robe", classID = A.ITEM_CLASS.Armor, subclassID = 0, quality = 3,
+			equipLoc = "INVTYPE_CHEST", ilvl = 280, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
+		assert.equal("280", SB.Overlays.regions[B.Get(0, 10)].topLeft.text)
+	end)
+
+```
+
+<!-- sbw3:edit T4 s08 spec/bagswindow_spec.lua -->
+In `spec/bagswindow_spec.lua`, find:
+
+```lua
+	end)
+
+	it("Ctrl+wheel changes the scale and plain wheel scrolls", function()
+		A.sizes[0] = 160
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	it("the title shows the average equipped item level with one decimal (D18)", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		assert.equal("SwagBag — ilvl 279.4", W.frame.title.text)
+	end)
+
+	it("the item level in the title follows gear swaps while open, and is read again on open", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		A.avgIlvl = 281.06
+		SB.eventFrame:Fire("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+		assert.equal("SwagBag — ilvl 281.1", W.frame.title.text)
+		A.avgIlvl = 283
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 1)
+		assert.equal("SwagBag — ilvl 283.0", W.frame.title.text)
+		W.frame:Hide()
+		A.avgIlvl = 284.5
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 1)
+		assert.equal("SwagBag — ilvl 283.0", W.frame.title.text, "closed: nothing is read")
+		W.Open()
+		assert.equal("SwagBag — ilvl 284.5", W.frame.title.text)
+	end)
+
+	it("a flash keeps the title until it ends, then the item-level title comes back up to date", function()
+		A.avgIlvl = 279.44
+		W.Open()
+		W.SetScale(0.5)
+		A.avgIlvl = 280.02
+		SB.eventFrame:Fire("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+		assert.equal("SwagBag 50%", W.frame.title.text, "the flash is not cut short")
+		A.Advance(1.5)
+		assert.equal("SwagBag — ilvl 280.0", W.frame.title.text)
+	end)
+
+	it("no item level from the client, or bags.showIlvl off: the plain title, no error", function()
+		A.avgIlvl = nil
+		W.Open()
+		assert.equal("SwagBag", W.frame.title.text)
+		SB.eventFrame:Fire("PLAYER_AVG_ITEM_LEVEL_UPDATE")
+		assert.equal("SwagBag", W.frame.title.text)
+		assert.equal(0, #SB.ErrorTrap.Recent())
+		A.avgIlvl = 279.44
+		SB.Config.Set("bags.showIlvl", false)
+		W.RefreshTitle()
+		assert.equal("SwagBag", W.frame.title.text)
+	end)
+
+	it("Ctrl+wheel changes the scale and plain wheel scrolls", function()
+		A.sizes[0] = 160
+```
+
+<!-- sbw3:file T4 s09 spec/overlays_spec.lua -->
+Create `spec/overlays_spec.lua`:
+
+```lua
+-- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip
+-- Overlays drawn on item buttons (spec F9), with fake buttons; and in the open bags window.
+local Loader = dofile("spec/helpers/loader.lua")
+local Fake = dofile("spec/helpers/fakeframe.lua")
+local Fixtures = dofile("spec/fixtures/items.lua")
+
+local FILES = {
+	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
+	"SwagBag/Core/Slash.lua", "SwagBag/Engine/Items.lua", "SwagBag/Engine/OverlayData.lua",
+}
+
+describe("Overlays (spec F9)", function()
+	local SB, A, Ov
+	before_each(function()
+		SB = Loader.New(FILES)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		Fake.Install()
+		Loader.LoadFile(SB, "SwagBag/UI/Overlays.lua")
+		Ov = SB.Overlays
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	local function draw(bag, slot)
+		local b = Fake.New("ItemButton")
+		Ov.Apply(b, SB.Items.Describe(bag, slot), bag)
+		return b, Ov.regions[b]
+	end
+
+	it("gear: item level top left, track bottom left, BoE badge, upgrade arrow", function()
+		A.tracks["item:" .. Fixtures.BOE_RING] = { track = "Champion", level = 2, max = 8 }
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 290, equipLoc = "INVTYPE_FINGER" }
+		local _, r = draw(0, 3)
+		assert.same({ "285", "C2/8", "BoE", true, false },
+			{ r.topLeft.text, r.bottomLeft.text, r.bind.text, r.arrow.shown, r.junk.shown })
+	end)
+
+	it("a keystone shows +level and its dungeon's short name", function()
+		A.dungeons[503] = "Ara-Kara, City of Echoes"
+		local _, r = draw(0, 5)
+		assert.same({ "+12", "AKCE", "" }, { r.topLeft.text, r.bottomLeft.text, r.bind.text })
+	end)
+
+	it("a junk coin on gray items; nothing on a potion", function()
+		local _, junk = draw(0, 6)
+		assert.truthy(junk.junk.shown)
+		local _, potion = draw(0, 1)
+		assert.same({ "", "", "", false, false },
+			{ potion.topLeft.text, potion.bottomLeft.text, potion.bind.text, potion.arrow.shown, potion.junk.shown })
+	end)
+
+	it("a slot that empties clears its overlays; an empty slot that never had an item makes no regions", function()
+		local b = draw(0, 3)
+		Ov.Apply(b, nil, 0)
+		local r = Ov.regions[b]
+		assert.same({ "", "", false }, { r.topLeft.text, r.bind.text, r.arrow.shown })
+		local empty = Fake.New("ItemButton")
+		Ov.Apply(empty, nil, 0)
+		assert.is_nil(Ov.regions[empty])
+	end)
+
+	it("an empty reagent-bag slot is tinted so it stands out in Free; an item there is not", function()
+		A.SetBagSize(5, 4)
+		local b = Fake.New("ItemButton")
+		Ov.Apply(b, nil, 5)
+		assert.truthy(Ov.regions[b].reagent.shown)
+		A.Put(5, 1, Fixtures.HERB, 5)
+		Ov.Apply(b, SB.Items.Describe(5, 1), 5)
+		assert.falsy(Ov.regions[b].reagent.shown)
+		local other = Fake.New("ItemButton")
+		Ov.Apply(other, SB.Items.Describe(0, 1), 0)
+		Ov.Apply(other, nil, 0)
+		assert.falsy(Ov.regions[other].reagent.shown)
+	end)
+
+	it("each overlay has its own switch; /swagbag overlays lists and switches them", function()
+		SB.Config.Set("overlays.ilvl", false)
+		local _, r = draw(0, 3)
+		assert.equal("", r.topLeft.text)
+		assert.equal("BoE", r.bind.text)
+		SB.Slash.Dispatch("overlays bind off")
+		SB.Slash.Dispatch("overlays")
+		SB.Slash.Dispatch("overlays sparkles on")
+		assert.same({ "Overlay bind is now off.",
+			"Overlays: ilvl off, track on, upgrade on, keystone on, junk on, bind off, pawn off, title on",
+			SB.L.OVERLAYS_USAGE }, A.Lines())
+		assert.equal(false, SB.Config.Get("overlays.bind"))
+	end)
+
+	it("a gear change re-draws the arrows of the open windows, once after the last slot event", function()
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		local b, r = draw(0, 3)
+		assert.truthy(r.arrow.shown)
+		local record = SB.Items.Describe(0, 3)
+		local passes = 0
+		SB.BagsWindow = { IsOpen = function() return true end,
+			ForEachSlot = function(fn) passes = passes + 1 fn(b, record, 0, 3) end }
+		A.equipped[11] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 11)
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 12)
+		assert.truthy(r.arrow.shown, "not yet")
+		A.Advance(0.1)
+		assert.falsy(r.arrow.shown)
+		assert.equal(1, passes)
+	end)
+
+	it("with Use Pawn, Pawn decides the arrow for bag items", function()
+		A.equipped[11] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		A.pawn = { ["0:3"] = true }
+		SB.Slash.Dispatch("overlays pawn on")
+		local _, r = draw(0, 3)
+		assert.truthy(r.arrow.shown, "Pawn says upgrade, although 285 does not beat 300")
+		assert.same({ "Overlay pawn is now on." }, A.Lines())
+		A.pawn = nil
+		A.printed = {}
+		SB.Slash.Dispatch("overlays pawn on")
+		assert.same({ "Overlay pawn is now on.", SB.L.OVERLAYS_NO_PAWN }, A.Lines())
+	end)
+
+	it("/swagbag overlays title off switches the item level in the bags title off at once", function()
+		local refreshed = 0
+		SB.BagsWindow = { IsOpen = function() return false end, RefreshTitle = function() refreshed = refreshed + 1 end }
+		SB.Slash.Dispatch("overlays title off")
+		assert.equal(false, SB.Config.Get("bags.showIlvl"))
+		assert.equal(1, refreshed)
+		assert.same({ "Overlay title is now off." }, A.Lines())
+	end)
+end)
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `luajit spec/runner.lua spec/adapter_spec.lua spec/bagswindow_sections_spec.lua spec/bagswindow_spec.lua spec/overlays_spec.lua`
+Expected: `16 passed, 70 failed`. `UI/Overlays.lua` does not exist yet, so every `overlays_spec` test, and every `bagswindow_sections_spec` test except the load-order one, fails to load. The four title tests in `bagswindow_spec` and the `EquippedItemLevel` test in `adapter_spec` fail because `W.Title`, `W.RefreshTitle` and `Adapter.EquippedItemLevel` do not exist yet.
+
+Critical tests and the mutation that must make each fail:
+- `overlays_spec` "a slot that empties clears its overlays; an empty slot that never had an item makes no regions": delete the early return for empty slots in `Ov.Apply`.
+- `overlays_spec` "a gear change re-draws the arrows of the open windows, once after the last slot event": delete `Ov.context = nil` in the `PLAYER_EQUIPMENT_CHANGED` handler.
+- `overlays_spec` "an empty reagent-bag slot is tinted…": `show(r.reagent, record == nil)`.
+- `overlays_spec` "/swagbag overlays title off switches the item level in the bags title off at once": delete `title = "bags.showIlvl"` from `SETTING`.
+- `bagswindow_sections_spec` "an item whose data loads while open gets its overlays at once…": delete `overlay(bag, slot)` in `refreshRecord`.
+- `bagswindow_spec` "the title shows the average equipped item level with one decimal (D18)": `return L.BAGS_TITLE` instead of `return L.BAGS_TITLE_ILVL:format(ilvl)` in `W.Title`.
+- `bagswindow_spec` "the item level in the title follows gear swaps while open…": delete the `SB.On("PLAYER_AVG_ITEM_LEVEL_UPDATE", …)` line.
+- `bagswindow_spec` "a flash keeps the title until it ends, then the item-level title comes back up to date": `if true then` instead of `if not flashing then` in `W.RefreshTitle`; or `frame.title:SetText(L.BAGS_TITLE)` instead of `frame.title:SetText(W.Title())` when the flash ends.
+- `bagswindow_spec` "no item level from the client, or bags.showIlvl off: the plain title, no error": `if true then` instead of `if ilvl then` in `W.Title` (the format errors on nil).
+- `adapter_spec` "EquippedItemLevel is GetAverageItemLevel's equipped value…": `local ok, equipped = pcall(fn)` (the overall value instead of the equipped one).
+
+- [ ] **Step 3: Implement**
+
+<!-- sbw3:edit T4 i01 SwagBag/SwagBag.toc -->
+In `SwagBag/SwagBag.toc`, find:
+
+```text
+UI/GuildButtons.lua
+UI/GuildBankWindow.lua
+UI/DebugV1.lua
+
+```
+
+and replace it with:
+
+```text
+UI/GuildButtons.lua
+UI/GuildBankWindow.lua
+UI/Overlays.lua
+UI/DebugV1.lua
+
+```
+
+<!-- sbw3:edit T4 i02 SwagBag/Core/Adapter.lua -->
+In `SwagBag/Core/Adapter.lua`, find:
+
+```lua
+end
+
+-- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
+function A.PawnUpgrade(bag, slot)
+```
+
+and replace it with:
+
+```lua
+end
+
+-- Average item level of what the character wears (GetAverageItemLevel's second value), or
+-- nil when the client lacks the function or gives no number (spec addition D18).
+function A.EquippedItemLevel()
+	local fn = _G.GetAverageItemLevel
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, _, equipped = pcall(fn)
+	if not ok or type(equipped) ~= "number" or isSecret(equipped) then
+		return nil
+	end
+	return equipped
+end
+
+function A.HasPawn()
+	return type(_G.PawnIsContainerItemAnUpgrade) == "function"
+end
+
+-- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
+function A.PawnUpgrade(bag, slot)
+```
+
+<!-- sbw3:edit T4 i03 SwagBag/Core/Adapter.lua -->
+In `SwagBag/Core/Adapter.lua`, find:
+
+```lua
+	{ path = "C_PlayerInfo.CanUseItem", window = "bags", required = false },
+	{ path = "GetInventoryItemLink", window = "bags", required = false },
+	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
+	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
+```
+
+and replace it with:
+
+```lua
+	{ path = "C_PlayerInfo.CanUseItem", window = "bags", required = false },
+	{ path = "GetInventoryItemLink", window = "bags", required = false },
+	{ path = "GetAverageItemLevel", window = "bags", required = false },
+	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
+	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
+```
+
+<!-- sbw3:edit T4 i04 SwagBag/Core/Config.lua -->
+In `SwagBag/Core/Config.lua`, find:
+
+```lua
+	settings = {
+		-- view: "sections" (category view) | "grid"; newRows: rows kept for New while open;
+		-- reagentSeparate: show the reagent bag as its own "Reagents" section (spec AC1.4).
+		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false },
+		safeMode = { bags = false, bank = false },
+		-- blizzardFrame: "tiny" (Blizzard's bank invisible, its tabs on SwagBag's window) |
+```
+
+and replace it with:
+
+```lua
+	settings = {
+		-- view: "sections" (category view) | "grid"; newRows: rows kept for New while open;
+		-- reagentSeparate: show the reagent bag as its own "Reagents" section (spec AC1.4);
+		-- showIlvl: the title shows the average equipped item level (plan D18).
+		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
+			showIlvl = true },
+		safeMode = { bags = false, bank = false },
+		-- blizzardFrame: "tiny" (Blizzard's bank invisible, its tabs on SwagBag's window) |
+```
+
+<!-- sbw3:edit T4 i05 SwagBag/Core/Config.lua -->
+In `SwagBag/Core/Config.lua`, find:
+
+```lua
+		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
+		guildBank = { mode = "full", withdrawAnyTab = true },
+	},
+}
+```
+
+and replace it with:
+
+```lua
+		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
+		guildBank = { mode = "full", withdrawAnyTab = true },
+		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
+		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
+			usePawn = false },
+	},
+}
+```
+
+<!-- sbw3:edit T4 i06 SwagBag/Locale/enUS.lua -->
+In `SwagBag/Locale/enUS.lua`, find:
+
+```lua
+L.BAGS_TITLE = "SwagBag"
+L.BAGS_SCALE = "SwagBag %d%%"
+L.VIEW_TO_GRID = "Grid"
+L.VIEW_TO_SECTIONS = "Categories"
+```
+
+and replace it with:
+
+```lua
+L.BAGS_TITLE = "SwagBag"
+L.BAGS_SCALE = "SwagBag %d%%"
+L.BAGS_TITLE_ILVL = "SwagBag — ilvl %.1f"
+L.VIEW_TO_GRID = "Grid"
+L.VIEW_TO_SECTIONS = "Categories"
+```
+
+<!-- sbw3:edit T4 i07 SwagBag/Locale/enUS.lua -->
+In `SwagBag/Locale/enUS.lua`, find:
+
+```lua
+L.BADGE_BOE = "BoE"
+L.BADGE_WUE = "WuE"
+
+-- In-game check V1 (optional)
+```
+
+and replace it with:
+
+```lua
+L.BADGE_BOE = "BoE"
+L.BADGE_WUE = "WuE"
+L.OVERLAY_KEYSTONE = "+%d"
+L.OVERLAY_ON = "on"
+L.OVERLAY_OFF = "off"
+L.HELP_OVERLAYS = "overlays [name on|off]: list or switch item overlays (ilvl, track, upgrade, keystone, junk, bind, pawn)"
+	.. " and the item level in the bags title (title)"
+L.OVERLAYS_STATE = "Overlays: %s"
+L.OVERLAYS_SET = "Overlay %s is now %s."
+L.OVERLAYS_USAGE = "Use /swagbag overlays, or /swagbag overlays <ilvl|track|upgrade|keystone|junk|bind|pawn|title> <on|off>."
+L.OVERLAYS_NO_PAWN = "Pawn is not loaded, so the item-level rule still decides the upgrade arrow."
+
+-- In-game check V1 (optional)
+```
+
+<!-- sbw3:edit T4 i08 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+---------------------------------------------------------------------------
+local titleToken = 0
+
+-- Show text in the title for 1.5 s (feedback for header buttons and scaling, P2).
+function W.Flash(text)
+	titleToken = titleToken + 1
+	local token = titleToken
+	frame.title:SetText(text)
+	SB.Adapter.After(1.5, Guard("bags.flash", function()
+		if token == titleToken then
+			frame.title:SetText(L.BAGS_TITLE)
+		end
+	end, "bags"))
+end
+
+function W.RestorePosition()
+```
+
+and replace it with:
+
+```lua
+---------------------------------------------------------------------------
+local titleToken = 0
+local flashing = false
+
+-- The title at rest: "SwagBag — ilvl 279.4" (the average item level the character wears,
+-- one decimal) while bags.showIlvl is on and the client answers; otherwise "SwagBag" (D18).
+function W.Title()
+	if SB.Config.Get("bags.showIlvl") then
+		local ilvl = SB.Adapter.EquippedItemLevel()
+		if ilvl then
+			return L.BAGS_TITLE_ILVL:format(ilvl)
+		end
+	end
+	return L.BAGS_TITLE
+end
+
+-- Shows the resting title, unless a flash is up (the flash puts the resting title back).
+function W.RefreshTitle()
+	if not flashing then
+		frame.title:SetText(W.Title())
+	end
+end
+
+-- Show text in the title for 1.5 s (feedback for header buttons and scaling, P2), then
+-- the resting title.
+function W.Flash(text)
+	titleToken = titleToken + 1
+	local token = titleToken
+	flashing = true
+	frame.title:SetText(text)
+	SB.Adapter.After(1.5, Guard("bags.flash", function()
+		if token == titleToken then
+			flashing = false
+			frame.title:SetText(W.Title())
+		end
+	end, "bags"))
+end
+
+-- A gear swap changes the item level in the title. SB.On skips an event the client does
+-- not know, so a missing PLAYER_AVG_ITEM_LEVEL_UPDATE costs nothing.
+local function itemLevelChanged()
+	if frame:IsShown() then
+		W.RefreshTitle()
+	end
+end
+SB.On("PLAYER_EQUIPMENT_CHANGED", itemLevelChanged, "bags")
+SB.On("PLAYER_AVG_ITEM_LEVEL_UPDATE", itemLevelChanged, "bags")
+
+function W.RestorePosition()
+```
+
+<!-- sbw3:edit T4 i09 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+end
+
+local function describe(bag, slot)
+	W.records[bag] = W.records[bag] or {}
+```
+
+and replace it with:
+
+```lua
+end
+
+-- Overlays (spec F9) follow the record; an empty reagent-bag slot gets its Free cue.
+local function overlay(bag, slot)
+	if SB.Overlays then
+		SB.Overlays.Apply(SB.Buttons.Get(bag, slot), W.records[bag] and W.records[bag][slot], bag)
+	end
+end
+
+local function describe(bag, slot)
+	W.records[bag] = W.records[bag] or {}
+```
+
+<!-- sbw3:edit T4 i10 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+	end
+	W.records[bag][slot] = record
+	return record
+end
+```
+
+and replace it with:
+
+```lua
+	end
+	W.records[bag][slot] = record
+	overlay(bag, slot)
+	return record
+end
+```
+
+<!-- sbw3:edit T4 i11 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+		fresh.icon = fresh.icon or old.icon
+		W.records[bag][slot] = fresh
+	end
+end
+```
+
+and replace it with:
+
+```lua
+		fresh.icon = fresh.icon or old.icon
+		W.records[bag][slot] = fresh
+		overlay(bag, slot)
+	end
+end
+```
+
+<!-- sbw3:edit T4 i12 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+	W.sortPending, W.sortSawUpdate = false, false
+	W.viewButton:SetText(W.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	frame:Show()
+	W.Layout("open")
+```
+
+and replace it with:
+
+```lua
+	W.sortPending, W.sortSawUpdate = false, false
+	W.viewButton:SetText(W.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	W.RefreshTitle()
+	frame:Show()
+	W.Layout("open")
+```
+
+<!-- sbw3:file T4 i13 SwagBag/UI/Overlays.lua -->
+Create `SwagBag/UI/Overlays.lua`:
+
+```lua
+-- SwagBag overlays (spec F9). Draws Engine/OverlayData.lua's result on an item button:
+--   top left      item level, or "+12" on a keystone          (overlays.ilvl / .keystone)
+--   bottom left   upgrade track "H3/6", or the keystone's dungeon (overlays.track / .keystone)
+--   left          "BoE" / "WuE" until the item is bound          (overlays.bind)
+--   top right     green upgrade arrow (AC9.3)                     (overlays.upgrade)
+--   top left      junk coin on gray items a vendor pays for       (overlays.junk)
+-- The stack count is Blizzard's own (SetItemButtonCount). overlays.usePawn hands the arrow
+-- to Pawn's PawnIsContainerItemAnUpgrade for bag and bank items.
+-- An empty reagent-bag slot gets a faint green tint, so in Free it is clear which empty slots
+-- take reagents only (the week-2 "reagent-bag empties in Free" cue).
+-- Regions are font strings and textures on the button itself (no frames: allowed in combat),
+-- made the first time a button needs one, in its OVERLAY layer, so dimming the button dims
+-- them too. What the character wears is read once and kept until PLAYER_EQUIPMENT_CHANGED,
+-- which re-draws the open windows (spec AC9.3).
+-- /swagbag overlays also switches the item level in the bags window's title (bags.showIlvl).
+--   Overlays.Apply(button, record, bag)   record nil = empty slot
+--   Overlays.RefreshAll()                 re-draw the open bags window's buttons
+local _, SB = ...
+
+local L = SB.L
+local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind" } }
+SB.Overlays = Ov
+
+local regions = setmetatable({}, { __mode = "k" }) -- [button] = its overlay regions
+Ov.regions = regions
+
+local function text(button, point, x, y)
+	local fs = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+	fs:SetPoint(point, button, point, x, y)
+	return fs
+end
+
+-- A texture with an atlas, or a plain colour when the atlas is missing.
+local function texture(button, sublevel, atlas, r, g, b, a)
+	local t = button:CreateTexture(nil, "OVERLAY", nil, sublevel)
+	local ok, set = pcall(t.SetAtlas, t, atlas)
+	if not (ok and set ~= false) then
+		t:SetColorTexture(r, g, b, a)
+	end
+	t:Hide()
+	return t
+end
+
+local function regionsFor(button)
+	local r = regions[button]
+	if not r then
+		r = {
+			topLeft = text(button, "TOPLEFT", 2, -2),
+			bottomLeft = text(button, "BOTTOMLEFT", 2, 2),
+			bind = text(button, "LEFT", 2, 0),
+			arrow = texture(button, 7, "bags-greenarrow", 0.2, 1, 0.2, 0.9),
+			junk = texture(button, 7, "bags-junkcoin", 1, 0.85, 0.1, 0.9),
+			reagent = texture(button, 6, "", 0.2, 0.75, 0.35, 0.18),
+		}
+		r.arrow:SetSize(14, 14)
+		r.arrow:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
+		r.junk:SetSize(12, 12)
+		r.junk:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
+		r.reagent:SetAllPoints(button)
+		regions[button] = r
+	end
+	return r
+end
+
+-- What the character wears and can use; kept until the equipment changes.
+function Ov.Context()
+	if not Ov.context then
+		local A = SB.Adapter
+		local ctx = { equipped = A.EquippedItems(), canUse = A.CanUse, dungeonName = A.DungeonName }
+		if SB.Config.Get("overlays.usePawn") then
+			ctx.pawn = function(record)
+				if record.bag and A.BagKind(record.bag) then -- bag and bank slots; not the guild bank
+					return A.PawnUpgrade(record.bag, record.slot)
+				end
+				return nil
+			end
+		end
+		Ov.context = ctx
+	end
+	return Ov.context
+end
+
+local function on(name)
+	return SB.Config.Get("overlays." .. name) == true
+end
+
+local function show(region, yes)
+	if yes then
+		region:Show()
+	else
+		region:Hide()
+	end
+end
+
+function Ov.Apply(button, record, bag)
+	if not button then
+		return
+	end
+	local reagentEmpty = record == nil and bag ~= nil and SB.Adapter.BagKind(bag) == "reagentbag"
+	if not regions[button] and record == nil and not reagentEmpty then
+		return -- an empty slot that never showed anything: no regions needed
+	end
+	local r = regionsFor(button)
+	local d = SB.OverlayData.For(record, Ov.Context())
+	local top = (on("ilvl") and d.ilvl and tostring(d.ilvl))
+		or (on("keystone") and d.keystone and L.OVERLAY_KEYSTONE:format(d.keystone.level)) or ""
+	local bottom = (on("track") and d.track) or (on("keystone") and d.keystone and d.keystone.dungeon) or ""
+	r.topLeft:SetText(top)
+	r.bottomLeft:SetText(bottom)
+	r.bind:SetText(on("bind") and d.bind or "")
+	show(r.arrow, on("upgrade") and d.upgrade)
+	show(r.junk, on("junk") and d.junk and top == "")
+	show(r.reagent, reagentEmpty)
+end
+
+-- Re-draw the buttons of the open bags window (equipment or settings changed).
+function Ov.RefreshAll()
+	local function each(fn)
+		fn(function(button, record, bag)
+			Ov.Apply(button, record, bag)
+		end)
+	end
+	local bags = SB.BagsWindow
+	if bags and bags.IsOpen() then
+		each(bags.ForEachSlot)
+	end
+end
+
+-- A gear swap fires one event per slot: re-draw once, after the last one.
+SB.On("PLAYER_EQUIPMENT_CHANGED", function()
+	Ov.context = nil
+	SB.Debounce("overlays.equipment", 0.1, Ov.RefreshAll, "none")
+end, "none")
+
+-- The setting behind each name /swagbag overlays knows (plain names are overlays.<name>).
+local SETTING = { pawn = "overlays.usePawn", title = "bags.showIlvl" }
+
+local function path(name)
+	return SETTING[name] or ("overlays." .. name)
+end
+
+local function state(name)
+	return SB.Config.Get(path(name)) and L.OVERLAY_ON or L.OVERLAY_OFF
+end
+
+-- /swagbag overlays              list every overlay and whether it is on
+-- /swagbag overlays <name> on|off  switch one (pawn: let Pawn decide the arrow;
+--                                  title: the item level in the bags window's title)
+SB.Slash.Register("overlays", L.HELP_OVERLAYS, function(arg)
+	local name, value = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
+	local names = { "ilvl", "track", "upgrade", "keystone", "junk", "bind", "pawn", "title" }
+	if name == "" then
+		local parts = {}
+		for _, n in ipairs(names) do
+			parts[#parts + 1] = n .. " " .. state(n)
+		end
+		return L.OVERLAYS_STATE:format(table.concat(parts, ", "))
+	end
+	local known = false
+	for _, n in ipairs(names) do
+		known = known or n == name
+	end
+	if not known or (value ~= "on" and value ~= "off") then
+		return L.OVERLAYS_USAGE
+	end
+	if not SB.Config.Set(path(name), value == "on") then
+		return L.SETTINGS_READONLY
+	end
+	Ov.context = nil
+	Ov.RefreshAll()
+	if SB.BagsWindow then
+		SB.BagsWindow.RefreshTitle()
+	end
+	local line = L.OVERLAYS_SET:format(name, state(name))
+	if name == "pawn" and value == "on" and not SB.Adapter.HasPawn() then
+		return { line, L.OVERLAYS_NO_PAWN }
+	end
+	return line
+end)
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `luajit spec/runner.lua spec/adapter_spec.lua spec/bagswindow_sections_spec.lua spec/bagswindow_spec.lua spec/overlays_spec.lua`
+Expected: `86 passed, 0 failed`
+
+- [ ] **Step 5: Run all checks**
+
+Run: `scripts/check.sh`
+Expected: `TOC OK (39 files)`, `506 passed, 0 failed`, `ALL CHECKS PASSED`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add spec/mock_adapter.lua \
+  spec/adapter_spec.lua \
+  spec/bagswindow_sections_spec.lua \
+  spec/bagswindow_spec.lua \
+  spec/overlays_spec.lua \
+  SwagBag/SwagBag.toc \
+  SwagBag/Core/Adapter.lua \
+  SwagBag/Core/Config.lua \
+  SwagBag/Locale/enUS.lua \
+  SwagBag/UI/BagsWindow.lua \
+  SwagBag/UI/Overlays.lua
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 4: overlays on bag buttons, item level in the bags title, Use Pawn, reagent-bag cue, /swagbag overlays" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
+```
+
+- [ ] **Step 7: In-game session O1 (the user does this on Oct 16; about 10 minutes; bags only)**
+
+Give the user this checklist exactly. Carry some gear (one piece better than what you wear, if you have one), your keystone, a gray item and some crafting materials. The bank and guild bank do not show overlays yet; session G2 checks them later in the week.
+
+1. Quit the game completely and start it again (new files). Log in. Press **B**.
+2. The bags window's title reads `SwagBag — ilvl` and a number with one decimal, for example `SwagBag — ilvl 279.4`. Press **C**: the character window's item level is the same number (the character window may round it). Press **C** again to close it.
+3. Gear shows its item level in the top left corner (for example `285`). Gear with an upgrade track shows it in the bottom left (for example `H3/6`). If **no** gear shows a track, tell Claude: the game's track information may be missing.
+4. A BoE item shows `BoE` on its left side, and a warbound-until-equipped item shows `WuE`.
+5. Gear that beats what you wear in that slot shows a small green arrow in its top right corner. For rings and trinkets, "what you wear" means the weaker of your two.
+6. Equip one item that has an arrow (right-click it). Within a moment its arrow is gone, the piece you took off shows an arrow only if it beats what you now wear, and **the number in the title changes**. Move the mouse off it. (No arrow anywhere? Equip any piece with a different item level than the one it replaces: the number in the title changes all the same. Put your usual piece back afterwards.)
+7. Hold **Ctrl** and turn the mouse wheel up one notch over the items. The title says `SwagBag 105%` for a moment, then `SwagBag — ilvl …` again. Turn the wheel down one notch to go back to your size.
+8. Click `Reflow`. The title says `Regrouped` for a moment, then `SwagBag — ilvl …` again.
+9. Your keystone shows `+` and its level in the top left (for example `+12`) and a short dungeon name in the bottom left.
+10. Gray items show a small coin.
+11. If you have a reagent bag with empty slots, those empty slots in `Free` have a faint green tint.
+12. Type `/swagbag overlays`. Chat says `Overlays: ilvl on, track on, upgrade on, keystone on, junk on, bind on, pawn off, title on`.
+13. Type `/swagbag overlays ilvl off`. Chat says `Overlay ilvl is now off.`, and the item levels on the items disappear. Type `/swagbag overlays ilvl on`: they come back.
+14. Type `/swagbag overlays title off`. Chat says `Overlay title is now off.`, and the title reads just `SwagBag`. Type `/swagbag overlays title on`: the item level is back in the title.
+15. If you use Pawn, type `/swagbag overlays pawn on`: the arrows now follow Pawn. Without Pawn, chat says `Overlay pawn is now on.` and `Pawn is not loaded, so the item-level rule still decides the upgrade arrow.` Either way, type `/swagbag overlays pawn off` afterwards.
+16. Every crest or valorstone item you carry is in `Keystone & Crests`. If one is somewhere else, drop it on the `Keystone & Crests` header and tell Claude its exact name.
+17. Type `/swagbag report`, press Ctrl+C and paste it into Claude Code. Claude checks no new errors and `Blocked actions: none`.
+
+Pass: steps 2–16 behave as described. Report every crest name from step 16: Claude adds their item IDs to `Engine/Crests.lua`.
+
+---
+
+### Task 5: Button pool and bags-window fixes from the ledgers (growth, retry, parents, bank tabs, per-window pools, incremental redraw, scale)
 
 The week-1 and week-2 ledgers left these for week 3. Each one matters once the bank window exists:
 
@@ -3007,7 +4894,7 @@ The week-1 and week-2 ledgers left these for week 3. Each one matters once the b
 - **SetParentFor after creation is a no-op.** Bank bag frames made at login live under a hidden holder, and a later `SetParentFor("bank", child)` never moved them. Fix: it moves the existing **bag frames** of that kind (never the item buttons), out of combat.
 - **Bank tabs bought after login get no buttons.** Fix: `Buttons.EnsureBankTabs()` runs at login (inside `CreateAll`) and on every `BANKFRAME_OPENED`.
 - **The pools are global** (Review Focus 1). `SectionHeaders.ReleaseAll()` and `Buttons.ReleasePlaceholders()` release every window's frames, so a bags redraw would wipe the bank window's headers. Fix: both take the parent frame and release only frames acquired in it. `SectionHeaders.Acquire` takes an optional owner `{ onClick, onDrop }`, so the bank's headers do not call the bags window's click handler. Owners and parents are kept in side tables, not in fields on the frames.
-- **ApplyChanges redraws every cell** (week-2 final review: "make render incremental for 1,290 slots"). Fix: `renderMoved(oldPos, newPos)` touches only the buttons whose cell changed (`Layout.Moves`), plus the placeholders and headers.
+- **ApplyChanges redraws every cell** (week-2 final review: "make render incremental for 1,290 slots"). Fix: `renderMoved(oldPos, newPos)` touches only the buttons whose cell changed (`Layout.Moves`), plus the placeholders and headers. The test allows 4 button lookups for one change: the changed slot's repaint, its overlay (Task 4) and the one button that moved.
 - **A cell whose slot is past the bag's size can be shown again** while its "removed" change is held back (week-2 Task 10 minor). Fix: `render` and `renderMoved` never show such a cell, and search skips it.
 - **The window jumps on reopen after Ctrl+wheel** (week-2 final residual). Fix: `W.SetScale` saves the new corner at once. A test covers a second notch from 120 %.
 - **No re-anchoring during a drag** (same residual). While `W.dragging` is true, neither a scale change nor a resize calls `SetPoint`. The drop saves the corner.
@@ -3017,18 +4904,18 @@ The week-1 and week-2 ledgers left these for week 3. Each one matters once the b
 - Test: `spec/buttons_spec.lua`, `spec/bagswindow_sections_spec.lua`
 
 **Interfaces:**
-- Consumes: `SB.Layout.Moves` (on `main`), `spec/helpers/fakeframe.lua` (Task 1).
+- Consumes: `SB.Layout.Moves` (on `main`), `spec/helpers/fakeframe.lua` (Task 1), `SB.Overlays.Apply` (Task 4; the bags window already calls it).
 - Produces:
   - `SB.Buttons.pendingGrow[bag]`, `SB.Buttons.EnsureBankTabs()`.
   - `SB.Buttons.SetParentFor(kind, frame)` now moves existing bag frames of that kind.
   - `SB.Buttons.ReleasePlaceholders(parent)` (nil = all).
   - `SB.SectionHeaders.Acquire(parent, sectionId, label, x, y, width, owner)` (owner = `{ onClick(id), onDrop(id) }`, optional) and `SB.SectionHeaders.ReleaseAll(parent)` (nil = all).
   - `SB.BagsWindow.dragging`.
-  - Every window must pass its own scroll child to both release calls (Tasks 5, 6, 8 do).
+  - Every window must pass its own scroll child to both release calls (Tasks 7, 8, 10 do).
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T3 s01 spec/bagswindow_sections_spec.lua -->
+<!-- sbw3:edit T5 s01 spec/bagswindow_sections_spec.lua -->
 In `spec/bagswindow_sections_spec.lua`, find:
 
 ```lua
@@ -3084,7 +4971,7 @@ and replace it with:
 		W.Open()
 ```
 
-<!-- sbw3:edit T3 s02 spec/bagswindow_sections_spec.lua -->
+<!-- sbw3:edit T5 s02 spec/bagswindow_sections_spec.lua -->
 In `spec/bagswindow_sections_spec.lua`, find:
 
 ```lua
@@ -3112,7 +4999,8 @@ and replace it with:
 		bagUpdate()
 		B.Get = realGet
 		assert.equal(1, #B.placeholders)
-		assert.truthy(gets <= 3, "Buttons.Get called " .. gets .. " times for one change in 16 slots")
+		-- the changed slot's repaint, its overlay and the one button that moved
+		assert.truthy(gets <= 4, "Buttons.Get called " .. gets .. " times for one change in 16 slots")
 		assert.equal(16, #W.cells, "search still sees every slot")
 	end)
 
@@ -3137,7 +5025,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T3 s03 spec/buttons_spec.lua -->
+<!-- sbw3:edit T5 s03 spec/buttons_spec.lua -->
 In `spec/buttons_spec.lua`, find:
 
 ```lua
@@ -3301,7 +5189,7 @@ end)
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/buttons_spec.lua`
-Expected: `63 passed, 12 failed`. Each new test fails on the defect it pins.
+Expected: `65 passed, 12 failed`. Each new test fails on the defect it pins.
 
 Critical tests and the mutation that must make each fail:
 - "growth asked for during combat keeps the largest request, in either order": `Buttons.pendingGrow[bag] = n`.
@@ -3318,7 +5206,7 @@ Critical tests and the mutation that must make each fail:
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T3 i01 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T5 i01 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -3355,7 +5243,7 @@ end
 
 ```
 
-<!-- sbw3:edit T3 i02 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T5 i02 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -3391,7 +5279,7 @@ function Buttons.EnsureCapacity(bag, n)
 		return 0
 ```
 
-<!-- sbw3:edit T3 i03 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T5 i03 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -3436,7 +5324,7 @@ end
 
 ```
 
-<!-- sbw3:edit T3 i04 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T5 i04 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -3456,7 +5344,7 @@ Buttons.PLACEHOLDER_ALPHA = 0.5
 
 ```
 
-<!-- sbw3:edit T3 i05 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T5 i05 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -3476,7 +5364,7 @@ and replace it with:
 	p.icon:SetTexture(icon)
 ```
 
-<!-- sbw3:edit T3 i06 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T5 i06 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -3512,7 +5400,7 @@ function Buttons.ReleasePlaceholders(parent)
 end
 ```
 
-<!-- sbw3:edit T3 i07 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T5 i07 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -3539,7 +5427,7 @@ SB.On("BANKFRAME_OPENED", function()
 end, "bank")
 ```
 
-<!-- sbw3:edit T3 i08 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T5 i08 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -3560,7 +5448,7 @@ local _, SB = ...
 
 ```
 
-<!-- sbw3:edit T3 i09 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T5 i09 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -3583,7 +5471,7 @@ local parents, owners = {}, {}
 -- Pure: the header text.
 ```
 
-<!-- sbw3:edit T3 i10 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T5 i10 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -3618,7 +5506,7 @@ and replace it with:
 	end, "bags"))
 ```
 
-<!-- sbw3:edit T3 i11 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T5 i11 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -3649,7 +5537,7 @@ function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	h:SetWidth(width)
 ```
 
-<!-- sbw3:edit T3 i12 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T5 i12 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -3685,7 +5573,7 @@ function H.ReleaseAll(parent)
 end
 ```
 
-<!-- sbw3:edit T3 i13 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T5 i13 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -3710,7 +5598,7 @@ and replace it with:
 end, "bags"))
 ```
 
-<!-- sbw3:edit T3 i14 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T5 i14 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -3741,7 +5629,7 @@ frame:SetScript("OnDragStop", Guard("bags.dragStop", function()
 	savePosition()
 ```
 
-<!-- sbw3:edit T3 i15 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T5 i15 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -3762,7 +5650,7 @@ and replace it with:
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 ```
 
-<!-- sbw3:edit T3 i16 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T5 i16 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -3784,7 +5672,7 @@ function W.SetScale(scale)
 	scale = SB.GridLayout.ClampScale(scale)
 ```
 
-<!-- sbw3:edit T3 i17 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T5 i17 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -3810,7 +5698,7 @@ and replace it with:
 	W.Flash(L.BAGS_SCALE:format(math.floor(scale * 100 + 0.5)))
 ```
 
-<!-- sbw3:edit T3 i18 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T5 i18 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -3866,7 +5754,7 @@ local function renderExtras(pos)
 		if p.shown then
 ```
 
-<!-- sbw3:edit T3 i19 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T5 i19 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -3951,7 +5839,7 @@ end
 local function layoutSections(bags)
 ```
 
-<!-- sbw3:edit T3 i20 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T5 i20 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -3974,7 +5862,7 @@ and replace it with:
 	if W.View() == "grid" then
 ```
 
-<!-- sbw3:edit T3 i21 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T5 i21 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -4001,12 +5889,12 @@ and replace it with:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/buttons_spec.lua`
-Expected: `75 passed, 0 failed`
+Expected: `77 passed, 0 failed`
 
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (36 files)`, `488 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (39 files)`, `518 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -4016,11 +5904,11 @@ git add spec/bagswindow_sections_spec.lua \
   SwagBag/UI/Buttons.lua \
   SwagBag/UI/SectionHeaders.lua \
   SwagBag/UI/BagsWindow.lua
-git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 3: pool growth max-merge, CreateAll retry, bank bag frames, per-window pools, incremental redraw, scale position" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 5: pool growth max-merge, CreateAll retry, bank bag frames, per-window pools, incremental redraw, scale position" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
-- [ ] **Step 7: In-game session S3 (the user does this on Oct 16; about 2 minutes)**
+- [ ] **Step 7: In-game session S3 (the user does this on Oct 17; about 2 minutes)**
 
 No new files, so `/reload` is enough.
 
@@ -4034,7 +5922,7 @@ Pass: steps 2–5 behave as described.
 
 ---
 
-### Task 4: One search per window (`SearchState.New`, `SearchBox.New`)
+### Task 6: One search per window (`SearchState.New`, `SearchBox.New`)
 
 Spec AC5.1 asks for "a search box per window". Today `SB.Search` is a single module state, and `UI/SearchBox.lua` builds one box bound to the bags window. The bank and guild bank windows need their own search text and dimming, so this task makes the search state an instance (`SB.SearchState.New()`). `SB.Search` stays the bags window's instance, so every existing caller and test keeps working. The box becomes a factory, `SB.SearchBox.New(o)`, which builds a box on any frame with its own state, slot iterator and dimmer; the bags box is built through it. `ErrorSpan` and `VOLATILE_REFRESH` are shared and stay on every instance. Both files are replaced whole, because the search body is now indented inside the constructor.
 
@@ -4053,7 +5941,7 @@ Spec AC5.1 asks for "a search box per window". Today `SB.Search` is a single mod
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T4 s01 spec/search_spec.lua -->
+<!-- sbw3:edit T6 s01 spec/search_spec.lua -->
 In `spec/search_spec.lua`, find:
 
 ```lua
@@ -4086,7 +5974,7 @@ and replace it with:
 end)
 ```
 
-<!-- sbw3:edit T4 s02 spec/searchbox_spec.lua -->
+<!-- sbw3:edit T6 s02 spec/searchbox_spec.lua -->
 In `spec/searchbox_spec.lua`, find:
 
 ```lua
@@ -4143,7 +6031,7 @@ Critical test and its mutation: `searchbox_spec` "another window's box has its o
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:file T4 i01 SwagBag/Engine/Search.lua -->
+<!-- sbw3:file T6 i01 SwagBag/Engine/Search.lua -->
 Replace the whole file `SwagBag/Engine/Search.lua` with:
 
 ```lua
@@ -4275,7 +6163,7 @@ end
 SB.Search = SearchState.New()
 ```
 
-<!-- sbw3:file T4 i02 SwagBag/UI/SearchBox.lua -->
+<!-- sbw3:file T6 i02 SwagBag/UI/SearchBox.lua -->
 Replace the whole file `SwagBag/UI/SearchBox.lua` with:
 
 ```lua
@@ -4448,7 +6336,7 @@ Expected: `28 passed, 0 failed`
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (36 files)`, `490 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (39 files)`, `520 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -4457,35 +6345,33 @@ git add spec/search_spec.lua \
   spec/searchbox_spec.lua \
   SwagBag/Engine/Search.lua \
   SwagBag/UI/SearchBox.lua
-git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 4: one search state and search box per window" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 6: one search state and search box per window" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
 ---
 
-### Task 5: GroupView: stacked groups with their own sections, the hover guard across groups, the 1,290-slot budget
+### Task 7: GroupView: stacked groups with their own sections, the hover guard across groups, the 1,290-slot budget
 
 The bank window shows two groups (character bank, warband bank) and the guild bank one group per tab. Both need what the bags window does for one group: week-2 `Layout` sections or a grid, collapse, the spec §4.3 transitions while open, and spec §4.2 rule 5. `UI/GroupView.lua` provides that for a stack of groups in one scroll child:
 
 - Each group has a header (`"#" .. groupId`) that collapses the whole group, its own `Layout` state, and its own collapse set: `ui.collapsed["bank:warband"]`, `ui.collapsed["bank:#"]` for whole groups.
-- Section headers are `groupId .. ":" .. sectionId` and are acquired with the view's own owner (Task 3), so clicks never reach the bags window.
+- Section headers are `groupId .. ":" .. sectionId` and are acquired with the view's own owner (Task 5), so clicks never reach the bags window.
 - `Layout.Position` gains `opts.top`, so each group's sections start under the group above.
 - **Cross-group pushes.** A change in one group can push the groups below it (the character bank's Free gains a row). That push is held back while one of the pushed buttons is under the mouse or an item is on the cursor (Review Focus 4). It retries 300 ms later; `v.stats.heldRedraws` counts the holds.
 - **Incremental redraws.** Redraws touch only `Layout.Moves` keys plus the placeholders and headers. The 1,290-slot fixture is laid out in plain Lua well inside the 80 ms first-open budget (spec §9), and a live change looks up at most 4 buttons.
 - **Drops on headers.** A drop on a section header goes to `cfg.onDrop(sectionId)`. The click that follows the drop is ignored for 0.3 s, exactly like the bags window (week-2 ruling).
 
-This task also adds `spec/helpers/uienv.lua`, which the window specs (Tasks 6, 8, 9, 11) share.
-
 **Files:**
 - Create: `SwagBag/UI/GroupView.lua`
 - Modify: `SwagBag/Engine/Layout.lua` (`opts.top`), `SwagBag/SwagBag.toc`
-- Test: `spec/helpers/uienv.lua` (new), `spec/groupview_spec.lua` (new), `spec/layout_spec.lua`
+- Test: `spec/groupview_spec.lua` (new), `spec/layout_spec.lua`
 
 **Interfaces:**
 - Consumes:
   - `SB.Layout.Build/Position/Apply/Moves/Key/NEW` and `SB.GridLayout.Compute` (on `main`);
   - `SB.Categorizer.Assign`, `SB.Categories.SectionOrder/Name`, `SB.Config.UI` (on `main`);
-  - Task 3's `SB.SectionHeaders.Acquire(…, owner)`, `ReleaseAll(parent)` and `SB.Buttons.AcquirePlaceholder/ReleasePlaceholders(parent)`.
+  - Task 5's `SB.SectionHeaders.Acquire(…, owner)`, `ReleaseAll(parent)` and `SB.Buttons.AcquirePlaceholder/ReleasePlaceholders(parent)`.
 - Produces:
   - `SB.Layout.Position(state, opts, collapsed)` with `opts.top` (default 0; the height includes it).
   - `SB.GroupView.New(cfg) -> v` (the cfg fields are listed at the top of the file).
@@ -4494,11 +6380,10 @@ This task also adds `spec/helpers/uienv.lua`, which the window specs (Tasks 6, 8
   - Access: `v.ForEachSlot(fn(button, record, bag, slot))`, `v.Record(bag, slot)`, `v.SetRecord(bag, slot, record)`, `v.GroupOf(bag)`, `v.Size(bag)`, `v.IsOpen()`, `v.Clear()`, `v.Collapsed(id)`.
   - Fields: `v.groups`, `v.pos`, `v.cells`, `v.stats.lastLayoutMs`, `v.stats.lastLayoutReason`, `v.stats.heldRedraws`.
   - Constants: `SB.GroupView.SLOT/GAP/PAD/SECTION_HEADER/SECTION_GAP/GROUP_HEADER/GROUP_GAP/RETRY/DROP_GUARD`.
-  - `spec/helpers/uienv.lua`: `Env.ENGINE`, `Env.PaintGlobals()`, `Env.ClearPaintGlobals()`, `Env.FakeBags(SB)`, `Env.LoadBank(SB)`.
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:file T5 s01 spec/groupview_spec.lua -->
+<!-- sbw3:file T7 s01 spec/groupview_spec.lua -->
 Create `spec/groupview_spec.lua`:
 
 ```lua
@@ -4950,7 +6835,7 @@ describe("GroupView randomized (Park-Miller): hover holds across groups, section
 end)
 ```
 
-<!-- sbw3:edit T5 s02 spec/layout_spec.lua -->
+<!-- sbw3:edit T7 s02 spec/layout_spec.lua -->
 In `spec/layout_spec.lua`, find:
 
 ```lua
@@ -5002,7 +6887,7 @@ Critical tests and the mutation that must make each fail:
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T5 i01 SwagBag/SwagBag.toc -->
+<!-- sbw3:edit T7 i01 SwagBag/SwagBag.toc -->
 In `SwagBag/SwagBag.toc`, find:
 
 ```text
@@ -5022,7 +6907,7 @@ UI/BankWindow.lua
 UI/GuildButtons.lua
 ```
 
-<!-- sbw3:edit T5 i02 SwagBag/Engine/Layout.lua -->
+<!-- sbw3:edit T7 i02 SwagBag/Engine/Layout.lua -->
 In `SwagBag/Engine/Layout.lua`, find:
 
 ```lua
@@ -5044,7 +6929,7 @@ and replace it with:
 --           placeholders = { {bag, slot, icon, x, y, shown} }, headers = { {id, y, count,
 ```
 
-<!-- sbw3:edit T5 i03 SwagBag/Engine/Layout.lua -->
+<!-- sbw3:edit T7 i03 SwagBag/Engine/Layout.lua -->
 In `SwagBag/Engine/Layout.lua`, find:
 
 ```lua
@@ -5065,7 +6950,7 @@ and replace it with:
 		local sec = st.sections[id]
 ```
 
-<!-- sbw3:file T5 i04 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:file T7 i04 SwagBag/UI/GroupView.lua -->
 Create `SwagBag/UI/GroupView.lua`:
 
 ```lua
@@ -5603,7 +7488,7 @@ Expected: `44 passed, 0 failed`
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (37 files)`, `506 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (40 files)`, `536 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -5613,18 +7498,18 @@ git add spec/groupview_spec.lua \
   SwagBag/SwagBag.toc \
   SwagBag/Engine/Layout.lua \
   SwagBag/UI/GroupView.lua
-git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 5: GroupView, stacked groups with their own sections and a hover guard across groups" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 7: GroupView, stacked groups with their own sections and a hover guard across groups" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
 ---
-### Task 6: Bank window contents: Character bank and Warband bank groups, deposit highlight, live updates, Sort per bank type, Reflow, grid, search
+### Task 8: Bank window contents: Character bank and Warband bank groups, deposit highlight, live updates, Sort per bank type, Reflow, grid, search
 
 This task fills Task 1's window (spec F2, §5.1).
 
 **Groups and highlight.** A `GroupView` holds two groups, `"bank"` (Character bank) and `"warband"` (Warband bank). Each lists the purchased tabs the client reports, never a hardcoded count. The group that receives deposits is tinted, and its header ends with `  - deposits go here` (AC2.3). A tab click moves that highlight with `v.Relabel()`, and nothing moves.
 
-**Opening.** The bank tabs' bag frames move into this window's scroll child (`Buttons.SetParentFor("bank"/"warband", child)`; Task 3 made that work after login). `Inventory.ScanKind` rescans the bank on `BANKFRAME_OPENED` without marking anything "new": what was already in the bank is not a new arrival.
+**Opening.** The bank tabs' bag frames move into this window's scroll child (`Buttons.SetParentFor("bank"/"warband", child)`; Task 5 made that work after login). `Inventory.ScanKind` rescans the bank on `BANKFRAME_OPENED` without marking anything "new": what was already in the bank is not a new arrival.
 
 **Live updates (spec §4.3).** While open, a deposit shows in that group's New, a withdrawal leaves a placeholder and its button goes to that group's Free, and count/lock/load changes repaint in place. A same-itemID link change (a keystone after a run) is a repaint, not an arrival (week-2 W12).
 
@@ -5632,22 +7517,24 @@ This task fills Task 1's window (spec F2, §5.1).
 
 **Sort.** `Sort bank` and `Sort warband` call `Adapter.SortBank(kind)` (spec §5.5, D12). The window regroups 0.3 s after the last bank update, held back while the mouse is over the items. In combat a Sort says `Sort after combat ends` and nothing runs later (week-2 ruling W11). A sort that changes nothing stops waiting after 1.5 s.
 
-**Buttons, search and drops.** `Reflow` and `Grid`/`Categories` work as in the bags window. The window has its own search box (Task 4). A drop on a bank section header goes to the bags window's drag-to-assign (D13).
+**Buttons, search and drops.** `Reflow` and `Grid`/`Categories` work as in the bags window. The window has its own search box (Task 6). A drop on a bank section header goes to the bags window's drag-to-assign (D13).
 
 **Report.** The report gains `Last bank layout: … ms (open)` for the 80 ms budget (spec §9).
 
-The task also adds the Review Focus 1 test: the real bags window and the real bank window open together, and a bags redraw never takes the bank's headers or placeholders.
+The bank buttons get their overlays in Task 11, once the guild bank has contents too.
+
+The task also adds `spec/helpers/uienv.lua`, the shared set-up of the window specs (this task's and Tasks 10, 11 and 12): the engine file list, the paint globals and loading the bank window. It also adds the Review Focus 1 test: the real bags window and the real bank window open together, and a bags redraw never takes the bank's headers or placeholders.
 
 **Files:**
 - Modify: `SwagBag/UI/BankWindow.lua`, `SwagBag/UI/GroupView.lua` (`Relabel`), `SwagBag/Core/Adapter.lua` (`SortBank`, optional check), `SwagBag/Engine/Inventory.lua` (`ScanKind`), `SwagBag/Core/Config.lua` (`bank.view`, `bank.columns`), `SwagBag/Locale/enUS.lua`, `SwagBag/Core/Report.lua`
-- Test: `spec/mock_adapter.lua`, `spec/helpers/uienv.lua`, `spec/bankwindow_spec.lua`, `spec/bankwindow_groups_spec.lua` (new), `spec/report_spec.lua`
+- Test: `spec/mock_adapter.lua`, `spec/helpers/uienv.lua` (new), `spec/bankwindow_spec.lua`, `spec/bankwindow_groups_spec.lua` (new), `spec/report_spec.lua`
 
 **Interfaces:**
 - Consumes:
   - Task 1: `SB.BankWindow` (frame, mode, target, `Flash`, `TitleButton`, `GroupName`);
-  - Task 3: `SB.Buttons.SetParentFor/EnsureBankTabs/ReleasePlaceholders(parent)`;
-  - Task 4: `SB.SearchState.New`, `SB.SearchBox.New`;
-  - Task 5: `SB.GroupView.New`;
+  - Task 5: `SB.Buttons.SetParentFor/EnsureBankTabs/ReleasePlaceholders(parent)`;
+  - Task 6: `SB.SearchState.New`, `SB.SearchBox.New`;
+  - Task 7: `SB.GroupView.New`;
   - on `main`: `SB.BagsWindow.DropOnSection(id)`, `SB.Inventory.OnChanged/Has/R`, `SB.Items.Describe`.
 - Produces:
   - `SB.Adapter.SortBank(kind) -> ok, err` and `SB.Inventory.ScanKind(kind)`.
@@ -5657,11 +7544,11 @@ The task also adds the Review Focus 1 test: the real bags window and the real ba
     - buttons `viewButton`, `reflowButton`, `sortBankButton`, `sortWarbandButton`.
   - `GroupView` gains `v.Relabel()`.
   - Settings `bank.view` and `bank.columns`. Report line `Last bank layout: %.1f ms (%s)`.
-  - `spec/helpers/uienv.lua`'s `Env.LoadBank` now loads the search box, GroupView and bank window together.
+  - `spec/helpers/uienv.lua`: `Env.ENGINE`, `Env.PaintGlobals()`, `Env.ClearPaintGlobals()`, `Env.FakeBags(SB)`, `Env.LoadBank(SB)` (loads the search box, GroupView and bank window together).
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:file T6 s01 spec/helpers/uienv.lua -->
+<!-- sbw3:file T8 s01 spec/helpers/uienv.lua -->
 Create `spec/helpers/uienv.lua`:
 
 ```lua
@@ -5720,7 +7607,7 @@ end
 return Env
 ```
 
-<!-- sbw3:edit T6 s02 spec/mock_adapter.lua -->
+<!-- sbw3:edit T8 s02 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -5745,7 +7632,7 @@ and replace it with:
 	end
 ```
 
-<!-- sbw3:file T6 s03 spec/bankwindow_groups_spec.lua -->
+<!-- sbw3:file T8 s03 spec/bankwindow_groups_spec.lua -->
 Create `spec/bankwindow_groups_spec.lua`:
 
 ```lua
@@ -6090,7 +7977,7 @@ describe("Bags and bank windows open together (Review Focus 1)", function()
 end)
 ```
 
-<!-- sbw3:edit T6 s04 spec/bankwindow_spec.lua -->
+<!-- sbw3:edit T8 s04 spec/bankwindow_spec.lua -->
 In `spec/bankwindow_spec.lua`, find:
 
 ```lua
@@ -6115,7 +8002,7 @@ local FILES = Env.ENGINE
 -- Blizzard's bank as Blizzard shows it: parented to UIParent, two real tabs underneath.
 ```
 
-<!-- sbw3:edit T6 s05 spec/bankwindow_spec.lua -->
+<!-- sbw3:edit T8 s05 spec/bankwindow_spec.lua -->
 In `spec/bankwindow_spec.lua`, find:
 
 ```lua
@@ -6149,7 +8036,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T6 s06 spec/bankwindow_spec.lua -->
+<!-- sbw3:edit T8 s06 spec/bankwindow_spec.lua -->
 In `spec/bankwindow_spec.lua`, find:
 
 ```lua
@@ -6172,7 +8059,7 @@ and replace it with:
 		assert.truthy(ok, tostring(err))
 ```
 
-<!-- sbw3:edit T6 s07 spec/report_spec.lua -->
+<!-- sbw3:edit T8 s07 spec/report_spec.lua -->
 In `spec/report_spec.lua`, find:
 
 ```lua
@@ -6210,7 +8097,7 @@ Critical tests and the mutation that must make each fail:
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T6 i01 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T8 i01 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -6239,7 +8126,7 @@ end
 -- Blizzard frames and the bank (week 3). SwagBag only READS Blizzard's bank state
 ```
 
-<!-- sbw3:edit T6 i02 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T8 i02 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -6259,7 +8146,7 @@ and replace it with:
 	{ path = "ClearCursor", window = "bags", required = false },
 ```
 
-<!-- sbw3:edit T6 i03 SwagBag/Core/Config.lua -->
+<!-- sbw3:edit T8 i03 SwagBag/Core/Config.lua -->
 In `SwagBag/Core/Config.lua`, find:
 
 ```lua
@@ -6281,7 +8168,7 @@ and replace it with:
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 ```
 
-<!-- sbw3:edit T6 i04 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T8 i04 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -6307,7 +8194,7 @@ L.REPORT_BANK_LAYOUT = "Last bank layout: %.1f ms (%s)"
 -- Guild bank window (spec F16)
 ```
 
-<!-- sbw3:edit T6 i05 SwagBag/Engine/Inventory.lua -->
+<!-- sbw3:edit T8 i05 SwagBag/Engine/Inventory.lua -->
 In `SwagBag/Engine/Inventory.lua`, find:
 
 ```lua
@@ -6338,7 +8225,7 @@ end
 function Inv.ScanAll()
 ```
 
-<!-- sbw3:edit T6 i06 SwagBag/Engine/Inventory.lua -->
+<!-- sbw3:edit T8 i06 SwagBag/Engine/Inventory.lua -->
 In `SwagBag/Engine/Inventory.lua`, find:
 
 ```lua
@@ -6358,7 +8245,7 @@ SB.On("BANKFRAME_OPENED", function()
 end, "bank")
 ```
 
-<!-- sbw3:edit T6 i07 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:edit T8 i07 SwagBag/UI/GroupView.lua -->
 In `SwagBag/UI/GroupView.lua`, find:
 
 ```lua
@@ -6378,7 +8265,7 @@ and replace it with:
 --   v.Record(bag, slot), v.SetRecord(bag, slot, record), v.GroupOf(bag), v.Size(bag), v.IsOpen()
 ```
 
-<!-- sbw3:edit T6 i08 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:edit T8 i08 SwagBag/UI/GroupView.lua -->
 In `SwagBag/UI/GroupView.lua`, find:
 
 ```lua
@@ -6404,7 +8291,7 @@ and replace it with:
 		if not v.pos then
 ```
 
-<!-- sbw3:edit T6 i09 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T8 i09 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -6429,7 +8316,7 @@ local _, SB = ...
 
 ```
 
-<!-- sbw3:edit T6 i10 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T8 i10 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -6457,7 +8344,7 @@ and replace it with:
 SB.BankWindow = BW
 ```
 
-<!-- sbw3:edit T6 i11 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T8 i11 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -6507,7 +8394,7 @@ end, "bank"))
 local function blizzardBank()
 ```
 
-<!-- sbw3:edit T6 i12 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T8 i12 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -6534,7 +8421,7 @@ function BW.RefreshTarget()
 end
 ```
 
-<!-- sbw3:edit T6 i13 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T8 i13 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -6810,7 +8697,7 @@ end, "bank"))
 ---------------------------------------------------------------------------
 ```
 
-<!-- sbw3:edit T6 i14 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T8 i14 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -6836,7 +8723,7 @@ and replace it with:
 	BW.RefreshStillOpen()
 ```
 
-<!-- sbw3:edit T6 i15 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T8 i15 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -6857,7 +8744,7 @@ and replace it with:
 	BW.RefreshStillOpen()
 ```
 
-<!-- sbw3:edit T6 i16 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T8 i16 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -6890,7 +8777,7 @@ end, "bank")
 
 ```
 
-<!-- sbw3:edit T6 i17 SwagBag/Core/Report.lua -->
+<!-- sbw3:edit T8 i17 SwagBag/Core/Report.lua -->
 In `SwagBag/Core/Report.lua`, find:
 
 ```lua
@@ -6921,7 +8808,7 @@ Expected: `43 passed, 0 failed`
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (37 files)`, `524 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (40 files)`, `554 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -6938,22 +8825,22 @@ git add spec/helpers/uienv.lua \
   SwagBag/UI/GroupView.lua \
   SwagBag/UI/BankWindow.lua \
   SwagBag/Core/Report.lua
-git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 6: bank window contents, deposit highlight, live updates, sort per bank type, search" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 8: bank window contents, deposit highlight, live updates, sort per bank type, search" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
-Session B1 (the bank contents) runs after Task 7, so it can check the snapshots too.
+Session B1 (the bank contents) runs after Task 9, so it can check the snapshots too.
 
 ---
 
-### Task 7: Snapshots captured: format, timing, combat, budget, `/swagbag snapshot`
+### Task 9: Snapshots captured: format, timing, combat, budget, `/swagbag snapshot`
 
 Spec F13 ships its offline view in November. The data has to start now (spec §12.1: "bank snapshots are still captured in October"), because the character bank can only be read at a banker (§5.7). `Engine/Snapshots.lua` stores the spec §8.3 format:
 - `{ v = 1, at, containers = { [bag] = { size, s } } }`;
 - one `"slot:link;count\n"` string per container, links verbatim;
 - `Deserialize` reads it back. A link that contains `;` round-trips, because the line pattern takes the last `;`.
 
-**Where it saves:** `SwagBagDB.chars["Name-Realm"]` (with class, level, lastSeen), `SwagBagDB.warband`, and `SwagBagDB.guilds["Guild-Realm"]` (used by Task 8). There is no schema bump (D7): `Snapshots.DB()` creates the tables and repairs damaged ones.
+**Where it saves:** `SwagBagDB.chars["Name-Realm"]` (with class, level, lastSeen), `SwagBagDB.warband`, and `SwagBagDB.guilds["Guild-Realm"]` (used by Task 10). There is no schema bump (D7): `Snapshots.DB()` creates the tables and repairs damaged ones.
 
 **When (D6):**
 - bags at logout and 5 s after the last bag update;
@@ -6981,7 +8868,7 @@ The close snapshot is read from SwagBag's inventory model, so a client that alre
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T7 s01 spec/mock_adapter.lua -->
+<!-- sbw3:edit T9 s01 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -7014,7 +8901,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T7 s02 spec/report_spec.lua -->
+<!-- sbw3:edit T9 s02 spec/report_spec.lua -->
 In `spec/report_spec.lua`, find:
 
 ```lua
@@ -7039,7 +8926,7 @@ and replace it with:
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 ```
 
-<!-- sbw3:file T7 s03 spec/snapshots_spec.lua -->
+<!-- sbw3:file T9 s03 spec/snapshots_spec.lua -->
 Create `spec/snapshots_spec.lua`:
 
 ```lua
@@ -7251,14 +9138,14 @@ Critical tests and the mutation that must make each fail:
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T7 i01 SwagBag/SwagBag.toc -->
+<!-- sbw3:edit T9 i01 SwagBag/SwagBag.toc -->
 In `SwagBag/SwagBag.toc`, find:
 
 ```text
 Engine/Categorizer.lua
 Engine/Layout.lua
+Engine/OverlayData.lua
 
-# UI
 ```
 
 and replace it with:
@@ -7267,19 +9154,19 @@ and replace it with:
 Engine/Categorizer.lua
 Engine/Layout.lua
 Engine/Snapshots.lua
+Engine/OverlayData.lua
 
-# UI
 ```
 
-<!-- sbw3:edit T7 i02 .luacheckrc -->
+<!-- sbw3:edit T9 i02 .luacheckrc -->
 In `.luacheckrc`, find:
 
 ```lua
 	"GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink", "QueryGuildBankTab",
 	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
 	"IsModifiedClick", "HandleModifiedItemClick",
+	"C_ChallengeMode", "C_PlayerInfo", "GetInventoryItemLink",
 }
-
 ```
 
 and replace it with:
@@ -7288,11 +9175,11 @@ and replace it with:
 	"GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink", "QueryGuildBankTab",
 	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
 	"IsModifiedClick", "HandleModifiedItemClick", "time", "UnitName", "UnitClass", "UnitLevel",
+	"C_ChallengeMode", "C_PlayerInfo", "GetInventoryItemLink",
 }
-
 ```
 
-<!-- sbw3:edit T7 i03 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T9 i03 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -7326,14 +9213,14 @@ end
 
 ```
 
-<!-- sbw3:edit T7 i04 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T9 i04 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
 L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
 
--- In-game check V1 (optional)
-L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
+-- Overlays (spec F9)
+L.OVERLAY_TRACK = "%s%d/%d"
 ```
 
 and replace it with:
@@ -7356,11 +9243,11 @@ L.AGE_HOURS = "%d h ago"
 L.AGE_DAYS = "%d days ago"
 L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
 
--- In-game check V1 (optional)
-L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
+-- Overlays (spec F9)
+L.OVERLAY_TRACK = "%s%d/%d"
 ```
 
-<!-- sbw3:file T7 i05 SwagBag/Engine/Snapshots.lua -->
+<!-- sbw3:file T9 i05 SwagBag/Engine/Snapshots.lua -->
 Create `SwagBag/Engine/Snapshots.lua`:
 
 ```lua
@@ -7669,7 +9556,7 @@ SB.Slash.Register("snapshot", SB.L.HELP_SNAPSHOT, function()
 end)
 ```
 
-<!-- sbw3:edit T7 i06 SwagBag/Core/Report.lua -->
+<!-- sbw3:edit T9 i06 SwagBag/Core/Report.lua -->
 In `SwagBag/Core/Report.lua`, find:
 
 ```lua
@@ -7700,7 +9587,7 @@ Expected: `22 passed, 0 failed`
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (38 files)`, `538 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (41 files)`, `568 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -7714,11 +9601,11 @@ git add spec/mock_adapter.lua \
   SwagBag/Locale/enUS.lua \
   SwagBag/Engine/Snapshots.lua \
   SwagBag/Core/Report.lua
-git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 7: snapshots of bags, bank and warband bank, with budget and /swagbag snapshot" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 9: snapshots of bags, bank and warband bank, with budget and /swagbag snapshot" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
-- [ ] **Step 7: In-game session B1 (the user does this on Oct 17; about 15 minutes)**
+- [ ] **Step 7: In-game session B1 (the user does this on Oct 18; about 15 minutes)**
 
 Give the user this checklist exactly. Stand at a banker, with some items in both the character bank and the warband bank.
 
@@ -7751,11 +9638,11 @@ Pass: steps 2–13 behave as described, and no item moved while the mouse was on
 
 ---
 
-### Task 8: Guild bank window on GroupView: sections per tab, on-demand queries with a session cache, live changes, search, per-guild snapshot
+### Task 10: Guild bank window on GroupView: sections per tab, on-demand queries with a session cache, live changes, search, per-guild snapshot
 
 Task 2's guild window draws each tab as a plain grid. This task replaces it with a `GroupView` (AC16.1): every viewable tab is a group (`"tab" .. N`, pseudo bag `100 + N`) with its own category sections or grid, its own search box, Reflow and Grid. The tab header shows the marker, name, item count and withdrawals left, for example `- Mats (12) - 5 withdrawals left today`.
 
-Guild items are not container items, so `Items.DescribeLink(info, bag, slot, tab)` builds their records from the link. It uses `Adapter.GetLinkIlvl(link)` for the item level, sets location `"guild"`, and marks guild items as never bound, never on cooldown and never new.
+Guild items are not container items, so `Items.DescribeLink(info, bag, slot, tab)` builds their records from the link. It uses `Adapter.GetLinkIlvl(link)` for the item level, sets location `"guild"`, and marks guild items as never bound, never on cooldown and never new. Like bag records (Task 3) it carries `track` (from `Adapter.UpgradeInfo`) and `hasNoValue` (always false), so Task 11 can draw overlays on guild buttons.
 
 **Queries (Review Focus 3).** One tab is queried at a time. A `GUILDBANKBAGSLOTS_CHANGED` that arrives while tab T is being queried is T's answer, and only tabs that answered during this visit are read. A tab whose answer is still on its way never reads as empty and never turns into a screen of placeholders. A tab with no answer in 0.3 s is asked once more at the end of the queue.
 
@@ -7773,9 +9660,11 @@ Guild items are not container items, so `Items.DescribeLink(info, bag, slot, tab
 **Interfaces:**
 - Consumes:
   - Task 2: `SB.GuildButtons`, the Adapter guild functions, `SB.TinyHost`;
-  - Task 4: `SB.SearchState.New`, `SB.SearchBox.New`;
-  - Task 5: `SB.GroupView.New` (with `Relabel` from Task 6);
-  - Task 7: `SB.Snapshots.SaveGuild`.
+  - Task 3: `SB.Adapter.UpgradeInfo` (records carry `track`);
+  - Task 6: `SB.SearchState.New`, `SB.SearchBox.New`;
+  - Task 7: `SB.GroupView.New` (with `Relabel` from Task 8);
+  - Task 8: `spec/helpers/uienv.lua`;
+  - Task 9: `SB.Snapshots.SaveGuild`.
 - Produces:
   - `SB.Items.DescribeLink(info, bag, slot, tab) -> record` and `SB.Adapter.GetLinkIlvl(link) -> number | nil`.
   - `SB.GuildBankWindow` keeps the Task 2 names listed there. `ReadTab`, `Render` and `labels` are gone (the GroupView draws). `TabLabel` now takes `(tab, collapsed, count)`. It gains:
@@ -7785,7 +9674,7 @@ Guild items are not container items, so `Items.DescribeLink(info, bag, slot, tab
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T8 s01 spec/helpers/uienv.lua -->
+<!-- sbw3:edit T10 s01 spec/helpers/uienv.lua -->
 In `spec/helpers/uienv.lua`, find:
 
 ```lua
@@ -7815,14 +9704,14 @@ end
 return Env
 ```
 
-<!-- sbw3:edit T8 s02 spec/mock_adapter.lua -->
+<!-- sbw3:edit T10 s02 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
 	end
 
-	function m.IsWarboundUntilEquip(bag, slot)
-		local s = slotOf(bag, slot)
+	-- Overlays: m.tracks[link] = { track, level, max }; m.dungeons[mapID] = name;
+	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
 ```
 
 and replace it with:
@@ -7837,11 +9726,11 @@ and replace it with:
 		return it and not it.pending and it.ilvl or nil
 	end
 
-	function m.IsWarboundUntilEquip(bag, slot)
-		local s = slotOf(bag, slot)
+	-- Overlays: m.tracks[link] = { track, level, max }; m.dungeons[mapID] = name;
+	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
 ```
 
-<!-- sbw3:file T8 s03 spec/guildbank_spec.lua -->
+<!-- sbw3:file T10 s03 spec/guildbank_spec.lua -->
 Replace the whole file `spec/guildbank_spec.lua` with:
 
 ```lua
@@ -8249,7 +10138,7 @@ describe("GuildBankWindow load order", function()
 end)
 ```
 
-<!-- sbw3:edit T8 s04 spec/items_spec.lua -->
+<!-- sbw3:edit T10 s04 spec/items_spec.lua -->
 In `spec/items_spec.lua`, find:
 
 ```lua
@@ -8271,7 +10160,7 @@ and replace it with:
 		Fixtures.SmallBags(A)
 ```
 
-<!-- sbw3:edit T8 s05 spec/items_spec.lua -->
+<!-- sbw3:edit T10 s05 spec/items_spec.lua -->
 In `spec/items_spec.lua`, find:
 
 ```lua
@@ -8318,7 +10207,7 @@ Critical tests and the mutation that must make each fail:
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T8 i01 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T10 i01 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -8349,7 +10238,7 @@ function A.GetLinkIlvl(link)
 		return v
 ```
 
-<!-- sbw3:edit T8 i02 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T10 i02 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -8369,15 +10258,15 @@ and replace it with:
 	{ path = "C_Timer.After", window = "bags", required = true },
 ```
 
-<!-- sbw3:edit T8 i03 SwagBag/Core/Config.lua -->
+<!-- sbw3:edit T10 i03 SwagBag/Core/Config.lua -->
 In `SwagBag/Core/Config.lua`, find:
 
 ```lua
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
 		guildBank = { mode = "full", withdrawAnyTab = true },
-	},
-}
+		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
+		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 ```
 
 and replace it with:
@@ -8387,11 +10276,11 @@ and replace it with:
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
 		-- view / columns: as for the bank window.
 		guildBank = { mode = "full", withdrawAnyTab = true, view = "sections", columns = 14 },
-	},
-}
+		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
+		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 ```
 
-<!-- sbw3:edit T8 i04 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T10 i04 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -8412,7 +10301,7 @@ L.GUILD_WITHDRAW_LEFT = "%d withdrawals left today"
 L.GUILD_WITHDRAW_UNLIMITED = "unlimited withdrawals"
 ```
 
-<!-- sbw3:edit T8 i05 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T10 i05 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -8433,7 +10322,28 @@ L.GUILD_VIEW_SECTIONS = "SwagBag guild bank - category view"
 -- Snapshots (spec F13: captured now, shown offline in November)
 ```
 
-<!-- sbw3:edit T8 i06 SwagBag/Engine/Items.lua -->
+<!-- sbw3:edit T10 i06 SwagBag/Engine/Items.lua -->
+In `SwagBag/Engine/Items.lua`, find:
+
+```lua
+--   isBound, isWUE, isLocked, onCooldown, inEquipmentSet, hasUpgradeTrack,
+--   isUsable, isToy, isQuestItem, isKeystone, isCagedPet, isNew    booleans
+--   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"
+--   tab             bank tab number (1-based) | nil
+--   track           { track, level, max } upgrade track | nil (overlays)
+```
+
+and replace it with:
+
+```lua
+--   isBound, isWUE, isLocked, onCooldown, inEquipmentSet, hasUpgradeTrack,
+--   isUsable, isToy, isQuestItem, isKeystone, isCagedPet, isNew    booleans
+--   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"|"guild"
+--   tab             bank tab number (1-based) | nil
+--   track           { track, level, max } upgrade track | nil (overlays)
+```
+
+<!-- sbw3:edit T10 i07 SwagBag/Engine/Items.lua -->
 In `SwagBag/Engine/Items.lua`, find:
 
 ```lua
@@ -8474,6 +10384,8 @@ function Items.DescribeLink(info, bag, slot, tab)
 		onCooldown = false,
 		inEquipmentSet = false,
 		hasUpgradeTrack = false,
+		track = A.UpgradeInfo(info.link),
+		hasNoValue = false,
 		isUsable = A.IsUsable(info.itemID),
 		isToy = A.IsToy(info.itemID),
 		isQuestItem = inst.classID == A.ITEM_CLASS.Questitem,
@@ -8504,7 +10416,7 @@ end
 -- Three cheap lookups, no item-info calls. Returns the same record.
 ```
 
-<!-- sbw3:file T8 i07 SwagBag/UI/GuildBankWindow.lua -->
+<!-- sbw3:file T10 i08 SwagBag/UI/GuildBankWindow.lua -->
 Replace the whole file `SwagBag/UI/GuildBankWindow.lua` with:
 
 ```lua
@@ -9239,7 +11151,7 @@ Expected: `39 passed, 0 failed`
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (38 files)`, `544 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (41 files)`, `574 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -9253,29 +11165,421 @@ git add spec/helpers/uienv.lua \
   SwagBag/Locale/enUS.lua \
   SwagBag/Engine/Items.lua \
   SwagBag/UI/GuildBankWindow.lua
-git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 8: guild bank on GroupView with sections per tab, queries, cache, search, snapshot" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 10: guild bank on GroupView with sections per tab, queries, cache, search, snapshot" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
-- [ ] **Step 7: In-game session G2 (the user does this on Oct 18; about 10 minutes)**
-
-No new files, so `/reload` is enough. Stand at the guild vault.
-
-1. Type `/reload`. Open the guild vault. Every tab you may view is a group, for example `- Mats (12) - 5 withdrawals left today`. Under each header are its own sections: `- New (0)`, your categories, `- Free (N)`. For a moment some tab headers may end with `(loading...)`.
-2. The selected tab's header is green and ends with `  - deposits go here`. Click another tab icon on the right: the green header follows.
-3. Right-click a cheap item in your bags. It appears in the first cell of `New` in the selected tab's group. Move the mouse off it.
-4. Right-click that item in the guild window. It goes back to your bags, a faded copy stays where it was, and nothing else moves. Move the mouse off it.
-5. Click a tab's header, for example `- Mats (12) …`. The whole tab folds into `+ Mats (12) …`. Click it again to open it.
-6. Type `herb` (or any word) in the guild window's search box. The guild items that do not match dim, and your bags are not dimmed. Clear the box.
-7. Click `Grid`. The title says `SwagBag guild bank - grid view`. Click `Categories` to go back.
-8. Press **Esc**. Open the vault again. The tabs' items show at once, with no `(loading...)`.
-9. Press **Esc**, walk away, and right-click your Hearthstone: the cast bar appears, with no red message.
-10. Type `/swagbag report`, press Ctrl+C and paste it into Claude Code. Claude checks `Snapshots: … 1 guilds …`, `Guild bank: setting full, last visit full`, no new errors and `Blocked actions: none`.
-
-Pass: steps 1–10 behave as described, and no item moved while the mouse was on it.
+Session G2 (the guild bank contents) runs after Task 11, so it can check the overlays on bank and guild items too.
 
 ---
-### Task 9: Prices: Vendor and Auctionator providers, session cache, per-category totals in section headers, the `value` keyword
+
+### Task 11: Overlays on bank and guild bank buttons
+
+Task 4 drew overlays on the bags only, because the bank and guild bank windows had no contents yet. Now they do (Tasks 8 and 10), so this task applies the same `SB.Overlays.Apply(button, record, bag)` there (spec F9: overlays on every item button):
+- the bank window applies overlays in its `describe` and when a live change refreshes a record in place;
+- the guild bank window applies them in its `describe` and in `GW.Refresh`, when a tab's answer changes a slot;
+- `Overlays.RefreshAll` also redraws the open bank and guild bank windows after a gear change or a `/swagbag overlays` switch.
+
+"Use Pawn" asks Pawn about bag and bank slots only. A guild slot (pseudo bag `100 + N`) has no container, so the item-level rule decides its arrow; a test pins that with a fixture whose Pawn would say "upgrade" for the guild slot.
+
+**Files:**
+- Modify: `SwagBag/UI/BankWindow.lua`, `SwagBag/UI/GuildBankWindow.lua` (apply overlays), `SwagBag/UI/Overlays.lua` (`RefreshAll` covers both windows)
+- Test: `spec/helpers/uienv.lua` (load `Engine/OverlayData.lua` and `UI/Overlays.lua`), `spec/overlays_spec.lua`, `spec/bankwindow_groups_spec.lua`, `spec/guildbank_spec.lua`
+
+**Interfaces:**
+- Consumes:
+  - Task 4: `SB.Overlays.Apply/RefreshAll/regions`;
+  - Task 8: `SB.BankWindow.view.ForEachSlot`, `Env.LoadBank`;
+  - Task 10: `SB.GuildBankWindow.view.ForEachSlot`, `SB.Items.DescribeLink` (records carry `track`), `Env.LoadGuild`.
+- Produces: `SB.Overlays.RefreshAll()` now redraws every open window (bags, bank, guild bank). No new names.
+
+- [ ] **Step 1: Write the failing tests**
+
+<!-- sbw3:edit T11 s01 spec/helpers/uienv.lua -->
+In `spec/helpers/uienv.lua`, find:
+
+```lua
+	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
+	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
+}
+
+```
+
+and replace it with:
+
+```lua
+	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
+	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
+	"SwagBag/Engine/OverlayData.lua",
+}
+
+```
+
+<!-- sbw3:edit T11 s02 spec/helpers/uienv.lua -->
+In `spec/helpers/uienv.lua`, find:
+
+```lua
+	end
+	for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/SearchBox.lua",
+		"SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua" }) do
+		Loader.LoadFile(SB, path)
+	end
+```
+
+and replace it with:
+
+```lua
+	end
+	for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/SearchBox.lua",
+		"SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua", "SwagBag/UI/Overlays.lua" }) do
+		Loader.LoadFile(SB, path)
+	end
+```
+
+<!-- sbw3:edit T11 s03 spec/helpers/uienv.lua -->
+In `spec/helpers/uienv.lua`, find:
+
+```lua
+	for _, path in ipairs({ "SwagBag/Engine/Snapshots.lua", "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua",
+		"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/GuildButtons.lua",
+		"SwagBag/UI/GuildBankWindow.lua" }) do
+		Loader.LoadFile(SB, path)
+	end
+```
+
+and replace it with:
+
+```lua
+	for _, path in ipairs({ "SwagBag/Engine/Snapshots.lua", "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua",
+		"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/GuildButtons.lua",
+		"SwagBag/UI/GuildBankWindow.lua", "SwagBag/UI/Overlays.lua" }) do
+		Loader.LoadFile(SB, path)
+	end
+```
+
+<!-- sbw3:edit T11 s04 spec/bankwindow_groups_spec.lua -->
+In `spec/bankwindow_groups_spec.lua`, find:
+
+```lua
+		assert.equal("- Character bank (2)", header("#bank").text.text)
+		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#warband").bg.calls.SetColorTexture)
+	end)
+
+```
+
+and replace it with:
+
+```lua
+		assert.equal("- Character bank (2)", header("#bank").text.text)
+		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#warband").bg.calls.SetColorTexture)
+	end)
+
+	it("bank items get their overlays (the BoE ring's item level and badge)", function()
+		openBank()
+		local r = SB.Overlays.regions[B.Get(12, 2)]
+		assert.same({ "285", "BoE" }, { r.topLeft.text, r.bind.text })
+	end)
+
+```
+
+<!-- sbw3:edit T11 s05 spec/guildbank_spec.lua -->
+In `spec/guildbank_spec.lua`, find:
+
+```lua
+		assert.same(herbAt, { SB.Buttons.placeholdersInUse[1].points[1][4], SB.Buttons.placeholdersInUse[1].points[1][5] })
+		assert.equal(header("tab1:new").points[1][5] - 20, at(button(1, 7))[2], "the deposit is first in New")
+	end)
+
+```
+
+and replace it with:
+
+```lua
+		assert.same(herbAt, { SB.Buttons.placeholdersInUse[1].points[1][4], SB.Buttons.placeholdersInUse[1].points[1][5] })
+		assert.equal(header("tab1:new").points[1][5] - 20, at(button(1, 7))[2], "the deposit is first in New")
+	end)
+
+	it("guild items get their overlays (the BoE ring's item level and badge)", function()
+		openVault()
+		answerQueries()
+		local r = SB.Overlays.regions[button(2, 1)]
+		assert.same({ "285", "BoE" }, { r.topLeft.text, r.bind.text })
+	end)
+
+```
+
+<!-- sbw3:edit T11 s06 spec/overlays_spec.lua -->
+In `spec/overlays_spec.lua`, find:
+
+```lua
+		assert.same({ "Overlay title is now off." }, A.Lines())
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		assert.same({ "Overlay title is now off." }, A.Lines())
+	end)
+
+	it("a gear change re-draws the open bank and guild bank windows too", function()
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		local bankButton, bank = draw(0, 3)
+		local guildButton, guild = draw(0, 3)
+		local record = SB.Items.Describe(0, 3)
+		local function window(button)
+			return { IsOpen = function() return true end,
+				view = { ForEachSlot = function(fn) fn(button, record, 0, 3) end } }
+		end
+		SB.BankWindow, SB.GuildBankWindow = window(bankButton), window(guildButton)
+		A.equipped[11] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 11)
+		A.Advance(0.1)
+		assert.same({ false, false }, { bank.arrow.shown, guild.arrow.shown })
+	end)
+
+	it("Use Pawn never asks Pawn about a guild bank slot; the item-level rule decides there", function()
+		A.equipped[11] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
+		A.pawn = { ["101:3"] = true }
+		SB.Config.Set("overlays.usePawn", true)
+		local g = Fake.New("ItemButton")
+		Ov.Apply(g, SB.Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = "item:" .. Fixtures.BOE_RING, count = 1 },
+			101, 3, 1), 101)
+		assert.falsy(Ov.regions[g].arrow.shown, "285 does not beat 300")
+	end)
+end)
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `luajit spec/runner.lua spec/bankwindow_groups_spec.lua spec/guildbank_spec.lua spec/overlays_spec.lua`
+Expected: `57 passed, 3 failed`. The bank and guild windows do not apply overlays yet, and `Overlays.RefreshAll` redraws only the bags window. The fourth new test (Use Pawn and a guild slot) already passes, because Task 4's `Ov.Context` asks Pawn only about container slots; it is there to keep it that way now that guild buttons draw overlays.
+
+Critical tests and the mutation that must make each fail:
+- `bankwindow_groups_spec` "bank items get their overlays (the BoE ring's item level and badge)": delete the `SB.Overlays.Apply(button, record, bag)` block in the bank window's `describe`.
+- `guildbank_spec` "guild items get their overlays (the BoE ring's item level and badge)": delete the `SB.Overlays.Apply(button, record, bag)` blocks in both the guild window's `describe` and `GW.Refresh`. (Deleting only one survives: the first answer reaches the buttons through both paths.)
+- `overlays_spec` "a gear change re-draws the open bank and guild bank windows too": delete the `if bank and bank.IsOpen() then … end` block in `Ov.RefreshAll`.
+- `overlays_spec` "Use Pawn never asks Pawn about a guild bank slot…": `if record.bag then` instead of `if record.bag and A.BagKind(record.bag) then` in `Ov.Context`.
+
+- [ ] **Step 3: Implement**
+
+<!-- sbw3:edit T11 i01 SwagBag/UI/BankWindow.lua -->
+In `SwagBag/UI/BankWindow.lua`, find:
+
+```lua
+		record.icon = (A.GetItemInstant(record.itemID) or {}).icon
+	end
+	return record
+end
+```
+
+and replace it with:
+
+```lua
+		record.icon = (A.GetItemInstant(record.itemID) or {}).icon
+	end
+	if SB.Overlays then
+		SB.Overlays.Apply(button, record, bag)
+	end
+	return record
+end
+```
+
+<!-- sbw3:edit T11 i02 SwagBag/UI/BankWindow.lua -->
+In `SwagBag/UI/BankWindow.lua`, find:
+
+```lua
+					fresh.icon = fresh.icon or old.icon
+					v.SetRecord(c.bag, c.slot, fresh)
+				end
+			else
+```
+
+and replace it with:
+
+```lua
+					fresh.icon = fresh.icon or old.icon
+					v.SetRecord(c.bag, c.slot, fresh)
+					if SB.Overlays then
+						SB.Overlays.Apply(button, fresh, c.bag)
+					end
+				end
+			else
+```
+
+<!-- sbw3:edit T11 i03 SwagBag/UI/GuildBankWindow.lua -->
+In `SwagBag/UI/GuildBankWindow.lua`, find:
+
+```lua
+		SB.GuildButtons.Paint(button, info)
+	end
+	return info and SB.Items.DescribeLink(info, bag, slot, tab) or nil
+end
+
+```
+
+and replace it with:
+
+```lua
+		SB.GuildButtons.Paint(button, info)
+	end
+	local record = info and SB.Items.DescribeLink(info, bag, slot, tab) or nil
+	if SB.Overlays then
+		SB.Overlays.Apply(button, record, bag)
+	end
+	return record
+end
+
+```
+
+<!-- sbw3:edit T11 i04 SwagBag/UI/GuildBankWindow.lua -->
+In `SwagBag/UI/GuildBankWindow.lua`, find:
+
+```lua
+					end
+					if GW.view.IsOpen() then
+						GW.view.SetRecord(bag, slot, b and SB.Items.DescribeLink(b, bag, slot, tab) or nil)
+					end
+					if (a and a.itemID) ~= (b and b.itemID) then
+```
+
+and replace it with:
+
+```lua
+					end
+					if GW.view.IsOpen() then
+						local record = b and SB.Items.DescribeLink(b, bag, slot, tab) or nil
+						GW.view.SetRecord(bag, slot, record)
+						if SB.Overlays then
+							SB.Overlays.Apply(button, record, bag)
+						end
+					end
+					if (a and a.itemID) ~= (b and b.itemID) then
+```
+
+<!-- sbw3:edit T11 i05 SwagBag/UI/Overlays.lua -->
+In `SwagBag/UI/Overlays.lua`, find:
+
+```lua
+-- /swagbag overlays also switches the item level in the bags window's title (bags.showIlvl).
+--   Overlays.Apply(button, record, bag)   record nil = empty slot
+--   Overlays.RefreshAll()                 re-draw the open bags window's buttons
+local _, SB = ...
+
+```
+
+and replace it with:
+
+```lua
+-- /swagbag overlays also switches the item level in the bags window's title (bags.showIlvl).
+--   Overlays.Apply(button, record, bag)   record nil = empty slot
+--   Overlays.RefreshAll()                 re-draw every open window's buttons
+local _, SB = ...
+
+```
+
+<!-- sbw3:edit T11 i06 SwagBag/UI/Overlays.lua -->
+In `SwagBag/UI/Overlays.lua`, find:
+
+```lua
+end
+
+-- Re-draw the buttons of the open bags window (equipment or settings changed).
+function Ov.RefreshAll()
+	local function each(fn)
+```
+
+and replace it with:
+
+```lua
+end
+
+-- Re-draw the buttons of every open window (equipment or settings changed).
+function Ov.RefreshAll()
+	local function each(fn)
+```
+
+<!-- sbw3:edit T11 i07 SwagBag/UI/Overlays.lua -->
+In `SwagBag/UI/Overlays.lua`, find:
+
+```lua
+		end)
+	end
+	local bags = SB.BagsWindow
+	if bags and bags.IsOpen() then
+		each(bags.ForEachSlot)
+	end
+end
+```
+
+and replace it with:
+
+```lua
+		end)
+	end
+	local bags, bank, guild = SB.BagsWindow, SB.BankWindow, SB.GuildBankWindow
+	if bags and bags.IsOpen() then
+		each(bags.ForEachSlot)
+	end
+	if bank and bank.IsOpen() then
+		each(bank.view.ForEachSlot)
+	end
+	if guild and guild.IsOpen() then
+		each(guild.view.ForEachSlot)
+	end
+end
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `luajit spec/runner.lua spec/bankwindow_groups_spec.lua spec/guildbank_spec.lua spec/overlays_spec.lua`
+Expected: `60 passed, 0 failed`
+
+- [ ] **Step 5: Run all checks**
+
+Run: `scripts/check.sh`
+Expected: `TOC OK (41 files)`, `578 passed, 0 failed`, `ALL CHECKS PASSED`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add spec/helpers/uienv.lua \
+  spec/bankwindow_groups_spec.lua \
+  spec/guildbank_spec.lua \
+  spec/overlays_spec.lua \
+  SwagBag/UI/BankWindow.lua \
+  SwagBag/UI/GuildBankWindow.lua \
+  SwagBag/UI/Overlays.lua
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 11: overlays on bank and guild bank buttons" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
+```
+
+- [ ] **Step 7: In-game session G2 (the user does this on Oct 19; about 15 minutes)**
+
+No new files, so `/reload` is enough. Carry one piece of gear better than what you wear if you have one, and put a BoE item or any gear in the bank beforehand if you can.
+
+1. Type `/reload`. Talk to a banker. In the `SwagBag bank` window, gear shows its item level in the top left corner (for example `285`), a BoE item shows `BoE` on its left side, gear that beats what you wear shows the small green arrow, and gray items show the coin, just as in your bags.
+2. Equip a piece of gear from your bags (right-click it) while the bank window is open. Within a moment the arrows in the bank window follow your new gear, and the number in your bags window's title changes. Move the mouse off it. Press **Esc**.
+3. Open the guild vault. Every tab you may view is a group, for example `- Mats (12) - 5 withdrawals left today`. Under each header are its own sections: `- New (0)`, your categories, `- Free (N)`. For a moment some tab headers may end with `(loading...)`.
+4. Guild gear shows its item level in the top left and `BoE` where it applies, as in your bags. Gear that beats what you wear shows the green arrow.
+5. The selected tab's header is green and ends with `  - deposits go here`. Click another tab icon on the right: the green header follows.
+6. Right-click a cheap item in your bags. It appears in the first cell of `New` in the selected tab's group. Move the mouse off it.
+7. Right-click that item in the guild window. It goes back to your bags, a faded copy stays where it was, and nothing else moves. Move the mouse off it.
+8. Click a tab's header, for example `- Mats (12) …`. The whole tab folds into `+ Mats (12) …`. Click it again to open it.
+9. Type `herb` (or any word) in the guild window's search box. The guild items that do not match dim, and your bags are not dimmed. Clear the box.
+10. Click `Grid`. The title says `SwagBag guild bank - grid view`. Click `Categories` to go back.
+11. Press **Esc**. Open the vault again. The tabs' items show at once, with no `(loading...)`.
+12. Press **Esc**, walk away, and right-click your Hearthstone: the cast bar appears, with no red message.
+13. Type `/swagbag report`, press Ctrl+C and paste it into Claude Code. Claude checks `Snapshots: … 1 guilds …`, `Guild bank: setting full, last visit full`, no new errors and `Blocked actions: none`.
+
+Pass: steps 1–13 behave as described, and no item moved while the mouse was on it.
+
+---
+
+### Task 12: Prices: Vendor and Auctionator providers, session cache, per-category totals in section headers, the `value` keyword
 
 Spec F10 and §3.3. `Engine/Prices.lua` is a provider registry.
 
@@ -9298,7 +11602,7 @@ The setting is `prices.headerTotals`. Week-2 header strings stay exactly as they
 - Test: `spec/mock_adapter.lua` (sell prices, Auctionator), `spec/helpers/uienv.lua`, `spec/prices_spec.lua` (new), `spec/bagswindow_sections_spec.lua`, `spec/bankwindow_groups_spec.lua`, `spec/report_spec.lua`
 
 **Interfaces:**
-- Consumes: `SB.Adapter.GetItemInfo(itemID).sellPrice`, `SB.Adapter.Resolve`, `SB.Adapter.Now` (on `main`); Layout states (`state.sections[id].cells`, placeholders flagged `placeholder = true`).
+- Consumes: `SB.Adapter.GetItemInfo(itemID).sellPrice`, `SB.Adapter.Resolve`, `SB.Adapter.Now` (on `main`); Layout states (`state.sections[id].cells`, placeholders flagged `placeholder = true`); Task 7's GroupView section headers; Task 8's `spec/helpers/uienv.lua`. Prices come last because nothing earlier needs them: the overlays (Tasks 3, 4, 11) never read a price.
 - Produces:
   - `SB.Prices.RegisterProvider(p)`, with `p = { name, priority, available(), value(link, itemID), onUpdate(cb) }`.
   - `SB.Prices.Value(link, itemID, bound) -> copper | nil, source`, `.Source() -> name`, `.SectionTotals(state, recordOf) -> { [sectionId] = copper }`, `.Money(copper) -> text`, `.Invalidate()`, `.cached`.
@@ -9308,12 +11612,13 @@ The setting is `prices.headerTotals`. Week-2 header strings stay exactly as they
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T9 s01 spec/helpers/uienv.lua -->
+<!-- sbw3:edit T12 s01 spec/helpers/uienv.lua -->
 In `spec/helpers/uienv.lua`, find:
 
 ```lua
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
 	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
+	"SwagBag/Engine/OverlayData.lua",
 }
 
 ```
@@ -9323,12 +11628,12 @@ and replace it with:
 ```lua
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
 	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
-	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua",
+	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua", "SwagBag/Engine/OverlayData.lua",
 }
 
 ```
 
-<!-- sbw3:edit T9 s02 spec/mock_adapter.lua -->
+<!-- sbw3:edit T12 s02 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -9366,7 +11671,7 @@ and replace it with:
 	return m
 ```
 
-<!-- sbw3:edit T9 s03 spec/mock_adapter.lua -->
+<!-- sbw3:edit T12 s03 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -9387,7 +11692,7 @@ and replace it with:
 			expansionID = 0,
 ```
 
-<!-- sbw3:edit T9 s04 spec/bagswindow_sections_spec.lua -->
+<!-- sbw3:edit T12 s04 spec/bagswindow_sections_spec.lua -->
 In `spec/bagswindow_sections_spec.lua`, find:
 
 ```lua
@@ -9407,7 +11712,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T9 s05 spec/bagswindow_sections_spec.lua -->
+<!-- sbw3:edit T12 s05 spec/bagswindow_sections_spec.lua -->
 In `spec/bagswindow_sections_spec.lua`, find:
 
 ```lua
@@ -9443,7 +11748,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T9 s06 spec/bankwindow_groups_spec.lua -->
+<!-- sbw3:edit T12 s06 spec/bankwindow_groups_spec.lua -->
 In `spec/bankwindow_groups_spec.lua`, find:
 
 ```lua
@@ -9471,7 +11776,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:file T9 s07 spec/prices_spec.lua -->
+<!-- sbw3:file T12 s07 spec/prices_spec.lua -->
 Create `spec/prices_spec.lua`:
 
 ```lua
@@ -9600,7 +11905,7 @@ describe("Prices (spec F10, 3.3)", function()
 end)
 ```
 
-<!-- sbw3:edit T9 s08 spec/report_spec.lua -->
+<!-- sbw3:edit T12 s08 spec/report_spec.lua -->
 In `spec/report_spec.lua`, find:
 
 ```lua
@@ -9628,7 +11933,7 @@ and replace it with:
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/bankwindow_groups_spec.lua spec/prices_spec.lua spec/report_spec.lua`
-Expected: `9 passed, 89 failed`. `prices_spec`, `bagswindow_sections_spec` and `bankwindow_groups_spec` now load `Engine/Prices.lua` and `Providers/Auctionator.lua`, which do not exist yet, so all of their tests fail. Only `report_spec`'s older tests pass.
+Expected: `9 passed, 92 failed`. `prices_spec`, `bagswindow_sections_spec` and `bankwindow_groups_spec` now load `Engine/Prices.lua` and `Providers/Auctionator.lua`, which do not exist yet, so all of their tests fail. Only `report_spec`'s older tests pass.
 
 Critical tests and the mutation that must make each fail:
 - "a bound item is worth its vendor price only": `if true then` instead of `if not bound or p.name == "Vendor" then` in `lookup`.
@@ -9640,12 +11945,13 @@ Critical tests and the mutation that must make each fail:
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T9 i01 SwagBag/SwagBag.toc -->
+<!-- sbw3:edit T12 i01 SwagBag/SwagBag.toc -->
 In `SwagBag/SwagBag.toc`, find:
 
 ```text
 Engine/Layout.lua
 Engine/Snapshots.lua
+Engine/OverlayData.lua
 
 # UI
 ```
@@ -9656,6 +11962,7 @@ and replace it with:
 Engine/Layout.lua
 Engine/Snapshots.lua
 Engine/Prices.lua
+Engine/OverlayData.lua
 
 # Providers
 Providers/Auctionator.lua
@@ -9663,7 +11970,7 @@ Providers/Auctionator.lua
 # UI
 ```
 
-<!-- sbw3:edit T9 i02 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T12 i02 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -9718,14 +12025,14 @@ end
 -- flag a failed REQUIRED check turns on. value: exact value expected.
 ```
 
-<!-- sbw3:edit T9 i03 SwagBag/Core/Config.lua -->
+<!-- sbw3:edit T12 i03 SwagBag/Core/Config.lua -->
 In `SwagBag/Core/Config.lua`, find:
 
 ```lua
 		-- view / columns: as for the bank window.
 		guildBank = { mode = "full", withdrawAnyTab = true, view = "sections", columns = 14 },
-	},
-}
+		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
+		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 ```
 
 and replace it with:
@@ -9735,11 +12042,11 @@ and replace it with:
 		guildBank = { mode = "full", withdrawAnyTab = true, view = "sections", columns = 14 },
 		-- headerTotals: each section header shows its total value (spec F10).
 		prices = { headerTotals = true },
-	},
-}
+		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
+		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 ```
 
-<!-- sbw3:edit T9 i04 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T12 i04 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -9760,14 +12067,14 @@ L.PLACEHOLDER_TIP = "This item moved or was used - items regroup when you close 
 
 ```
 
-<!-- sbw3:edit T9 i05 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T12 i05 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
 L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
 
--- In-game check V1 (optional)
-L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
+-- Overlays (spec F9)
+L.OVERLAY_TRACK = "%s%d/%d"
 ```
 
 and replace it with:
@@ -9779,18 +12086,18 @@ L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
 L.PRICES_PROVIDER_OFF = "Price source %s stopped working and was switched off until /reload."
 L.REPORT_PRICES = "Prices: %s, %d cached"
 
--- In-game check V1 (optional)
-L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
+-- Overlays (spec F9)
+L.OVERLAY_TRACK = "%s%d/%d"
 ```
 
-<!-- sbw3:edit T9 i06 SwagBag/Engine/Keywords.lua -->
+<!-- sbw3:edit T12 i06 SwagBag/Engine/Keywords.lua -->
 In `SwagBag/Engine/Keywords.lua`, find:
 
 ```lua
 -- Aliases include Syndicator's English spellings used by published Baganator category
 -- strings (desk spike F, docs/research/2026-10-syndicator-grammar-diff.md).
 -- Not yet registered (need later modules): expansion, gold/value, crafting quality,
--- collection, crest / upgrade currency.
+-- collection.
 local _, SB = ...
 
 ```
@@ -9800,13 +12107,12 @@ and replace it with:
 ```lua
 -- Aliases include Syndicator's English spellings used by published Baganator category
 -- strings (desk spike F, docs/research/2026-10-syndicator-grammar-diff.md).
--- Not yet registered (need later modules): expansion, crafting quality, collection,
--- crest / upgrade currency.
+-- Not yet registered (need later modules): expansion, crafting quality, collection.
 local _, SB = ...
 
 ```
 
-<!-- sbw3:edit T9 i07 SwagBag/Engine/Keywords.lua -->
+<!-- sbw3:edit T12 i07 SwagBag/Engine/Keywords.lua -->
 In `SwagBag/Engine/Keywords.lua`, find:
 
 ```lua
@@ -9833,7 +12139,7 @@ and replace it with:
 	-- State (volatile) ---------------------------------------------------------
 ```
 
-<!-- sbw3:file T9 i08 SwagBag/Engine/Prices.lua -->
+<!-- sbw3:file T12 i08 SwagBag/Engine/Prices.lua -->
 Create `SwagBag/Engine/Prices.lua`:
 
 ```lua
@@ -10002,7 +12308,7 @@ SB.On("SB_LOGIN", function()
 end, "none")
 ```
 
-<!-- sbw3:file T9 i09 SwagBag/Providers/Auctionator.lua -->
+<!-- sbw3:file T12 i09 SwagBag/Providers/Auctionator.lua -->
 Create `SwagBag/Providers/Auctionator.lua`:
 
 ```lua
@@ -10030,7 +12336,7 @@ SB.Prices.RegisterProvider({
 })
 ```
 
-<!-- sbw3:edit T9 i10 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T12 i10 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -10080,7 +12386,7 @@ end
 
 ```
 
-<!-- sbw3:edit T9 i11 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:edit T12 i11 SwagBag/UI/GroupView.lua -->
 In `SwagBag/UI/GroupView.lua`, find:
 
 ```lua
@@ -10119,7 +12425,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T9 i12 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:edit T12 i12 SwagBag/UI/GroupView.lua -->
 In `SwagBag/UI/GroupView.lua`, find:
 
 ```lua
@@ -10143,7 +12449,7 @@ and replace it with:
 	end
 ```
 
-<!-- sbw3:edit T9 i13 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T12 i13 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -10172,7 +12478,7 @@ and replace it with:
 end
 ```
 
-<!-- sbw3:edit T9 i14 SwagBag/Core/Report.lua -->
+<!-- sbw3:edit T12 i14 SwagBag/Core/Report.lua -->
 In `SwagBag/Core/Report.lua`, find:
 
 ```lua
@@ -10197,12 +12503,12 @@ and replace it with:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/bankwindow_groups_spec.lua spec/prices_spec.lua spec/report_spec.lua`
-Expected: `98 passed, 0 failed`
+Expected: `101 passed, 0 failed`
 
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (40 files)`, `556 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (43 files)`, `590 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -10224,1822 +12530,25 @@ git add spec/helpers/uienv.lua \
   SwagBag/UI/GroupView.lua \
   SwagBag/UI/BagsWindow.lua \
   SwagBag/Core/Report.lua
-git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 9: prices from Auctionator or the vendor, per-category totals in headers, value keyword" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 12: prices from Auctionator or the vendor, per-category totals in headers, value keyword" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
----
+- [ ] **Step 7: In-game session P1 (the user does this on Oct 20; about 5 minutes)**
 
-### Task 10: Overlay data and the upgrade arrow (AC9.3); the crest keyword and data file
-
-Spec F9 (AC9.1, AC9.3). `Engine/OverlayData.lua` is pure: an item record goes in, and what to draw on its button comes out:
-- the item level on equippable gear;
-- the upgrade track as `H3/6` (initial, level, maximum), from `C_Item.GetItemUpgradeInfo` through the Adapter, never from the tooltip;
-- the keystone's level and a short dungeon name from its link (`O.Short`: the initials of the words that matter, or 3 letters of a one-word name);
-- the junk coin (gray, and a vendor pays for it);
-- a `BoE` / `WuE` badge until the item is bound;
-- the **upgrade arrow**.
-
-**The arrow (AC9.3).** The item must beat the lowest-ilvl item equipped in the matching slot(s); an empty slot counts as 0.
-- Rings and trinkets compare with both slots.
-- A two-hander compares by summed item level (2 × its level against main hand plus off hand).
-- A one-hander also compares with the off hand when the off hand holds a one-hand weapon. An off-hand item never beats a two-hander (D10).
-- Gear the character cannot use (`C_PlayerInfo.CanUseItem`, feature-detected) and items still loading never get an arrow.
-- With "Use Pawn", Pawn's verdict replaces the item-level rule when Pawn gives one.
-
-**Records.** Items gain `record.track` and `record.hasNoValue`.
-
-**Crests (D8).** `Engine/Crests.lua` holds the season's crest item IDs (empty until session O1 confirms them) and the name words `crest` and `valorstone`. The keyword `crest` (alias `upgrade currency`) matches an ID, else a non-gear item whose name contains a word. A loading item is "not a crest", because a nil in Keystone & Crests (priority 95) would hold every loading item in New. `c_keystone`'s query becomes `keystone | crest`. That changes a built-in default, so users' diffs (spec §8.5) stay intact.
-
-**Files:**
-- Create: `SwagBag/Engine/OverlayData.lua`, `SwagBag/Engine/Crests.lua`
-- Modify:
-  - `SwagBag/Core/Adapter.lua`: `UpgradeInfo`, `DungeonName`, `EquippedItems`, `CanUse`, `PawnUpgrade`, optional checks;
-  - `.luacheckrc`;
-  - `SwagBag/Engine/Items.lua` (`track`, `hasNoValue`), `SwagBag/Engine/Keywords.lua` (`crest`), `SwagBag/Engine/CategoryDefaults.lua`;
-  - `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`.
-- Test: `spec/mock_adapter.lua`, `spec/overlaydata_spec.lua` (new), `spec/keywords_spec.lua`, `spec/categorizer_spec.lua`, `spec/categories_spec.lua`
-
-**Interfaces:**
-- Consumes: item records (`classID`, `equipLoc`, `ilvl`, `pending`, `isBound`, `isWUE`, `bind`, `quality`, `isKeystone`, `link`), `SB.Adapter.ITEM_CLASS`.
-- Produces:
-  - `SB.OverlayData.For(record, ctx) -> { ilvl, track, keystone = { level, dungeon }, junk, bind, upgrade }`, with `ctx = { equipped, canUse, dungeonName, pawn }`.
-  - `SB.OverlayData.IsUpgrade(record, equipped, canUse) -> bool`, `.Short(name) -> text`, `.SLOTS`.
-  - `SB.Crests = { ids = {}, words = { "crest", "valorstone" } }`.
-  - `SB.Adapter.UpgradeInfo(link) -> { track, level, max } | nil`, `.DungeonName(mapID)`, `.EquippedItems() -> { [invSlot] = { ilvl, equipLoc } }`, `.CanUse(itemID) -> bool`, `.PawnUpgrade(bag, slot) -> bool | nil`.
-  - Records gain `track` and `hasNoValue`. Keyword `crest` (alias `upgrade currency`).
-
-- [ ] **Step 1: Write the failing tests**
-
-<!-- sbw3:edit T10 s01 spec/mock_adapter.lua -->
-In `spec/mock_adapter.lua`, find:
-
-```lua
-			isBound = s.isBound == true,
-			name = (not it.pending) and it.name or nil,
-			hasNoValue = false,
-		}
-	end
-```
-
-and replace it with:
-
-```lua
-			isBound = s.isBound == true,
-			name = (not it.pending) and it.name or nil,
-			hasNoValue = s.hasNoValue == true,
-		}
-	end
-```
-
-<!-- sbw3:edit T10 s02 spec/mock_adapter.lua -->
-In `spec/mock_adapter.lua`, find:
-
-```lua
-	end
-
-	function m.IsWarboundUntilEquip(bag, slot)
-		local s = slotOf(bag, slot)
-```
-
-and replace it with:
-
-```lua
-	end
-
-	-- Overlays: m.tracks[link] = { track, level, max }; m.dungeons[mapID] = name;
-	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
-	m.tracks, m.dungeons, m.equipped, m.cannotUse, m.pawn = {}, {}, {}, {}, nil
-	function m.UpgradeInfo(link)
-		return m.tracks[link]
-	end
-
-	function m.DungeonName(mapID)
-		return m.dungeons[mapID]
-	end
-
-	function m.EquippedItems()
-		local out = {}
-		for slot, e in pairs(m.equipped) do
-			out[slot] = { ilvl = e.ilvl, equipLoc = e.equipLoc }
-		end
-		return out
-	end
-
-	function m.CanUse(itemID)
-		return not m.cannotUse[itemID]
-	end
-
-	function m.PawnUpgrade(bag, slot)
-		if m.pawn == nil then
-			return nil
-		end
-		return m.pawn[bag .. ":" .. slot] == true
-	end
-
-	function m.IsWarboundUntilEquip(bag, slot)
-		local s = slotOf(bag, slot)
-```
-
-<!-- sbw3:edit T10 s03 spec/categories_spec.lua -->
-In `spec/categories_spec.lua`, find:
-
-```lua
--- c_fish (name search by design), c_other (fallback) are exempt; c_tools also has an item list.
-local EXPECTED = {
-	c_keystone = { "keystone" }, c_consumables = { "consumable" }, c_gear = { "gear" },
-	c_boe = { "boe", "gear" }, c_tradegoods = { "reagent", "tradegoods" }, c_herbs = { "herb" }, c_ore = { "ore" },
-	c_leathercloth = { "cloth", "leather" }, c_enchanting = { "enchanting" }, c_cooking = { "cooking" },
-```
-
-and replace it with:
-
-```lua
--- c_fish (name search by design), c_other (fallback) are exempt; c_tools also has an item list.
-local EXPECTED = {
-	c_keystone = { "crest", "keystone" }, c_consumables = { "consumable" }, c_gear = { "gear" },
-	c_boe = { "boe", "gear" }, c_tradegoods = { "reagent", "tradegoods" }, c_herbs = { "herb" }, c_ore = { "ore" },
-	c_leathercloth = { "cloth", "leather" }, c_enchanting = { "enchanting" }, c_cooking = { "cooking" },
-```
-
-<!-- sbw3:edit T10 s04 spec/categorizer_spec.lua -->
-In `spec/categorizer_spec.lua`, find:
-
-```lua
-		assert.equal(before + 2, #SB.ErrorTrap.Recent())
-	end)
-end)
-```
-
-and replace it with:
-
-```lua
-		assert.equal(before + 2, #SB.ErrorTrap.Recent())
-	end)
-
-	it("Keystone & Crests files the keystone and crest items (spec 7.6)", function()
-		Loader.LoadFile(SB, "SwagBag/Engine/Crests.lua")
-		A.AddItem(500001, { name = "Weathered Harbinger Crest", classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0,
-			quality = 2, maxStack = 99, bind = "pickup" })
-		A.Put(0, 7, 500001, 12)
-		C.Load()
-		assert.equal("c_keystone", at(5))
-		assert.equal("c_keystone", at(7))
-	end)
-end)
-```
-
-<!-- sbw3:edit T10 s05 spec/keywords_spec.lua -->
-In `spec/keywords_spec.lua`, find:
-
-```lua
-		end
-	end)
-end)
-```
-
-and replace it with:
-
-```lua
-		end
-	end)
-
-	it("crest: the season's item IDs, else a crest or valorstone name, never gear, never 'unknown'", function()
-		Loader.LoadFile(SB, "SwagBag/Engine/Crests.lua")
-		local A = SB.Adapter
-		A.AddItem(500001, { name = "Gilded Harbinger Crest", classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0,
-			quality = 4, maxStack = 99, bind = "pickup" })
-		A.AddItem(500002, { name = "Crest of the Tides", classID = A.ITEM_CLASS.Armor, subclassID = 1,
-			equipLoc = "INVTYPE_CLOAK", quality = 3, ilvl = 280, maxStack = 1, bind = "equip" })
-		A.AddItem(500003, { name = "Shiny Token", classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0, quality = 3 })
-		A.AddItem(500004, { classID = A.ITEM_CLASS.Miscellaneous, subclassID = 0, pending = true })
-		SB.Crests.ids[500003] = true
-		A.SetBagSize(1, 4)
-		for i = 1, 4 do
-			A.Put(1, i, 500000 + i, 1)
-		end
-		local q = Q.Compile("crest")
-		local function at(slot)
-			return Q.Eval(q, SB.Items.Describe(1, slot))
-		end
-		assert.same({ true, false, true, false }, { at(1), at(2), at(3), at(4) })
-		assert.equal(true, Q.Eval(Q.Compile("upgrade currency"), SB.Items.Describe(1, 1)))
-	end)
-end)
-```
-
-<!-- sbw3:file T10 s06 spec/overlaydata_spec.lua -->
-Create `spec/overlaydata_spec.lua`:
-
-```lua
-local Loader = dofile("spec/helpers/loader.lua")
-local Fixtures = dofile("spec/fixtures/items.lua")
-
-describe("OverlayData (spec F9)", function()
-	local SB, A, O
-	before_each(function()
-		SB = Loader.New({ "SwagBag/Engine/Items.lua", "SwagBag/Engine/OverlayData.lua" })
-		A, O = SB.Adapter, SB.OverlayData
-		Fixtures.SmallBags(A)
-	end)
-
-	local function gear(equipLoc, ilvl, extra)
-		local r = { itemID = 400000, classID = A.ITEM_CLASS.Armor, equipLoc = equipLoc, ilvl = ilvl, pending = false }
-		for k, v in pairs(extra or {}) do
-			r[k] = v
-		end
-		return r
-	end
-
-	local function weapon(equipLoc, ilvl)
-		return { itemID = 400001, classID = A.ITEM_CLASS.Weapon, equipLoc = equipLoc, ilvl = ilvl, pending = false }
-	end
-
-	local function worn(list)
-		local out = {}
-		for slot, e in pairs(list) do
-			out[slot] = { ilvl = e[1], equipLoc = e[2] }
-		end
-		return out
-	end
-
-	it("item level only on equippable gear", function()
-		assert.equal(285, O.For(SB.Items.Describe(0, 3)).ilvl, "the ring")
-		assert.is_nil(O.For(SB.Items.Describe(0, 1)).ilvl, "a potion")
-		assert.is_nil(O.For({ classID = A.ITEM_CLASS.Armor, equipLoc = "INVTYPE_BAG", ilvl = 1 }).ilvl, "a bag")
-		assert.is_nil(O.For(gear("INVTYPE_FINGER", nil, { pending = true })).ilvl, "still loading")
-	end)
-
-	it("the upgrade track as initial, level and maximum", function()
-		assert.equal("H3/6", O.For(gear("INVTYPE_HEAD", 280, { track = { track = "Hero", level = 3, max = 6 } })).track)
-		assert.is_nil(O.For(gear("INVTYPE_HEAD", 280)).track)
-	end)
-
-	it("the keystone's level and a short dungeon name from its link", function()
-		local r = SB.Items.Describe(0, 5)
-		assert.same({ level = 12, dungeon = "AKCE" },
-			O.For(r, { dungeonName = function(id) return id == 503 and "Ara-Kara, City of Echoes" or nil end }).keystone)
-		assert.same({ level = 12 }, O.For(r, {}).keystone, "no name known: the level alone")
-	end)
-
-	it("short dungeon names: initials of the words that matter, or three letters of a one-word name", function()
-		assert.same({ "DC", "AKCE", "PSF", "Roo", "OF", "TP" }, { O.Short("Darkflame Cleft"),
-			O.Short("Ara-Kara, City of Echoes"), O.Short("Priory of the Sacred Flame"), O.Short("The Rookery"),
-			O.Short("Operation: Floodgate"), O.Short("Theater of Pain") })
-		assert.is_nil(O.Short(nil))
-	end)
-
-	it("a junk coin on gray items a vendor pays for", function()
-		assert.equal(true, O.For(SB.Items.Describe(0, 6)).junk)
-		A.Put(0, 6, Fixtures.JUNK, 3, { hasNoValue = true })
-		assert.equal(false, O.For(SB.Items.Describe(0, 6)).junk)
-		assert.equal(false, O.For(SB.Items.Describe(0, 1)).junk)
-	end)
-
-	it("BoE and WuE badges until the item is bound", function()
-		assert.equal("BoE", O.For(SB.Items.Describe(0, 3)).bind)
-		assert.equal("WuE", O.For(gear("INVTYPE_HEAD", 1, { bind = "equip", isWUE = true })).bind)
-		assert.is_nil(O.For(gear("INVTYPE_HEAD", 1, { bind = "equip", isBound = true })).bind)
-		assert.is_nil(O.For(SB.Items.Describe(0, 4)).bind, "soulbound helm")
-	end)
-
-	it("upgrade arrow, one slot: beats the item worn there; an empty slot is always beaten (AC9.3)", function()
-		local up = O.IsUpgrade
-		assert.equal(true, up(gear("INVTYPE_HEAD", 280), worn({ [1] = { 270, "INVTYPE_HEAD" } })))
-		assert.equal(false, up(gear("INVTYPE_HEAD", 280), worn({ [1] = { 285, "INVTYPE_HEAD" } })))
-		assert.equal(false, up(gear("INVTYPE_HEAD", 280), worn({ [1] = { 280, "INVTYPE_HEAD" } })), "equal is not up")
-		assert.equal(true, up(gear("INVTYPE_HEAD", 280), worn({})))
-		assert.equal(true, up(gear("INVTYPE_ROBE", 281), worn({ [5] = { 280, "INVTYPE_CHEST" } })))
-	end)
-
-	it("rings and trinkets compare with the lower of both slots", function()
-		local up = O.IsUpgrade
-		assert.equal(true, up(gear("INVTYPE_FINGER", 285), worn({ [11] = { 290, "INVTYPE_FINGER" },
-			[12] = { 280, "INVTYPE_FINGER" } })))
-		assert.equal(false, up(gear("INVTYPE_FINGER", 285), worn({ [11] = { 290, "INVTYPE_FINGER" },
-			[12] = { 286, "INVTYPE_FINGER" } })))
-		assert.equal(true, up(gear("INVTYPE_TRINKET", 270), worn({ [13] = { 300, "INVTYPE_TRINKET" } })),
-			"the second trinket slot is empty")
-		assert.equal(false, up(gear("INVTYPE_TRINKET", 270), worn({ [13] = { 300, "INVTYPE_TRINKET" },
-			[14] = { 270, "INVTYPE_TRINKET" } })))
-	end)
-
-	it("a two-hander compares by summed item level against main and off hand", function()
-		local up = O.IsUpgrade
-		local dual = worn({ [16] = { 290, "INVTYPE_WEAPON" }, [17] = { 280, "INVTYPE_SHIELD" } })
-		assert.equal(true, up(weapon("INVTYPE_2HWEAPON", 286), dual), "572 > 570")
-		assert.equal(false, up(weapon("INVTYPE_2HWEAPON", 285), dual), "570 = 570")
-		assert.equal(false, up(weapon("INVTYPE_2HWEAPON", 289), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
-		assert.equal(true, up(weapon("INVTYPE_2HWEAPON", 291), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
-		assert.equal(true, up(weapon("INVTYPE_RANGEDRIGHT", 200), worn({})))
-	end)
-
-	it("one-handers: the main hand, plus the off hand when it holds a one-hand weapon; off-hands never beat a two-hander",
-		function()
-			local up = O.IsUpgrade
-			local shield = worn({ [16] = { 280, "INVTYPE_WEAPON" }, [17] = { 260, "INVTYPE_SHIELD" } })
-			assert.equal(false, up(weapon("INVTYPE_WEAPON", 275), shield), "the shield slot is not a weapon slot")
-			local dual = worn({ [16] = { 290, "INVTYPE_WEAPON" }, [17] = { 280, "INVTYPE_WEAPON" } })
-			assert.equal(true, up(weapon("INVTYPE_WEAPON", 285), dual))
-			assert.equal(true, up(gear("INVTYPE_SHIELD", 270), shield))
-			assert.equal(false, up(gear("INVTYPE_HOLDABLE", 400), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
-			assert.equal(true, up(weapon("INVTYPE_WEAPONMAINHAND", 300), worn({ [16] = { 290, "INVTYPE_2HWEAPON" } })))
-		end)
-
-	it("no arrow on gear the character cannot use, on items still loading, or on things that are not worn gear", function()
-		local up = O.IsUpgrade
-		assert.equal(false, up(gear("INVTYPE_HEAD", 400), worn({}), function() return false end))
-		assert.equal(false, up(gear("INVTYPE_HEAD", 400, { pending = true }), worn({})))
-		assert.equal(false, up(gear("INVTYPE_BODY", 400), worn({})), "a shirt")
-		assert.equal(false, up({ classID = A.ITEM_CLASS.Consumable, equipLoc = "", ilvl = 400 }, worn({})))
-	end)
-
-	it("with Pawn the verdict is Pawn's; without an answer from Pawn the item-level rule decides", function()
-		local helm = gear("INVTYPE_HEAD", 200)
-		local worse = worn({ [1] = { 300, "INVTYPE_HEAD" } })
-		assert.equal(true, O.For(helm, { equipped = worse, pawn = function() return true end }).upgrade)
-		assert.equal(false, O.For(gear("INVTYPE_HEAD", 400), { equipped = worse, pawn = function() return false end }).upgrade)
-		assert.equal(false, O.For(helm, { equipped = worse, pawn = function() return nil end }).upgrade)
-		assert.equal(true, O.For(gear("INVTYPE_HEAD", 301), { equipped = worse, pawn = function() return nil end }).upgrade)
-	end)
-end)
-```
-
-- [ ] **Step 2: Run them to verify they fail**
-
-Run: `luajit spec/runner.lua spec/categories_spec.lua spec/categorizer_spec.lua spec/keywords_spec.lua spec/overlaydata_spec.lua`
-Expected: `52 passed, 15 failed`. `Engine/OverlayData.lua`, `Engine/Crests.lua` and the `crest` keyword do not exist, and `c_keystone` still reads `keystone`.
-
-Critical tests and the mutation that must make each fail:
-- "a two-hander compares by summed item level against main and off hand": `return ilvl > math.min(main, off)` in the two-hander branch.
-- "rings and trinkets compare with the lower of both slots": take the highest slot instead of the lowest.
-- "one-handers: the main hand, plus the off hand when it holds a one-hand weapon…": drop `ONE_HAND_WEAPON[off.equipLoc]`, or delete the `mainIsTwoHand` refusal.
-- "no arrow on gear the character cannot use…": `if false then` for the `canUse` test.
-- "with Pawn the verdict is Pawn's…": `if verdict then` instead of `if verdict ~= nil then`.
-- `keywords_spec` "crest: … never 'unknown'": return `nil` for a loading item.
-- `categorizer_spec` "a loading item that instant facts already decide is filed directly (week-2 test)": the same mutation. It is why the crest rule returns false.
-
-- [ ] **Step 3: Implement**
-
-<!-- sbw3:edit T10 i01 SwagBag/SwagBag.toc -->
-In `SwagBag/SwagBag.toc`, find:
-
-```text
-Engine/Query/Parser.lua
-Engine/Query/Query.lua
-Engine/Keywords.lua
-Engine/Search.lua
-```
-
-and replace it with:
-
-```text
-Engine/Query/Parser.lua
-Engine/Query/Query.lua
-Engine/Crests.lua
-Engine/Keywords.lua
-Engine/Search.lua
-```
-
-<!-- sbw3:edit T10 i02 SwagBag/SwagBag.toc -->
-In `SwagBag/SwagBag.toc`, find:
-
-```text
-Engine/Snapshots.lua
-Engine/Prices.lua
-
-# Providers
-```
-
-and replace it with:
-
-```text
-Engine/Snapshots.lua
-Engine/Prices.lua
-Engine/OverlayData.lua
-
-# Providers
-```
-
-<!-- sbw3:edit T10 i03 .luacheckrc -->
-In `.luacheckrc`, find:
-
-```lua
-	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
-	"IsModifiedClick", "HandleModifiedItemClick", "time", "UnitName", "UnitClass", "UnitLevel",
-}
-
-```
-
-and replace it with:
-
-```lua
-	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
-	"IsModifiedClick", "HandleModifiedItemClick", "time", "UnitName", "UnitClass", "UnitLevel",
-	"C_ChallengeMode", "C_PlayerInfo", "GetInventoryItemLink",
-}
-
-```
-
-<!-- sbw3:edit T10 i04 SwagBag/Core/Adapter.lua -->
-In `SwagBag/Core/Adapter.lua`, find:
-
-```lua
-	end
-	return (info.maxLevel or info.maxUpgradeLevel or 0) > 0 or (info.trackString or "") ~= ""
-end
-
-```
-
-and replace it with:
-
-```lua
-	end
-	return (info.maxLevel or info.maxUpgradeLevel or 0) > 0 or (info.trackString or "") ~= ""
-end
-
--- Upgrade track of an item link: { track = "Hero", level = 3, max = 6 }, or nil when the
--- item has none (or the API is missing). Real API only; no tooltip reading (spec P7).
-function A.UpgradeInfo(link)
-	if type(link) ~= "string" or not (C_Item and C_Item.GetItemUpgradeInfo) then
-		return nil
-	end
-	local ok, info = pcall(C_Item.GetItemUpgradeInfo, link)
-	if not ok or type(info) ~= "table" then
-		return nil
-	end
-	local track, level, max = info.trackString, info.currentLevel, info.maxLevel or info.maxUpgradeLevel
-	if type(track) ~= "string" or track == "" or isSecret(track) or type(level) ~= "number" or type(max) ~= "number" then
-		return nil
-	end
-	return { track = track, level = level, max = max }
-end
-
--- Name of a Mythic+ dungeon (keystone link map ID), or nil.
-function A.DungeonName(mapID)
-	if not (C_ChallengeMode and C_ChallengeMode.GetMapUIInfo) then
-		return nil
-	end
-	local ok, name = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
-	if ok and type(name) == "string" and not isSecret(name) then
-		return name
-	end
-	return nil
-end
-
--- What the character wears: [inventory slot 1-17] = { ilvl, equipLoc } (nil = empty slot).
-function A.EquippedItems()
-	local out = {}
-	for slot = 1, 17 do
-		local okL, link = pcall(GetInventoryItemLink, "player", slot)
-		if okL and type(link) == "string" and not isSecret(link) then
-			local inst = A.GetItemInstant(link)
-			local okI, ilvl = pcall(function()
-				return C_Item.GetCurrentItemLevel(ItemLocation:CreateFromEquipmentSlot(slot))
-			end)
-			out[slot] = { ilvl = (okI and type(ilvl) == "number" and not isSecret(ilvl)) and ilvl or 0,
-				equipLoc = inst and inst.equipLoc or "" }
-		end
-	end
-	return out
-end
-
--- True unless the client says this character cannot use the item (feature-detected).
-function A.CanUse(itemID)
-	if not (C_PlayerInfo and C_PlayerInfo.CanUseItem) then
-		return true
-	end
-	local ok, yes = pcall(C_PlayerInfo.CanUseItem, itemID)
-	return not ok or yes ~= false
-end
-
--- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
-function A.PawnUpgrade(bag, slot)
-	local fn = _G.PawnIsContainerItemAnUpgrade
-	if type(fn) ~= "function" then
-		return nil
-	end
-	local ok, yes = pcall(fn, bag, slot)
-	if not ok then
-		return nil
-	end
-	return yes and true or false
-end
-
-```
-
-<!-- sbw3:edit T10 i05 SwagBag/Core/Adapter.lua -->
-In `SwagBag/Core/Adapter.lua`, find:
-
-```lua
-	{ path = "Enum.AddOnRestrictionType", window = "bags", required = false },
-	{ path = "C_ChallengeMode.IsChallengeModeActive", window = "bags", required = false },
-	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
-	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
-```
-
-and replace it with:
-
-```lua
-	{ path = "Enum.AddOnRestrictionType", window = "bags", required = false },
-	{ path = "C_ChallengeMode.IsChallengeModeActive", window = "bags", required = false },
-	{ path = "C_ChallengeMode.GetMapUIInfo", window = "bags", required = false },
-	{ path = "C_PlayerInfo.CanUseItem", window = "bags", required = false },
-	{ path = "GetInventoryItemLink", window = "bags", required = false },
-	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
-	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
-```
-
-<!-- sbw3:edit T10 i06 SwagBag/Locale/enUS.lua -->
-In `SwagBag/Locale/enUS.lua`, find:
-
-```lua
-L.REPORT_PRICES = "Prices: %s, %d cached"
-
--- In-game check V1 (optional)
-L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
-```
-
-and replace it with:
-
-```lua
-L.REPORT_PRICES = "Prices: %s, %d cached"
-
--- Overlays (spec F9)
-L.OVERLAY_TRACK = "%s%d/%d"
-L.BADGE_BOE = "BoE"
-L.BADGE_WUE = "WuE"
-
--- In-game check V1 (optional)
-L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
-```
-
-<!-- sbw3:edit T10 i07 SwagBag/Engine/CategoryDefaults.lua -->
-In `SwagBag/Engine/CategoryDefaults.lua`, find:
-
-```lua
-
-SB.CategoryDefaults = {
-	{ id = "c_keystone", name = L.CAT_KEYSTONE, query = "keystone", priority = 95, displayOrder = 10 },
-	{ id = "c_consumables", name = L.CAT_CONSUMABLES, query = "consumable", priority = 65, displayOrder = 20 },
-	{ id = "c_gear", name = L.CAT_GEAR, query = "gear", priority = 70, displayOrder = 30 },
-```
-
-and replace it with:
-
-```lua
-
-SB.CategoryDefaults = {
-	{ id = "c_keystone", name = L.CAT_KEYSTONE, query = "keystone | crest", priority = 95, displayOrder = 10 },
-	{ id = "c_consumables", name = L.CAT_CONSUMABLES, query = "consumable", priority = 65, displayOrder = 20 },
-	{ id = "c_gear", name = L.CAT_GEAR, query = "gear", priority = 70, displayOrder = 30 },
-```
-
-<!-- sbw3:file T10 i08 SwagBag/Engine/Crests.lua -->
-Create `SwagBag/Engine/Crests.lua`:
-
-```lua
--- SwagBag crest data (spec 7.3 "crest", 13.2 item 4): what files into "Keystone & Crests"
--- besides the keystone. Per season, updated with patches.
---   ids    item IDs of the season's upgrade-currency items, confirmed in game
---   words  lower-case name words for the rest (never matched on gear, so a cloak named
---          "...Crest..." stays in Gear)
--- An item the user drops on the Keystone & Crests header joins it whatever this file says
--- (spec AC4.3); Claude moves confirmed IDs into `ids` when the user reports them.
-local _, SB = ...
-
-SB.Crests = {
-	ids = {},
-	words = { "crest", "valorstone" },
-}
-```
-
-<!-- sbw3:edit T10 i09 SwagBag/Engine/Items.lua -->
-In `SwagBag/Engine/Items.lua`, find:
-
-```lua
---   isBound, isWUE, isLocked, onCooldown, inEquipmentSet, hasUpgradeTrack,
---   isUsable, isToy, isQuestItem, isKeystone, isCagedPet, isNew    booleans
---   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"
---   tab             bank tab number (1-based) | nil
---   pending         true while the item's data has not loaded
--- }
-```
-
-and replace it with:
-
-```lua
---   isBound, isWUE, isLocked, onCooldown, inEquipmentSet, hasUpgradeTrack,
---   isUsable, isToy, isQuestItem, isKeystone, isCagedPet, isNew    booleans
---   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"|"guild"
---   tab             bank tab number (1-based) | nil
---   track           { track, level, max } upgrade track | nil (overlays)
---   hasNoValue      boolean: a vendor pays nothing for it
---   pending         true while the item's data has not loaded
--- }
-```
-
-<!-- sbw3:edit T10 i10 SwagBag/Engine/Items.lua -->
-In `SwagBag/Engine/Items.lua`, find:
-
-```lua
-		inEquipmentSet = A.InEquipmentSet(bag, slot),
-		hasUpgradeTrack = A.HasUpgradeTrack(bag, slot),
-		isUsable = A.IsUsable(s.itemID),
-		isToy = A.IsToy(s.itemID),
-```
-
-and replace it with:
-
-```lua
-		inEquipmentSet = A.InEquipmentSet(bag, slot),
-		hasUpgradeTrack = A.HasUpgradeTrack(bag, slot),
-		track = A.UpgradeInfo(s.link),
-		hasNoValue = s.hasNoValue == true,
-		isUsable = A.IsUsable(s.itemID),
-		isToy = A.IsToy(s.itemID),
-```
-
-<!-- sbw3:edit T10 i11 SwagBag/Engine/Items.lua -->
-In `SwagBag/Engine/Items.lua`, find:
-
-```lua
-		inEquipmentSet = false,
-		hasUpgradeTrack = false,
-		isUsable = A.IsUsable(info.itemID),
-		isToy = A.IsToy(info.itemID),
-```
-
-and replace it with:
-
-```lua
-		inEquipmentSet = false,
-		hasUpgradeTrack = false,
-		track = A.UpgradeInfo(info.link),
-		hasNoValue = false,
-		isUsable = A.IsUsable(info.itemID),
-		isToy = A.IsToy(info.itemID),
-```
-
-<!-- sbw3:edit T10 i12 SwagBag/Engine/Keywords.lua -->
-In `SwagBag/Engine/Keywords.lua`, find:
-
-```lua
--- Aliases include Syndicator's English spellings used by published Baganator category
--- strings (desk spike F, docs/research/2026-10-syndicator-grammar-diff.md).
--- Not yet registered (need later modules): expansion, crafting quality, collection,
--- crest / upgrade currency.
-local _, SB = ...
-
-```
-
-and replace it with:
-
-```lua
--- Aliases include Syndicator's English spellings used by published Baganator category
--- strings (desk spike F, docs/research/2026-10-syndicator-grammar-diff.md).
--- Not yet registered (need later modules): expansion, crafting quality, collection.
-local _, SB = ...
-
-```
-
-<!-- sbw3:edit T10 i13 SwagBag/Engine/Keywords.lua -->
-In `SwagBag/Engine/Keywords.lua`, find:
-
-```lua
-		return r.isKeystone == true
-	end)
-	kw("pet", "instance", function(r)
-		return r.isCagedPet == true or r.classID == C.Battlepet
-```
-
-and replace it with:
-
-```lua
-		return r.isKeystone == true
-	end)
-	-- Crests and other upgrade currency items (spec 7.3): the season's item IDs, else a name
-	-- word from the data file (Engine/Crests.lua). Gear is never a crest. A loading item with an
-	-- unknown ID is "not a crest" rather than "unknown": the rule sits in Keystone & Crests
-	-- (priority 95), and an unknown there would hold every loading item in New (spec 7.7 D3).
-	kw("crest", "static", function(r)
-		local list = SB.Crests or { ids = {}, words = {} }
-		if list.ids[r.itemID] then
-			return true
-		end
-		if isGear(r) or r.name == nil then
-			return false
-		end
-		local name = r.name:lower()
-		for _, word in ipairs(list.words) do
-			if name:find(word, 1, true) then
-				return true
-			end
-		end
-		return false
-	end, { "upgrade currency" })
-	kw("pet", "instance", function(r)
-		return r.isCagedPet == true or r.classID == C.Battlepet
-```
-
-<!-- sbw3:file T10 i14 SwagBag/Engine/OverlayData.lua -->
-Create `SwagBag/Engine/OverlayData.lua`:
-
-```lua
--- SwagBag overlay data (spec F9: AC9.1, AC9.3). Pure: an item record in, what to draw on its
--- button out. UI/Overlays.lua draws it and applies the per-overlay settings. Everything
--- comes from the record (Items.lua: real APIs, no tooltip reading).
---   OverlayData.For(record, ctx) -> {
---     ilvl      number | nil    equippable gear only
---     track     "H3/6" | nil    upgrade track initial, level / max
---     keystone  { level, dungeon } | nil   from the keystone link; dungeon = short name
---     junk      boolean         poor quality and a vendor pays for it
---     bind      "BoE" | "WuE" | nil   bind on equip / warbound until equipped, not yet bound
---     upgrade   boolean         the arrow (AC9.3, see IsUpgrade) }
---   ctx = { equipped = { [invSlot] = { ilvl, equipLoc } }, canUse = fn(itemID) -> bool,
---           dungeonName = fn(mapID) -> name | nil, pawn = fn(record) -> true | false | nil }
---   OverlayData.IsUpgrade(record, equipped, canUse) -> boolean
---   OverlayData.Short(name) -> short dungeon name ("Darkflame Cleft" -> "DC")
-local _, SB = ...
-
-local O = {}
-SB.OverlayData = O
-
--- Equip location -> the inventory slots it can go in (spec AC9.3 "matching slot(s)").
-O.SLOTS = {
-	INVTYPE_HEAD = { 1 }, INVTYPE_NECK = { 2 }, INVTYPE_SHOULDER = { 3 }, INVTYPE_CHEST = { 5 }, INVTYPE_ROBE = { 5 },
-	INVTYPE_WAIST = { 6 }, INVTYPE_LEGS = { 7 }, INVTYPE_FEET = { 8 }, INVTYPE_WRIST = { 9 }, INVTYPE_HAND = { 10 },
-	INVTYPE_FINGER = { 11, 12 }, INVTYPE_TRINKET = { 13, 14 }, INVTYPE_CLOAK = { 15 },
-	INVTYPE_WEAPON = { 16 }, INVTYPE_WEAPONMAINHAND = { 16 }, INVTYPE_2HWEAPON = { 16 }, INVTYPE_RANGED = { 16 },
-	INVTYPE_RANGEDRIGHT = { 16 }, INVTYPE_WEAPONOFFHAND = { 17 }, INVTYPE_SHIELD = { 17 }, INVTYPE_HOLDABLE = { 17 },
-}
-local TWO_HAND = { INVTYPE_2HWEAPON = true, INVTYPE_RANGED = true, INVTYPE_RANGEDRIGHT = true }
-local ONE_HAND_WEAPON = { INVTYPE_WEAPON = true, INVTYPE_WEAPONOFFHAND = true }
-local MAIN, OFF = 16, 17
-
-local function ilvlAt(equipped, slot)
-	local e = equipped[slot]
-	return e and e.ilvl or 0
-end
-
--- AC9.3: higher than the lowest-ilvl item equipped in the matching slot(s); an empty slot
--- counts as 0. Rings and trinkets compare with both slots. A two-hander replaces the main and
--- off hand, so it compares by summed item level (2 x its level against both). A one-hander
--- also compares with the off hand when the off hand holds a one-hand weapon (dual wield).
--- An off-hand item never beats a two-hander (it would leave the main hand empty).
-function O.IsUpgrade(record, equipped, canUse)
-	local A = SB.Adapter
-	local ilvl = record.ilvl
-	local slots = O.SLOTS[record.equipLoc or ""]
-	if not slots or record.pending or type(ilvl) ~= "number" then
-		return false
-	end
-	if record.classID ~= A.ITEM_CLASS.Armor and record.classID ~= A.ITEM_CLASS.Weapon then
-		return false
-	end
-	if canUse and not canUse(record.itemID) then
-		return false
-	end
-	local main, off = equipped[MAIN], equipped[OFF]
-	local mainIsTwoHand = main and TWO_HAND[main.equipLoc] or false
-	if TWO_HAND[record.equipLoc] then
-		if off then
-			return ilvl * 2 > ilvlAt(equipped, MAIN) + ilvlAt(equipped, OFF)
-		end
-		return ilvl > ilvlAt(equipped, MAIN)
-	end
-	if slots[1] == OFF then
-		if mainIsTwoHand then
-			return false
-		end
-		return ilvl > ilvlAt(equipped, OFF)
-	end
-	local lowest = math.huge
-	for _, slot in ipairs(slots) do
-		lowest = math.min(lowest, ilvlAt(equipped, slot))
-	end
-	if record.equipLoc == "INVTYPE_WEAPON" and off and ONE_HAND_WEAPON[off.equipLoc] then
-		lowest = math.min(lowest, ilvlAt(equipped, OFF))
-	end
-	return ilvl > lowest
-end
-
-local SMALL = { ["of"] = true, ["the"] = true, ["and"] = true }
-
--- Initials of the meaningful words (up to 4), or the first 3 letters of a one-word name.
-function O.Short(name)
-	if type(name) ~= "string" then
-		return nil
-	end
-	local words = {}
-	for w in name:gmatch("[^%s%-,:']+") do
-		if not SMALL[w:lower()] then
-			words[#words + 1] = w
-		end
-	end
-	if #words == 0 then
-		return nil
-	elseif #words == 1 then
-		return words[1]:sub(1, 3)
-	end
-	local out = {}
-	for i = 1, math.min(4, #words) do
-		out[i] = words[i]:sub(1, 1):upper()
-	end
-	return table.concat(out)
-end
-
-local function isGear(r)
-	local C = SB.Adapter.ITEM_CLASS
-	return r.classID == C.Armor or r.classID == C.Weapon
-end
-
-function O.For(record, ctx)
-	local out = { junk = false, upgrade = false }
-	if not record then
-		return out
-	end
-	ctx = ctx or {}
-	local L = SB.L
-	if isGear(record) and O.SLOTS[record.equipLoc or ""] and type(record.ilvl) == "number" then
-		out.ilvl = record.ilvl
-	end
-	local t = record.track
-	if t and t.track and t.level and t.max then
-		out.track = L.OVERLAY_TRACK:format(t.track:sub(1, 1), t.level, t.max)
-	end
-	if record.isKeystone and record.link then
-		local mapID, level = record.link:match("keystone:%d+:(%d+):(%d+)")
-		if level then
-			local name = ctx.dungeonName and ctx.dungeonName(tonumber(mapID))
-			out.keystone = { level = tonumber(level), dungeon = O.Short(name) }
-		end
-	end
-	out.junk = record.quality == 0 and not record.hasNoValue
-	if not record.isBound then
-		if record.isWUE then
-			out.bind = L.BADGE_WUE
-		elseif record.bind == "equip" then
-			out.bind = L.BADGE_BOE
-		end
-	end
-	local verdict = ctx.pawn and ctx.pawn(record)
-	if verdict ~= nil then
-		out.upgrade = verdict and true or false
-	else
-		out.upgrade = O.IsUpgrade(record, ctx.equipped or {}, ctx.canUse)
-	end
-	return out
-end
-```
-
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `luajit spec/runner.lua spec/categories_spec.lua spec/categorizer_spec.lua spec/keywords_spec.lua spec/overlaydata_spec.lua`
-Expected: `67 passed, 0 failed`
-
-- [ ] **Step 5: Run all checks**
-
-Run: `scripts/check.sh`
-Expected: `TOC OK (42 files)`, `570 passed, 0 failed`, `ALL CHECKS PASSED`
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add spec/mock_adapter.lua \
-  spec/categories_spec.lua \
-  spec/categorizer_spec.lua \
-  spec/keywords_spec.lua \
-  spec/overlaydata_spec.lua \
-  SwagBag/SwagBag.toc \
-  .luacheckrc \
-  SwagBag/Core/Adapter.lua \
-  SwagBag/Locale/enUS.lua \
-  SwagBag/Engine/CategoryDefaults.lua \
-  SwagBag/Engine/Crests.lua \
-  SwagBag/Engine/Items.lua \
-  SwagBag/Engine/Keywords.lua \
-  SwagBag/Engine/OverlayData.lua
-git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 10: overlay data and the upgrade arrow, crest keyword and data file" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
-```
-
----
-
-### Task 11: Overlays on bag, bank and guild buttons; Use Pawn; the reagent-bag cue; `/swagbag overlays`
-
-`UI/Overlays.lua` draws Task 10's data on any item button:
-- top left: the item level, or `+12` on a keystone;
-- bottom left: the track `H3/6`, or the keystone's dungeon;
-- left: `BoE` / `WuE`;
-- top right: a green upgrade arrow;
-- top left: a junk coin (only when nothing else is there).
-
-The stack count stays Blizzard's own.
-
-**How it draws.** Regions are font strings and textures on the button itself (no frames, so drawing is allowed in combat), made the first time a button needs one, in its OVERLAY layer. Dimming a button for search therefore dims its overlays too. An empty slot that never showed anything gets no regions, so a 1,290-slot bank with many empties stays light.
-
-**Free-section cue.** An empty reagent-bag slot gets a faint green tint, so it is clear which empty slots take only reagents (the week-2 ledger's "reagent-bag empties in Free (UI cue)").
-
-**When it redraws.** What the character wears is read once and kept until `PLAYER_EQUIPMENT_CHANGED`. A gear swap fires one event per slot, so the open windows redraw once, 0.1 s after the last one (AC9.3 "re-evaluated on PLAYER_EQUIPMENT_CHANGED").
-
-**Switches.** Each overlay has its own switch (AC9.2), `overlays.ilvl/track/upgrade/keystone/junk/bind`, plus `overlays.usePawn`. Until the settings window arrives in week 4, `/swagbag overlays` lists them and `/swagbag overlays <name> on|off` switches one (P2: it always answers).
-
-**Wiring.** The bags window applies overlays in `describe` and when a loading item's data arrives. The bank and guild windows apply them in their `describe` and live-update paths.
-
-**Files:**
-- Create: `SwagBag/UI/Overlays.lua`
-- Modify: `SwagBag/UI/BagsWindow.lua`, `SwagBag/UI/BankWindow.lua`, `SwagBag/UI/GuildBankWindow.lua` (apply overlays), `SwagBag/Core/Adapter.lua` (`HasPawn`), `SwagBag/Core/Config.lua` (`overlays`), `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`
-- Test: `spec/mock_adapter.lua`, `spec/helpers/uienv.lua`, `spec/overlays_spec.lua` (new), `spec/bagswindow_sections_spec.lua`, `spec/bankwindow_groups_spec.lua`, `spec/guildbank_spec.lua`
-
-**Interfaces:**
-- Consumes:
-  - Task 10: `SB.OverlayData.For`, `SB.Adapter.EquippedItems/CanUse/DungeonName/PawnUpgrade`;
-  - Task 6: `SB.BankWindow.view.ForEachSlot`;
-  - Task 8: `SB.GuildBankWindow.view.ForEachSlot`;
-  - on `main`: `SB.BagsWindow.ForEachSlot` (`fn(button, record, bag, slot)`).
-- Produces:
-  - `SB.Overlays.Apply(button, record, bag)`, `.RefreshAll()`, `.Context()`, `.regions[button]` (`topLeft`, `bottomLeft`, `bind`, `arrow`, `junk`, `reagent`).
-  - `SB.Adapter.HasPawn() -> bool`.
-  - Settings `overlays.*`. Slash command `overlays`.
-
-- [ ] **Step 1: Write the failing tests**
-
-<!-- sbw3:edit T11 s01 spec/helpers/uienv.lua -->
-In `spec/helpers/uienv.lua`, find:
-
-```lua
-	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
-	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
-	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua",
-}
-
-```
-
-and replace it with:
-
-```lua
-	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
-	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
-	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua", "SwagBag/Engine/OverlayData.lua",
-}
-
-```
-
-<!-- sbw3:edit T11 s02 spec/helpers/uienv.lua -->
-In `spec/helpers/uienv.lua`, find:
-
-```lua
-	end
-	for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/SearchBox.lua",
-		"SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua" }) do
-		Loader.LoadFile(SB, path)
-	end
-```
-
-and replace it with:
-
-```lua
-	end
-	for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/SearchBox.lua",
-		"SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua", "SwagBag/UI/Overlays.lua" }) do
-		Loader.LoadFile(SB, path)
-	end
-```
-
-<!-- sbw3:edit T11 s03 spec/helpers/uienv.lua -->
-In `spec/helpers/uienv.lua`, find:
-
-```lua
-	for _, path in ipairs({ "SwagBag/Engine/Snapshots.lua", "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua",
-		"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/GuildButtons.lua",
-		"SwagBag/UI/GuildBankWindow.lua" }) do
-		Loader.LoadFile(SB, path)
-	end
-```
-
-and replace it with:
-
-```lua
-	for _, path in ipairs({ "SwagBag/Engine/Snapshots.lua", "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua",
-		"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/GuildButtons.lua",
-		"SwagBag/UI/GuildBankWindow.lua", "SwagBag/UI/Overlays.lua" }) do
-		Loader.LoadFile(SB, path)
-	end
-```
-
-<!-- sbw3:edit T11 s04 spec/mock_adapter.lua -->
-In `spec/mock_adapter.lua`, find:
-
-```lua
-	end
-
-	function m.PawnUpgrade(bag, slot)
-		if m.pawn == nil then
-```
-
-and replace it with:
-
-```lua
-	end
-
-	function m.HasPawn()
-		return m.pawn ~= nil
-	end
-
-	function m.PawnUpgrade(bag, slot)
-		if m.pawn == nil then
-```
-
-<!-- sbw3:edit T11 s05 spec/bagswindow_sections_spec.lua -->
-In `spec/bagswindow_sections_spec.lua`, find:
-
-```lua
-local FILES = {
-	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
-	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Inventory.lua", "SwagBag/Engine/GridLayout.lua",
-	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
-```
-
-and replace it with:
-
-```lua
-local FILES = {
-	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
-	"SwagBag/Core/Slash.lua", "SwagBag/Engine/OverlayData.lua",
-	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Inventory.lua", "SwagBag/Engine/GridLayout.lua",
-	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
-```
-
-<!-- sbw3:edit T11 s06 spec/bagswindow_sections_spec.lua -->
-In `spec/bagswindow_sections_spec.lua`, find:
-
-```lua
-		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
-		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
-		W = SB.BagsWindow
-		SB.Emit("SB_LOGIN")
-```
-
-and replace it with:
-
-```lua
-		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
-		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
-		Loader.LoadFile(SB, "SwagBag/UI/Overlays.lua")
-		W = SB.BagsWindow
-		SB.Emit("SB_LOGIN")
-```
-
-<!-- sbw3:edit T11 s07 spec/bagswindow_sections_spec.lua -->
-In `spec/bagswindow_sections_spec.lua`, find:
-
-```lua
-		B.Get = realGet
-		assert.equal(1, #B.placeholders)
-		assert.truthy(gets <= 3, "Buttons.Get called " .. gets .. " times for one change in 16 slots")
-		assert.equal(16, #W.cells, "search still sees every slot")
-	end)
-```
-
-and replace it with:
-
-```lua
-		B.Get = realGet
-		assert.equal(1, #B.placeholders)
-		-- the changed slot's repaint, its overlay and the one button that moved
-		assert.truthy(gets <= 4, "Buttons.Get called " .. gets .. " times for one change in 16 slots")
-		assert.equal(16, #W.cells, "search still sees every slot")
-	end)
-```
-
-<!-- sbw3:edit T11 s08 spec/bagswindow_sections_spec.lua -->
-In `spec/bagswindow_sections_spec.lua`, find:
-
-```lua
-		W.Open()
-		assert.equal("- Consumables (2)", header("c_consumables").text.text)
-	end)
-
-```
-
-and replace it with:
-
-```lua
-		W.Open()
-		assert.equal("- Consumables (2)", header("c_consumables").text.text)
-	end)
-
-	it("bag items get their overlays; an empty reagent-bag slot is tinted in Free", function()
-		A.SetBagSize(5, 2)
-		SB.Inventory.ScanAll()
-		W.Open()
-		local ring = SB.Overlays.regions[B.Get(0, 3)]
-		assert.same({ "285", "BoE" }, { ring.topLeft.text, ring.bind.text })
-		assert.truthy(SB.Overlays.regions[B.Get(5, 1)].reagent.shown)
-		assert.is_nil(SB.Overlays.regions[B.Get(0, 16)], "an ordinary empty slot gets nothing")
-		A.Clear(0, 3)
-		bagUpdate()
-		assert.equal("", ring.topLeft.text, "the emptied slot's overlays are cleared")
-	end)
-
-	it("an item whose data loads while open gets its overlays at once (it moves only on the next open)", function()
-		W.Open()
-		A.Put(0, 10, Fixtures.UNLOADED, 1)
-		bagUpdate()
-		assert.equal("", SB.Overlays.regions[B.Get(0, 10)].topLeft.text)
-		A.items[Fixtures.UNLOADED] = { name = "Robe", classID = A.ITEM_CLASS.Armor, subclassID = 0, quality = 3,
-			equipLoc = "INVTYPE_CHEST", ilvl = 280, maxStack = 1, bind = "equip" }
-		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
-		assert.equal("280", SB.Overlays.regions[B.Get(0, 10)].topLeft.text)
-	end)
-
-```
-
-<!-- sbw3:edit T11 s09 spec/bankwindow_groups_spec.lua -->
-In `spec/bankwindow_groups_spec.lua`, find:
-
-```lua
-		assert.equal("- Herbs (1) - 3g", header("bank:c_herbs").text.text, "20 herbs at the vendor price, no vendor label")
-		assert.equal("- Ore (1) - 9g", header("warband:c_ore").text.text, "10 ore at 90s")
-	end)
-
-```
-
-and replace it with:
-
-```lua
-		assert.equal("- Herbs (1) - 3g", header("bank:c_herbs").text.text, "20 herbs at the vendor price, no vendor label")
-		assert.equal("- Ore (1) - 9g", header("warband:c_ore").text.text, "10 ore at 90s")
-	end)
-
-	it("bank items get their overlays (the BoE ring's item level and badge)", function()
-		openBank()
-		local r = SB.Overlays.regions[B.Get(12, 2)]
-		assert.same({ "285", "BoE" }, { r.topLeft.text, r.bind.text })
-	end)
-
-```
-
-<!-- sbw3:edit T11 s10 spec/guildbank_spec.lua -->
-In `spec/guildbank_spec.lua`, find:
-
-```lua
-		assert.same(herbAt, { SB.Buttons.placeholdersInUse[1].points[1][4], SB.Buttons.placeholdersInUse[1].points[1][5] })
-		assert.equal(header("tab1:new").points[1][5] - 20, at(button(1, 7))[2], "the deposit is first in New")
-	end)
-
-```
-
-and replace it with:
-
-```lua
-		assert.same(herbAt, { SB.Buttons.placeholdersInUse[1].points[1][4], SB.Buttons.placeholdersInUse[1].points[1][5] })
-		assert.equal(header("tab1:new").points[1][5] - 20, at(button(1, 7))[2], "the deposit is first in New")
-	end)
-
-	it("guild items get their overlays (the BoE ring's item level and badge)", function()
-		openVault()
-		answerQueries()
-		local r = SB.Overlays.regions[button(2, 1)]
-		assert.same({ "285", "BoE" }, { r.topLeft.text, r.bind.text })
-	end)
-
-```
-
-<!-- sbw3:file T11 s11 spec/overlays_spec.lua -->
-Create `spec/overlays_spec.lua`:
-
-```lua
--- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip
--- Overlays drawn on item buttons (spec F9), with fake buttons; and in the open windows.
-local Loader = dofile("spec/helpers/loader.lua")
-local Fake = dofile("spec/helpers/fakeframe.lua")
-local Env = dofile("spec/helpers/uienv.lua")
-local Fixtures = dofile("spec/fixtures/items.lua")
-
-describe("Overlays (spec F9)", function()
-	local SB, A, Ov
-	before_each(function()
-		SB = Loader.New(Env.ENGINE)
-		A = SB.Adapter
-		SB.Config.Init(nil, nil)
-		Fixtures.SmallBags(A)
-		Fake.Install()
-		Loader.LoadFile(SB, "SwagBag/UI/Overlays.lua")
-		Ov = SB.Overlays
-	end)
-
-	after_each(function()
-		Fake.Uninstall()
-	end)
-
-	local function draw(bag, slot)
-		local b = Fake.New("ItemButton")
-		Ov.Apply(b, SB.Items.Describe(bag, slot), bag)
-		return b, Ov.regions[b]
-	end
-
-	it("gear: item level top left, track bottom left, BoE badge, upgrade arrow", function()
-		A.tracks["item:" .. Fixtures.BOE_RING] = { track = "Champion", level = 2, max = 8 }
-		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
-		A.equipped[12] = { ilvl = 290, equipLoc = "INVTYPE_FINGER" }
-		local _, r = draw(0, 3)
-		assert.same({ "285", "C2/8", "BoE", true, false },
-			{ r.topLeft.text, r.bottomLeft.text, r.bind.text, r.arrow.shown, r.junk.shown })
-	end)
-
-	it("a keystone shows +level and its dungeon's short name", function()
-		A.dungeons[503] = "Ara-Kara, City of Echoes"
-		local _, r = draw(0, 5)
-		assert.same({ "+12", "AKCE", "" }, { r.topLeft.text, r.bottomLeft.text, r.bind.text })
-	end)
-
-	it("a junk coin on gray items; nothing on a potion", function()
-		local _, junk = draw(0, 6)
-		assert.truthy(junk.junk.shown)
-		local _, potion = draw(0, 1)
-		assert.same({ "", "", "", false, false },
-			{ potion.topLeft.text, potion.bottomLeft.text, potion.bind.text, potion.arrow.shown, potion.junk.shown })
-	end)
-
-	it("a slot that empties clears its overlays; an empty slot that never had an item makes no regions", function()
-		local b = draw(0, 3)
-		Ov.Apply(b, nil, 0)
-		local r = Ov.regions[b]
-		assert.same({ "", "", false }, { r.topLeft.text, r.bind.text, r.arrow.shown })
-		local empty = Fake.New("ItemButton")
-		Ov.Apply(empty, nil, 0)
-		assert.is_nil(Ov.regions[empty])
-	end)
-
-	it("an empty reagent-bag slot is tinted so it stands out in Free; an item there is not", function()
-		A.SetBagSize(5, 4)
-		local b = Fake.New("ItemButton")
-		Ov.Apply(b, nil, 5)
-		assert.truthy(Ov.regions[b].reagent.shown)
-		A.Put(5, 1, Fixtures.HERB, 5)
-		Ov.Apply(b, SB.Items.Describe(5, 1), 5)
-		assert.falsy(Ov.regions[b].reagent.shown)
-		local other = Fake.New("ItemButton")
-		Ov.Apply(other, SB.Items.Describe(0, 1), 0)
-		Ov.Apply(other, nil, 0)
-		assert.falsy(Ov.regions[other].reagent.shown)
-	end)
-
-	it("each overlay has its own switch; /swagbag overlays lists and switches them", function()
-		SB.Config.Set("overlays.ilvl", false)
-		local _, r = draw(0, 3)
-		assert.equal("", r.topLeft.text)
-		assert.equal("BoE", r.bind.text)
-		SB.Slash.Dispatch("overlays bind off")
-		SB.Slash.Dispatch("overlays")
-		SB.Slash.Dispatch("overlays sparkles on")
-		assert.same({ "Overlay bind is now off.",
-			"Overlays: ilvl off, track on, upgrade on, keystone on, junk on, bind off, pawn off",
-			SB.L.OVERLAYS_USAGE }, A.Lines())
-		assert.equal(false, SB.Config.Get("overlays.bind"))
-	end)
-
-	it("a gear change re-draws the arrows of the open windows, once after the last slot event", function()
-		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
-		local b, r = draw(0, 3)
-		assert.truthy(r.arrow.shown)
-		local record = SB.Items.Describe(0, 3)
-		local passes = 0
-		SB.BagsWindow = { IsOpen = function() return true end,
-			ForEachSlot = function(fn) passes = passes + 1 fn(b, record, 0, 3) end }
-		A.equipped[11] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
-		A.equipped[12] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
-		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 11)
-		SB.eventFrame:Fire("PLAYER_EQUIPMENT_CHANGED", 12)
-		assert.truthy(r.arrow.shown, "not yet")
-		A.Advance(0.1)
-		assert.falsy(r.arrow.shown)
-		assert.equal(1, passes)
-	end)
-
-	it("with Use Pawn, Pawn decides the arrow for bag items; guild items keep the item-level rule", function()
-		A.equipped[11] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
-		A.equipped[12] = { ilvl = 300, equipLoc = "INVTYPE_FINGER" }
-		A.pawn = { ["0:3"] = true, ["101:3"] = true } -- Pawn must never be asked about a guild slot
-		SB.Slash.Dispatch("overlays pawn on")
-		local _, r = draw(0, 3)
-		assert.truthy(r.arrow.shown, "Pawn says upgrade")
-		local g = Fake.New("ItemButton")
-		Ov.Apply(g, SB.Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = "item:" .. Fixtures.BOE_RING, count = 1 },
-			101, 3, 1), 101)
-		assert.falsy(Ov.regions[g].arrow.shown, "285 does not beat 300")
-		assert.same({ "Overlay pawn is now on." }, A.Lines())
-		A.pawn = nil
-		A.printed = {}
-		SB.Slash.Dispatch("overlays pawn on")
-		assert.same({ "Overlay pawn is now on.", SB.L.OVERLAYS_NO_PAWN }, A.Lines())
-	end)
-end)
-```
-
-- [ ] **Step 2: Run them to verify they fail**
-
-Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/bankwindow_groups_spec.lua spec/guildbank_spec.lua spec/overlays_spec.lua`
-Expected: `2 passed, 118 failed`. The spec files now load `UI/Overlays.lua`, which does not exist yet; only the two load-order tests pass.
-
-Critical tests and the mutation that must make each fail:
-- "a slot that empties clears its overlays; an empty slot that never had an item makes no regions": delete the early return for empty slots in `Ov.Apply`.
-- "a gear change re-draws the arrows of the open windows, once after the last slot event": delete `Ov.context = nil` in the `PLAYER_EQUIPMENT_CHANGED` handler.
-- "with Use Pawn, Pawn decides the arrow for bag items; guild items keep the item-level rule": `if record.bag then` instead of `if record.bag and A.BagKind(record.bag) then`. The fixture's Pawn would say "upgrade" for the guild slot.
-- "an empty reagent-bag slot is tinted…": `show(r.reagent, record == nil)`.
-- `bagswindow_sections_spec` "an item whose data loads while open gets its overlays at once…": delete `overlay(bag, slot)` in `refreshRecord`.
-
-- [ ] **Step 3: Implement**
-
-<!-- sbw3:edit T11 i01 SwagBag/SwagBag.toc -->
-In `SwagBag/SwagBag.toc`, find:
-
-```text
-UI/GuildButtons.lua
-UI/GuildBankWindow.lua
-UI/DebugV1.lua
-
-```
-
-and replace it with:
-
-```text
-UI/GuildButtons.lua
-UI/GuildBankWindow.lua
-UI/Overlays.lua
-UI/DebugV1.lua
-
-```
-
-<!-- sbw3:edit T11 i02 SwagBag/Core/Adapter.lua -->
-In `SwagBag/Core/Adapter.lua`, find:
-
-```lua
-end
-
--- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
-function A.PawnUpgrade(bag, slot)
-```
-
-and replace it with:
-
-```lua
-end
-
-function A.HasPawn()
-	return type(_G.PawnIsContainerItemAnUpgrade) == "function"
-end
-
--- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
-function A.PawnUpgrade(bag, slot)
-```
-
-<!-- sbw3:edit T11 i03 SwagBag/Core/Config.lua -->
-In `SwagBag/Core/Config.lua`, find:
-
-```lua
-		-- headerTotals: each section header shows its total value (spec F10).
-		prices = { headerTotals = true },
-	},
-}
-```
-
-and replace it with:
-
-```lua
-		-- headerTotals: each section header shows its total value (spec F10).
-		prices = { headerTotals = true },
-		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
-		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
-			usePawn = false },
-	},
-}
-```
-
-<!-- sbw3:edit T11 i04 SwagBag/Locale/enUS.lua -->
-In `SwagBag/Locale/enUS.lua`, find:
-
-```lua
-L.BADGE_BOE = "BoE"
-L.BADGE_WUE = "WuE"
-
--- In-game check V1 (optional)
-```
-
-and replace it with:
-
-```lua
-L.BADGE_BOE = "BoE"
-L.BADGE_WUE = "WuE"
-L.OVERLAY_KEYSTONE = "+%d"
-L.OVERLAY_ON = "on"
-L.OVERLAY_OFF = "off"
-L.HELP_OVERLAYS = "overlays [name on|off]: list or switch item overlays (ilvl, track, upgrade, keystone, junk, bind, pawn)"
-L.OVERLAYS_STATE = "Overlays: %s"
-L.OVERLAYS_SET = "Overlay %s is now %s."
-L.OVERLAYS_USAGE = "Use /swagbag overlays, or /swagbag overlays <ilvl|track|upgrade|keystone|junk|bind|pawn> <on|off>."
-L.OVERLAYS_NO_PAWN = "Pawn is not loaded, so the item-level rule still decides the upgrade arrow."
-
--- In-game check V1 (optional)
-```
-
-<!-- sbw3:edit T11 i05 SwagBag/UI/BagsWindow.lua -->
-In `SwagBag/UI/BagsWindow.lua`, find:
-
-```lua
-end
-
-local function describe(bag, slot)
-	W.records[bag] = W.records[bag] or {}
-```
-
-and replace it with:
-
-```lua
-end
-
--- Overlays (spec F9) follow the record; an empty reagent-bag slot gets its Free cue.
-local function overlay(bag, slot)
-	if SB.Overlays then
-		SB.Overlays.Apply(SB.Buttons.Get(bag, slot), W.records[bag] and W.records[bag][slot], bag)
-	end
-end
-
-local function describe(bag, slot)
-	W.records[bag] = W.records[bag] or {}
-```
-
-<!-- sbw3:edit T11 i06 SwagBag/UI/BagsWindow.lua -->
-In `SwagBag/UI/BagsWindow.lua`, find:
-
-```lua
-	end
-	W.records[bag][slot] = record
-	return record
-end
-```
-
-and replace it with:
-
-```lua
-	end
-	W.records[bag][slot] = record
-	overlay(bag, slot)
-	return record
-end
-```
-
-<!-- sbw3:edit T11 i07 SwagBag/UI/BagsWindow.lua -->
-In `SwagBag/UI/BagsWindow.lua`, find:
-
-```lua
-		fresh.icon = fresh.icon or old.icon
-		W.records[bag][slot] = fresh
-	end
-end
-```
-
-and replace it with:
-
-```lua
-		fresh.icon = fresh.icon or old.icon
-		W.records[bag][slot] = fresh
-		overlay(bag, slot)
-	end
-end
-```
-
-<!-- sbw3:edit T11 i08 SwagBag/UI/BankWindow.lua -->
-In `SwagBag/UI/BankWindow.lua`, find:
-
-```lua
-		record.icon = (A.GetItemInstant(record.itemID) or {}).icon
-	end
-	return record
-end
-```
-
-and replace it with:
-
-```lua
-		record.icon = (A.GetItemInstant(record.itemID) or {}).icon
-	end
-	if SB.Overlays then
-		SB.Overlays.Apply(button, record, bag)
-	end
-	return record
-end
-```
-
-<!-- sbw3:edit T11 i09 SwagBag/UI/BankWindow.lua -->
-In `SwagBag/UI/BankWindow.lua`, find:
-
-```lua
-					fresh.icon = fresh.icon or old.icon
-					v.SetRecord(c.bag, c.slot, fresh)
-				end
-			else
-```
-
-and replace it with:
-
-```lua
-					fresh.icon = fresh.icon or old.icon
-					v.SetRecord(c.bag, c.slot, fresh)
-					if SB.Overlays then
-						SB.Overlays.Apply(button, fresh, c.bag)
-					end
-				end
-			else
-```
-
-<!-- sbw3:edit T11 i10 SwagBag/UI/GuildBankWindow.lua -->
-In `SwagBag/UI/GuildBankWindow.lua`, find:
-
-```lua
-		SB.GuildButtons.Paint(button, info)
-	end
-	return info and SB.Items.DescribeLink(info, bag, slot, tab) or nil
-end
-
-```
-
-and replace it with:
-
-```lua
-		SB.GuildButtons.Paint(button, info)
-	end
-	local record = info and SB.Items.DescribeLink(info, bag, slot, tab) or nil
-	if SB.Overlays then
-		SB.Overlays.Apply(button, record, bag)
-	end
-	return record
-end
-
-```
-
-<!-- sbw3:edit T11 i11 SwagBag/UI/GuildBankWindow.lua -->
-In `SwagBag/UI/GuildBankWindow.lua`, find:
-
-```lua
-					end
-					if GW.view.IsOpen() then
-						GW.view.SetRecord(bag, slot, b and SB.Items.DescribeLink(b, bag, slot, tab) or nil)
-					end
-					if (a and a.itemID) ~= (b and b.itemID) then
-```
-
-and replace it with:
-
-```lua
-					end
-					if GW.view.IsOpen() then
-						local record = b and SB.Items.DescribeLink(b, bag, slot, tab) or nil
-						GW.view.SetRecord(bag, slot, record)
-						if SB.Overlays then
-							SB.Overlays.Apply(button, record, bag)
-						end
-					end
-					if (a and a.itemID) ~= (b and b.itemID) then
-```
-
-<!-- sbw3:file T11 i12 SwagBag/UI/Overlays.lua -->
-Create `SwagBag/UI/Overlays.lua`:
-
-```lua
--- SwagBag overlays (spec F9). Draws Engine/OverlayData.lua's result on an item button:
---   top left      item level, or "+12" on a keystone          (overlays.ilvl / .keystone)
---   bottom left   upgrade track "H3/6", or the keystone's dungeon (overlays.track / .keystone)
---   left          "BoE" / "WuE" until the item is bound          (overlays.bind)
---   top right     green upgrade arrow (AC9.3)                     (overlays.upgrade)
---   top left      junk coin on gray items a vendor pays for       (overlays.junk)
--- The stack count is Blizzard's own (SetItemButtonCount). overlays.usePawn hands the arrow
--- to Pawn's PawnIsContainerItemAnUpgrade for bag and bank items.
--- An empty reagent-bag slot gets a faint green tint, so in Free it is clear which empty slots
--- take reagents only (the week-2 "reagent-bag empties in Free" cue).
--- Regions are font strings and textures on the button itself (no frames: allowed in combat),
--- made the first time a button needs one, in its OVERLAY layer, so dimming the button dims
--- them too. What the character wears is read once and kept until PLAYER_EQUIPMENT_CHANGED,
--- which re-draws the open windows (spec AC9.3).
---   Overlays.Apply(button, record, bag)   record nil = empty slot
---   Overlays.RefreshAll()                 re-draw every open window's buttons
-local _, SB = ...
-
-local L = SB.L
-local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind" } }
-SB.Overlays = Ov
-
-local regions = setmetatable({}, { __mode = "k" }) -- [button] = its overlay regions
-Ov.regions = regions
-
-local function text(button, point, x, y)
-	local fs = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-	fs:SetPoint(point, button, point, x, y)
-	return fs
-end
-
--- A texture with an atlas, or a plain colour when the atlas is missing.
-local function texture(button, sublevel, atlas, r, g, b, a)
-	local t = button:CreateTexture(nil, "OVERLAY", nil, sublevel)
-	local ok, set = pcall(t.SetAtlas, t, atlas)
-	if not (ok and set ~= false) then
-		t:SetColorTexture(r, g, b, a)
-	end
-	t:Hide()
-	return t
-end
-
-local function regionsFor(button)
-	local r = regions[button]
-	if not r then
-		r = {
-			topLeft = text(button, "TOPLEFT", 2, -2),
-			bottomLeft = text(button, "BOTTOMLEFT", 2, 2),
-			bind = text(button, "LEFT", 2, 0),
-			arrow = texture(button, 7, "bags-greenarrow", 0.2, 1, 0.2, 0.9),
-			junk = texture(button, 7, "bags-junkcoin", 1, 0.85, 0.1, 0.9),
-			reagent = texture(button, 6, "", 0.2, 0.75, 0.35, 0.18),
-		}
-		r.arrow:SetSize(14, 14)
-		r.arrow:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
-		r.junk:SetSize(12, 12)
-		r.junk:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
-		r.reagent:SetAllPoints(button)
-		regions[button] = r
-	end
-	return r
-end
-
--- What the character wears and can use; kept until the equipment changes.
-function Ov.Context()
-	if not Ov.context then
-		local A = SB.Adapter
-		local ctx = { equipped = A.EquippedItems(), canUse = A.CanUse, dungeonName = A.DungeonName }
-		if SB.Config.Get("overlays.usePawn") then
-			ctx.pawn = function(record)
-				if record.bag and A.BagKind(record.bag) then -- bag and bank slots; not the guild bank
-					return A.PawnUpgrade(record.bag, record.slot)
-				end
-				return nil
-			end
-		end
-		Ov.context = ctx
-	end
-	return Ov.context
-end
-
-local function on(name)
-	return SB.Config.Get("overlays." .. name) == true
-end
-
-local function show(region, yes)
-	if yes then
-		region:Show()
-	else
-		region:Hide()
-	end
-end
-
-function Ov.Apply(button, record, bag)
-	if not button then
-		return
-	end
-	local reagentEmpty = record == nil and bag ~= nil and SB.Adapter.BagKind(bag) == "reagentbag"
-	if not regions[button] and record == nil and not reagentEmpty then
-		return -- an empty slot that never showed anything: no regions needed
-	end
-	local r = regionsFor(button)
-	local d = SB.OverlayData.For(record, Ov.Context())
-	local top = (on("ilvl") and d.ilvl and tostring(d.ilvl))
-		or (on("keystone") and d.keystone and L.OVERLAY_KEYSTONE:format(d.keystone.level)) or ""
-	local bottom = (on("track") and d.track) or (on("keystone") and d.keystone and d.keystone.dungeon) or ""
-	r.topLeft:SetText(top)
-	r.bottomLeft:SetText(bottom)
-	r.bind:SetText(on("bind") and d.bind or "")
-	show(r.arrow, on("upgrade") and d.upgrade)
-	show(r.junk, on("junk") and d.junk and top == "")
-	show(r.reagent, reagentEmpty)
-end
-
--- Re-draw the buttons of every open window (equipment or settings changed).
-function Ov.RefreshAll()
-	local function each(fn)
-		fn(function(button, record, bag)
-			Ov.Apply(button, record, bag)
-		end)
-	end
-	local bags, bank, guild = SB.BagsWindow, SB.BankWindow, SB.GuildBankWindow
-	if bags and bags.IsOpen() then
-		each(bags.ForEachSlot)
-	end
-	if bank and bank.IsOpen() then
-		each(bank.view.ForEachSlot)
-	end
-	if guild and guild.IsOpen() then
-		each(guild.view.ForEachSlot)
-	end
-end
-
--- A gear swap fires one event per slot: re-draw once, after the last one.
-SB.On("PLAYER_EQUIPMENT_CHANGED", function()
-	Ov.context = nil
-	SB.Debounce("overlays.equipment", 0.1, Ov.RefreshAll, "none")
-end, "none")
-
-local SETTING = { pawn = "usePawn" }
-
-local function state(name)
-	return SB.Config.Get("overlays." .. (SETTING[name] or name)) and L.OVERLAY_ON or L.OVERLAY_OFF
-end
-
--- /swagbag overlays              list every overlay and whether it is on
--- /swagbag overlays <name> on|off  switch one (pawn: let Pawn decide the arrow)
-SB.Slash.Register("overlays", L.HELP_OVERLAYS, function(arg)
-	local name, value = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
-	local names = { "ilvl", "track", "upgrade", "keystone", "junk", "bind", "pawn" }
-	if name == "" then
-		local parts = {}
-		for _, n in ipairs(names) do
-			parts[#parts + 1] = n .. " " .. state(n)
-		end
-		return L.OVERLAYS_STATE:format(table.concat(parts, ", "))
-	end
-	local known = false
-	for _, n in ipairs(names) do
-		known = known or n == name
-	end
-	if not known or (value ~= "on" and value ~= "off") then
-		return L.OVERLAYS_USAGE
-	end
-	if not SB.Config.Set("overlays." .. (SETTING[name] or name), value == "on") then
-		return L.SETTINGS_READONLY
-	end
-	Ov.context = nil
-	Ov.RefreshAll()
-	local line = L.OVERLAYS_SET:format(name, state(name))
-	if name == "pawn" and value == "on" and not SB.Adapter.HasPawn() then
-		return { line, L.OVERLAYS_NO_PAWN }
-	end
-	return line
-end)
-```
-
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/bankwindow_groups_spec.lua spec/guildbank_spec.lua spec/overlays_spec.lua`
-Expected: `120 passed, 0 failed`
-
-- [ ] **Step 5: Run all checks**
-
-Run: `scripts/check.sh`
-Expected: `TOC OK (43 files)`, `582 passed, 0 failed`, `ALL CHECKS PASSED`
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add spec/helpers/uienv.lua \
-  spec/mock_adapter.lua \
-  spec/bagswindow_sections_spec.lua \
-  spec/bankwindow_groups_spec.lua \
-  spec/guildbank_spec.lua \
-  spec/overlays_spec.lua \
-  SwagBag/SwagBag.toc \
-  SwagBag/Core/Adapter.lua \
-  SwagBag/Core/Config.lua \
-  SwagBag/Locale/enUS.lua \
-  SwagBag/UI/BagsWindow.lua \
-  SwagBag/UI/BankWindow.lua \
-  SwagBag/UI/GuildBankWindow.lua \
-  SwagBag/UI/Overlays.lua
-git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 3 Task 11: overlays on bag, bank and guild buttons, Use Pawn, reagent-bag cue, /swagbag overlays" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
-```
-
-- [ ] **Step 7: In-game session O1 (the user does this on Oct 19; about 15 minutes)**
-
-Give the user this checklist exactly. Carry some gear (one piece better than what you wear, if you have one), your keystone, a gray item and some crafting materials. Auctionator may be on or off; say which.
+Give the user this checklist exactly. Carry some crafting materials and a few consumables. Auctionator may be on or off; say which.
 
 1. Quit the game completely and start it again (new files). Log in. Press **B**.
-2. Gear shows its item level in the top left corner (for example `285`). Gear with an upgrade track shows it in the bottom left (for example `H3/6`). If **no** gear shows a track, tell Claude: the game's track information may be missing.
-3. A BoE item shows `BoE` on its left side, and a warbound-until-equipped item shows `WuE`.
-4. Gear that beats what you wear in that slot shows a small green arrow in its top right corner. For rings and trinkets, "what you wear" means the weaker of your two.
-5. Equip one item that has an arrow (right-click it). Within a moment its arrow is gone, and the piece you took off shows an arrow only if it beats what you now wear. Move the mouse off it.
-6. Your keystone shows `+` and its level in the top left (for example `+12`) and a short dungeon name in the bottom left.
-7. Gray items show a small coin.
-8. Section headers end with a value. With Auctionator: for example `- Trade Goods (12) - 1,240g`. Without it: for example `- Trade Goods (12) - 35g vendor`. A section worth nothing shows no value.
-9. If you have a reagent bag with empty slots, those empty slots in `Free` have a faint green tint.
-10. Type `/swagbag overlays`. Chat says `Overlays: ilvl on, track on, upgrade on, keystone on, junk on, bind on, pawn off`.
-11. Type `/swagbag overlays ilvl off`. Chat says `Overlay ilvl is now off.`, and the item levels disappear. Type `/swagbag overlays ilvl on`: they come back.
-12. If you use Pawn, type `/swagbag overlays pawn on`: the arrows now follow Pawn. Without Pawn, chat says `Overlay pawn is now on.` and `Pawn is not loaded, so the item-level rule still decides the upgrade arrow.` Either way, type `/swagbag overlays pawn off` afterwards.
-13. Every crest or valorstone item you carry is in `Keystone & Crests`. If one is somewhere else, drop it on the `Keystone & Crests` header and tell Claude its exact name.
-14. Talk to a banker. Bank items show the same overlays, and the bank's section headers show values. Open the guild vault: the same there.
-15. Type `/swagbag report`, press Ctrl+C and paste it into Claude Code. Claude checks `Prices: Auctionator, … cached` (or `Prices: Vendor, … cached` without Auctionator), no new errors and `Blocked actions: none`.
+2. Section headers end with a value. With Auctionator: for example `- Trade Goods (12) - 1,240g`. Without it: for example `- Trade Goods (12) - 35g vendor`. A section worth nothing shows no value.
+3. Click the bags window's search box and type `value>1`. Items worth 1 gold or less each, and items with no price, dim. Clear the box with its small x.
+4. Talk to a banker. The bank window's section headers show values the same way. Press **Esc**.
+5. Open the guild vault. The guild window's section headers show values too. Press **Esc**.
+6. Type `/swagbag report`, press Ctrl+C and paste it into Claude Code. Claude checks `Prices: Auctionator, … cached` (or `Prices: Vendor, … cached` without Auctionator), no new errors and `Blocked actions: none`.
 
-Pass: steps 2–14 behave as described. Report every crest name from step 13: Claude adds their item IDs to `Engine/Crests.lua`.
+Pass: steps 2–6 behave as described.
 
 ---
+
 ## Daily bank check (Oct 20–21, about 5 minutes; spec §12.2 week 3: "bank and guild bank used for real")
 
 At the end of each day's play, the user answers these and pastes the report:
@@ -12048,17 +12557,17 @@ At the end of each day's play, the user answers these and pastes the report:
 2. Did any deposit land in the wrong bank or tab? (yes/no; which item, which tab the window said)
 3. Did any item move while your mouse was on it, in the bags, bank or guild bank window? (yes/no; what were you doing)
 4. After leaving a bank, did your Hearthstone or any item work normally? (yes/no)
-5. Did any overlay show something wrong (wrong item level, an arrow on worse gear, no arrow on better gear)? (item name)
+5. Did any overlay show something wrong (wrong item level, an arrow on worse gear, no arrow on better gear), or did the item level in the bags title not match your character window? (item name, or the two numbers)
 6. Type `/swagbag report`, press Ctrl+C and paste it into Claude Code. Claude checks no new errors, `Blocked actions: none`, `Last bank layout` at or below 80 ms for an `open`, and the `Snapshots:` size.
 
-Any "yes" to questions 2, 3 or 5, and any "no" to question 4, is a bug report. Claude first reproduces it as a failing test in the owning spec file (`bankwindow_groups_spec`, `guildbank_spec`, `groupview_spec` or `overlaydata_spec`), then fixes it.
+Any "yes" to questions 2, 3 or 5, and any "no" to question 4, is a bug report. Claude first reproduces it as a failing test in the owning spec file (`bankwindow_groups_spec`, `guildbank_spec`, `groupview_spec`, `overlaydata_spec` or `bagswindow_spec`), then fixes it.
 
 ## Week 3 exit check (spec §12.2 week 3: "Bank and guild bank used for real; fallback decided by day 2 if a check fails")
 
 The user ticks these in game on Oct 21 and pastes the final `/swagbag report` into Claude Code:
 
 1. [ ] Sessions V2 and G1 passed on Oct 15, or their fallback (`/swagbag bank beside`, `/swagbag guild view`) became the default on Oct 16.
-2. [ ] Sessions S3, B1, G2 and O1 passed, or every failure was fixed and its step re-run.
+2. [ ] Sessions O1, S3, B1, G2 and P1 passed, or every failure was fixed and its step re-run.
 3. [ ] At least three bank visits and two guild vault visits through SwagBag during normal play, with deposits, withdrawals and one Sort.
 4. [ ] The daily bank check had no bug answers, or every one was fixed.
 5. [ ] Every crest item the user carries is in Keystone & Crests, and its item ID is in `Engine/Crests.lua`.
@@ -12068,7 +12577,7 @@ The user ticks these in game on Oct 21 and pastes the final `/swagbag report` in
    - `Last bank layout` at or below 80 ms for `open`;
    - `Snapshots:` at or below about 30 KB per character (check V10);
    - a `Prices:` line naming the source.
-7. [ ] Claude ran `scripts/check.sh` on the branch: `ALL CHECKS PASSED`, 582 passed, 0 failed or more. The branch is merged (or kept), as the user chooses.
+7. [ ] Claude ran `scripts/check.sh` on the branch: `ALL CHECKS PASSED`, 590 passed, 0 failed or more. The branch is merged (or kept), as the user chooses.
 
 If a line fails, paste the report, and Claude fixes it before week 4 starts. Any slip is reported at the end of the week (spec §12.2).
 
@@ -12077,7 +12586,7 @@ If a line fails, paste the report, and Claude fixes it before week 4 starts. Any
 Week 4 (M5 focus modes, signals, the consumables warning, quick setup, settings pages) uses these interfaces unchanged:
 
 - **Windows.** Spec §6.3's "AH/Vendor/Bank" mode expands everything at the bank, and it needs the bank window open. Use `SB.BankWindow.IsOpen()`, `SB.BankWindow.interaction` (the visit is open) and `SB.GuildBankWindow.interaction`. Collapse state lives in `ui.collapsed["bank:<group>"]`, `["bank:#"]`, `["guild:tab<N>"]` and `["guild:#"]`. A focus mode that collapses sections in the bank window writes the group's set and calls `view.Restack()`.
-- **Settings pages.** The keys are `bank.blizzardFrame` ("tiny" / "beside"), `guildBank.mode` ("full" / "view"), `guildBank.withdrawAnyTab`, `bank.view`, `bank.columns`, `guildBank.view`, `guildBank.columns`, `prices.headerTotals`, `overlays.ilvl/track/upgrade/keystone/junk/bind/usePawn`. Each setting's alternative is next to it (P1); the slash commands give the wording.
+- **Settings pages.** The keys are `bank.blizzardFrame` ("tiny" / "beside"), `guildBank.mode` ("full" / "view"), `guildBank.withdrawAnyTab`, `bank.view`, `bank.columns`, `guildBank.view`, `guildBank.columns`, `prices.headerTotals`, `overlays.ilvl/track/upgrade/keystone/junk/bind/usePawn`, `bags.showIlvl`. Each setting's alternative is next to it (P1); the slash commands give the wording.
 - **GroupView** (`SB.GroupView.New(cfg)`) is window-agnostic. Spec §12.3 M8's offline alt view can draw snapshot contents through it with a `describe` that reads `Snapshots.Deserialize` records.
 - **Snapshots.** `SB.Snapshots.Deserialize`, `SwagBagDB.chars[...].bags/bank`, `SwagBagDB.warband`, `SwagBagDB.guilds[...]` are what M8 reads.
 - **Prices.** `SB.Prices.Value/Source/SectionTotals`. Spec §2.2 v1.1's worth-money highlight uses `Value`.
@@ -12092,38 +12601,40 @@ Week 4 (M5 focus modes, signals, the consumables warning, quick setup, settings 
 | V2 first-day check: deposit in tiny mode, Hearthstone afterwards; fallback `bank.blizzardFrame = "beside"` (§5.4, AC2.6) | 1 (session V2) |
 | G1 first-day check: withdraw, deposit, tab switch, Hearthstone; fallback `guildBank.mode = "view"` (AC16.6) | 2 (session G1) |
 | §5.2 tiny mode: BankFrame shown in a 0.001 parent; TabSystem re-hosted; restored on close, out of combat (§13.2 item 5), on logout (§8.6) | 1 |
-| AC2.3 / §5.2 deposit target read from `GetActiveBankType`, receiving group highlighted | 1, 6 |
+| AC2.3 / §5.2 deposit target read from `GetActiveBankType`, receiving group highlighted | 1, 8 |
 | AC2.5 / §5.3 never write bank state; forbidden tokens | 1 (tests), all (check.sh) |
 | §5.6 Esc hides only SwagBag's window; "Bank still open" | 1 |
-| AC2.1 / §5.1 Character bank and Warband bank stacked, sections or grid, purchased tabs only | 5, 6 |
-| AC2.7 / §5.5 SortBank per type; regroup after the bank settles; combat refusal with no auto-run (W11) | 6 |
-| §9 first bank open ≤ 80 ms, hidden until complete; incremental update budget | 5, 6 (tests + report line) |
-| AC16.1 guild tabs stacked, sections or grid, search, per-category totals | 8, 9 |
-| AC16.2 withdraw by right-click or drag; withdrawals left in the tab header; limits respected | 2, 8 |
-| AC16.3 deposit by right-click into Blizzard's selected tab, highlighted | 2, 8 |
-| AC16.4 on-demand `QueryGuildBankTab`, session cache, per-guild snapshot | 2, 7, 8 |
+| AC2.1 / §5.1 Character bank and Warband bank stacked, sections or grid, purchased tabs only | 7, 8 |
+| AC2.7 / §5.5 SortBank per type; regroup after the bank settles; combat refusal with no auto-run (W11) | 8 |
+| §9 first bank open ≤ 80 ms, hidden until complete; incremental update budget | 7, 8 (tests + report line) |
+| AC16.1 guild tabs stacked, sections or grid, search, per-category totals | 10, 12 |
+| AC16.2 withdraw by right-click or drag; withdrawals left in the tab header; limits respected | 2, 10 |
+| AC16.3 deposit by right-click into Blizzard's selected tab, highlighted | 2, 10 |
+| AC16.4 on-demand `QueryGuildBankTab`, session cache, per-guild snapshot | 2, 9, 10 |
 | AC16.5 "Blizzard guild bank" button; AC16.7 never write guild bank state; re-hosted tab buttons | 2 |
-| F9 overlays: ilvl, track, arrow (AC9.3, both rings/trinkets, two-hand summed, Use Pawn), keystone level + dungeon, junk coin, BoE/WuE, stack count (Blizzard's), no tooltip parsing; AC9.2 switches | 10, 11 |
-| F10 Prices provider interface (§3.3), Auctionator with session cache, vendor fallback, totals in headers with "vendor" | 9 |
-| F13 / §5.7 / §8.3 / §8.4 snapshots captured on every visit, compact strings, size budget | 7, 8 |
-| §7.3 `crest`, `value` keywords; §13.2 item 4 crest data file | 9, 10 |
-| Ledger: EnsureCapacity max-merge; CreateAll retry; SetParentFor after creation; tabs bought after login | 3, 6 |
-| Ledger: incremental ApplyChanges (1,290 slots); skip cells with slot > size | 3, 5 |
-| Ledger: savePosition after SetScale + second-notch test; no re-anchor while dragging | 3 |
-| Ledger: reagent-bag empties in Free (UI cue) | 11 |
-| Ledger: week-3 crest item IDs | 10 (data file + names), O1 step 13 (the IDs) |
-| A search box per window (AC5.1) | 4, 6, 8 |
-| §9 / §13.2 item 6 `BANK_TAB_SETTINGS_UPDATED`, feature-detected | 6 |
+| F9 overlays: ilvl, track, arrow (AC9.3, both rings/trinkets, two-hand summed, Use Pawn), keystone level + dungeon, junk coin, BoE/WuE, stack count (Blizzard's), no tooltip parsing; AC9.2 switches | 3, 4 (bags), 11 (bank, guild bank) |
+| F10 Prices provider interface (§3.3), Auctionator with session cache, vendor fallback, totals in headers with "vendor" | 12 |
+| F13 / §5.7 / §8.3 / §8.4 snapshots captured on every visit, compact strings, size budget | 9, 10 |
+| §7.3 `crest`, `value` keywords; §13.2 item 4 crest data file | 3 (`crest`), 12 (`value`) |
+| Ledger: EnsureCapacity max-merge; CreateAll retry; SetParentFor after creation; tabs bought after login | 5, 8 |
+| Ledger: incremental ApplyChanges (1,290 slots); skip cells with slot > size | 5, 7 |
+| Ledger: savePosition after SetScale + second-notch test; no re-anchor while dragging | 5 |
+| Ledger: reagent-bag empties in Free (UI cue) | 4 |
+| Ledger: week-3 crest item IDs | 3 (data file + names), O1 step 16 (the IDs) |
+| A search box per window (AC5.1) | 6, 8, 10 |
+| §9 / §13.2 item 6 `BANK_TAB_SETTINGS_UPDATED`, feature-detected | 8 |
+| D18 (user, 2026-10-02): average equipped item level in the bags title, one decimal, feature-detected, back after every flash, `bags.showIlvl` | 4 (session O1 steps 2, 6–8, 14) |
 
 Not in week 3 by design: the offline snapshot view and tooltip alt counts (F13 AC13.2–13.3, November M8), the worth-money highlight and the AH value overlay (v1.1), focus modes and settings pages (week 4), bank/guild window scaling (D14).
 
 ## How this plan was checked (while writing it)
 
-- **Replay.** Every code block above was extracted from this file and applied, task by task, to a fresh clone of `main` (`7beafdc`) in a scratch folder outside the repo (`/tmp`). For each task the spec blocks were applied alone first, and the `Expected` line under Step 2 is that red run. Then the whole task was applied and `scripts/check.sh` was run: the totals above (427 → 582 passed, 0 failed) and `ALL CHECKS PASSED` are those green runs.
-- **Mutations.** Every "Critical tests" mutation listed under a Step 2 was applied to the finished code, and the named test failed.
+- **Replay.** Every code block above was extracted from this file and applied, task by task, to a fresh clone of the repo's `main` (`5be2c2b`) in a scratch folder outside the repo (`/tmp/sbw3b`), in the task order above (after the 2026-10-02 reorder, D18). For each task the spec blocks were applied alone first, and the `Expected` line under Step 2 is that red run. Then the whole task was applied and `scripts/check.sh` was run: the totals above (427 → 590 passed, 0 failed) and `ALL CHECKS PASSED` are those green runs.
+- **Mutations.** Every "Critical tests" mutation listed under a Step 2 (88 runs, counting each alternative) was applied to the finished code of the reordered plan, and the named test failed.
 - **Timing.** The two wall-clock budget tests (1,078 bank slots ≤ 80 ms) measured 7–22 ms over several runs.
 - **Spec coverage.** See the table above.
 - **Placeholder scan.** No TBD, TODO or "similar to"; every step that changes code shows the code.
 - **Name check.** Every `SB.*` name a task uses exists on `main`, in an earlier task's **Produces** block, or in the same task (checked against the final tree with grep).
 - **Rules grep.** No `C_`/`Enum` outside `Core/Adapter.lua` (comments included), no `OnUpdate` script, no forbidden token, and no item button created in combat or reparented.
 - **Review Focus.** Each of the five lines names the test that pins it, in the task that owns the code.
+
