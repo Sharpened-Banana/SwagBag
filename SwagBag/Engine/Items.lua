@@ -15,7 +15,7 @@
 --   isUsable, isToy, isQuestItem, isKeystone, isCagedPet, isNew    booleans
 --   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"
 --   tab             bank tab number (1-based) | nil
---   pending         true while C_Item has not loaded the item's data
+--   pending         true while the item's data has not loaded
 -- }
 local _, SB = ...
 
@@ -41,7 +41,7 @@ function Items.Describe(bag, slot)
 		count = s.count or 1,
 		icon = s.icon,
 		name = s.name,
-		quality = s.quality,
+		quality = s.quality, -- may be set while pending (from slot)
 		classID = inst.classID,
 		subclassID = inst.subclassID,
 		equipLoc = inst.equipLoc or "",
