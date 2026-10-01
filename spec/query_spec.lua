@@ -136,6 +136,56 @@ describe("Query compile and eval", function()
 		assert.equal(false, run("\"Healing Potion\"", HERB))
 	end)
 
+	it("AND, OR and NOT give the full tri-state truth tables", function()
+		Q.RegisterKeyword({ name = "tt", class = "static", eval = function() return true end })
+		Q.RegisterKeyword({ name = "ff", class = "static", eval = function() return false end })
+		Q.RegisterKeyword({ name = "uu", class = "static", eval = function() return nil end })
+		local vals = { tt = true, ff = false, uu = "nil" }
+		local names = { "tt", "ff", "uu" }
+		local function andOf(a, b)
+			if a == false or b == false then return false end
+			if a == true and b == true then return true end
+			return "nil"
+		end
+		local function orOf(a, b)
+			if a == true or b == true then return true end
+			if a == false and b == false then return false end
+			return "nil"
+		end
+		local function got(text)
+			local v = run(text, POTION)
+			if v == nil then return "nil" end
+			return v
+		end
+		for _, x in ipairs(names) do
+			for _, y in ipairs(names) do
+				assert.equal(andOf(vals[x], vals[y]), got(x .. " & " .. y), x .. " & " .. y)
+				assert.equal(orOf(vals[x], vals[y]), got(x .. " | " .. y), x .. " | " .. y)
+			end
+		end
+		assert.equal(false, got("!tt"))
+		assert.equal(true, got("!ff"))
+		assert.equal("nil", got("!uu"))
+	end)
+
+	it("normalises keyword results to strict booleans", function()
+		Q.RegisterKeyword({ name = "sloppy", class = "static", eval = function() return 1 end })
+		Q.RegisterKeyword({ name = "sloppyval", class = "static", value = function() return 5 end })
+		assert.equal(true, run("sloppy", POTION))
+		assert.equal(false, run("!sloppy", POTION))
+	end)
+
+	it("propagates errors thrown by a keyword eval instead of hiding them", function()
+		Q.RegisterKeyword({ name = "boom", class = "static", eval = function() error("kaboom", 0) end })
+		assert.has_error(function() run("boom", POTION) end, "kaboom")
+	end)
+
+	it("an empty quoted string matches every item with a name", function()
+		assert.equal(true, run("\"\"", POTION))
+		assert.equal(true, run("\"\"", RING))
+		assert.is_nil(run("\"\"", LOADING))
+	end)
+
 	it("takes the strongest cache class of the keywords used", function()
 		assert.equal("static", Q.Compile("potion").cacheClass)
 		assert.equal("static", Q.Compile("band").cacheClass)
@@ -245,8 +295,10 @@ describe("Query errors, Validate, Pretty, registry", function()
 		end
 		local tooDeep = Q.Compile(string.rep("!", 101) .. "a")
 		assert.equal("SHALLOWER", tooDeep.errors[1].expected)
-		assert.truthy(Q.FormatError(tooDeep.errors[1]))
-		assert.truthy(Q.FormatError(Q.Compile("a b ilvl>5").errors[1]))
+		assert.equal("Expected fewer nested ( and ! (at most 100 levels) but found \"!\" at character 101",
+			Q.FormatError(tooDeep.errors[1]))
+		assert.equal("Put & between a name and a comparison (at character 1)",
+			Q.FormatError(Q.Compile("a b ilvl>5").errors[1]))
 	end)
 
 	it("RegisterKeyword rejects bad definitions", function()

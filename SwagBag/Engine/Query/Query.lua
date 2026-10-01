@@ -114,7 +114,15 @@ local function build(node, leaf)
 			return true
 		end
 	end
-	return leaf(node)
+	-- Normalise leaf results to strict tri-state: nil stays nil, anything else is a boolean.
+	local f = leaf(node)
+	return function(r)
+		local v = f(r)
+		if v == nil then
+			return nil
+		end
+		return v ~= false
+	end
 end
 
 local function unknown()
@@ -202,6 +210,10 @@ end
 
 function Q.FormatError(err)
 	local L = SB.L
+	local full = rawget(L, "QUERY_ERR_" .. err.expected)
+	if full then
+		return full:format(err.position)
+	end
 	local expect = L["QUERY_EXPECT_" .. err.expected]
 	if err.after and err.got == "" then
 		return L.QUERY_ERR_AFTER:format(expect, err.after, err.position)
