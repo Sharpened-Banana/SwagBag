@@ -515,6 +515,48 @@ describe("BagsWindow category view", function()
 		assert.is_nil(number(0, 7), "the grid is the physical order: no tile")
 	end)
 
+	-- W3-21: a herb bag swapped for a plain bag of the same size changes no slot count, so only
+	-- BAG_CONTAINER_UPDATE tells the window. Mutation: delete the BAG_CONTAINER_UPDATE handler:
+	-- bag 1 keeps its own tile until the next full layout.
+	it("a bag swapped for another of the same size regroups Free once the mouse leaves (W3-21)", function()
+		local family = { [1] = "family8" }
+		A.BagFamily = function(bag) return family[bag] or (bag == 5 and "reagent" or "any") end
+		A.SetBagSize(1, 4)
+		SB.Inventory.ScanAll()
+		W.Open()
+		assert.same({ true, 4 }, { B.Get(1, 1).shown, number(1, 1) }, "the herb bag's own tile")
+		assert.equal(10, number(0, 7))
+		family[1] = "any" -- swapped for a plain bag with the same number of slots
+		W.scroll.mouseOver = true
+		SB.eventFrame:Fire("BAG_CONTAINER_UPDATE")
+		A.Advance(0.1)
+		assert.equal(4, number(1, 1), "waits while the mouse is over the items")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.same({ false, nil }, { B.Get(1, 1).shown, number(1, 1) }, "now a hidden free slot of the bags")
+		assert.equal(14, number(0, 7))
+	end)
+
+	-- Review fix 5: a drop on the tile that is picked back up while the mouse is still on it shows
+	-- the number again at once. Mutation: delete paintTiles(W.pos) in the inventory handler.
+	it("a held drop on the tile that is picked back up shows the number again under the mouse", function()
+		W.Open()
+		local tile, tileAt = B.Get(0, 7), at(0, 7)
+		tile.mouseOver = true
+		A.Put(0, 7, Fixtures.HERB, 5)
+		bagUpdate()
+		assert.is_nil(number(0, 7))
+		A.Clear(0, 7) -- picked back up
+		bagUpdate()
+		assert.same(tileAt, at(0, 7), "still nothing moves under the mouse")
+		assert.equal(10, number(0, 7), "the empty tile shows its number while the mouse is on it")
+		tile.mouseOver = false
+		A.Advance(0.3)
+		-- the held changes replay in order (arrived, then left): the next empty slot holds the cell
+		assert.same({ tileAt, 10 }, { at(0, 8), number(0, 8) })
+		assert.equal("- Free (10)", header("free").text.text)
+	end)
+
 	it("a stack count change only repaints", function()
 		W.Open()
 		local counts = placedCounts()

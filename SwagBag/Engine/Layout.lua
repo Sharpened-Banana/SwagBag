@@ -3,7 +3,8 @@
 --   state = { columns, newRows, order = { "new", ..., "free" },
 --             sections = { [id] = { id, cells = { [i] = cell }, size, capacity?, overflow } },
 --             where = { [key] = { section = id, index = i } }, deferred = {}, needsReflow,
---             tiles = nil | { family, families = { f }, cell = { [f] = i }, spares = { [f] = { key } } } }
+--             tiles = nil | { family, families = { f }, cell = { [f] = i }, spares = { [f] = { key } },
+--                             of = { [key] = f } } }
 --   cell  = { bag, slot }  (a slot button)  |  { bag, slot, placeholder = true, icon }
 --   Cells may have holes (nil) so that nothing after them ever shifts.
 -- Layout.Build(slots, assign, order, opts)   full layout (open, Reflow, sort, view toggle)
@@ -12,7 +13,10 @@
 --   order: section ids in display order; New is forced first and Free last.
 --   opts: { columns, newRows, freeTile, family }
 --     freeTile: Free shows ONE tile per bag family instead of every empty slot (plan D19)
---     family(bag) -> key: empty slots of one family hold the same items (default: all "any")
+--     family(bag) -> key: empty slots of one family hold the same items (default: all "any").
+--       Called only when a slot JOINS the layout (Build, "added"); the answer is kept in
+--       tiles.of[key] and used from then on, so a bag swapped or taken off while open (its
+--       family changes before its slots are "removed") still finds its own tile (W3-21).
 -- Layout.Position(state, opts, collapsed) -> pos   pixel positions (TOPLEFT offsets, y down
 --   negative). Collapsing changes section offsets only, so expanding returns every item
 --   to the same cell (spec 6.4). New always shows its header and newRows reserved rows.
@@ -94,8 +98,16 @@ local function bagOf(key)
 	return math.floor(key / 1000)
 end
 
-local function familyOf(st, bag)
-	return st.tiles.family(bag)
+-- The family a key was given when it joined the layout (W3-21: never looked up again).
+local function familyOf(st, key)
+	return st.tiles.of[key]
+end
+
+-- A key joins the layout (Build or "added"): the only place opts.family is called.
+local function join(st, key, bag)
+	local f = st.tiles.family(bag)
+	st.tiles.of[key] = f
+	return f
 end
 
 -- The key of family f's tile, or nil (no tile cell yet, or the cell is a hole).
@@ -108,13 +120,14 @@ end
 
 local function isTile(st, key, w)
 	return st.tiles ~= nil and w.section == Layout.FREE and w.index ~= nil
-		and w.index == st.tiles.cell[familyOf(st, bagOf(key))]
+		and w.index == st.tiles.cell[familyOf(st, key)]
 end
 
 -- Put an empty button into its family: a spare when the family has a tile, else the tile
 -- (in the family's tile cell when that is a hole, otherwise at Free's end).
 function Layout.ToFamily(st, key, cell)
-	local t, f = st.tiles, familyOf(st, cell.bag)
+	local t = st.tiles
+	local f = familyOf(st, key) or join(st, key, cell.bag)
 	if not t.spares[f] then
 		t.spares[f] = {}
 		t.families[#t.families + 1] = f
@@ -170,7 +183,7 @@ function Layout.Build(slots, assign, order, opts)
 	if opts.freeTile then
 		st.tiles = { family = opts.family or function()
 			return "any"
-		end, families = {}, cell = {}, spares = {} }
+		end, families = {}, cell = {}, spares = {}, of = {} }
 	end
 	local known = { [Layout.NEW] = true, [Layout.FREE] = true }
 	for _, id in ipairs(order) do
@@ -190,6 +203,9 @@ function Layout.Build(slots, assign, order, opts)
 		if not known[id] then -- an id missing from the order still gets a section (before Free)
 			known[id] = true
 			table.insert(st.order, #st.order, id)
+		end
+		if st.tiles then
+			join(st, Layout.Key(s.bag, s.slot), s.bag)
 		end
 		if id == Layout.FREE and st.tiles then
 			Layout.ToFamily(st, Layout.Key(s.bag, s.slot), { bag = s.bag, slot = s.slot })
@@ -253,7 +269,7 @@ function Layout.Position(st, opts, collapsed)
 					else
 						pos.cells[#pos.cells + 1] = entry
 						pos.byKey[Layout.Key(cell.bag, cell.slot)] = entry
-						local f = id == Layout.FREE and st.tiles and familyOf(st, cell.bag)
+						local f = id == Layout.FREE and st.tiles and familyOf(st, Layout.Key(cell.bag, cell.slot))
 						if f and st.tiles.cell[f] == i then
 							entry.tile, entry.count = f, 1 + #st.tiles.spares[f]
 							pos.tiles[#pos.tiles + 1] = entry
@@ -343,13 +359,15 @@ end
 -- The transitions with the free tile (see the header). Returns the keys that moved.
 local function applyTile(st, ch, collapsed, result, key, w)
 	if ch.kind == "added" then
+		join(st, key, ch.bag)
 		Layout.ToFamily(st, key, { bag = ch.bag, slot = ch.slot })
 		return { key }
 	elseif ch.kind == "removed" then
 		clearOverflow(st, key)
-		local tile = isTile(st, key, w)
+		local tile, f = isTile(st, key, w), familyOf(st, key)
 		take(st, key)
-		return { key, tile and promote(st, familyOf(st, ch.bag), w.index) or nil }
+		st.tiles.of[key] = nil -- a slot that comes back is a new join
+		return { key, tile and promote(st, f, w.index) or nil }
 	elseif ch.kind == "left" then
 		clearOverflow(st, key)
 		if w.spare or isTile(st, key, w) then
@@ -386,7 +404,7 @@ local function applyTile(st, ch, collapsed, result, key, w)
 		return { key }
 	elseif not room and tile then -- it stays, filled; the next spare is the tile, at Free's end
 		overflow(st, result, key)
-		return { promote(st, familyOf(st, ch.bag), nil) }
+		return { promote(st, familyOf(st, key), nil) }
 	end
 	local _, cell = take(st, key)
 	if room then
@@ -396,7 +414,7 @@ local function applyTile(st, ch, collapsed, result, key, w)
 		append(st, Layout.FREE, cell)
 		overflow(st, result, key)
 	end
-	return { key, tile and promote(st, familyOf(st, ch.bag), w.index) or nil }
+	return { key, tile and promote(st, familyOf(st, key), w.index) or nil }
 end
 
 local function applyOne(st, ch, collapsed, result)
@@ -480,7 +498,7 @@ local function partner(st, ch)
 	if not (w and isTile(st, key, w)) then
 		return nil
 	end
-	return st.tiles.spares[familyOf(st, ch.bag)][1]
+	return st.tiles.spares[familyOf(st, key)][1]
 end
 
 -- Change tables passed to Apply must not be reused or mutated afterwards: deferred entries

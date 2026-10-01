@@ -800,6 +800,11 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 			end
 		end
 	end
+	if W.state then
+		-- Repaint tiles: a held drop picked back up shows its number again at once (Paint hides
+		-- the number on a filled button but never restores it).
+		paintTiles(W.pos)
+	end
 	if W.state and (#moves > 0 or #W.state.deferred > 0) then
 		W.ApplyChanges(moves)
 	end
@@ -811,4 +816,18 @@ end, "bags"))
 -- /swagbag free tile|all (Core/Commands.lua): regroup now, or once the mouse leaves the items.
 SB.On("SB_FREE_TILE_CHANGED", function()
 	W.RequestLayout("free")
+end, "bags")
+
+-- A bag equipped, taken off or swapped (W3-21). A swap for a bag of the same size changes no
+-- slot count, but its empty slots may now be another family (a herb bag for a plain bag), so
+-- the window regroups: a full layout, guarded by rule 5 (it waits while the mouse is over the
+-- items or an item is on the cursor). Debounced so the bag's own updates land first. SB.On
+-- skips an event the client does not know.
+W.BAG_CHANGE_DELAY = 0.1
+SB.On("BAG_CONTAINER_UPDATE", function()
+	if frame:IsShown() then
+		SB.Debounce("bags.container", W.BAG_CHANGE_DELAY, function()
+			W.RequestLayout("bags")
+		end, "bags")
+	end
 end, "bags")

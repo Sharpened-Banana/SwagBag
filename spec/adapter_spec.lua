@@ -63,7 +63,7 @@ describe("Adapter.EquippedItems (real adapter, stubbed globals)", function()
 	end)
 
 	after_each(function()
-		GetInventoryItemLink, ItemLocation, C_Item = nil, nil, nil
+		GetInventoryItemLink, ItemLocation, C_Item, C_Container = nil, nil, nil, nil
 	end)
 
 	it("a readable item level is a number; an unreadable one is unknown, not 0; empty slots are absent", function()

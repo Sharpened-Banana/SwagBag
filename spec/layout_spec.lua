@@ -723,6 +723,60 @@ describe("Layout free tile (plan D19)", function()
 		assert.equal(1, st.sections.new.overflow)
 	end)
 
+	-- W3-21: a herb bag that holds its family's tile is taken off (or swapped) while the window is
+	-- open. BagFamily already answers for the new bag before the old slots are "removed", so the
+	-- layout must use the family each slot had when it joined. Mutation: in isTile, use the live
+	-- `st.tiles.family(bagOf(key))` instead of the stored family: no spare takes the tile's cell
+	-- and bag 3's free slots stay hidden with no tile.
+	it("a bag taken off whose family changed first: the tile still hands its cell to the next spare (W3-21)",
+		function()
+			local fam = { [0] = "any", [2] = "family8", [3] = "family8" }
+			local st = L.Build({ S(0, 1, "a"), S(0, 2, false), S(2, 1, false), S(2, 2, false), S(2, 3, false),
+				S(3, 1, false), S(3, 2, false) }, assign, { "a" },
+				{ columns = 4, newRows = 1, freeTile = true, family = function(bag) return fam[bag] end })
+			local old = L.Position(st, OPTS, {})
+			assert.same({ "0:2=1", "2:1=5" }, tiles(old))
+			fam[2] = "any" -- the herb bag is swapped for a plain bag: the game answers for the new bag
+			local r = L.Apply(st, { change(2, 1, "removed"), change(2, 2, "removed"), change(2, 3, "removed") })
+			local pos = L.Position(st, OPTS, {})
+			assert.same({ "0:2=1", "3:1=2" }, tiles(pos))
+			assert.same(xy(old, 2, 1), xy(pos, 3, 1), "bag 3's first free slot is where the tile was")
+			assert.same({ L.Key(3, 2) }, st.tiles.spares.family8)
+			assert.same({}, st.tiles.spares.any, "the removed slots never joined \"any\"")
+			for _, k in ipairs({ L.Key(2, 1), L.Key(2, 2), L.Key(2, 3) }) do
+				assert.is_nil(st.where[k])
+				assert.is_nil(pos.byKey[k])
+			end
+			assert.equal(0, r.deferred)
+			-- every remaining slot is in exactly one cell or one spare list
+			local seen = {}
+			for id, sec in pairs(st.sections) do
+				for i = 1, sec.size do
+					local c = sec.cells[i]
+					if c and not c.placeholder then
+						local k = L.Key(c.bag, c.slot)
+						assert.is_nil(seen[k])
+						seen[k] = true
+						assert.same({ section = id, index = i }, st.where[k])
+					end
+				end
+			end
+			for f, list in pairs(st.tiles.spares) do
+				for _, k in ipairs(list) do
+					assert.is_nil(seen[k])
+					seen[k] = true
+					assert.same({ section = "free", spare = f }, st.where[k])
+				end
+			end
+			for _, k in ipairs({ L.Key(0, 1), L.Key(0, 2), L.Key(3, 1), L.Key(3, 2) }) do
+				assert.truthy(seen[k], "slot " .. k)
+			end
+			-- the bag comes back as a plain bag: its slots join "any" now
+			fam[2] = "any"
+			L.Apply(st, { change(2, 1, "added"), change(2, 2, "added") })
+			assert.same({ "0:2=3", "3:1=2" }, tiles(L.Position(st, OPTS, {})))
+		end)
+
 	it("an added slot joins its family as a spare; a removed tile hands its cell to the next spare", function()
 		local st = build()
 		local cell = xy(L.Position(st, OPTS, {}), 0, 2)
@@ -736,38 +790,53 @@ describe("Layout free tile (plan D19)", function()
 	end)
 
 	-- The randomized check of W3-12. Park-Miller (seed * 16807 % 2147483647, exact in doubles).
-	-- 24 runs of 60 steps over a bag model (backpack 12, bag 1 8, reagent bag 6): leaves,
-	-- arrivals in hidden slots, drops on a tile (usually with the mouse on it), different items,
-	-- hover and cursor holds, the mouse leaving, and Reflows (a full Build of the bags as they are).
+	-- 40 runs of 60 steps over a bag model (backpack 12, bag 1 8 (a herb bag in half the runs),
+	-- bag 2 6 (a herb bag at first),
+	-- reagent bag 6): leaves, arrivals in hidden slots, drops on a tile (usually with the mouse on
+	-- it), different items, hover and cursor holds, the mouse leaving, loot that fills a whole
+	-- family, Reflows (a full Build of the bags as they are; one in four switches the tile off,
+	-- one in two of those with it off switches it back on), and bags 1 and 2 taken off and put back. A bag taken off changes its family
+	-- first (W3-21: the game already answers for the new bag), and comes back as "any" or
+	-- "family8"; the layout must use the family each slot had when it joined.
 	-- After EVERY step:
 	--   every slot is in exactly one cell or spare list; a button moved only if it was not busy;
 	--   no two shown buttons share a cell; a button that appears takes no busy button's cell;
 	--   each family shows at most one tile, and a shown tile is an empty slot (or the slot under
-	--   the mouse that just took a drop, its swap held back).
+	--   the mouse that just took a drop, its swap held back); with the tile off, no tile and no
+	--   spare at all.
 	-- After every step with nothing held back (and after each run's drain), exactly:
 	--   one shown tile per family that has a free slot, none for a family without; the tile's
 	--   count is that family's real number of free slots; every spare is empty; every item shows.
 	-- Mutations that must make it fail: (1) `return { key }` instead of the promote at the end of
 	-- applyTile; (2) `if held[key] then` in Apply (no busy check); (3) `1 + #st.tiles.spares[f]`
 	-- -> `#st.tiles.spares[f]` in Position; (4) in applyTile's "left" branch,
-	-- `append(st, Layout.FREE, cell)` instead of `Layout.ToFamily(st, key, cell)`.
+	-- `append(st, Layout.FREE, cell)` instead of `Layout.ToFamily(st, key, cell)`; (5) the live
+	-- `st.tiles.family(bagOf(key))` instead of the stored family in isTile (W3-21).
 	it("randomized: one real empty tile per family with the real count; nothing moves under the cursor", function()
-		local SIZES = { [0] = 12, [1] = 8, [5] = 6 }
-		local BAGS = { 0, 1, 5 }
+		local SIZES = { [0] = 12, [1] = 8, [2] = 6, [5] = 6 }
+		local FAMILIES = { "any", "reagent", "family8" }
 		local totals = { swaps = 0, heldSwaps = 0, spareLeaves = 0, spareArrivals = 0, reagentSwaps = 0, fullTile = 0,
-			steps = 0, settled = 0, reflows = 0 }
+			steps = 0, settled = 0, reflows = 0, tileOff = 0, tileBackOn = 0, removes = 0, adds = 0,
+			removedTiles = 0, handedOn = 0, fills = 0, zeroToOneAny = 0, zeroToOneReagent = 0 }
 		local seed = 20261002
 		local function rand(n)
 			seed = seed * 16807 % 2147483647
 			return seed % n + 1
 		end
-		for run = 1, 24 do
-			local content, slots, keys = {}, {}, {}
+		for run = 1, 40 do
+			-- famOf: what the game answers now; joined: the family each slot had when it joined
+			local famOf = { [0] = "any", [1] = rand(2) == 1 and "family8" or "any", [2] = "family8", [5] = "reagent" }
+			local function liveFamily(bag)
+				return famOf[bag]
+			end
+			local content, slots, keys, joined = {}, {}, {}, {}
+			local present = { [0] = true, [1] = true, [2] = true, [5] = true }
 			local nextItem = 100
-			for _, bag in ipairs(BAGS) do
+			for _, bag in ipairs({ 0, 1, 2, 5 }) do
 				for slot = 1, SIZES[bag] do
 					local k = L.Key(bag, slot)
 					keys[#keys + 1] = k
+					joined[k] = famOf[bag]
 					if rand(2) == 1 then
 						nextItem = nextItem + 1
 						content[k] = nextItem
@@ -775,15 +844,16 @@ describe("Layout free tile (plan D19)", function()
 					slots[#slots + 1] = { bag = bag, slot = slot, record = content[k] and { cat = "c" .. (content[k] % 3) } or nil }
 				end
 			end
+			local tileOn = true
 			local st = L.Build(slots, assign, { "c0", "c1", "c2" },
-				{ columns = 4, newRows = 1 + rand(2), freeTile = true, family = family })
+				{ columns = 4, newRows = 1 + rand(2), freeTile = true, family = liveFamily })
 			local pos = L.Position(st, OPTS, {})
 			local hover, cursor = nil, false
 
 			local function realFree(f)
 				local n = 0
 				for _, k in ipairs(keys) do
-					if content[k] == nil and family(math.floor(k / 1000)) == f then
+					if content[k] == nil and joined[k] == f then
 						n = n + 1
 					end
 				end
@@ -799,9 +869,12 @@ describe("Layout free tile (plan D19)", function()
 			end
 
 			local function check(old, new, busyKeys, label)
-				local held = {}
+				local held, heldAdd = {}, {}
 				for _, ch in ipairs(st.deferred) do
 					held[L.Key(ch.bag, ch.slot)] = true
+					if ch.kind == "added" then -- a bag put back while the cursor holds an item: it waits
+						heldAdd[L.Key(ch.bag, ch.slot)] = true
+					end
 				end
 				-- every slot exactly once
 				local seen = {}
@@ -816,7 +889,7 @@ describe("Layout free tile (plan D19)", function()
 						end
 					end
 				end
-				for f, list in pairs(st.tiles.spares) do
+				for f, list in pairs(st.tiles and st.tiles.spares or {}) do
 					for _, k in ipairs(list) do
 						assert.is_nil(seen[k], label .. ": a spare is also in a cell")
 						seen[k] = true
@@ -824,7 +897,7 @@ describe("Layout free tile (plan D19)", function()
 					end
 				end
 				for _, k in ipairs(keys) do
-					assert.truthy(seen[k], label .. ": a button was lost")
+					assert.truthy(seen[k] or heldAdd[k], label .. ": a button was lost")
 				end
 				-- nothing moved under the cursor
 				for _, k in ipairs(L.Moves(old, new)) do
@@ -847,7 +920,17 @@ describe("Layout free tile (plan D19)", function()
 						end
 					end
 				end
-				for _, f in ipairs({ "any", "reagent" }) do
+				if not st.tiles then -- the tile is off: every free slot is shown, no tile, no spare
+					assert.equal(0, #new.tiles, label .. ": a tile with the tile off")
+					for k, c in pairs(new.byKey) do
+						assert.truthy(c.shown and not c.spare, label .. ": a hidden slot with the tile off " .. k)
+					end
+					if #st.deferred == 0 then
+						totals.settled = totals.settled + 1
+					end
+					return
+				end
+				for _, f in ipairs(FAMILIES) do
 					local n = 0
 					for _, t in ipairs(new.tiles) do
 						if t.shown and t.tile == f then
@@ -885,7 +968,7 @@ describe("Layout free tile (plan D19)", function()
 			local function emptyKey(f)
 				local list = {}
 				for _, k in ipairs(keys) do
-					if content[k] == nil and (not f or family(math.floor(k / 1000)) == f) then
+					if content[k] == nil and (not f or joined[k] == f) then
 						list[#list + 1] = k
 					end
 				end
@@ -906,8 +989,13 @@ describe("Layout free tile (plan D19)", function()
 
 			for step = 1, 60 do
 				local changes, label = {}, ("run %d step %d"):format(run, step)
-				local kind = rand(12)
+				local before = {}
+				for _, f in ipairs(FAMILIES) do
+					before[f] = realFree(f)
+				end
+				local kind = rand(15)
 				local dropOnTile = nil
+				local removedTileKeys, handedFamily = {}, nil
 				if kind <= 3 then -- an item is used up or moved away
 					local k = filledKey()
 					if k then
@@ -915,7 +1003,7 @@ describe("Layout free tile (plan D19)", function()
 						content[k] = nil
 					end
 				elseif kind <= 6 then -- a drop on a family's tile, usually with the mouse on it
-					local t = tileOf(pos, rand(3) == 1 and "reagent" or "any")
+					local t = tileOf(pos, FAMILIES[rand(3)])
 					if t and content[L.Key(t.bag, t.slot)] == nil then
 						dropOnTile = L.Key(t.bag, t.slot)
 						nextItem = nextItem + 1
@@ -944,16 +1032,72 @@ describe("Layout free tile (plan D19)", function()
 					end
 				elseif kind == 11 then -- the mouse leaves the items
 					hover, cursor = nil, false
-				elseif not hover and not cursor then -- Reflow: a full layout of what is in the bags now
-					local fresh = {}
-					for _, k in ipairs(keys) do
-						fresh[#fresh + 1] = { bag = math.floor(k / 1000), slot = k % 1000,
-							record = content[k] and { cat = "c" .. (content[k] % 3) } or nil }
+				elseif kind == 12 then -- Reflow: a full layout of what is in the bags now
+					if not hover and not cursor then
+						if rand(tileOn and 4 or 2) == 1 then -- off one Reflow in four, back on one in two
+							tileOn = not tileOn
+							if tileOn then
+								totals.tileBackOn = totals.tileBackOn + 1
+							else
+								totals.tileOff = totals.tileOff + 1
+							end
+						end
+						local fresh = {}
+						for _, k in ipairs(keys) do
+							joined[k] = liveFamily(math.floor(k / 1000)) -- every slot joins again
+							fresh[#fresh + 1] = { bag = math.floor(k / 1000), slot = k % 1000,
+								record = content[k] and { cat = "c" .. (content[k] % 3) } or nil }
+						end
+						st = L.Build(fresh, assign, { "c0", "c1", "c2" },
+							{ columns = 4, newRows = 1 + rand(2), freeTile = tileOn, family = liveFamily })
+						pos = L.Position(st, OPTS, {})
+						totals.reflows = totals.reflows + 1
 					end
-					st = L.Build(fresh, assign, { "c0", "c1", "c2" },
-						{ columns = 4, newRows = 1 + rand(2), freeTile = true, family = family })
-					pos = L.Position(st, OPTS, {})
-					totals.reflows = totals.reflows + 1
+				elseif kind == 13 then -- loot fills every free slot of one family in one update
+					local f = FAMILIES[rand(3)]
+					for _, k in ipairs(keys) do
+						if content[k] == nil and joined[k] == f then
+							nextItem = nextItem + 1
+							content[k] = nextItem
+							changes[#changes + 1] = ch(k, "arrived", nextItem)
+						end
+					end
+					if #changes > 0 then
+						totals.fills = totals.fills + 1
+					end
+				elseif #st.deferred == 0 then -- bag 1 or 2 is taken off, or put back
+					local bag = rand(2)
+					local newFamily = rand(2) == 1 and "any" or "family8"
+					if present[bag] then
+						local changed, oldFamily = famOf[bag] ~= newFamily, famOf[bag]
+						famOf[bag] = newFamily -- the game answers for the next bag before the slots go
+						for slot = 1, SIZES[bag] do
+							local k = L.Key(bag, slot)
+							changes[#changes + 1] = ch(k, "removed")
+							if changed and pos.byKey[k] and pos.byKey[k].tile then
+								removedTileKeys[k], handedFamily = true, oldFamily
+							end
+							content[k], joined[k] = nil, nil
+						end
+						local kept = {}
+						for _, k in ipairs(keys) do
+							if math.floor(k / 1000) ~= bag then
+								kept[#kept + 1] = k
+							end
+						end
+						keys, present[bag] = kept, false
+						totals.removes = totals.removes + 1
+					else
+						famOf[bag] = newFamily
+						for slot = 1, SIZES[bag] do
+							local k = L.Key(bag, slot)
+							keys[#keys + 1] = k
+							joined[k] = newFamily
+							changes[#changes + 1] = ch(k, "added")
+						end
+						present[bag] = true
+						totals.adds = totals.adds + 1
+					end
 				end
 				local busyKeys = {}
 				for _, k in ipairs(keys) do
@@ -987,8 +1131,11 @@ describe("Layout free tile (plan D19)", function()
 					if st.where[k] and st.where[k].spare and new.byKey[k] and not (pos.byKey[k] and pos.byKey[k].spare) then
 						totals.spareLeaves = totals.spareLeaves + 1
 					end
-					if pos.byKey[k] and pos.byKey[k].spare and not st.where[k].spare then
+					if pos.byKey[k] and pos.byKey[k].spare and st.where[k] and not st.where[k].spare then
 						totals.spareArrivals = totals.spareArrivals + 1
+					end
+					if removedTileKeys[k] and not st.where[k] then -- W3-21: its family had changed
+						totals.removedTiles = totals.removedTiles + 1
 					end
 				end
 				if dropOnTile and st.where[dropOnTile].section == "free" and r.overflowed > 0 then
@@ -996,6 +1143,17 @@ describe("Layout free tile (plan D19)", function()
 				end
 				totals.steps = totals.steps + 1
 				check(pos, new, busyKeys, label)
+				if handedFamily and st.tiles and #st.deferred == 0 and realFree(handedFamily) > 0 then
+					totals.handedOn = totals.handedOn + 1 -- W3-21: another bag's free slot is the tile now
+				end
+				if st.tiles and #st.deferred == 0 then -- the check above saw the family's new tile
+					if before.any == 0 and realFree("any") > 0 then
+						totals.zeroToOneAny = totals.zeroToOneAny + 1
+					end
+					if before.reagent == 0 and realFree("reagent") > 0 then
+						totals.zeroToOneReagent = totals.zeroToOneReagent + 1
+					end
+				end
 				pos = new
 			end
 			local r = L.Apply(st, {}, nil) -- drain: the mouse has left and the cursor is empty
@@ -1011,5 +1169,14 @@ describe("Layout free tile (plan D19)", function()
 		assert.truthy(totals.fullTile >= 20, "drops on the tile with New full " .. totals.fullTile)
 		assert.truthy(totals.settled >= 400, "settled checks " .. totals.settled)
 		assert.truthy(totals.reflows >= 25, "reflows " .. totals.reflows)
+		assert.truthy(totals.tileOff >= 10, "builds with the tile off " .. totals.tileOff)
+		assert.truthy(totals.tileBackOn >= 5, "builds with the tile back on " .. totals.tileBackOn)
+		assert.truthy(totals.removes >= 60, "bags taken off " .. totals.removes)
+		assert.truthy(totals.adds >= 40, "bags put back " .. totals.adds)
+		assert.truthy(totals.removedTiles >= 9, "tiles taken off with a changed family " .. totals.removedTiles)
+		assert.truthy(totals.handedOn >= 4, "a removed tile's family kept a tile " .. totals.handedOn)
+		assert.truthy(totals.fills >= 60, "families filled by loot " .. totals.fills)
+		assert.truthy(totals.zeroToOneAny >= 25, "'any' from 0 free to 1+ " .. totals.zeroToOneAny)
+		assert.truthy(totals.zeroToOneReagent >= 15, "'reagent' from 0 free to 1+ " .. totals.zeroToOneReagent)
 	end)
 end)
