@@ -2,21 +2,32 @@
 -- A layout STATE says which section each slot button is in, at which cell index:
 --   state = { columns, newRows, order = { "new", ..., "free" },
 --             sections = { [id] = { id, cells = { [i] = cell }, size, capacity?, overflow } },
---             where = { [key] = { section = id, index = i } }, deferred = {}, needsReflow }
+--             where = { [key] = { section = id, index = i } }, deferred = {}, needsReflow,
+--             tiles = nil | { family, families = { f }, cell = { [f] = i }, spares = { [f] = { key } },
+--                             of = { [key] = f } } }
 --   cell  = { bag, slot }  (a slot button)  |  { bag, slot, placeholder = true, icon }
 --   Cells may have holes (nil) so that nothing after them ever shifts.
 -- Layout.Build(slots, assign, order, opts)   full layout (open, Reflow, sort, view toggle)
 --   slots: physical order { { bag, slot, record } } (record nil = empty slot)
 --   assign(record) -> section id, or nil (pending -> New); empty slots go to Free.
 --   order: section ids in display order; New is forced first and Free last.
---   opts: { columns, newRows }
+--   opts: { columns, newRows, freeTile, family }
+--     freeTile: Free shows ONE tile per bag family instead of every empty slot (plan D19)
+--     family(bag) -> key: empty slots of one family hold the same items (default: all "any").
+--       Called only when a slot JOINS the layout (Build, "added"); the answer is kept in
+--       tiles.of[key] and used from then on, so a bag swapped or taken off while open (its
+--       family changes before its slots are "removed") still finds its own tile (W3-21).
 -- Layout.Position(state, opts, collapsed) -> pos   pixel positions (TOPLEFT offsets, y down
 --   negative). Collapsing changes section offsets only, so expanding returns every item
 --   to the same cell (spec 6.4). New always shows its header and newRows reserved rows.
---   opts: { columns, size, gap, padding, header, sectionGap }
+--   opts: { columns, size, gap, padding, header, sectionGap, top }   top: y offset where the
+--   layout starts (a window that stacks several layouts, default 0); height includes it.
 --   pos = { cells = { {bag, slot, x, y, shown} } (display order), byKey = { [key] = cell },
 --           placeholders = { {bag, slot, icon, x, y, shown} }, headers = { {id, y, count,
 --           overflow, collapsed} }, width, height }
+--   With the free tile (plan D19) a tile's cell entry also has tile = family and count = that
+--   family's free slots, pos.tiles lists the tile entries, and each spare is a cell entry
+--   { bag, slot, shown = false, spare = family } with no x or y.
 -- Layout.Moves(oldPos, newPos) -> keys whose button position changes (hover guard, 4.2 #5)
 -- Layout.Apply(state, changes, isBusy, collapsed) -> result   while the window is open
 --   changes: { { bag, slot, kind, icon } } in order. kind:
@@ -37,6 +48,19 @@
 --   added -> a new button at Free's end;  removed -> its cell becomes a hole
 -- Nothing else ever moves, so no other button changes position. Any placeholder, move or
 -- hole sets state.needsReflow; the next full Build (close + open, Reflow, sort) clears it.
+-- Free tile (opts.freeTile, plan D19). Free's cells hold one TILE per family -- a real empty
+-- slot button, its family's first in physical order -- plus any filled button that overflowed
+-- New. Every other empty button is a SPARE: it has no cell (where = { section = "free", spare
+-- = family }) and Position reports it hidden. A family keeps its tile cell for the whole
+-- layout. With the tile, these transitions replace the ones above:
+--   the tile arrived  -> to New (or it stays, filled, when New is full); the family's first
+--                        spare takes the tile cell (Free's end when the cell is still taken),
+--                        shown. This SWAP moves two buttons: it waits while either is busy.
+--   the tile removed  -> the same swap
+--   a spare arrived   -> to New (Free's end when New is full), shown
+--   any button that becomes empty (in a section: placeholder as above; in New; in a filled
+--   Free cell) and an added slot -> its family's last spare, hidden; or, when the family
+--   has no tile, its tile (in the family's tile cell when that is a hole, else Free's end)
 local _, SB = ...
 
 local Layout = { NEW = "new", FREE = "free" }
@@ -68,10 +92,100 @@ local function append(st, id, cell)
 end
 Layout.Append = append
 
+---------------------------------------------------------------------------
+-- Free tile (plan D19)
+---------------------------------------------------------------------------
+local function bagOf(key)
+	return math.floor(key / 1000)
+end
+
+-- The family a key was given when it joined the layout (W3-21: never looked up again).
+local function familyOf(st, key)
+	return st.tiles.of[key]
+end
+
+-- A key joins the layout (Build or "added"): the only place opts.family is called.
+local function join(st, key, bag)
+	local f = st.tiles.family(bag)
+	st.tiles.of[key] = f
+	return f
+end
+
+-- The key of family f's tile, or nil (no tile cell yet, or the cell is a hole).
+local function tileKey(st, f)
+	local i = st.tiles.cell[f]
+	local free = st.sections[Layout.FREE]
+	local c = i and free and free.cells[i]
+	return c and Layout.Key(c.bag, c.slot) or nil
+end
+
+local function isTile(st, key, w)
+	return st.tiles ~= nil and w.section == Layout.FREE and w.index ~= nil
+		and w.index == st.tiles.cell[familyOf(st, key)]
+end
+
+-- Put an empty button into its family: a spare when the family has a tile, else the tile
+-- (in the family's tile cell when that is a hole, otherwise at Free's end).
+function Layout.ToFamily(st, key, cell)
+	local t = st.tiles
+	local f = familyOf(st, key) or join(st, key, cell.bag)
+	if not t.spares[f] then
+		t.spares[f] = {}
+		t.families[#t.families + 1] = f
+	end
+	if tileKey(st, f) then
+		local list = t.spares[f]
+		list[#list + 1] = key
+		st.where[key] = { section = Layout.FREE, spare = f }
+		return
+	end
+	local free = section(st, Layout.FREE)
+	local i = t.cell[f]
+	if i and free.cells[i] == nil then
+		free.cells[i] = cell
+		st.where[key] = { section = Layout.FREE, index = i }
+	else
+		t.cell[f] = append(st, Layout.FREE, cell)
+	end
+end
+
+-- Family f's first spare takes Free's cell i (a hole), or Free's end when i is nil, and is
+-- the family's tile from now on. Returns its key, or nil when the family has no spare left.
+local function promote(st, f, i)
+	local list = st.tiles.spares[f]
+	local key = list and table.remove(list, 1)
+	if not key then
+		st.tiles.cell[f] = i
+		return nil
+	end
+	local cell = { bag = bagOf(key), slot = key % 1000 }
+	if i then
+		section(st, Layout.FREE).cells[i] = cell
+		st.where[key] = { section = Layout.FREE, index = i }
+	else
+		st.tiles.cell[f] = append(st, Layout.FREE, cell)
+	end
+	return key
+end
+
+-- Number of spares (hidden empty buttons) of every family together.
+local function spareCount(st)
+	local n = 0
+	for _, list in pairs(st.tiles and st.tiles.spares or {}) do
+		n = n + #list
+	end
+	return n
+end
+
 function Layout.Build(slots, assign, order, opts)
 	local cols = opts.columns
 	local st = { columns = cols, newRows = opts.newRows or 2, order = { Layout.NEW }, sections = {}, where = {},
 		deferred = {}, needsReflow = false }
+	if opts.freeTile then
+		st.tiles = { family = opts.family or function()
+			return "any"
+		end, families = {}, cell = {}, spares = {}, of = {} }
+	end
 	local known = { [Layout.NEW] = true, [Layout.FREE] = true }
 	for _, id in ipairs(order) do
 		if not known[id] then
@@ -91,7 +205,14 @@ function Layout.Build(slots, assign, order, opts)
 			known[id] = true
 			table.insert(st.order, #st.order, id)
 		end
-		append(st, id, { bag = s.bag, slot = s.slot })
+		if st.tiles then
+			join(st, Layout.Key(s.bag, s.slot), s.bag)
+		end
+		if id == Layout.FREE and st.tiles then
+			Layout.ToFamily(st, Layout.Key(s.bag, s.slot), { bag = s.bag, slot = s.slot })
+		else
+			append(st, id, { bag = s.bag, slot = s.slot })
+		end
 	end
 	local new = section(st, Layout.NEW)
 	new.capacity = math.max(st.newRows, math.ceil(new.size / cols)) * cols
@@ -113,15 +234,19 @@ function Layout.Position(st, opts, collapsed)
 	collapsed = collapsed or {}
 	local cols, size, gap, pad = opts.columns, opts.size, opts.gap, opts.padding
 	local step = size + gap
-	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {} }
-	local y = pad
+	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {} }
+	local y = (opts.top or 0) + pad
 	for _, id in ipairs(st.order) do
 		local sec = st.sections[id]
 		local visible = id == Layout.NEW or (sec ~= nil and sec.size > 0)
 		if visible then
 			sec = sec or { cells = {}, size = 0, overflow = 0 }
 			local closed = collapsed[id] == true
-			pos.headers[#pos.headers + 1] = { id = id, y = -y, count = countButtons(sec), overflow = sec.overflow,
+			local count = countButtons(sec)
+			if id == Layout.FREE then
+				count = count + spareCount(st)
+			end
+			pos.headers[#pos.headers + 1] = { id = id, y = -y, count = count, overflow = sec.overflow,
 				collapsed = closed }
 			y = y + opts.header
 			local slots = sec.size
@@ -145,6 +270,20 @@ function Layout.Position(st, opts, collapsed)
 					else
 						pos.cells[#pos.cells + 1] = entry
 						pos.byKey[Layout.Key(cell.bag, cell.slot)] = entry
+						local f = id == Layout.FREE and st.tiles and familyOf(st, Layout.Key(cell.bag, cell.slot))
+						if f and st.tiles.cell[f] == i then
+							entry.tile, entry.count = f, 1 + #st.tiles.spares[f]
+							pos.tiles[#pos.tiles + 1] = entry
+						end
+					end
+				end
+			end
+			if id == Layout.FREE and st.tiles then -- spares: hidden, and never given a position
+				for _, f in ipairs(st.tiles.families) do
+					for _, key in ipairs(st.tiles.spares[f]) do
+						local entry = { bag = bagOf(key), slot = key % 1000, shown = false, spare = f }
+						pos.cells[#pos.cells + 1] = entry
+						pos.byKey[key] = entry
 					end
 				end
 			end
@@ -176,10 +315,20 @@ end
 -- Remove a button from its cell (leaving a hole). Returns where it was and the cell.
 local function take(st, key)
 	local w = st.where[key]
+	st.where[key] = nil
+	if w.spare then
+		local list = st.tiles.spares[w.spare]
+		for n = 1, #list do
+			if list[n] == key then
+				table.remove(list, n)
+				break
+			end
+		end
+		return w, { bag = bagOf(key), slot = key % 1000 }
+	end
 	local sec = st.sections[w.section]
 	local cell = sec.cells[w.index]
 	sec.cells[w.index] = nil
-	st.where[key] = nil
 	return w, cell
 end
 
@@ -208,8 +357,82 @@ local function clearOverflow(st, key)
 	end
 end
 
+-- The transitions with the free tile (see the header). Returns the keys that moved.
+local function applyTile(st, ch, collapsed, result, key, w)
+	if ch.kind == "added" then
+		join(st, key, ch.bag)
+		Layout.ToFamily(st, key, { bag = ch.bag, slot = ch.slot })
+		return { key }
+	elseif ch.kind == "removed" then
+		clearOverflow(st, key)
+		local tile, f = isTile(st, key, w), familyOf(st, key)
+		take(st, key)
+		st.tiles.of[key] = nil -- a slot that comes back is a new join
+		return { key, tile and promote(st, f, w.index) or nil }
+	elseif ch.kind == "left" then
+		clearOverflow(st, key)
+		if w.spare or isTile(st, key, w) then
+			return {} -- already an empty slot of Free: repaint only
+		end
+		local old, cell = take(st, key)
+		if old.section ~= Layout.FREE and old.section ~= Layout.NEW then
+			st.sections[old.section].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
+			result.placeholders = result.placeholders + 1
+		end
+		Layout.ToFamily(st, key, cell)
+		return { key }
+	elseif ch.kind ~= "arrived" or w.section == Layout.NEW then
+		return {}
+	end
+	local tile = isTile(st, key, w)
+	local room = newHasRoom(st, collapsed)
+	if w.section == Layout.FREE and not (w.spare or tile) then -- a filled button that overflowed New
+		if not room then
+			overflow(st, result, key)
+			return {}
+		end
+		clearOverflow(st, key)
+	elseif w.section ~= Layout.FREE then -- a category section: placeholder in its cell
+		local old, cell = take(st, key)
+		st.sections[old.section].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
+		result.placeholders = result.placeholders + 1
+		if room then
+			append(st, Layout.NEW, cell)
+		else
+			append(st, Layout.FREE, cell)
+			overflow(st, result, key)
+		end
+		return { key }
+	elseif not room and tile then -- it stays, filled; the next spare is the tile, at Free's end
+		overflow(st, result, key)
+		return { promote(st, familyOf(st, key), nil) }
+	end
+	local _, cell = take(st, key)
+	if room then
+		clearOverflow(st, key)
+		append(st, Layout.NEW, cell)
+	else -- a spare, and New is full: shown at Free's end
+		append(st, Layout.FREE, cell)
+		overflow(st, result, key)
+	end
+	return { key, tile and promote(st, familyOf(st, key), w.index) or nil }
+end
+
 local function applyOne(st, ch, collapsed, result)
 	local key = Layout.Key(ch.bag, ch.slot)
+	if st.tiles and (st.where[key] or ch.kind == "added") then
+		if ch.kind == "added" and st.where[key] then
+			return
+		end
+		local moved = applyTile(st, ch, collapsed, result, key, st.where[key])
+		for _, k in ipairs(moved) do
+			result.moved[#result.moved + 1] = k
+		end
+		if #moved > 0 then
+			st.needsReflow = true
+		end
+		return
+	end
 	local w = st.where[key]
 	if ch.kind == "added" then
 		if not w then
@@ -265,6 +488,20 @@ local function applyOne(st, ch, collapsed, result)
 	result.moved[#result.moved + 1] = key
 end
 
+-- Free tile: a change that makes the tile fill or go away hands its cell to the family's first
+-- spare. Returns that spare's key, so the swap waits while either button is busy.
+local function partner(st, ch)
+	if not st.tiles or (ch.kind ~= "arrived" and ch.kind ~= "removed") then
+		return nil
+	end
+	local key = Layout.Key(ch.bag, ch.slot)
+	local w = st.where[key]
+	if not (w and isTile(st, key, w)) then
+		return nil
+	end
+	return st.tiles.spares[familyOf(st, key)][1]
+end
+
 -- Change tables passed to Apply must not be reused or mutated afterwards: deferred entries
 -- keep references to them.
 function Layout.Apply(st, changes, isBusy, collapsed)
@@ -278,7 +515,8 @@ function Layout.Apply(st, changes, isBusy, collapsed)
 	local held = {}
 	for _, ch in ipairs(queue) do
 		local key = Layout.Key(ch.bag, ch.slot)
-		if held[key] or (isBusy and isBusy(ch.bag, ch.slot)) then
+		local spare = partner(st, ch)
+		if held[key] or (isBusy and (isBusy(ch.bag, ch.slot) or (spare and isBusy(bagOf(spare), spare % 1000)))) then
 			held[key] = true -- later changes of a held slot wait too, so order is kept
 			st.deferred[#st.deferred + 1] = ch
 		else

@@ -18,9 +18,28 @@ SB.Config = Config
 Config.Defaults = {
 	settings = {
 		-- view: "sections" (category view) | "grid"; newRows: rows kept for New while open;
-		-- reagentSeparate: show the reagent bag as its own "Reagents" section (spec AC1.4).
-		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false },
+		-- reagentSeparate: show the reagent bag as its own "Reagents" section (spec AC1.4);
+		-- showIlvl: the title shows the average equipped item level (plan D18);
+		-- freeTile: Free shows one tile per bag family with the number of free slots, false shows
+		-- every free slot (plan D19; the bank window follows it too).
+		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
+			showIlvl = true, freeTile = true },
 		safeMode = { bags = false, bank = false },
+		-- blizzardFrame: "tiny" (Blizzard's bank invisible, its tabs on SwagBag's window) |
+		-- "beside" (Blizzard's bank visible, SwagBag's window next to it; spec 5.4, check V2).
+		-- view: "sections" | "grid"; columns: slots per row in the bank window.
+		bank = { blizzardFrame = "tiny", view = "sections", columns = 14 },
+		-- mode: "full" (SwagBag's window replaces Blizzard's; spec F16) | "view" (read-only window
+		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
+		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
+		-- Off until check G1 proves the client withdraws from the tab it is given (ruling W3-10).
+		-- view / columns: as for the bank window.
+		guildBank = { mode = "full", withdrawAnyTab = false, view = "sections", columns = 14 },
+		-- headerTotals: each section header shows its total value (spec F10).
+		prices = { headerTotals = true },
+		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
+		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
+			usePawn = false },
 	},
 }
 
@@ -210,6 +229,9 @@ function Config.UI()
 	return Config.charDB.ui
 end
 
+-- The account DB's saved snapshots (Engine/Snapshots.lua): kept by Reset (ruling W3-39).
+local SNAPSHOT_KEYS = { "chars", "warband", "guilds" }
+
 -- Wipe both DBs after keeping a copy of the saved data. Returns the new tables,
 -- which the caller assigns to SwagBagDB / SwagBagCharDB.
 function Config.Reset()
@@ -232,7 +254,14 @@ function Config.Reset()
 		Config.status = "ok"
 		return Config.db, Config.charDB
 	end
-	-- When not read-only, back up the LIVE tables and preserve existing backups
+	-- When not read-only, back up the LIVE tables and preserve existing backups. The saved
+	-- snapshots are not settings: they move to the new DB as they are and stay out of the
+	-- backup (ruling W3-39).
+	local kept = {}
+	for _, k in ipairs(SNAPSHOT_KEYS) do
+		kept[k] = Config.db[k]
+		Config.db[k] = nil
+	end
 	local oldDB = copy(Config.db)
 	local oldChar = copy(Config.charDB)
 	local existingDBBackups = oldDB.backups or {}
@@ -240,6 +269,9 @@ function Config.Reset()
 	oldDB.backups = nil
 	oldChar.backups = nil
 	Config.db, Config.charDB = newDB(), newCharDB()
+	for _, k in ipairs(SNAPSHOT_KEYS) do
+		Config.db[k] = kept[k]
+	end
 	-- Carry over existing backups (e.g., v<N> from failed migrations)
 	for k, v in pairs(existingDBBackups) do
 		Config.db.backups[k] = v

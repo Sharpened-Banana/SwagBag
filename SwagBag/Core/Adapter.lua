@@ -43,6 +43,21 @@ function A.Date(fmt)
 	return date(fmt)
 end
 
+-- Seconds since the epoch (snapshot stamps).
+function A.Time()
+	return time()
+end
+
+-- "Name-Realm" of the logged-in character (the snapshot key, spec 8.2).
+function A.CharKey()
+	return tostring(UnitName("player")) .. "-" .. tostring(GetRealmName())
+end
+
+function A.CharInfo()
+	local _, class = UnitClass("player")
+	return { class = class, level = UnitLevel("player") }
+end
+
 function A.BuildInfo()
 	local version, build, _, toc = GetBuildInfo()
 	return { version = version, build = build, toc = toc, locale = GetLocale() }
@@ -160,6 +175,22 @@ function A.BagKind(bag)
 	return nil, nil
 end
 
+-- Which empty slots belong together (the free tile, plan D19): "reagent" for the reagent bag
+-- (only reagents fit), "family<N>" for a bag whose GetContainerNumFreeSlots family N is not 0
+-- (a profession bag: only its items fit), else "any". Feature-detected: "any" without the API.
+function A.BagFamily(bag)
+	if A.BagKind(bag) == "reagentbag" then
+		return "reagent"
+	end
+	if C_Container and C_Container.GetContainerNumFreeSlots then
+		local ok, _, family = pcall(C_Container.GetContainerNumFreeSlots, bag)
+		if ok and type(family) == "number" and not isSecret(family) and family ~= 0 then
+			return "family" .. family
+		end
+	end
+	return "any"
+end
+
 -- kind: "bags" | "bank" | "warband". Bank kinds return PURCHASED tab IDs only.
 function A.GetBagIDs(kind)
 	if kind == "bags" then
@@ -254,6 +285,18 @@ function A.GetIlvl(bag, slot)
 	return nil
 end
 
+-- Item level of an item link (guild bank items have no bag slot), or nil.
+function A.GetLinkIlvl(link)
+	if type(link) ~= "string" or not (C_Item and C_Item.GetDetailedItemLevelInfo) then
+		return nil
+	end
+	local ok, v = pcall(C_Item.GetDetailedItemLevelInfo, link)
+	if ok and type(v) == "number" and not isSecret(v) then
+		return v
+	end
+	return nil
+end
+
 function A.IsWarboundUntilEquip(bag, slot)
 	if not (C_Item and C_Item.IsBoundToAccountUntilEquip) then
 		return false
@@ -264,20 +307,98 @@ function A.IsWarboundUntilEquip(bag, slot)
 	return ok and v == true
 end
 
--- True when the item has an upgrade track. Feature-detected; false when unknown.
-function A.HasUpgradeTrack(bag, slot)
-	if not (C_Item and C_Item.GetItemUpgradeInfo) then
-		return false
-	end
-	local okLink, link = pcall(C_Container.GetContainerItemLink, bag, slot)
-	if not okLink or type(link) ~= "string" then
-		return false
+-- Upgrade track of an item link: returns { track = "Hero", level = 3, max = 6 } or nil, then
+-- hasTrack (true when the item has any upgrade track at all). One client call per item. Real API
+-- only; no tooltip reading (spec P7). Missing API: nil, false.
+function A.UpgradeInfo(link)
+	if type(link) ~= "string" or not (C_Item and C_Item.GetItemUpgradeInfo) then
+		return nil, false
 	end
 	local ok, info = pcall(C_Item.GetItemUpgradeInfo, link)
 	if not ok or type(info) ~= "table" then
-		return false
+		return nil, false
 	end
-	return (info.maxLevel or info.maxUpgradeLevel or 0) > 0 or (info.trackString or "") ~= ""
+	local track, level, max = info.trackString, info.currentLevel, info.maxLevel or info.maxUpgradeLevel
+	local hasTrack = (max or 0) > 0 or (type(track) == "string" and track ~= "")
+	if type(track) ~= "string" or track == "" or isSecret(track) or type(level) ~= "number" or type(max) ~= "number" then
+		return nil, hasTrack
+	end
+	return { track = track, level = level, max = max }, hasTrack
+end
+
+-- Name of a Mythic+ dungeon (keystone link map ID), or nil.
+function A.DungeonName(mapID)
+	if not (C_ChallengeMode and C_ChallengeMode.GetMapUIInfo) then
+		return nil
+	end
+	local ok, name = pcall(C_ChallengeMode.GetMapUIInfo, mapID)
+	if ok and type(name) == "string" and not isSecret(name) then
+		return name
+	end
+	return nil
+end
+
+-- What the character wears: [inventory slot 1-17] = { ilvl, equipLoc } (nil = empty slot).
+function A.EquippedItems()
+	local out = {}
+	for slot = 1, 17 do
+		local okL, link = pcall(GetInventoryItemLink, "player", slot)
+		if okL and type(link) == "string" and not isSecret(link) then
+			local inst = A.GetItemInstant(link)
+			local okI, ilvl = pcall(function()
+				return C_Item.GetCurrentItemLevel(ItemLocation:CreateFromEquipmentSlot(slot))
+			end)
+			local equipLoc = inst and inst.equipLoc or ""
+			if okI and type(ilvl) == "number" and not isSecret(ilvl) then
+				out[slot] = { ilvl = ilvl, equipLoc = equipLoc }
+			else
+				-- A worn item whose level cannot be read is "unknown", never 0 (an empty slot is absent).
+				out[slot] = { ilvl = nil, unknown = true, equipLoc = equipLoc }
+			end
+		end
+	end
+	return out
+end
+
+-- True unless the client says this character cannot use the item (feature-detected).
+function A.CanUse(itemID)
+	if not (C_PlayerInfo and C_PlayerInfo.CanUseItem) then
+		return true
+	end
+	local ok, yes = pcall(C_PlayerInfo.CanUseItem, itemID)
+	return not ok or yes ~= false
+end
+
+-- Average item level of what the character wears (GetAverageItemLevel's second value), or
+-- nil when the client lacks the function or gives no number (spec addition D18).
+function A.EquippedItemLevel()
+	local fn = _G.GetAverageItemLevel
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, _, equipped = pcall(fn)
+	if not ok or type(equipped) ~= "number" or isSecret(equipped) then
+		return nil
+	end
+	return equipped
+end
+
+function A.HasPawn()
+	return type(_G.PawnIsContainerItemAnUpgrade) == "function"
+end
+
+-- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
+function A.PawnUpgrade(bag, slot)
+	local fn = _G.PawnIsContainerItemAnUpgrade
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, yes = pcall(fn, bag, slot)
+	if not ok then
+		return nil
+	end
+	-- Pawn's nil also means "not an upgrade", so it folds to false here.
+	return yes and true or false
 end
 
 function A.IsOnCooldown(bag, slot)
@@ -345,6 +466,225 @@ function A.SortBags()
 	return pcall(C_Container.SortBags)
 end
 
+-- Blizzard's own bank sort for "bank" (character bank) or "warband" (spec 5.5). ok, err.
+function A.SortBank(kind)
+	local BT = Enum and Enum.BankType
+	local bankType = BT and ((kind == "bank" and BT.Character) or (kind == "warband" and BT.Account))
+	if bankType == nil or not (C_Container and C_Container.SortBank) then
+		return false
+	end
+	return pcall(C_Container.SortBank, bankType)
+end
+
+---------------------------------------------------------------------------
+-- Blizzard frames and the bank (week 3). SwagBag only READS Blizzard's bank state
+-- (spec 5.2, 5.3): it never selects a tab or a bank type and never closes the bank.
+---------------------------------------------------------------------------
+-- A Blizzard frame by its global name (BankFrame, GuildBankFrame, ...), or nil.
+function A.Frame(name)
+	return _G[name]
+end
+
+-- "bank" (character bank) | "warband" | nil: the bank type Blizzard's bank frame has
+-- selected, which is where a right-clicked bag item goes. Read only.
+function A.ActiveBankType()
+	local f = _G.BankFrame
+	if not (f and f.GetActiveBankType) then
+		return nil
+	end
+	local ok, bankType = pcall(f.GetActiveBankType, f)
+	local BT = Enum and Enum.BankType
+	if not ok or bankType == nil or isSecret(bankType) or not BT then
+		return nil
+	end
+	if bankType == BT.Character then
+		return "bank"
+	elseif bankType == BT.Account then
+		return "warband"
+	end
+	return nil
+end
+
+---------------------------------------------------------------------------
+-- Guild bank (week 3, spec F16). Blizzard's guild bank functions are plain globals; the
+-- guild bank UI (GuildBankFrame) is load-on-demand, so nothing here may assume it exists.
+-- SwagBag never selects a guild bank tab: Blizzard's own tab buttons do (spec AC16.7).
+---------------------------------------------------------------------------
+A.GUILD_SLOTS = 98 -- slots per guild bank tab
+
+-- { { tab, name, icon, viewable, canDeposit, withdrawals } } for each tab the guild owns.
+-- withdrawals: stacks the player may still take from that tab today; -1 = unlimited.
+function A.GuildTabs()
+	if not (GetNumGuildBankTabs and GetGuildBankTabInfo) then
+		return {}
+	end
+	local okN, n = pcall(GetNumGuildBankTabs)
+	if not okN or type(n) ~= "number" or isSecret(n) then
+		return {}
+	end
+	local out = {}
+	for tab = 1, n do
+		local ok, name, icon, viewable, canDeposit, _, remaining = pcall(GetGuildBankTabInfo, tab)
+		if ok and not isSecret(name) then
+			out[#out + 1] = { tab = tab, name = name, icon = icon, viewable = viewable == true,
+				canDeposit = canDeposit == true,
+				withdrawals = (type(remaining) == "number" and not isSecret(remaining)) and remaining or 0 }
+		end
+	end
+	return out
+end
+
+-- Normalized guild slot { itemID, link, count, icon, quality, isLocked }, or nil when empty
+-- (or not loaded yet: QueryGuildBankTab loads a tab).
+function A.GuildSlot(tab, slot)
+	local ok, icon, count, locked, _, quality = pcall(GetGuildBankItemInfo, tab, slot)
+	if not ok or icon == nil or isSecret(icon) then
+		return nil
+	end
+	local okL, link = pcall(GetGuildBankItemLink, tab, slot)
+	if not okL or type(link) ~= "string" or isSecret(link) then
+		return nil
+	end
+	local inst = A.GetItemInstant(link)
+	if not inst then
+		return nil
+	end
+	return { itemID = inst.itemID, link = link, count = count or 1, icon = icon, quality = quality,
+		isLocked = locked == true }
+end
+
+function A.GuildQuery(tab)
+	if QueryGuildBankTab then
+		pcall(QueryGuildBankTab, tab)
+	end
+end
+
+-- The tab Blizzard's guild bank has selected (where a right-clicked bag item goes). Read only.
+function A.GuildCurrentTab()
+	if not GetCurrentGuildBankTab then
+		return nil
+	end
+	local ok, tab = pcall(GetCurrentGuildBankTab)
+	if ok and type(tab) == "number" and not isSecret(tab) then
+		return tab
+	end
+	return nil
+end
+
+-- Withdraw a stack to the bags (what a right-click does in Blizzard's guild bank).
+function A.GuildWithdraw(tab, slot)
+	return pcall(AutoStoreGuildBankItem, tab, slot)
+end
+
+-- Pick up the stack, or put the cursor's item into that slot (deposit or move).
+function A.GuildPickup(tab, slot)
+	return pcall(PickupGuildBankItem, tab, slot)
+end
+
+-- "Guild Name-Realm" for the player's guild, or nil without a guild.
+function A.GuildKey()
+	if not GetGuildInfo then
+		return nil
+	end
+	local ok, name, _, _, realm = pcall(GetGuildInfo, "player")
+	if not ok or type(name) ~= "string" or isSecret(name) then
+		return nil
+	end
+	return name .. "-" .. tostring(realm or (GetRealmName and GetRealmName()) or "")
+end
+
+function A.GuildTooltip(owner, tab, slot)
+	if not GameTooltip then
+		return
+	end
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	pcall(GameTooltip.SetGuildBankItem, GameTooltip, tab, slot)
+	GameTooltip:Show()
+end
+
+function A.HideTooltip()
+	if GameTooltip then
+		GameTooltip:Hide()
+	end
+end
+
+-- Shift/Ctrl-click on an item link (chat link, dressing room). True when Blizzard handled it.
+function A.ModifiedClick(link)
+	if not (IsModifiedClick and HandleModifiedItemClick) or not IsModifiedClick() then
+		return false
+	end
+	local ok, handled = pcall(HandleModifiedItemClick, link)
+	return ok and handled ~= false
+end
+
+-- True for the guild vault in PLAYER_INTERACTION_MANAGER_FRAME_SHOW / _HIDE.
+function A.IsGuildBanker(interactionType)
+	local PIT = Enum and Enum.PlayerInteractionType
+	return PIT ~= nil and PIT.GuildBanker ~= nil and interactionType == PIT.GuildBanker
+end
+
+-- Blizzard's guild bank tab buttons (to re-host on SwagBag's window), top to bottom.
+function A.GuildTabFrames()
+	local gf = _G.GuildBankFrame
+	local list = {}
+	if not gf then
+		return list
+	end
+	if type(gf.BankTabs) == "table" then
+		for i, t in ipairs(gf.BankTabs) do
+			list[i] = t
+		end
+	else
+		for i = 1, 8 do
+			local t = _G["GuildBankTab" .. i]
+			if t then
+				list[#list + 1] = t
+			end
+		end
+	end
+	return list
+end
+
+---------------------------------------------------------------------------
+-- Auctionator (optional price source, spec F10). Only its public API v1 is used.
+---------------------------------------------------------------------------
+local function auctionator()
+	local api = A.Resolve("Auctionator.API.v1")
+	if type(api) == "table" and type(api.GetAuctionPriceByItemLink) == "function" then
+		return api
+	end
+	return nil
+end
+
+-- Resolved when availability is asked (once per price-cache fill), not on every price lookup.
+local auctionatorApi
+
+function A.AuctionatorAvailable()
+	auctionatorApi = auctionator()
+	return auctionatorApi ~= nil
+end
+
+-- Copper per unit, or nil when Auctionator has no price. Errors are the caller's to count.
+function A.AuctionatorPrice(link)
+	local api = auctionatorApi
+	if not api then
+		return nil
+	end
+	local v = api.GetAuctionPriceByItemLink("SwagBag", link)
+	if type(v) == "number" and not isSecret(v) and v == v and v >= 0 and v < math.huge then
+		return v
+	end
+	return nil
+end
+
+-- cb runs whenever Auctionator's price database changes (when the API offers that).
+function A.AuctionatorOnUpdate(cb)
+	local api = auctionator()
+	if api and type(api.RegisterForDBUpdate) == "function" then
+		pcall(api.RegisterForDBUpdate, "SwagBag", cb)
+	end
+end
+
 ---------------------------------------------------------------------------
 -- Feature checks (consumed by Core/Checks.lua). window: which Safe Mode
 -- flag a failed REQUIRED check turns on. value: exact value expected.
@@ -353,9 +693,11 @@ A.CHECKS = {
 	{ path = "C_Container.GetContainerNumSlots", window = "bags", required = true },
 	{ path = "C_Container.GetContainerItemInfo", window = "bags", required = true },
 	{ path = "C_Container.GetContainerItemCooldown", window = "bags", required = true },
+	{ path = "C_Container.GetContainerNumFreeSlots", window = "bags", required = false },
 	{ path = "C_Container.GetContainerItemEquipmentSetInfo", window = "bags", required = false },
 	{ path = "C_Container.GetContainerItemQuestInfo", window = "bags", required = false },
 	{ path = "C_Container.SortBags", window = "bags", required = false },
+	{ path = "C_Container.SortBank", window = "bank", required = false },
 	{ path = "GetCursorInfo", window = "bags", required = false },
 	{ path = "ClearCursor", window = "bags", required = false },
 	{ path = "GameTooltip", window = "bags", required = false },
@@ -366,6 +708,7 @@ A.CHECKS = {
 	{ path = "C_Item.IsUsableItem", window = "bags", required = false },
 	{ path = "C_Item.IsBoundToAccountUntilEquip", window = "bags", required = false },
 	{ path = "C_Item.GetItemUpgradeInfo", window = "bags", required = false },
+	{ path = "C_Item.GetDetailedItemLevelInfo", window = "bank", required = false },
 	{ path = "C_ToyBox.GetToyInfo", window = "bags", required = false },
 	{ path = "C_Timer.After", window = "bags", required = true },
 	{ path = "C_AddOns.IsAddOnLoaded", window = "bags", required = false },
@@ -397,5 +740,18 @@ A.CHECKS = {
 	{ path = "Enum.ItemBind", window = "bags", required = false },
 	{ path = "Enum.AddOnRestrictionType", window = "bags", required = false },
 	{ path = "C_ChallengeMode.IsChallengeModeActive", window = "bags", required = false },
+	{ path = "C_ChallengeMode.GetMapUIInfo", window = "bags", required = false },
+	{ path = "C_PlayerInfo.CanUseItem", window = "bags", required = false },
+	{ path = "C_Item.GetCurrentItemLevel", window = "bags", required = false },
+	{ path = "ItemLocation.CreateFromEquipmentSlot", window = "bags", required = false },
+	{ path = "GetInventoryItemLink", window = "bags", required = false },
+	{ path = "GetAverageItemLevel", window = "bags", required = false },
 	{ path = "C_RestrictedActions.IsAddOnRestrictionActive", window = "bags", required = false },
+	{ path = "GetGuildBankItemInfo", window = "bank", required = false },
+	{ path = "GetGuildBankItemLink", window = "bank", required = false },
+	{ path = "GetGuildBankTabInfo", window = "bank", required = false },
+	{ path = "QueryGuildBankTab", window = "bank", required = false },
+	{ path = "AutoStoreGuildBankItem", window = "bank", required = false },
+	{ path = "PickupGuildBankItem", window = "bank", required = false },
+	{ path = "Enum.PlayerInteractionType.GuildBanker", window = "bank", required = false },
 }

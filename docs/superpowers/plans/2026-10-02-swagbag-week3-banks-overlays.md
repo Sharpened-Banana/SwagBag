@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** By the end of week 3 the user banks, uses the warband bank and the guild bank through SwagBag every day: one bank window with the character bank and the warband bank stacked, a full guild bank window, item overlays with an upgrade arrow (on the bags from day 2), the average equipped item level in the bags title, per-category gold totals from Auctionator, and bank/guild snapshots saved on every visit. The two first-day checks (V2, G1) run on Oct 15, and each has a fallback that is one setting.
+**Goal:** By the end of week 3 the user banks, uses the warband bank and the guild bank through SwagBag every day: one bank window with the character bank and the warband bank stacked, a full guild bank window, item overlays with an upgrade arrow (on the bags from day 2), the average equipped item level in the bags title, a Free section that shows one real empty slot with the number of free slots (D19), per-category gold totals from Auctionator, and bank/guild snapshots saved on every visit. The two first-day checks (V2, G1) run on Oct 15, and each has a fallback that is one setting.
 
-**Architecture:** Blizzard's bank and guild bank frames stay open the whole visit. They are parented to an invisible 0.001-scale frame (`UI/TinyHost.lua`), and their real tab buttons are moved onto SwagBag's windows. SwagBag only reads which tab is selected. The bank and guild bank contents are drawn by a new multi-group view, `UI/GroupView.lua`: a stack of groups (character bank and warband bank, or one group per guild tab), each with its own week-2 `Layout` state, the same hover guard, and redraws that touch only the buttons that moved. Pure engine modules add snapshots (`Engine/Snapshots.lua`), prices (`Engine/Prices.lua` plus `Providers/Auctionator.lua`) and overlay data with the upgrade arrow (`Engine/OverlayData.lua`). `UI/Overlays.lua` draws them on bag buttons first (Task 4), then on bank and guild buttons (Task 11). The bags window's title shows the average equipped item level (`SwagBag — ilvl 279.4`).
+**Architecture:** Blizzard's bank and guild bank frames stay open the whole visit. They are parented to an invisible 0.001-scale frame (`UI/TinyHost.lua`), and their real tab buttons are moved onto SwagBag's windows. SwagBag only reads which tab is selected. The bank and guild bank contents are drawn by a new multi-group view, `UI/GroupView.lua`: a stack of groups (character bank and warband bank, or one group per guild tab), each with its own week-2 `Layout` state, the same hover guard, and redraws that touch only the buttons that moved. Pure engine modules add snapshots (`Engine/Snapshots.lua`), prices (`Engine/Prices.lua` plus `Providers/Auctionator.lua`) and overlay data with the upgrade arrow (`Engine/OverlayData.lua`). `UI/Overlays.lua` draws them on bag buttons first (Task 4), then on bank and guild buttons (Task 12). The bags window's title shows the average equipped item level (`SwagBag — ilvl 279.4`). `Engine/Layout.lua` gains the free tile (Task 5, D19): each bag family's Free is one real empty slot button with the number of free slots, used by the bags window and, through `GroupView`, the bank window.
 
 **Tech Stack:** Lua 5.1 (WoW Retail 12.1.x, Interface 120100/120105). LuaJIT 2.1 for tests. The in-repo runner `spec/runner.lua`. luacheck. bash `scripts/check.sh`. git.
 
@@ -18,7 +18,7 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 
 **Branch:** `week3-banks`. The controller creates it before Task 1. No task creates or switches branches.
 
-**The code on `main` (commit `5be2c2b`, 427 tests; it only adds this plan on top of week 2's `7beafdc`) is the source of truth.** Every interface below was read from the merged week-2 code:
+**The code on `main` (commit `5be2c2b`, 427 tests; it only adds this plan on top of week 2's `7beafdc`) is the source of truth for Tasks 1 and 2.** Tasks 1 and 2 are built on `week3-banks`, with their fix rounds (rulings W3-1 to W3-11). Tasks 3–13 build on that branch's `2b37296` (493 tests), and their blocks were replayed on it (amendment of 2026-10-02, see "How this plan was checked"). Every interface below was read from the merged week-2 code:
 - `Buttons.Get/Count/EnsureCapacity/Place/Paint/SetDimmed/AcquirePlaceholder/ReleasePlaceholders/KindOf/SetParentFor/CreateAll` and `Buttons.created`.
 - `SectionHeaders.Acquire(parent, id, label, x, y, width)` and `ReleaseAll()`, whose clicks call the module-level `onClick`/`onDrop` (the bags window's).
 - `BagsWindow`: `busyCheck`, `sizeFrame(width, height, keepTop)`, `Sort`/`Reflow`/`RequestLayout`/`ApplyChanges`/`DropOnSection`/`ForEachSlot`, and `W.records[bag][slot]`.
@@ -59,11 +59,11 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 
 ## Review Focus
 
-1. **The bags window and the bank window open at the same time.** At a banker both are open, and the bags window redraws often (deposits, Reflow). Expected: a redraw of one window never takes the other window's section headers or placeholders. Week 2's pools released *every* header and placeholder. Pinned by Task 5 (`buttons_spec` "ReleasePlaceholders(parent) releases only the placeholders inside that parent", "ReleaseAll(parent) releases only that window's headers…") and Task 8 (`bankwindow_groups_spec` "a bags redraw (Reflow, a bag change) never takes the bank window's headers or placeholders").
-2. **The bank or guild vault closing in combat, the player logging out with the bank open, or Safe Mode switching on mid-visit.** Expected: Blizzard's frames get their parents and anchors back exactly. In combat they get them back the moment combat ends. Nothing stays invisible. Pinned by Task 1 (`tinyhost_spec` "Restore in combat waits for combat to end…", `bankwindow_spec` "a bank closed in combat is put back as soon as combat ends", "logging out during a visit puts Blizzard's bank back (spec 8.6)", "Safe Mode for the bank…") and Task 10 (`guildbank_spec` "closing the vault puts Blizzard's frame and its tabs back exactly…").
-3. **Guild bank tab answers that arrive late, out of order, or never.** The client answers `QueryGuildBankTab` one tab at a time, and reading a tab before its answer may return nothing. Expected: a tab never looks empty because its answer is still on the way; an unanswered tab is asked once more; a reopen shows the session's cached contents at once. Pinned by Task 10 (`guildbank_spec` "a reopen shows the session's cached contents at once; a tab whose answer is on its way is not read", "a query that gets no answer moves on after QUERY_GAP and is asked once more at the end").
-4. **Items moving in the upper bank group while the mouse rests on the lower group.** A withdrawal adds a row to the character bank's Free section, which pushes the warband group down. Expected: the push waits until the mouse leaves the pushed buttons, and no button ever moves under the mouse. Pinned by Task 7 (`groupview_spec` "a group that grows a row pushes the groups below, but not while one of them is under the mouse", and the randomized "never moves a hovered button, and after each drain every category cell holds its own item").
-5. **Damaged or oversized saved snapshot data** (a hand-edited `chars` that is a string, a warband entry that is a number, many alts' banks). Expected: saving never errors; damaged parts are replaced; over 1.5 MB the bank snapshots of the characters seen longest ago are dropped first (never the current character's), with one chat line. Pinned by Task 9 (`snapshots_spec` "damaged saved snapshot tables never break a save", "over 1.5 MB, other characters' bank snapshots go first, seen longest ago first, ties by name").
+1. **The bags window and the bank window open at the same time.** At a banker both are open, and the bags window redraws often (deposits, Reflow). Expected: a redraw of one window never takes the other window's section headers or placeholders. Week 2's pools released *every* header and placeholder. Pinned by Task 6 (`buttons_spec` "ReleasePlaceholders(parent) releases only the placeholders inside that parent", "ReleaseAll(parent) releases only that window's headers…") and Task 9 (`bankwindow_groups_spec` "a bags redraw (Reflow, a bag change) never takes the bank window's headers or placeholders").
+2. **The bank or guild vault closing in combat, the player logging out with the bank open, or Safe Mode switching on mid-visit.** Expected: Blizzard's frames get their parents and anchors back exactly. In combat they get them back the moment combat ends. Nothing stays invisible. Pinned by Task 1 (`tinyhost_spec` "Restore in combat waits for combat to end…", `bankwindow_spec` "a bank closed in combat is put back as soon as combat ends", "logging out during a visit puts Blizzard's bank back (spec 8.6)", "Safe Mode for the bank…") and Task 11 (`guildbank_spec` "closing the vault puts Blizzard's frame and its tabs back exactly…").
+3. **Guild bank tab answers that arrive late, out of order, or never.** The client answers `QueryGuildBankTab` one tab at a time, and reading a tab before its answer may return nothing. Expected: a tab never looks empty because its answer is still on the way; an unanswered tab is asked once more; a reopen shows the session's cached contents at once. Pinned by Task 11 (`guildbank_spec` "a reopen shows the session's cached contents at once; a tab whose answer is on its way is not read", "a query that gets no answer moves on after QUERY_GAP and is asked once more at the end").
+4. **Items moving in the upper bank group while the mouse rests on the lower group.** A withdrawal adds a row to the character bank's Free section, which pushes the warband group down. Expected: the push waits until the mouse leaves the pushed buttons, and no button ever moves under the mouse. Pinned by Task 8 (`groupview_spec` "a group that grows a row pushes the groups below, but not while one of them is under the mouse", and the randomized "never moves a hovered button, and after each drain every category cell holds its own item").
+5. **Damaged or oversized saved snapshot data** (a hand-edited `chars` that is a string, a warband entry that is a number, many alts' banks). Expected: saving never errors; damaged parts are replaced; over 1.5 MB the bank snapshots of the characters seen longest ago are dropped first (never the current character's), with one chat line. Pinned by Task 10 (`snapshots_spec` "damaged saved snapshot tables never break a save", "over 1.5 MB, other characters' bank snapshots go first, seen longest ago first, ties by name").
 
 ## Decisions and deviations from the spec (read before Task 1)
 
@@ -73,7 +73,7 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 | D2 | F12 / §10.1: Safe Mode per window, `bags` and `bank` | The guild bank shares the `bank` Safe Mode flag. There is no third window. | An error in either bank turns both over to Blizzard. This avoids changing `/swagbag safe`, the report line and every Safe Mode test. |
 | D3 | AC16.1 "(or one tab at a time, option)" | Not built this week. Each tab group collapses on its own (saved per character). | The brief asks for all tabs stacked. A collapsed group gives the same view. |
 | D4 | AC16.7 "SetCurrentGuildBankTab only if G1 proves it untainted, otherwise … re-hosted" | Tabs are always switched with Blizzard's re-hosted tab buttons. `SetCurrentGuildBankTab` is never called, and G1 does not test it. | Re-hosting is always spec-compliant. A direct call would need its own taint check for no user benefit. |
-| D5 | AC16.2 "Withdraw: right-click…" | A right-click withdraws from **any** tab with `AutoStoreGuildBankItem(tab, slot)`. G1 step 7 checks this. Fallback: `guildBank.withdrawAnyTab = false`, which refuses with "Click the X tab on the right first…". | Blizzard only ever withdraws from the selected tab. Whether the server accepts another tab is an in-game fact. |
+| D5 | AC16.2 "Withdraw: right-click…" | A right-click withdraws with `AutoStoreGuildBankItem(tab, slot)`. By default (`guildBank.withdrawAnyTab = false`, ruling W3-10) it withdraws only from the tab Blizzard has selected. In another tab it refuses with "Click the X tab on the right first…". G1 step 7 checks that refusal. G1 steps 8–10 test the alternative, `/swagbag guild anytab on`, which withdraws from **any** tab. It becomes the default only if G1 proves the client honours the tab argument (step 9 brings the same item, and nothing leaves the selected tab). | Blizzard only ever withdraws from the selected tab. Whether the server accepts another tab is an in-game fact, and a wrong answer would withdraw a different item silently. |
 | D6 | F13 AC13.1: bags on logout and every `BAG_UPDATE_DELAYED` (5 s); banks on open and close | As written, plus every bank update while the bank is open (1 s debounce, spec §5.7). The close snapshot is taken from SwagBag's own inventory model, because the client may already read 0 slots by then. | Spec §5.7 lists the open-time updates. |
 | D7 | §8.2 shows `chars`/`warband` in the schema | No schema bump. The tables are created on the first save and repaired if damaged (`Snapshots.DB`). | Nothing old needs converting. A migration would only touch every config test. |
 | D8 | §7.3 `crest`: "item ID allowlist in data file", §13.2 item 4 | `Engine/Crests.lua` starts with **no** item IDs. Non-gear items whose name contains "crest" or "valorstone" match until session O1 confirms the season's IDs. A loading item is "not a crest" (false, not nil). | No verified Midnight item IDs exist yet. A nil in Keystone & Crests (priority 95) would hold every loading item in New (week-2 D3). |
@@ -86,7 +86,8 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 | D15 | — (not in spec) | A `Blizzard bank` button shows Blizzard's bank for this visit only. | In tiny mode, tab purchase (`PurchaseBankTab` stays Blizzard's) and warband gold live in Blizzard's hidden frame. |
 | D16 | §7.3 numeric `gold`/`value` | Registered now (`value>100`), volatile, from `Prices`. | The spec §7.4 example `value>100 & tradegoods` works this week. |
 | D17 | F16 "Tab contents load on demand" | A tab read for the first time in the session is laid out in full (held back while the mouse is over the items). Later changes follow spec §4.3 (placeholder, New, Free). | Otherwise a tab's first answer would put every item in New. |
-| D18 | §12.2 week 3 order (overlays after the banks); title not in spec | **The user's decisions of 2026-10-02.** (1) Overlays move to the front: overlay data and the arrow (Task 3) and overlays on the bags (Task 4) come right after V2 and G1; bank and guild buttons get theirs in Task 11, once those windows have contents. (2) New: the bags window's title shows the character's average **equipped** item level with one decimal, `SwagBag — ilvl 279.4`, from `GetAverageItemLevel()`'s second value (feature-detected; plain `SwagBag` without it, no error). It is read on open, `PLAYER_EQUIPMENT_CHANGED` and `PLAYER_AVG_ITEM_LEVEL_UPDATE`; a title flash (`SwagBag 105%`, `Regrouped`, …) is never cut short, and the item-level title comes back after it. Setting `bags.showIlvl` (default on), switched with `/swagbag overlays title on|off`. | The user wants overlays and the item level on the bags within days. The overlays need only the bags' item records, so nothing from Tasks 5–12 moves with them, and prices (Task 12) are never read by an overlay. |
+| D18 | §12.2 week 3 order (overlays after the banks); title not in spec | **The user's decisions of 2026-10-02.** (1) Overlays move to the front: overlay data and the arrow (Task 3) and overlays on the bags (Task 4) come right after V2 and G1; bank and guild buttons get theirs in Task 12, once those windows have contents. (2) New: the bags window's title shows the character's average **equipped** item level with one decimal, `SwagBag — ilvl 279.4`, from `GetAverageItemLevel()`'s second value (feature-detected; plain `SwagBag` without it, no error). It is read on open, `PLAYER_EQUIPMENT_CHANGED` and `PLAYER_AVG_ITEM_LEVEL_UPDATE`; a title flash (`SwagBag 105%`, `Regrouped`, …) is never cut short, and the item-level title comes back after it. Setting `bags.showIlvl` (default on), switched with `/swagbag overlays title on|off`. | The user wants overlays and the item level on the bags within days. The overlays need only the bags' item records, so nothing from Tasks 5–13 moves with them, and prices (Task 13) are never read by an overlay. |
+| D19 | §4.2 rule 4 / AC3.5 "Empty slots render in a Free section of real slot buttons"; §4.3 "Item leaves and the button is in Free or New: repaint only" | **The user's request of 2026-10-02 (W3-12).** By default (`bags.freeTile = true`) Free shows ONE tile per bag family: the family's first empty slot, a real `ContainerFrameItemButtonTemplate` button with the number of free slots in large text. The reagent bag, and any bag whose `GetContainerNumFreeSlots` family is not 0, is a family of its own with its own tile. The family's other empty buttons are hidden spares with no cell. When the tile fills, it moves to New and the next empty button takes its cell, its number one lower. That swap goes through `Layout.Apply`'s busy check, so it waits while the mouse is on the tile or an item is on the cursor. With the tile on, an emptied button in New also joins Free's spares, so the number is always the real count. The grid view shows every slot (physical order, AC3.6). `/swagbag free all` (`bags.freeTile = false`) shows every free slot as before. The bank's Character and Warband groups follow the same setting (Task 9); the guild bank does not. | The user asked for it. Every slot drawn is still a real button showing its own slot, so rules 1 and 4 hold: drops, splits and drags onto the tile are Blizzard's own. Only the hidden buttons and the New row of §4.3 change, and only while the tile is on. |
 
 ---
 
@@ -99,25 +100,26 @@ SwagBag/UI/TinyHost.lua              NEW  tiny mode: keep a Blizzard frame shown
 SwagBag/UI/BankWindow.lua            NEW  bank window: tiny/beside, read-only deposit target, two groups, sort, reflow, grid, search
 SwagBag/UI/GuildButtons.lua          NEW  SwagBag's own guild slot buttons (withdraw / pickup / drop through the Adapter)
 SwagBag/UI/GuildBankWindow.lua       NEW  guild bank window: full/view, re-hosted tabs, one group per tab, queries, cache
-SwagBag/UI/GroupView.lua             NEW  stacked groups of Layout sections or grids; hover guard across groups; incremental redraw
+SwagBag/UI/GroupView.lua             NEW  stacked groups of Layout sections or grids; hover guard across groups; incremental redraw; free tile
 SwagBag/UI/Overlays.lua              NEW  draws overlay data on bag, bank and guild buttons; /swagbag overlays
 SwagBag/Engine/Snapshots.lua         NEW  spec 8.3 format, capture timing, 8.4 budget; /swagbag snapshot
 SwagBag/Engine/Prices.lua            NEW  provider registry, session cache, section totals, money format
 SwagBag/Providers/Auctionator.lua    NEW  the Auctionator price provider
 SwagBag/Engine/OverlayData.lua       NEW  record -> overlay data; the AC9.3 upgrade arrow
 SwagBag/Engine/Crests.lua            NEW  crest data (spec 7.3, 13.2 item 4)
-SwagBag/UI/Buttons.lua               MOD  growth max-merge, CreateAll retry, SetParentFor moves bag frames, EnsureBankTabs, per-parent placeholders
+SwagBag/UI/Buttons.lua               MOD  growth max-merge, CreateAll retry, SetParentFor moves bag frames, EnsureBankTabs, per-parent placeholders, SetFreeCount
 SwagBag/UI/SectionHeaders.lua        MOD  per-window owners and release; value in the label; Totals/IsVendor
-SwagBag/UI/BagsWindow.lua            MOD  incremental ApplyChanges, cells past a bag's size, scale saves position, drag guard, totals, overlays, item-level title
+SwagBag/UI/BagsWindow.lua            MOD  incremental ApplyChanges, cells past a bag's size, scale saves position, drag guard, totals, overlays, item-level title, free tile
 SwagBag/UI/SearchBox.lua             REWRITE  SearchBox.New(o) factory; the bags box is built through it
 SwagBag/Engine/Search.lua            REWRITE  SearchState.New() instances; SB.Search is the bags window's
-SwagBag/Engine/Layout.lua            MOD  Position(opts.top)
+SwagBag/Engine/Layout.lua            MOD  Position(opts.top); the free tile (opts.freeTile/family, spares, swap, pos.tiles; D19)
 SwagBag/Engine/Inventory.lua         MOD  ScanKind (no "new" marks) on BANKFRAME_OPENED
 SwagBag/Engine/Items.lua             MOD  DescribeLink (guild records), track, hasNoValue
 SwagBag/Engine/Keywords.lua          MOD  value/gold, crest/upgrade currency
 SwagBag/Engine/CategoryDefaults.lua  MOD  Keystone & Crests = "keystone | crest"
-SwagBag/Core/Adapter.lua             MOD  bank, guild bank, sort bank, time/char, Auctionator, overlay reads, average item level; optional checks
-SwagBag/Core/Config.lua              MOD  bank, guildBank, prices, overlays, bags.showIlvl defaults (schema stays 2)
+SwagBag/Core/Adapter.lua             MOD  bank, guild bank, sort bank, time/char, Auctionator, overlay reads, average item level, BagFamily; optional checks
+SwagBag/Core/Config.lua              MOD  bank, guildBank, prices, overlays, bags.showIlvl, bags.freeTile defaults (schema stays 2)
+SwagBag/Core/Commands.lua            MOD  /swagbag free tile|all
 SwagBag/Core/Report.lua              MOD  Bank, Last bank layout, Prices, Snapshots, Guild bank lines
 SwagBag/Core/Init.lua, SwagBag.toc, Locale/enUS.lua, .luacheckrc   MOD
 spec/helpers/fakeframe.lua, spec/helpers/uienv.lua               NEW  fake frames; shared window test set-up
@@ -130,20 +132,31 @@ spec/snapshots_spec.lua, prices_spec.lua, overlaydata_spec.lua, overlays_spec.lu
 | Day | Tasks | User in game? |
 |---|---|---|
 | Thu Oct 15 | 1, 2 | **yes, first day:** session V2 (Task 1, bank, about 10 minutes) and session G1 (Task 2, guild vault, about 10 minutes) |
-| Fri Oct 16 | 3, 4 | **yes:** session O1 (Task 4: overlays and the item level in the title, on the bags; about 10 minutes). **Day 2:** if V2 or G1 failed, its fallback becomes the default today (one line in `Config.Defaults`, see the session's "If it fails") |
-| Sat Oct 17 | 5, 6, 7 | **yes:** session S3 (Task 5, 2 minutes) |
-| Sun Oct 18 | 8, 9 | **yes:** session B1 (Task 9: bank contents, sort, snapshots), about 15 minutes |
-| Mon Oct 19 | 10, 11 | **yes:** session G2 (Task 11: guild bank contents, overlays in the bank and guild windows), about 15 minutes |
-| Tue Oct 20 | 12 | **yes:** session P1 (Task 12: gold totals, 5 minutes); daily bank check (5 minutes) |
+| Fri Oct 16 | 3, 4, 5 | **yes:** session O1 (Task 4: overlays and the item level in the title, on the bags; about 10 minutes), then session F1 (Task 5: the free tile, about 3 minutes). **Day 2:** if V2 or G1 failed, its fallback becomes the default today (one line in `Config.Defaults`, see the session's "If it fails") |
+| Sat Oct 17 | 6, 7, 8 | **yes:** session S3 (Task 6, 2 minutes) |
+| Sun Oct 18 | 9, 10 | **yes:** session B1 (Task 10: bank contents, sort, snapshots), about 15 minutes |
+| Mon Oct 19 | 11, 12 | **yes:** session G2 (Task 12: guild bank contents, overlays in the bank and guild windows), about 15 minutes |
+| Tue Oct 20 | 13 | **yes:** session P1 (Task 13: gold totals, 5 minutes); daily bank check (5 minutes) |
 | Wed Oct 21 | fixes from the user's reports | **yes:** daily bank check (5 minutes); **Week 3 exit check** |
 
-Tasks 1 and 2 come first because no in-game session has run yet: V2 and G1 are the riskiest unknowns (spec §13.1), and their fallbacks are setting switches, so a failure never blocks Tasks 3–12. Tasks 3 and 4 come next by the user's choice (D18): overlays and the item-level title on the bags within days. They need nothing from the bank work. The bank and guild buttons get their overlays in Task 11, after both windows have contents (Tasks 8 and 10). Prices come last (Task 12); no earlier task reads a price.
+Tasks 1 and 2 come first because no in-game session has run yet: V2 and G1 are the riskiest unknowns (spec §13.1), and their fallbacks are setting switches, so a failure never blocks Tasks 3–13. Tasks 3 and 4 come next by the user's choice (D18): overlays and the item-level title on the bags within days. They need nothing from the bank work. Task 5, the free tile (D19), was the user's request of 2026-10-02 (W3-12). It comes right after the bag overlays, because it changes the Layout engine and the bags window, and Tasks 6, 8 and 9 build on both. The bank and guild buttons get their overlays in Task 12, after both windows have contents (Tasks 9 and 11). Prices come last (Task 13); no earlier task reads a price.
 
-Cumulative `scripts/check.sh` test totals when tasks run in numeric order (verified by replaying every task's blocks from this file on a fresh clone of `main`): start 427 · T1 451 passed, 0 failed · T2 476 passed, 0 failed · T3 490 passed, 0 failed · T4 506 passed, 0 failed · T5 518 passed, 0 failed · T6 520 passed, 0 failed · T7 536 passed, 0 failed · T8 554 passed, 0 failed · T9 568 passed, 0 failed · T10 574 passed, 0 failed · T11 578 passed, 0 failed · T12 590 passed, 0 failed.
+Cumulative `scripts/check.sh` test totals. Tasks 1 and 2 are built: `2b37296`, with their fix rounds, has 493 passed, 0 failed (the plan's own T1/T2 blocks gave 451 and 476 before the fix rounds). Tasks 3–13 run in numeric order on `2b37296`; the totals below were verified by replaying every block of Tasks 3–13 from this file on a fresh clone of that commit:
+- T3 507 passed, 0 failed
+- T4 523 passed, 0 failed
+- T5 539 passed, 0 failed
+- T6 551 passed, 0 failed
+- T7 553 passed, 0 failed
+- T8 570 passed, 0 failed
+- T9 589 passed, 0 failed
+- T10 603 passed, 0 failed
+- T11 609 passed, 0 failed
+- T12 613 passed, 0 failed
+- T13 625 passed, 0 failed
 
 ## How the TOC grows
 
-Each task's TOC block shows exactly where its new lines go. `scripts/check.sh` prints `TOC OK (N files)`: 32 on `main`, 34 after Task 1, 36 after Task 2, 38 after Task 3, 39 after Tasks 4–6, 40 after Tasks 7–8, 41 after Tasks 9–11 and 43 after Task 12. Final order of the changed sections:
+Each task's TOC block shows exactly where its new lines go. `scripts/check.sh` prints `TOC OK (N files)`: 32 on `main`, 34 after Task 1, 36 after Task 2, 38 after Task 3, 39 after Tasks 4–7 (Task 5 adds no file), 40 after Tasks 8–9, 41 after Tasks 10–12 and 43 after Task 13. Final order of the changed sections:
 
 ```
 # Engine
@@ -189,7 +202,7 @@ UI/DebugV1.lua
 - A **Replace the whole file** step gives the complete new content of an existing file.
 - An **In `path`, find … and replace it with …** step gives an exact block of the current file (it occurs exactly once) and its replacement.
 - Copy every block verbatim, including tabs, and apply a task's blocks in the order shown. The `<!-- sbw3:… -->` comments mark blocks for the replay check (see "How this plan was checked"); leave them out of the code.
-- Every block in this plan was applied in this order to a fresh clone of `main` and checked with `scripts/check.sh`. The `Expected` lines are those real outputs.
+- Every block was applied in this order and checked with `scripts/check.sh`. Tasks 1–2 were applied to a fresh clone of `main`, and Tasks 3–13 to a fresh clone of `2b37296` (Tasks 1–2 as built). The `Expected` lines are those real outputs.
 
 **Critical tests and their mutations.** For each task, the list under Step 2 names the critical tests and the code change (mutation) that must make each one fail. Every mutation was applied to the finished code and the named test failed. A reviewer re-runs any of them with a one-line edit.
 
@@ -198,11 +211,11 @@ UI/DebugV1.lua
 
 Spec §5.2 and §11.3 V2: SwagBag shows the bank while Blizzard's bank frame stays open and invisible ("tiny mode"). Deposits must still land in whichever bank type Blizzard has selected, and a Hearthstone must work afterwards. Nobody has tested this in game yet. This task builds the smallest real piece that lets the user test it today:
 - `UI/TinyHost.lua`, which keeps a Blizzard frame shown at scale 0.001 and re-hosts its tab buttons;
-- the `SwagBag bank` window, still without contents (those come in Task 8), with the deposit line read from Blizzard and the `Blizzard bank` button;
+- the `SwagBag bank` window, still without contents (those come in Task 9), with the deposit line read from Blizzard and the `Blizzard bank` button;
 - the fallback setting `bank.blizzardFrame = "tiny" | "beside"` (spec §5.4, AC2.6) with `/swagbag bank tiny|beside`;
 - the "Bank still open" button on the bags window (spec §5.6).
 
-The code is not throwaway: Task 8 fills this window.
+The code is not throwaway: Task 9 fills this window.
 
 The task also adds `spec/helpers/fakeframe.lua`, a fake frame that every week-3 UI spec uses. It records shown state, parent, anchors, scripts and hooks; `Show`/`Hide` fire `OnShow`/`OnHide`; and every other method is a recorded no-op (`f.calls[name]`). That is how the tests prove "no call on BankFrame besides moving it". The version goes to 0.3.0, so the loaded line and the report show the week-3 build.
 
@@ -1408,32 +1421,38 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 - [ ] **Step 7: In-game session V2 (the user does this on Oct 15; about 10 minutes)**
 
-Give the user this checklist exactly. You need:
+Give the user this checklist exactly.
+
+You need:
 - a banker nearby;
 - two cheap gray (junk) items in your bags that you do not mind moving;
 - your Hearthstone in your bags;
+- your Hearthstone is not on cooldown;
 - not to be in a group.
 
-1. Quit the game completely and start it again (new files need a full restart, not `/reload`). Log in. Chat shows `SwagBag: v0.3.0 loaded. Type /swagbag help for commands.`
+Blizzard's bank tabs carry Blizzard's own labels, not SwagBag's: the character bank tab is labelled Bank and the warband tab is labelled Warband Bank.
+
+1. Quit the game completely and restart it. This task adds new files, so `/reload` is not enough. Log in. Chat shows `SwagBag: v0.3.0 loaded. Type /swagbag help for commands.`
 2. Talk to the banker. Blizzard's bank window does **not** appear. A small dark window titled `SwagBag bank` appears instead, with a `Blizzard bank` button at its top right. It is empty for now (the bank's items come later this week). Blizzard's own bank tabs hang under its bottom edge, and your SwagBag bags open too.
 3. The second line of the SwagBag bank window says `Deposits go to Character bank - switch with the tabs below` (or `Deposits go to Warband bank - switch with the tabs below` if the warband tab was selected last time).
-4. Click the warband tab under the SwagBag bank window. The line now says `Deposits go to Warband bank - switch with the tabs below`.
-5. In your SwagBag bags, right-click one gray item. It leaves your bags (a faded copy stays where it was). Move the mouse off it.
+4. Click the tab labelled Warband Bank under the SwagBag bank window. The line now says `Deposits go to Warband bank - switch with the tabs below`.
+5. In your SwagBag bags, right-click one gray item. It leaves your bags (a faded copy stays where it was), and no red error message appears at the top of the screen. Move the mouse off it.
 6. Click `Blizzard bank`. The SwagBag bank window's title says `Blizzard's bank is shown for this visit` for a moment, and Blizzard's bank window appears, open on the warband bank. **The gray item is in the warband bank.**
-7. Click `Blizzard bank` again. Blizzard's bank window disappears, the title says `Blizzard's bank is hidden again` for a moment, and the tabs are back under the SwagBag bank window.
-8. Click the character bank tab. The line says `Deposits go to Character bank - switch with the tabs below`. Right-click the second gray item in your bags, then move the mouse off it.
-9. Click `Blizzard bank`. **The second gray item is in the character bank.** Click `Blizzard bank` again.
-10. Click the **X** of the SwagBag bank window. Only that window closes. Your bags window now shows a `Bank still open` button in its title row. Click it: the SwagBag bank window comes back.
-11. Press **Esc** once. The SwagBag bank window closes. Press **B**: your bags window has **no** `Bank still open` button (the Esc ended the bank visit).
-12. Walk a few steps away from the banker. Right-click your Hearthstone in the SwagBag bags. The cast bar appears, and there is **no** red message `Interface action failed because of an AddOn`. Move to cancel the cast if you want to stay.
-13. Type `/swagbag bank beside`. Chat says `Bank: Blizzard's bank is shown, with SwagBag's bank window beside it.` Talk to the banker: Blizzard's bank appears as usual, and the SwagBag bank window sits to its right. Press **Esc**.
-14. Type `/swagbag bank tiny`. Chat says `Bank: Blizzard's bank is hidden; its tabs are under SwagBag's bank window.`
-15. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks:
+7. Blizzard's bank window is still showing. At the bottom of Blizzard's bank window, click the tab labelled Bank. Blizzard's bank switches to the character bank, and the second line of the SwagBag bank window now says `Deposits go to Character bank - switch with the tabs below`. Click the tab labelled Warband Bank: the line says `Deposits go to Warband bank - switch with the tabs below` again.
+8. Click `Blizzard bank` again. Blizzard's bank window disappears, the title says `Blizzard's bank is hidden again` for a moment, and the tabs are back under the SwagBag bank window.
+9. Click the tab labelled Bank under the SwagBag bank window. The line says `Deposits go to Character bank - switch with the tabs below`. Right-click the second gray item in your bags. It leaves your bags, and no red error message appears at the top of the screen. Move the mouse off it.
+10. Click `Blizzard bank`. **The second gray item is in the character bank.** Click `Blizzard bank` again.
+11. Click the **X** of the SwagBag bank window. The SwagBag bank window closes, and **Blizzard's own bank window appears**. This is expected: the bank is still open, so SwagBag hands it back to Blizzard and never leaves an invisible bank behind (ruling W3-11). Your bags window now shows a `Bank still open` button in its title row. Click it: the SwagBag bank window comes back, and Blizzard's bank window disappears again.
+12. Press **Esc** once. The SwagBag bank window closes, and Blizzard's bank window does **not** stay on screen: the same Esc ends the bank visit. Press **B**: your bags window has **no** `Bank still open` button. If Blizzard's bank window is still showing after the Esc, press **Esc** again to close it and tell Claude.
+13. Walk a few steps away from the banker. Right-click your Hearthstone in the SwagBag bags, then move the mouse off it. The cast bar appears. There is **no** red error message at the top of the screen; Blizzard's message would read: Interface action failed because of an AddOn. Move to cancel the cast if you want to stay.
+14. Type `/swagbag bank beside`. Chat says `Bank: Blizzard's bank is shown, with SwagBag's bank window beside it.` Talk to the banker: Blizzard's bank appears as usual, and the SwagBag bank window sits to its right. Press **Esc**.
+15. Type `/swagbag bank tiny`. Chat says `Bank: Blizzard's bank is hidden; its tabs are under SwagBag's bank window.`
+16. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks:
     - the first line starts `SwagBag 0.3.0`;
     - `Blocked actions: none` and no new errors;
     - a line `Bank: setting tiny, last visit beside, last deposit target …`.
 
-Pass: in steps 6 and 9 each item landed in the bank that the line named, step 12 cast with no red message, and the report is clean.
+Pass: in steps 6 and 10 each item landed in the bank that the line named, step 7 updated the line from Blizzard's own tabs, step 11 brought Blizzard's bank back while the visit lasted, step 13 cast with no red message, and the report is clean.
 
 If it fails: tell Claude which step. Until it is fixed, type `/swagbag bank beside`: Blizzard's bank stays visible and deposits are Blizzard's own. If the failure is the deposit landing in the wrong bank or the Hearthstone being blocked, then on Oct 16 Claude makes "beside" the default (spec AC2.6). That is one line in `SwagBag/Core/Config.lua`, `bank = { blizzardFrame = "beside", … }`, plus the matching expectations in `spec/bankwindow_spec.lua`. Nothing else changes.
 
@@ -1449,7 +1468,7 @@ Spec F16 and §11.3 G1: SwagBag's guild bank window replaces Blizzard's. Blizzar
 - the `Blizzard guild bank` button (gold, log, permissions; AC16.5);
 - the fallback setting `guildBank.mode = "full" | "view"` (AC16.6) with `/swagbag guild full|view`, and `guildBank.withdrawAnyTab` (D5).
 
-Blizzard's guild bank UI is load-on-demand. The window hooks `GuildBankFrame`'s `OnShow` once the frame exists (`ADDON_LOADED` "Blizzard_GuildBankUI", or at login if it is already loaded). It listens to `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE` for the vault, and to the older `GUILDBANKFRAME_OPENED/CLOSED` when the client still has them (a registration that fails is silent). The guild bank shares the `bank` Safe Mode flag (D2). Task 10 replaces this task's simple grid with category sections.
+Blizzard's guild bank UI is load-on-demand. The window hooks `GuildBankFrame`'s `OnShow` once the frame exists (`ADDON_LOADED` "Blizzard_GuildBankUI", or at login if it is already loaded). It listens to `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE` for the vault, and to the older `GUILDBANKFRAME_OPENED/CLOSED` when the client still has them (a registration that fails is silent). The guild bank shares the `bank` Safe Mode flag (D2). Task 11 replaces this task's simple grid with category sections.
 
 **Files:**
 - Create: `SwagBag/UI/GuildButtons.lua`, `SwagBag/UI/GuildBankWindow.lua`
@@ -2973,31 +2992,43 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 - [ ] **Step 7: In-game session G1 (the user does this on Oct 15; about 10 minutes)**
 
-Give the user this checklist exactly. You need:
+Give the user this checklist exactly.
+
+You need:
 - a guild vault;
-- a tab you may deposit into;
-- a tab you may withdraw from (at least one withdrawal left today), and ideally a second one;
+- a guild bank tab you may both deposit into and withdraw from (at least two withdrawals left today), with at least one free slot;
+- a second tab you may withdraw from (for steps 7 to 10);
 - one cheap item you do not mind putting in the guild bank;
-- your Hearthstone.
+- at least three free slots in your bags;
+- your Hearthstone in your bags;
+- your Hearthstone is not on cooldown.
 
-1. Quit the game completely and start it again (new files need a full restart). Log in. Chat shows `SwagBag: v0.3.0 loaded. Type /swagbag help for commands.`
-2. Open the guild vault. Blizzard's guild bank does **not** appear. A window titled `SwagBag guild bank` appears instead, with Blizzard's tab icons along its right edge. Each tab you may view has a line like `Mats - 5 withdrawals left today (loading...)` (or `unlimited withdrawals`). Within a few seconds `(loading...)` goes away and the tab's items appear in a grid under its line.
+The guild bank tabs are Blizzard's own tab buttons, not SwagBag's: small square buttons, each showing the picture your guild chose for that tab, stacked top to bottom. Hover one to see the tab's name. In this session they sit along the right edge of the SwagBag guild bank window instead of Blizzard's guild bank window. (Their exact look in 12.1 is not yet confirmed: if they look different, tell Claude what you see.)
+
+1. Quit the game completely and restart it. This task adds new files, so `/reload` is not enough. Log in. Chat shows `SwagBag: v0.3.0 loaded. Type /swagbag help for commands.`
+2. Open the guild vault. Blizzard's guild bank window does **not** appear. A dark window titled `SwagBag guild bank` appears instead, with a `Blizzard guild bank` button at its top right and Blizzard's square tab buttons down its right edge. Each tab you may view has a line such as `Mats - 5 withdrawals left today (loading...)` (or `Mats - unlimited withdrawals (loading...)`, or `Mats - no withdrawals left today (loading...)`). The lines are gold, except the selected tab's line, which is green. Within a few seconds `(loading...)` goes away and the tab's items appear in a grid under its line.
 3. The window's second line says `Deposits go to <tab name> - switch with the tabs on the right`. That tab's line ends with `- deposits go here` and is green.
-4. Click a different tab icon on the right (one you may deposit into). The second line and the green line follow it.
-5. In your SwagBag bags, right-click the cheap item. It goes into the tab named on the second line: within a second it shows in that tab's grid.
-6. In the SwagBag guild bank window, right-click that item. It comes back to your bags. If the tab is not unlimited, its `withdrawals left today` number goes down by one. Move the mouse off it.
-7. If you may withdraw from a tab that is **not** the selected one, right-click an item there. It moves to your bags. (If nothing happens, tell Claude the tab's name.)
-8. Drag an item from the guild bank window onto an empty slot of your SwagBag bags: it moves there. Drag it back onto an empty slot of the guild bank window: it moves back.
-9. Press **Enter** to open the chat box, then shift-click an item in the guild bank window. Its link appears in the chat box. Press **Esc** to clear the chat box.
-10. Click `Blizzard guild bank`. The title says `Blizzard's guild bank is shown for this visit (gold, log, permissions)` for a moment, and Blizzard's guild bank appears with the SwagBag window to its right. Right-click an item in the SwagBag window: chat says `SwagBag's guild bank is view-only now: move items in Blizzard's guild bank window.` Nothing moves.
-11. Click `Blizzard guild bank` again. Blizzard's guild bank disappears, and the title says `Blizzard's guild bank is hidden again` for a moment.
-12. Press **Esc** once. The SwagBag guild bank window closes.
-13. Walk away from the vault. Right-click your Hearthstone in the SwagBag bags: the cast bar appears, with **no** red `Interface action failed because of an AddOn` message. Move to cancel it.
-14. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks `Blocked actions: none`, no new errors, and a line `Guild bank: setting full, last visit full`.
+4. Click the square tab button on the right for the tab you may deposit into and withdraw from (hover the buttons to find it by name). The second line now names that tab, and that tab's line is the green one ending with `- deposits go here`.
+5. In your SwagBag bags, right-click the cheap item, then move the mouse off it. It leaves your bags, and no red error message appears at the top of the screen. Within a second it shows in the grid under the tab named on the second line.
+6. In the SwagBag guild bank window, right-click that item, then move the mouse off it. It comes back to your bags, and no red error message appears at the top of the screen. If the tab is not unlimited, its `withdrawals left today` number goes down by one.
+7. Right-click an item in your second tab's grid (not the green one), then move the mouse off it. Nothing moves, and chat says `Click the <tab> tab on the right first, then right-click the item again.` with that tab's name in place of `<tab>`.
+8. Type `/swagbag guild anytab on`. Chat says `Guild bank: a right-click now withdraws from any tab, not only the selected one.`
+9. Remember which item you will click, then right-click it in your second tab's grid (not the green one), then move the mouse off it. The SAME item you clicked lands in your bags, no red error message appears at the top of the screen, and nothing disappears from the green tab's grid. If a different item arrives, or something leaves the green tab, tell Claude, and do step 10 right away.
+10. Type `/swagbag guild anytab off`. Chat says `Guild bank: a right-click withdraws only from the selected tab.`
+11. Drag an item from the green tab's grid in the SwagBag guild bank window onto an empty slot of your SwagBag bags, then move the mouse off it: it is in your bags, and no red error message appears at the top of the screen. Drag it back onto an empty slot in the green tab's grid, then move the mouse off it: it is back in the guild bank, and no red error message appears at the top of the screen.
+12. Press **Enter** to open the chat box, then shift-click an item in the SwagBag guild bank window, then move the mouse off it. The item's link appears in the chat box. Press **Esc** to clear the chat box.
+13. Click `Blizzard guild bank`. The SwagBag guild bank window's title says `Blizzard's guild bank is shown for this visit (gold, log, permissions)` for a moment, and Blizzard's guild bank window appears, with the SwagBag guild bank window to its right. Right-click an item in the SwagBag guild bank window, then move the mouse off it: chat says `SwagBag's guild bank is view-only now: move items in Blizzard's guild bank window.` Nothing moves.
+14. Click `Blizzard guild bank` again. Blizzard's guild bank window disappears, the title says `Blizzard's guild bank is hidden again` for a moment, and the square tab buttons are back on the right edge of the SwagBag guild bank window.
+15. Press **Esc** once. The SwagBag guild bank window closes. Blizzard's guild bank window does **not** appear. If it appears, tell Claude.
+16. Walk about 20 steps away, until the vault is out of reach. Right-click your Hearthstone in the SwagBag bags, then move the mouse off it. The cast bar appears. There is **no** red error message at the top of the screen; Blizzard's message would read: Interface action failed because of an AddOn. Move to cancel the cast if you want to stay.
+17. Type `/swagbag report`, press Ctrl+C, and paste it into Claude Code. Claude checks:
+    - the first line starts `SwagBag 0.3.0`;
+    - `Blocked actions: none` and no new errors;
+    - a line `Guild bank: setting full, last visit full`.
 
-Pass: steps 5, 6 and 8 moved the items as described, step 13 cast with no red message, and the report is clean.
+Pass: steps 5, 6 and 11 moved the items as described with no red error message, step 7 refused with the message, step 16 cast with no red message, and the report is clean.
 
-If it fails: tell Claude which step. If step 5, 6 or 8 failed, or the report lists a blocked action, type `/swagbag guild view`. SwagBag's window then only shows the guild bank, and you move items in Blizzard's window. On Oct 16 Claude makes "view" the default (spec AC16.6): one line in `SwagBag/Core/Config.lua`, `guildBank = { mode = "view", … }`. If only step 7 failed, Claude makes `withdrawAnyTab = false` the default instead: a right-click in another tab then says `Click the <tab> tab on the right first, then right-click the item again.`
+If it fails: tell Claude which step. If step 5, 6 or 11 failed, or the report lists a blocked action, type `/swagbag guild view`. Chat says `Guild bank: Blizzard's window is shown; SwagBag's window beside it is view-only.` SwagBag's window then only shows the guild bank, and you move items in Blizzard's window. On Oct 16 Claude makes "view" the default (spec AC16.6): one line in `SwagBag/Core/Config.lua`, `guildBank = { mode = "view", … }`, plus the matching expectations in `spec/guildbank_spec.lua`. `withdrawAnyTab` stays off by default (ruling W3-10). Claude turns it on by default only if step 9 brought the same item and nothing left the green tab. If step 9 brought a different item, it stays off for good.
 
 ---
 ### Task 3: Overlay data and the upgrade arrow (AC9.3); the crest keyword and data file
@@ -3017,7 +3048,7 @@ Spec F9 (AC9.1, AC9.3). This task and Task 4 come right after the first-day chec
 - Gear the character cannot use (`C_PlayerInfo.CanUseItem`, feature-detected) and items still loading never get an arrow.
 - With "Use Pawn", Pawn's verdict replaces the item-level rule when Pawn gives one.
 
-**Records.** `Items.Describe` records gain `record.track` and `record.hasNoValue`. (Guild bank records get the same two fields when Task 10 adds `Items.DescribeLink`.)
+**Records.** `Items.Describe` records gain `record.track` and `record.hasNoValue`. (Guild bank records get the same two fields when Task 11 adds `Items.DescribeLink`.)
 
 **Crests (D8).** `Engine/Crests.lua` holds the season's crest item IDs (empty until session O1 confirms them) and the name words `crest` and `valorstone`. The keyword `crest` (alias `upgrade currency`) matches an ID, else a non-gear item whose name contains a word. A loading item is "not a crest", because a nil in Keystone & Crests (priority 95) would hold every loading item in New. `c_keystone`'s query becomes `keystone | crest`. That changes a built-in default, so users' diffs (spec §8.5) stay intact.
 
@@ -3845,7 +3876,7 @@ Expected: `67 passed, 0 failed`
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (38 files)`, `490 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (38 files)`, `507 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -3879,7 +3910,7 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 - top right: a green upgrade arrow;
 - top left: a junk coin (only when nothing else is there).
 
-The stack count stays Blizzard's own. This task wires the overlays onto the **bags** window only, so the user has them on day 2 (D18). Task 11 wires the same `Overlays.Apply` onto the bank and guild bank buttons, once those windows have contents (Tasks 8 and 10).
+The stack count stays Blizzard's own. This task wires the overlays onto the **bags** window only, so the user has them on day 2 (D18). Task 12 wires the same `Overlays.Apply` onto the bank and guild bank buttons, once those windows have contents (Tasks 9 and 11).
 
 **How it draws.** Regions are font strings and textures on the button itself (no frames, so drawing is allowed in combat), made the first time a button needs one, in its OVERLAY layer. Dimming a button for search therefore dims its overlays too. An empty slot that never showed anything gets no regions, so a bank with many empties stays light later.
 
@@ -3903,7 +3934,7 @@ The stack count stays Blizzard's own. This task wires the overlays onto the **ba
   - Task 3: `SB.OverlayData.For`, `SB.Adapter.EquippedItems/CanUse/DungeonName/PawnUpgrade`, records' `track` and `hasNoValue`;
   - on `main`: `SB.BagsWindow.ForEachSlot` (`fn(button, record, bag, slot)`), `SB.BagsWindow.Flash`, `SB.On`, `SB.Debounce`, `SB.Slash.Register`, `SB.Adapter.BagKind`.
 - Produces:
-  - `SB.Overlays.Apply(button, record, bag)`, `.RefreshAll()` (the open bags window; Task 11 adds the bank and guild windows), `.Context()`, `.regions[button]` (`topLeft`, `bottomLeft`, `bind`, `arrow`, `junk`, `reagent`).
+  - `SB.Overlays.Apply(button, record, bag)`, `.RefreshAll()` (the open bags window; Task 12 adds the bank and guild windows), `.Context()`, `.regions[button]` (`topLeft`, `bottomLeft`, `bind`, `arrow`, `junk`, `reagent`).
   - `SB.Adapter.EquippedItemLevel() -> number | nil` and `SB.Adapter.HasPawn() -> bool`.
   - `SB.BagsWindow.Title() -> text` and `SB.BagsWindow.RefreshTitle()` (does nothing while a flash shows).
   - Settings `bags.showIlvl` and `overlays.*`. Slash command `overlays` (names `ilvl`, `track`, `upgrade`, `keystone`, `junk`, `bind`, `pawn`, `title`).
@@ -4419,7 +4450,8 @@ In `SwagBag/Core/Config.lua`, find:
 
 ```lua
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
-		guildBank = { mode = "full", withdrawAnyTab = true },
+		-- Off until check G1 proves the client withdraws from the tab it is given (ruling W3-10).
+		guildBank = { mode = "full", withdrawAnyTab = false },
 	},
 }
 ```
@@ -4428,7 +4460,8 @@ and replace it with:
 
 ```lua
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
-		guildBank = { mode = "full", withdrawAnyTab = true },
+		-- Off until check G1 proves the client withdraws from the tab it is given (ruling W3-10).
+		guildBank = { mode = "full", withdrawAnyTab = false },
 		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 			usePawn = false },
@@ -4839,7 +4872,7 @@ Expected: `86 passed, 0 failed`
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (39 files)`, `506 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (39 files)`, `523 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -4873,7 +4906,7 @@ Give the user this checklist exactly. Carry some gear (one piece better than wha
 8. Click `Reflow`. The title says `Regrouped` for a moment, then `SwagBag — ilvl …` again.
 9. Your keystone shows `+` and its level in the top left (for example `+12`) and a short dungeon name in the bottom left.
 10. Gray items show a small coin.
-11. If you have a reagent bag with empty slots, those empty slots in `Free` have a faint green tint.
+11. If you have a reagent bag with empty slots, the empty reagent-bag slots shown in `Free` have a faint green tint. (Once Task 5 is in, that is the single reagent slot with a number; session F1 checks it.)
 12. Type `/swagbag overlays`. Chat says `Overlays: ilvl on, track on, upgrade on, keystone on, junk on, bind on, pawn off, title on`.
 13. Type `/swagbag overlays ilvl off`. Chat says `Overlay ilvl is now off.`, and the item levels on the items disappear. Type `/swagbag overlays ilvl on`: they come back.
 14. Type `/swagbag overlays title off`. Chat says `Overlay title is now off.`, and the title reads just `SwagBag`. Type `/swagbag overlays title on`: the item level is back in the title.
@@ -4885,7 +4918,1803 @@ Pass: steps 2–16 behave as described. Report every crest name from step 16: Cl
 
 ---
 
-### Task 5: Button pool and bags-window fixes from the ledgers (growth, retry, parents, bank tabs, per-window pools, incremental redraw, scale)
+### Task 5: Free as one tile: one real empty slot per bag family shows the number of free slots (W3-12, D19); `/swagbag free tile|all`
+
+**The user's request of 2026-10-02 (ledger W3-12, decision D19).** The bags window's Free section shows ONE free slot per bag family instead of every empty slot. That slot shows, in large white text, how many free slots the family has. The reagent bag (bag 5) is its own family, because only reagents fit there, so it gets its own tile with its own number (and keeps Task 4's green tint). Any other bag whose contents are restricted is told apart the same way (`Adapter.BagFamily`, below).
+
+**The tile is a real slot button, not a picture** (spec §4.2 rule 4, "Free is real"). It is the family's first empty `ContainerFrameItemButtonTemplate` button, with SwagBag's number drawn on it as a font string (`Buttons.SetFreeCount`). Dropping, splitting and dragging onto it are Blizzard's own code, and the item lands in that real (bag, slot), so rule 1 (identity) holds: every button still shows its own slot.
+- When the tile's slot fills, Layout's normal "arrived" transition moves that button to New.
+- The family's NEXT empty button then takes the tile's cell, with the number one lower. This swap is a move of two buttons, so it follows rule 5 like every other move.
+- A full layout (open, Reflow, Sort, `/swagbag free`) makes each family's first empty slot in physical order its tile again.
+
+**Design choices.**
+- **The other empty buttons are excluded from Free's cells (they are "spares"), not hidden inside cells.** A spare is listed in `state.tiles.spares[family]`; its `where` entry is `{ section = "free", spare = family }`; `Layout.Position` reports it with `shown = false` and no `x`/`y`. Why this design:
+  - Free's cells are exactly what is drawn: the tile per family, plus any filled button that overflowed New. So the hidden empties never take a cell, Free's height is a row or two, and a button that becomes empty never makes the drawn buttons shift.
+  - The layout invariants still hold. Every (bag, slot) is in exactly one place: a cell or one spare list. The randomized test checks this after every step. Free's header still counts every free slot (`- Free (10)`). Spares stay in `pos.cells`, so search dimming, overlays and `ForEachSlot` still see every slot.
+  - A hidden spare has no coordinates, so it can never sit under, or on top of, a visible button.
+- **Every button that becomes empty joins its family.** This covers a button in a category section (it leaves a placeholder, as before), a button in New, and a filled button in Free. When the family has a tile, the button becomes a spare. When the family has no tile (its free count was 0), the button becomes the tile: in the family's old tile cell if that cell is a hole, otherwise at Free's end.
+  - This changes one row of the spec §4.3 table, and only while the tile is on: an emptied button in New no longer stays as an empty slot in New. Without the change, the tile's number would not be the real number of free slots. The spec's rule that a button moves only into New or Free still holds.
+- **An item that lands in a hidden slot** (loot goes to the first free slot in bag order, which is often a spare) goes to New as usual, or to Free's end when New is full. The tile does not move; only its number changes.
+- **Grid view: no tile.** The grid is the physical order of the bags (spec AC3.6). It is the "show me everything where it really is" view, and hiding empty slots there would break it. `layoutGrid` also clears any number left from the sections view.
+- **Family detection.** `Adapter.BagFamily(bag)`:
+  - `"reagent"` for the reagent bag (`BagKind` "reagentbag", so it does not depend on the game's family value);
+  - `"family<N>"` when `C_Container.GetContainerNumFreeSlots(bag)` returns a non-zero bag family N as its second value (a profession bag);
+  - `"any"` otherwise, and on any error. This is feature-detected and inside `pcall`, with a new optional check.
+  - Bank and warband tabs come out as `"any"`. A tab's deposit settings ("reagents only") are not a bag family, so they are not split. Task 9 notes this.
+- **Hover guard.** `Layout.Apply` holds a change while its button is busy (under the mouse, or an item on the cursor). For a change that fills the tile or removes it, Apply also checks the spare that would take the cell. While a drop waits under the mouse, the tile shows the dropped item and no number: `Buttons.Paint` hides the number on any filled button, and the window never draws a number on a slot whose record holds an item. Then, 300 ms after the mouse leaves (the existing retry), the swap happens. Nothing moves under the cursor, and the user never drops onto a button that changes identity under the drag.
+- **One setting for every window:** `bags.freeTile` (default `true`), switched with `/swagbag free tile|all`. The command answers in chat (P2) and emits `SB_FREE_TILE_CHANGED`. The bags window regroups through `RequestLayout` (it waits while the mouse is over the items or an item is on the cursor). Task 8 gives `GroupView` the same tile, and Task 9 turns it on for the bank and warband groups with this setting. The guild bank does not use it: its slots are SwagBag's own buttons, the request named the bank and warband only, and it is one `cfg.freeTile` line later if wanted.
+
+**Files:**
+- Modify: `SwagBag/Engine/Layout.lua` (the free tile: `opts.freeTile`, `opts.family`, `state.tiles`, `pos.tiles`, `Layout.ToFamily`), `SwagBag/UI/BagsWindow.lua` (Build options, `paintTiles`, grid clears the number, `SB_FREE_TILE_CHANGED`), `SwagBag/UI/Buttons.lua` (`SetFreeCount`, `Paint` hides it), `SwagBag/Core/Adapter.lua` (`BagFamily`, optional check), `SwagBag/Core/Config.lua` (`bags.freeTile`), `SwagBag/Core/Commands.lua` (`/swagbag free`), `SwagBag/Locale/enUS.lua`
+- Test: `spec/layout_spec.lua`, `spec/bagswindow_sections_spec.lua`, `spec/buttons_spec.lua`, `spec/adapter_spec.lua`, `spec/commands_spec.lua`
+
+**Interfaces:**
+- Consumes:
+  - Task 4: the reagent-bag tint (`SB.Overlays.regions[button].reagent`), which the reagent tile keeps;
+  - Task 4: `bags.showIlvl` sits on the same `Config.Defaults` line this task extends;
+  - on `main`: `SB.Layout.Build/Position/Moves/Apply/Key`, `SB.BagsWindow.RequestLayout`, `SB.Slash.Register`, `SB.Emit`/`SB.On`, `SB.Adapter.BagKind`.
+- Produces:
+  - `SB.Layout.Build(slots, assign, order, opts)` with `opts.freeTile` (bool) and `opts.family(bag) -> key`. The result is `state.tiles = { family, families, cell = { [family] = index }, spares = { [family] = { key } } }` (nil without the tile).
+  - `SB.Layout.ToFamily(state, key, cell)`.
+  - `Layout.Position` additions: `pos.tiles` (tile cell entries, each with `tile = family` and `count = free slots`); a spare entry is `{ bag, slot, shown = false, spare = family }`; Free's header `count` includes the spares.
+  - `SB.Buttons.SetFreeCount(button, n | nil)` and `SB.Buttons.freeCounts[button]` (the font string). `SB.Buttons.Paint` hides the number on a filled button.
+  - `SB.Adapter.BagFamily(bag) -> "any" | "reagent" | "family<N>"`.
+  - Setting `bags.freeTile`. Slash command `free` (`tile`, `all`). Internal event `SB_FREE_TILE_CHANGED`.
+  - `UI/BagsWindow.lua`'s local `paintTiles(pos)` and `W.tiled`. Task 6's `renderMoved` calls `paintTiles(newPos)`.
+
+- [ ] **Step 1: Write the failing tests**
+
+<!-- sbw3:edit T5 s01 spec/layout_spec.lua -->
+In `spec/layout_spec.lua`, find:
+
+```lua
+		assert.truthy(totals.swaps > 0, "no swaps")
+		assert.truthy(totals.deferrals > 0, "the hover guard never held anything")
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		assert.truthy(totals.swaps > 0, "no swaps")
+		assert.truthy(totals.deferrals > 0, "the hover guard never held anything")
+	end)
+end)
+
+describe("Layout free tile (plan D19)", function()
+	local SB, L
+	before_each(function()
+		SB = Loader.New({ "SwagBag/Engine/Layout.lua" })
+		L = SB.Layout
+	end)
+
+	local function family(bag)
+		return bag == 5 and "reagent" or "any"
+	end
+
+	-- a: (0,1) (0,4)   empty "any": (0,2) (0,3) (0,5) (1,1) (1,2)   empty "reagent": (5,1) (5,2)
+	-- New holds one row of 4.
+	local function build()
+		return L.Build({ S(0, 1, "a"), S(0, 2, false), S(0, 3, false), S(0, 4, "a"), S(0, 5, false), S(1, 1, false),
+			S(1, 2, false), S(5, 1, false), S(5, 2, false) }, assign, { "a" },
+			{ columns = 4, newRows = 1, freeTile = true, family = family })
+	end
+
+	local function change(bag, slot, kind, icon)
+		return { bag = bag, slot = slot, kind = kind, icon = icon }
+	end
+
+	-- "bag:slot=count" for every shown tile, in display order.
+	local function tiles(pos)
+		local out = {}
+		for _, t in ipairs(pos.tiles) do
+			if t.shown then
+				out[#out + 1] = t.bag .. ":" .. t.slot .. "=" .. t.count
+			end
+		end
+		return out
+	end
+
+	local function xy(pos, bag, slot)
+		local c = pos.byKey[L.Key(bag, slot)]
+		return { c.x, c.y, c.shown }
+	end
+
+	it("Build: Free holds the first empty slot of each family as its tile; the other empty slots are hidden spares",
+		function()
+			local st = build()
+			local pos = L.Position(st, OPTS, {})
+			assert.same({ "0:2=5", "5:1=2" }, tiles(pos))
+			assert.same({ section = "free", index = 1 }, st.where[L.Key(0, 2)])
+			assert.same({ section = "free", spare = "any" }, st.where[L.Key(0, 3)])
+			assert.same({ L.Key(0, 3), L.Key(0, 5), L.Key(1, 1), L.Key(1, 2) }, st.tiles.spares.any)
+			assert.same({ L.Key(5, 2) }, st.tiles.spares.reagent)
+			for _, k in ipairs({ L.Key(0, 3), L.Key(0, 5), L.Key(1, 1), L.Key(1, 2), L.Key(5, 2) }) do
+				assert.same({ false, nil }, { pos.byKey[k].shown, pos.byKey[k].x }, "a spare is hidden and has no cell")
+			end
+			assert.equal(7, pos.headers[#pos.headers].count, "Free's header counts every free slot")
+			assert.equal(9, #pos.cells, "every slot is in the view (search still sees the spares)")
+		end)
+
+	-- Mutation: `return { key }` instead of `return { key, tile and promote(...) or nil }` at the end of
+	-- applyTile (the tile leaves and nothing takes its cell).
+	it("when the tile fills it goes to New and the next empty button takes the same cell, its count one lower",
+		function()
+			local st = build()
+			local old = L.Position(st, OPTS, {})
+			local r = L.Apply(st, { change(0, 2, "arrived", 7) })
+			local pos = L.Position(st, OPTS, {})
+			assert.same({ L.Key(0, 2), L.Key(0, 3) }, r.moved)
+			assert.equal("new", st.where[L.Key(0, 2)].section)
+			assert.same(xy(old, 0, 2), xy(pos, 0, 3), "the next empty button is in the tile's cell")
+			assert.same({ "0:3=4", "5:1=2" }, tiles(pos))
+			assert.same({ L.Key(0, 2), L.Key(0, 3) }, L.Moves(old, pos), "the swap is a move of both buttons")
+		end)
+
+	-- Mutation: `if held[key] or (isBusy and isBusy(ch.bag, ch.slot)) then` in Apply (no partner check):
+	-- the swap's second half fails. Mutation: drop the isBusy check entirely: every half fails.
+	it("a busy tile is not swapped: under the mouse, with an item on the cursor, or while the next spare is busy",
+		function()
+			local st = build()
+			local old = L.Position(st, OPTS, {})
+			for _, busy in ipairs({
+				function(bag, slot) return bag == 0 and slot == 2 end, -- the mouse is on the tile
+				function() return true end, -- an item is on the cursor
+				function(bag, slot) return bag == 0 and slot == 3 end, -- the button that would take the cell
+			}) do
+				local r = L.Apply(st, { change(0, 2, "arrived", 7) }, busy)
+				assert.same({}, r.moved)
+				assert.equal(1, r.deferred)
+				assert.same(old, L.Position(st, OPTS, {}), "nothing moved")
+				st.deferred = {}
+			end
+			L.Apply(st, { change(0, 2, "arrived", 7) }, function(bag, slot) return bag == 0 and slot == 2 end)
+			local r = L.Apply(st, {}, nil) -- 300 ms later the mouse has left
+			assert.same({ L.Key(0, 2), L.Key(0, 3) }, r.moved)
+			assert.same(xy(old, 0, 2), xy(L.Position(st, OPTS, {}), 0, 3))
+		end)
+
+	-- Mutation: in applyTile's "left" branch, `append(st, Layout.FREE, cell)` instead of
+	-- `Layout.ToFamily(st, key, cell)`: the emptied button shows as a second empty slot in Free.
+	it("an emptied button becomes a hidden spare and the count goes up; nothing else moves", function()
+		local st = build()
+		local old = L.Position(st, OPTS, {})
+		local r = L.Apply(st, { change(0, 1, "left", 77) })
+		local pos = L.Position(st, OPTS, {})
+		assert.equal(1, r.placeholders)
+		assert.same({ L.Key(0, 1) }, L.Moves(old, pos), "only the emptied button (it is hidden now)")
+		assert.same({ false, nil }, { pos.byKey[L.Key(0, 1)].shown, pos.byKey[L.Key(0, 1)].x })
+		assert.same({ "0:2=6", "5:1=2" }, tiles(pos))
+		-- an item that arrives and leaves again in New: the button goes back to the spares
+		L.Apply(st, { change(1, 1, "arrived", 8) })
+		assert.equal("new", st.where[L.Key(1, 1)].section)
+		L.Apply(st, { change(1, 1, "left", 8) })
+		assert.same({ section = "free", spare = "any" }, st.where[L.Key(1, 1)])
+		assert.same({ "0:2=6", "5:1=2" }, tiles(L.Position(st, OPTS, {})))
+	end)
+
+	it("a family with no free slot has no tile; its next empty slot comes back in the same cell", function()
+		local st = build()
+		local cell = xy(L.Position(st, OPTS, {}), 5, 1)
+		L.Apply(st, { change(5, 1, "arrived", 9), change(5, 2, "arrived", 10) })
+		assert.same({ "0:2=5" }, tiles(L.Position(st, OPTS, {})))
+		L.Apply(st, { change(5, 1, "left", 9) })
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ "0:2=5", "5:1=1" }, tiles(pos))
+		assert.same(cell, xy(pos, 5, 1))
+	end)
+
+	it("an item looted into a hidden slot goes to New; the tile stays where it is, its count one lower", function()
+		local st = build()
+		local old = L.Position(st, OPTS, {})
+		local r = L.Apply(st, { change(1, 2, "arrived", 11) })
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ L.Key(1, 2) }, r.moved)
+		assert.same({ L.Key(1, 2) }, L.Moves(old, pos))
+		assert.same({ "0:2=4", "5:1=2" }, tiles(pos))
+	end)
+
+	it("with New full, a filled tile stays where it is and the next spare is the tile at Free's end", function()
+		local st = build()
+		L.Apply(st, { change(0, 3, "arrived", 1), change(0, 5, "arrived", 2), change(1, 1, "arrived", 3),
+			change(1, 2, "arrived", 4) })
+		local old = L.Position(st, OPTS, {})
+		local r = L.Apply(st, { change(5, 1, "arrived", 5) })
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ L.Key(5, 2) }, r.moved, "only the next spare moves (it is shown)")
+		assert.same(xy(old, 5, 1), xy(pos, 5, 1), "the filled tile did not move")
+		assert.same({ "0:2=1", "5:2=1" }, tiles(pos))
+		assert.equal(1, st.sections.new.overflow)
+	end)
+
+	it("an added slot joins its family as a spare; a removed tile hands its cell to the next spare", function()
+		local st = build()
+		local cell = xy(L.Position(st, OPTS, {}), 0, 2)
+		L.Apply(st, { change(1, 3, "added") })
+		assert.same({ "0:2=6", "5:1=2" }, tiles(L.Position(st, OPTS, {})))
+		local r = L.Apply(st, { change(0, 2, "removed") })
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ L.Key(0, 2), L.Key(0, 3) }, r.moved)
+		assert.same(cell, xy(pos, 0, 3))
+		assert.same({ "0:3=5", "5:1=2" }, tiles(pos))
+	end)
+
+	-- The randomized check of W3-12. Park-Miller (seed * 16807 % 2147483647, exact in doubles).
+	-- 24 runs of 60 steps over a bag model (backpack 12, bag 1 8, reagent bag 6): leaves,
+	-- arrivals in hidden slots, drops on a tile (usually with the mouse on it), different items,
+	-- hover and cursor holds, the mouse leaving, and Reflows (a full Build of the bags as they are).
+	-- After EVERY step:
+	--   every slot is in exactly one cell or spare list; a button moved only if it was not busy;
+	--   no two shown buttons share a cell; a button that appears takes no busy button's cell;
+	--   each family shows at most one tile, and a shown tile is an empty slot (or the slot under
+	--   the mouse that just took a drop, its swap held back).
+	-- After every step with nothing held back (and after each run's drain), exactly:
+	--   one shown tile per family that has a free slot, none for a family without; the tile's
+	--   count is that family's real number of free slots; every spare is empty; every item shows.
+	-- Mutations that must make it fail: (1) `return { key }` instead of the promote at the end of
+	-- applyTile; (2) `if held[key] then` in Apply (no busy check); (3) `1 + #st.tiles.spares[f]`
+	-- -> `#st.tiles.spares[f]` in Position; (4) in applyTile's "left" branch,
+	-- `append(st, Layout.FREE, cell)` instead of `Layout.ToFamily(st, key, cell)`.
+	it("randomized: one real empty tile per family with the real count; nothing moves under the cursor", function()
+		local SIZES = { [0] = 12, [1] = 8, [5] = 6 }
+		local BAGS = { 0, 1, 5 }
+		local totals = { swaps = 0, heldSwaps = 0, spareLeaves = 0, spareArrivals = 0, reagentSwaps = 0, fullTile = 0,
+			steps = 0, settled = 0, reflows = 0 }
+		local seed = 20261002
+		local function rand(n)
+			seed = seed * 16807 % 2147483647
+			return seed % n + 1
+		end
+		for run = 1, 24 do
+			local content, slots, keys = {}, {}, {}
+			local nextItem = 100
+			for _, bag in ipairs(BAGS) do
+				for slot = 1, SIZES[bag] do
+					local k = L.Key(bag, slot)
+					keys[#keys + 1] = k
+					if rand(2) == 1 then
+						nextItem = nextItem + 1
+						content[k] = nextItem
+					end
+					slots[#slots + 1] = { bag = bag, slot = slot, record = content[k] and { cat = "c" .. (content[k] % 3) } or nil }
+				end
+			end
+			local st = L.Build(slots, assign, { "c0", "c1", "c2" },
+				{ columns = 4, newRows = 1 + rand(2), freeTile = true, family = family })
+			local pos = L.Position(st, OPTS, {})
+			local hover, cursor = nil, false
+
+			local function realFree(f)
+				local n = 0
+				for _, k in ipairs(keys) do
+					if content[k] == nil and family(math.floor(k / 1000)) == f then
+						n = n + 1
+					end
+				end
+				return n
+			end
+
+			local function tileOf(p, f)
+				for _, t in ipairs(p.tiles) do
+					if t.shown and t.tile == f then
+						return t
+					end
+				end
+			end
+
+			local function check(old, new, busyKeys, label)
+				local held = {}
+				for _, ch in ipairs(st.deferred) do
+					held[L.Key(ch.bag, ch.slot)] = true
+				end
+				-- every slot exactly once
+				local seen = {}
+				for id, sec in pairs(st.sections) do
+					for i = 1, sec.size do
+						local c = sec.cells[i]
+						if c and not c.placeholder then
+							local k = L.Key(c.bag, c.slot)
+							assert.is_nil(seen[k], label .. ": placed twice")
+							seen[k] = true
+							assert.same({ section = id, index = i }, st.where[k], label)
+						end
+					end
+				end
+				for f, list in pairs(st.tiles.spares) do
+					for _, k in ipairs(list) do
+						assert.is_nil(seen[k], label .. ": a spare is also in a cell")
+						seen[k] = true
+						assert.same({ section = "free", spare = f }, st.where[k], label)
+					end
+				end
+				for _, k in ipairs(keys) do
+					assert.truthy(seen[k], label .. ": a button was lost")
+				end
+				-- nothing moved under the cursor
+				for _, k in ipairs(L.Moves(old, new)) do
+					assert.falsy(busyKeys[k], label .. ": a busy button moved")
+				end
+				-- no two shown buttons in one cell; an appearing button takes no busy button's cell
+				local at = {}
+				for k, c in pairs(new.byKey) do
+					if c.shown then
+						local xyk = c.x .. "," .. c.y
+						assert.is_nil(at[xyk], label .. ": two buttons in one cell")
+						at[xyk] = k
+						local o = old.byKey[k]
+						if not (o and o.shown) then
+							for bk in pairs(busyKeys) do
+								local b = old.byKey[bk]
+								assert.falsy(b and b.shown and b.x == c.x and b.y == c.y,
+									label .. ": a hidden button was placed on the busy one")
+							end
+						end
+					end
+				end
+				for _, f in ipairs({ "any", "reagent" }) do
+					local n = 0
+					for _, t in ipairs(new.tiles) do
+						if t.shown and t.tile == f then
+							n = n + 1
+							assert.truthy(content[L.Key(t.bag, t.slot)] == nil or held[L.Key(t.bag, t.slot)],
+								label .. ": the tile is not an empty slot")
+						end
+					end
+					assert.truthy(n <= 1, label .. ": two tiles for " .. f)
+					if #st.deferred == 0 then
+						local t = tileOf(new, f)
+						if realFree(f) > 0 then
+							assert.truthy(t, label .. ": no tile for " .. f)
+							assert.equal(realFree(f), t.count, label .. ": the count of " .. f)
+						else
+							assert.is_nil(t, label .. ": a tile for a full family")
+						end
+					end
+				end
+				if #st.deferred == 0 then
+					totals.settled = totals.settled + 1
+					for _, list in pairs(st.tiles.spares) do
+						for _, k in ipairs(list) do
+							assert.is_nil(content[k], label .. ": an item in a hidden button")
+						end
+					end
+					for _, k in ipairs(keys) do
+						if content[k] then
+							assert.truthy(new.byKey[k].shown, label .. ": an item is hidden")
+						end
+					end
+				end
+			end
+
+			local function emptyKey(f)
+				local list = {}
+				for _, k in ipairs(keys) do
+					if content[k] == nil and (not f or family(math.floor(k / 1000)) == f) then
+						list[#list + 1] = k
+					end
+				end
+				return #list > 0 and list[rand(#list)] or nil
+			end
+			local function filledKey()
+				local list = {}
+				for _, k in ipairs(keys) do
+					if content[k] then
+						list[#list + 1] = k
+					end
+				end
+				return #list > 0 and list[rand(#list)] or nil
+			end
+			local function ch(k, kind, icon)
+				return { bag = math.floor(k / 1000), slot = k % 1000, kind = kind, icon = icon }
+			end
+
+			for step = 1, 60 do
+				local changes, label = {}, ("run %d step %d"):format(run, step)
+				local kind = rand(12)
+				local dropOnTile = nil
+				if kind <= 3 then -- an item is used up or moved away
+					local k = filledKey()
+					if k then
+						changes[1] = ch(k, "left", content[k])
+						content[k] = nil
+					end
+				elseif kind <= 6 then -- a drop on a family's tile, usually with the mouse on it
+					local t = tileOf(pos, rand(3) == 1 and "reagent" or "any")
+					if t and content[L.Key(t.bag, t.slot)] == nil then
+						dropOnTile = L.Key(t.bag, t.slot)
+						nextItem = nextItem + 1
+						content[dropOnTile] = nextItem
+						changes[1] = ch(dropOnTile, "arrived", nextItem)
+						if rand(4) ~= 1 then
+							hover = dropOnTile
+						end
+					end
+				elseif kind <= 8 then -- looted into whatever slot is free (often a hidden one)
+					local k = emptyKey()
+					if k then
+						nextItem = nextItem + 1
+						content[k] = nextItem
+						changes[1] = ch(k, "arrived", nextItem)
+					end
+				elseif kind == 9 then -- the mouse moves on, the cursor empties
+					hover = rand(2) == 1 and keys[rand(#keys)] or nil
+					cursor = rand(5) == 1
+				elseif kind == 10 then -- a different item in a filled slot
+					local k = filledKey()
+					if k then
+						nextItem = nextItem + 1
+						changes[1] = ch(k, "arrived", content[k])
+						content[k] = nextItem
+					end
+				elseif kind == 11 then -- the mouse leaves the items
+					hover, cursor = nil, false
+				elseif not hover and not cursor then -- Reflow: a full layout of what is in the bags now
+					local fresh = {}
+					for _, k in ipairs(keys) do
+						fresh[#fresh + 1] = { bag = math.floor(k / 1000), slot = k % 1000,
+							record = content[k] and { cat = "c" .. (content[k] % 3) } or nil }
+					end
+					st = L.Build(fresh, assign, { "c0", "c1", "c2" },
+						{ columns = 4, newRows = 1 + rand(2), freeTile = true, family = family })
+					pos = L.Position(st, OPTS, {})
+					totals.reflows = totals.reflows + 1
+				end
+				local busyKeys = {}
+				for _, k in ipairs(keys) do
+					local c = pos.byKey[k]
+					if cursor or (k == hover and c and c.shown) then
+						busyKeys[k] = true
+					end
+				end
+				local wasTile = {}
+				for _, t in ipairs(pos.tiles) do
+					wasTile[L.Key(t.bag, t.slot)] = t.tile
+				end
+				local heldBefore = {}
+				for _, d in ipairs(st.deferred) do
+					heldBefore[L.Key(d.bag, d.slot)] = true
+				end
+				local r = L.Apply(st, changes, function(bag, slot)
+					return busyKeys[L.Key(bag, slot)] == true
+				end)
+				local new = L.Position(st, OPTS, {})
+				for _, k in ipairs(r.moved) do
+					if wasTile[k] and st.where[k] and st.where[k].section == "new" then
+						totals.swaps = totals.swaps + 1
+						if wasTile[k] == "reagent" then
+							totals.reagentSwaps = totals.reagentSwaps + 1
+						end
+						if heldBefore[k] then -- a swap that waited for the mouse to leave
+							totals.heldSwaps = totals.heldSwaps + 1
+						end
+					end
+					if st.where[k] and st.where[k].spare and new.byKey[k] and not (pos.byKey[k] and pos.byKey[k].spare) then
+						totals.spareLeaves = totals.spareLeaves + 1
+					end
+					if pos.byKey[k] and pos.byKey[k].spare and not st.where[k].spare then
+						totals.spareArrivals = totals.spareArrivals + 1
+					end
+				end
+				if dropOnTile and st.where[dropOnTile].section == "free" and r.overflowed > 0 then
+					totals.fullTile = totals.fullTile + 1
+				end
+				totals.steps = totals.steps + 1
+				check(pos, new, busyKeys, label)
+				pos = new
+			end
+			local r = L.Apply(st, {}, nil) -- drain: the mouse has left and the cursor is empty
+			assert.equal(0, r.deferred)
+			local new = L.Position(st, OPTS, {})
+			check(pos, new, {}, ("run %d drained"):format(run))
+		end
+		assert.truthy(totals.swaps >= 100, "swaps " .. totals.swaps)
+		assert.truthy(totals.heldSwaps >= 60, "held swaps " .. totals.heldSwaps)
+		assert.truthy(totals.reagentSwaps >= 30, "reagent swaps " .. totals.reagentSwaps)
+		assert.truthy(totals.spareLeaves >= 200, "leaves into spares " .. totals.spareLeaves)
+		assert.truthy(totals.spareArrivals >= 250, "arrivals in hidden slots " .. totals.spareArrivals)
+		assert.truthy(totals.fullTile >= 20, "drops on the tile with New full " .. totals.fullTile)
+		assert.truthy(totals.settled >= 400, "settled checks " .. totals.settled)
+		assert.truthy(totals.reflows >= 25, "reflows " .. totals.reflows)
+	end)
+end)
+```
+
+<!-- sbw3:edit T5 s02 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	function B.Paint(button, info) button.itemID = info and info.itemID or nil end
+```
+
+and replace it with:
+
+```lua
+	function B.Paint(button, info)
+		button.itemID = info and info.itemID or nil
+		if info then -- like the real pool: a filled button never shows a free tile's number
+			button.freeCount = nil
+		end
+	end
+	function B.SetFreeCount(button, n) button.freeCount = n end
+```
+
+<!-- sbw3:edit T5 s03 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	it("opens in the category view: sections in display order, New reserved on top, Free last", function()
+```
+
+and replace it with:
+
+```lua
+	-- The tests that pin Free's cells one by one show every free slot (bags.freeTile = false, the
+	-- alternative to the free tile, plan D19). The free tile has its own tests below.
+	local function everyFreeSlot()
+		SB.Config.Set("bags.freeTile", false)
+	end
+
+	it("opens in the category view: sections in display order, New reserved on top, Free last", function()
+```
+
+<!-- sbw3:edit T5 s04 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	it("shows every slot button exactly once, each at its own cell", function()
+```
+
+and replace it with:
+
+```lua
+	it("shows every slot button exactly once, each at its own cell", function()
+		everyFreeSlot()
+```
+
+<!-- sbw3:edit T5 s05 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	it("an ApplyChanges that adds a Free row keeps the top-left corner fixed (C1)", function()
+```
+
+and replace it with:
+
+```lua
+	it("an ApplyChanges that adds a Free row keeps the top-left corner fixed (C1)", function()
+		everyFreeSlot()
+```
+
+<!-- sbw3:edit T5 s06 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	it("using up an item leaves a placeholder with its icon; its button goes to Free; nothing else moves", function()
+```
+
+and replace it with:
+
+```lua
+	it("using up an item leaves a placeholder with its icon; its button goes to Free; nothing else moves", function()
+		everyFreeSlot()
+```
+
+<!-- sbw3:edit T5 s07 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	it("a drag to an empty slot and a stack split in one update: one placeholder, both show in New (Review Focus 1)",
+		function()
+```
+
+and replace it with:
+
+```lua
+	it("a drag to an empty slot and a stack split in one update: one placeholder, both show in New (Review Focus 1)",
+		function()
+			everyFreeSlot()
+```
+
+<!-- sbw3:edit T5 s08 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	it("a button under the mouse does not move; it moves 300 ms after the mouse leaves", function()
+```
+
+and replace it with:
+
+```lua
+	it("a button under the mouse does not move; it moves 300 ms after the mouse leaves", function()
+		everyFreeSlot()
+```
+
+<!-- sbw3:edit T5 s09 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	it("an item on the cursor holds every move until it is put down", function()
+```
+
+and replace it with:
+
+```lua
+	it("an item on the cursor holds every move until it is put down", function()
+		everyFreeSlot()
+```
+
+<!-- sbw3:edit T5 s10 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	it("a bag equipped while open adds its slots at the end of Free", function()
+```
+
+and replace it with:
+
+```lua
+	it("a bag equipped while open adds its slots at the end of Free", function()
+		everyFreeSlot()
+```
+
+<!-- sbw3:edit T5 s11 spec/bagswindow_sections_spec.lua -->
+In `spec/bagswindow_sections_spec.lua`, find:
+
+```lua
+	it("a stack count change only repaints", function()
+```
+
+and replace it with:
+
+```lua
+	-- The free tile's number on a slot button (nil: none).
+	local function number(bag, slot)
+		return rawget(B.Get(bag, slot), "freeCount")
+	end
+
+	-- Plan D19 (the user's request W3-12): the free tile. Mutation: `freeTile = false` in
+	-- layoutSections' Build options.
+	it("Free shows one tile per bag family with its number of free slots; the other empty slots are hidden", function()
+		A.SetBagSize(5, 2)
+		SB.Inventory.ScanAll()
+		W.Open()
+		assert.equal("- Free (12)", header("free").text.text)
+		assert.same({ true, 10 }, { B.Get(0, 7).shown, number(0, 7) }, "the backpack's first empty slot")
+		assert.same({ true, 2 }, { B.Get(5, 1).shown, number(5, 1) }, "the reagent bag has its own tile")
+		for slot = 8, 16 do
+			assert.falsy(B.Get(0, slot).shown, "slot " .. slot)
+		end
+		assert.falsy(B.Get(5, 2).shown)
+		assert.equal(18, #W.cells, "search still sees every slot")
+		assert.truthy(SB.Overlays.regions[B.Get(5, 1)].reagent.shown, "the reagent tile keeps its green tint")
+	end)
+
+	-- Mutation: `if button and t.shown then` in paintTiles (no "really empty" check): the number
+	-- shows on the dropped item when another change redraws while the mouse is still on it.
+	it("a drop on the tile: the item stays under the mouse with no number; then the next empty slot takes its place",
+		function()
+			W.Open()
+			local tile, tileAt = B.Get(0, 7), at(0, 7)
+			tile.mouseOver = true
+			A.Put(0, 7, Fixtures.HERB, 5)
+			bagUpdate()
+			assert.same(tileAt, at(0, 7), "nothing moves under the mouse")
+			assert.is_nil(number(0, 7), "the item shows, not the number")
+			assert.falsy(B.Get(0, 8).shown)
+			A.Clear(0, 2) -- the flask is used meanwhile: a redraw while the drop still waits
+			bagUpdate()
+			assert.same(tileAt, at(0, 7))
+			assert.is_nil(number(0, 7))
+			tile.mouseOver = false
+			A.Advance(0.3)
+			assert.same({ 4, -24 }, at(0, 7), "the dropped item is first in New")
+			assert.same({ true, 10 }, { B.Get(0, 8).shown, number(0, 8) }, "10 - 1 + the flask's slot")
+			assert.same(tileAt, at(0, 8), "the next empty slot is where the tile was")
+			assert.equal("- Free (10)", header("free").text.text)
+		end)
+
+	it("with an item on the cursor the tile keeps its place and number until the item is put down", function()
+		W.Open()
+		local tileAt = at(0, 7)
+		A.cursor = { itemID = Fixtures.FLASK }
+		A.Clear(0, 1)
+		A.Put(0, 7, Fixtures.HEALING_POTION, 5) -- the potion stack dragged onto the tile
+		bagUpdate()
+		assert.same(tileAt, at(0, 7))
+		assert.truthy(B.Get(0, 1).shown, "the emptied potion slot waits too")
+		A.cursor = nil
+		A.Advance(0.3)
+		assert.falsy(B.Get(0, 1).shown, "the emptied slot is a hidden free slot now")
+		assert.same(tileAt, at(0, 8))
+		assert.equal(10, number(0, 8))
+		assert.equal(1, #B.placeholders)
+	end)
+
+	-- Mutations: delete the SB_FREE_TILE_CHANGED handler; delete paintTiles(nil) in layoutGrid.
+	it("/swagbag free all regroups once the mouse leaves; the grid view never has a tile (AC3.6)", function()
+		W.Open()
+		SB.Config.Set("bags.freeTile", false)
+		W.scroll.mouseOver = true
+		SB.Emit("SB_FREE_TILE_CHANGED")
+		assert.falsy(B.Get(0, 8).shown, "waits while the mouse is over the items")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		for slot = 7, 16 do
+			assert.truthy(B.Get(0, slot).shown, "slot " .. slot)
+		end
+		assert.is_nil(number(0, 7))
+		SB.Config.Set("bags.freeTile", true)
+		SB.Emit("SB_FREE_TILE_CHANGED")
+		assert.equal(10, number(0, 7))
+		W.SetView("grid")
+		for slot = 7, 16 do
+			assert.truthy(B.Get(0, slot).shown, "grid: slot " .. slot)
+		end
+		assert.is_nil(number(0, 7), "the grid is the physical order: no tile")
+	end)
+
+	it("a stack count change only repaints", function()
+```
+
+<!-- sbw3:edit T5 s12 spec/buttons_spec.lua -->
+In `spec/buttons_spec.lua`, find:
+
+```lua
+-- luacheck: globals GameTooltip
+```
+
+and replace it with:
+
+```lua
+-- luacheck: globals GameTooltip SetItemButtonTexture SetItemButtonCount SetItemButtonQuality SetItemButtonDesaturated
+```
+
+<!-- sbw3:edit T5 s13 spec/buttons_spec.lua -->
+In `spec/buttons_spec.lua`, find:
+
+```lua
+		assert.equal(h, H.Acquire(B, "y", "y", 0, 0, 10))
+		assert.equal(B, h.calls.SetParent[1])
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		assert.equal(h, H.Acquire(B, "y", "y", 0, 0, 10))
+		assert.equal(B, h.calls.SetParent[1])
+	end)
+end)
+
+describe("The free tile's number (plan D19)", function()
+	local SB
+	before_each(function()
+		SB = Loader.New(FILES)
+		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
+		SetItemButtonTexture, SetItemButtonCount = function() end, function() end
+		SetItemButtonQuality, SetItemButtonDesaturated = function() end, function() end
+	end)
+
+	after_each(function()
+		SetItemButtonTexture, SetItemButtonCount, SetItemButtonQuality, SetItemButtonDesaturated = nil, nil, nil, nil
+	end)
+
+	-- Mutation: delete `if info then Buttons.SetFreeCount(button, nil) end` in Buttons.Paint.
+	it("SetFreeCount shows a large number on the button; nil hides it; painting an item hides it too", function()
+		local button = fakeFrame("ItemButton")
+		SB.Buttons.SetFreeCount(button, 12)
+		local fs = SB.Buttons.freeCounts[button]
+		assert.same({ "12", true }, { tostring(fs.text), fs.shown })
+		assert.same({ "CENTER", button, "CENTER", 0, 0 }, fs.points[1])
+		SB.Buttons.SetFreeCount(button, nil)
+		assert.falsy(fs.shown)
+		SB.Buttons.SetFreeCount(button, 11)
+		SB.Buttons.Paint(button, nil)
+		assert.truthy(fs.shown, "an empty slot keeps its number")
+		SB.Buttons.Paint(button, { itemID = 5, icon = 1, count = 1 })
+		assert.falsy(fs.shown, "an item never shows the number")
+		assert.is_nil(SB.Buttons.freeCounts[fakeFrame("ItemButton")], "no region until a button needs one")
+	end)
+end)
+```
+
+<!-- sbw3:edit T5 s14 spec/adapter_spec.lua -->
+In `spec/adapter_spec.lua`, find:
+
+```lua
+		GetAverageItemLevel = function() error("boom") end
+		assert.is_nil(A.EquippedItemLevel())
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		GetAverageItemLevel = function() error("boom") end
+		assert.is_nil(A.EquippedItemLevel())
+	end)
+
+	-- The free tile (plan D19). Mutation: delete the BagKind "reagentbag" test in A.BagFamily.
+	it("BagFamily: the reagent bag is its own family, a bag with a free-slot family is too, else 'any'", function()
+		assert.same({ "any", "reagent", "any" }, { A.BagFamily(0), A.BagFamily(5), A.BagFamily(6) })
+		C_Container = { GetContainerNumFreeSlots = function(bag) return 3, bag == 2 and 8 or 0 end }
+		assert.same({ "any", "family8", "reagent" }, { A.BagFamily(1), A.BagFamily(2), A.BagFamily(5) })
+		C_Container = { GetContainerNumFreeSlots = function() error("boom") end }
+		assert.equal("any", A.BagFamily(2))
+	end)
+end)
+```
+
+<!-- sbw3:edit T5 s15 spec/commands_spec.lua -->
+In `spec/commands_spec.lua`, find:
+
+```lua
+		assert.equal(2, SwagBagDB.schemaVersion)
+		assert.same({ schemaVersion = 7 }, SwagBagDB.backups.reset)
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		assert.equal(2, SwagBagDB.schemaVersion)
+		assert.same({ schemaVersion = 7 }, SwagBagDB.backups.reset)
+	end)
+
+	-- Plan D19. Mutation: delete SB.Emit("SB_FREE_TILE_CHANGED") in the free command.
+	it("free tile|all saves bags.freeTile, answers, and asks the open windows to regroup; else the usage", function()
+		local regroups = 0
+		SB.On("SB_FREE_TILE_CHANGED", function()
+			regroups = regroups + 1
+		end)
+		assert.equal(true, SB.Config.Get("bags.freeTile"), "the tile is the default")
+		SB.Slash.Dispatch("free all")
+		assert.equal(false, SB.Config.Get("bags.freeTile"))
+		SB.Slash.Dispatch("free tile")
+		assert.equal(true, SB.Config.Get("bags.freeTile"))
+		SB.Slash.Dispatch("free")
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("free all")
+		assert.equal(true, SB.Config.Get("bags.freeTile"))
+		assert.same({
+			"Every free slot is shown again.",
+			"Free slots now show as one slot with the number of free slots.",
+			"Use /swagbag free tile or /swagbag free all (now: tile).",
+			"SwagBag's saved settings are read-only, so nothing was changed.",
+		}, A.Lines())
+		assert.equal(2, regroups)
+	end)
+end)
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `luajit spec/runner.lua spec/layout_spec.lua spec/bagswindow_sections_spec.lua spec/buttons_spec.lua spec/adapter_spec.lua spec/commands_spec.lua`
+Expected: `109 passed, 16 failed`. These fail because nothing yet reads `freeTile`, and `SetFreeCount`, `BagFamily` and the `free` command do not exist:
+- the 9 new Layout tests;
+- the 4 new bags-window tile tests;
+- the button test, the `BagFamily` test and the `free` command test.
+
+The seven older bags-window tests that pin Free's cells one by one pass, because `everyFreeSlot()` sets a key nothing reads yet.
+
+The randomized test uses Park-Miller (`seed * 16807 % 2147483647`, exact in doubles): 24 runs of 60 steps, 1,440 steps in all. Its coverage minimums mean it can never pass vacuously:
+
+| What it counts | Minimum | Measured |
+|---|---|---|
+| tile swaps | 100 | 157 |
+| swaps that waited for the mouse | 60 | 97 |
+| reagent-tile swaps | 30 | 56 |
+| buttons that became hidden spares | 200 | 344 |
+| arrivals in hidden slots | 250 | 429 |
+| drops on a tile with New full | 20 | 37 |
+| settled checks | 400 | 616 |
+| Reflows | 25 | 44 |
+
+**Critical tests and the mutation that must make each fail.**
+
+The randomized test fails under each of these four mutations:
+1. `return { key }` instead of the closing `return { key, tile and promote(...) or nil }` in `applyTile` (the tile leaves and nothing takes its cell);
+2. `if held[key] then` in `Layout.Apply` (no busy check at all);
+3. `#st.tiles.spares[f]` instead of `1 + #st.tiles.spares[f]` in `Layout.Position`;
+4. `append(st, Layout.FREE, cell)` instead of `Layout.ToFamily(st, key, cell)` in `applyTile`'s "left" branch.
+
+The other critical tests:
+- "when the tile fills it goes to New and the next empty button takes the same cell…": mutation 1.
+- "a busy tile is not swapped…": `if held[key] or (isBusy and isBusy(ch.bag, ch.slot)) then` in `Layout.Apply` (the swap's spare is not checked).
+- "an emptied button becomes a hidden spare…": mutation 4.
+- "Free shows one tile per bag family…": `freeTile = false` in `layoutSections`' Build options.
+- "a drop on the tile: the item stays under the mouse with no number…": `if button and t.shown then` in `paintTiles` (no "really empty" check).
+- "/swagbag free all regroups once the mouse leaves; the grid view never has a tile": delete the `SB_FREE_TILE_CHANGED` handler; or delete `paintTiles(nil)` in `layoutGrid`.
+- "SetFreeCount shows a large number…": delete `if info then Buttons.SetFreeCount(button, nil) end` in `Buttons.Paint`.
+- "free tile|all saves bags.freeTile…": delete `SB.Emit("SB_FREE_TILE_CHANGED")` in the `free` command.
+- "BagFamily: the reagent bag is its own family…": delete the `BagKind(bag) == "reagentbag"` test in `A.BagFamily`.
+
+- [ ] **Step 3: Implement**
+
+<!-- sbw3:edit T5 i01 SwagBag/Core/Adapter.lua -->
+In `SwagBag/Core/Adapter.lua`, find:
+
+```lua
+-- kind: "bags" | "bank" | "warband". Bank kinds return PURCHASED tab IDs only.
+function A.GetBagIDs(kind)
+```
+
+and replace it with:
+
+```lua
+-- Which empty slots belong together (the free tile, plan D19): "reagent" for the reagent bag
+-- (only reagents fit), "family<N>" for a bag whose GetContainerNumFreeSlots family N is not 0
+-- (a profession bag: only its items fit), else "any". Feature-detected: "any" without the API.
+function A.BagFamily(bag)
+	if A.BagKind(bag) == "reagentbag" then
+		return "reagent"
+	end
+	if C_Container and C_Container.GetContainerNumFreeSlots then
+		local ok, _, family = pcall(C_Container.GetContainerNumFreeSlots, bag)
+		if ok and type(family) == "number" and not isSecret(family) and family ~= 0 then
+			return "family" .. family
+		end
+	end
+	return "any"
+end
+
+-- kind: "bags" | "bank" | "warband". Bank kinds return PURCHASED tab IDs only.
+function A.GetBagIDs(kind)
+```
+
+<!-- sbw3:edit T5 i02 SwagBag/Core/Adapter.lua -->
+In `SwagBag/Core/Adapter.lua`, find:
+
+```lua
+	{ path = "C_Container.GetContainerItemCooldown", window = "bags", required = true },
+```
+
+and replace it with:
+
+```lua
+	{ path = "C_Container.GetContainerItemCooldown", window = "bags", required = true },
+	{ path = "C_Container.GetContainerNumFreeSlots", window = "bags", required = false },
+```
+
+<!-- sbw3:edit T5 i03 SwagBag/Core/Config.lua -->
+In `SwagBag/Core/Config.lua`, find:
+
+```lua
+		-- showIlvl: the title shows the average equipped item level (plan D18).
+		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
+			showIlvl = true },
+```
+
+and replace it with:
+
+```lua
+		-- showIlvl: the title shows the average equipped item level (plan D18);
+		-- freeTile: Free shows one tile per bag family with the number of free slots, false shows
+		-- every free slot (plan D19; the bank window follows it too).
+		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
+			showIlvl = true, freeTile = true },
+```
+
+<!-- sbw3:edit T5 i04 SwagBag/Locale/enUS.lua -->
+In `SwagBag/Locale/enUS.lua`, find:
+
+```lua
+L.OVERLAYS_NO_PAWN = "Pawn is not loaded, so the item-level rule still decides the upgrade arrow."
+```
+
+and replace it with:
+
+```lua
+L.OVERLAYS_NO_PAWN = "Pawn is not loaded, so the item-level rule still decides the upgrade arrow."
+
+-- Free tile (plan D19)
+L.HELP_FREE = "free tile|all: show free slots as one slot with a number (tile) or show every free slot (all)"
+L.FREE_USAGE = "Use /swagbag free tile or /swagbag free all (now: %s)."
+L.FREE_MODE_TILE = "Free slots now show as one slot with the number of free slots."
+L.FREE_MODE_ALL = "Every free slot is shown again."
+```
+
+<!-- sbw3:edit T5 i05 SwagBag/Core/Commands.lua -->
+In `SwagBag/Core/Commands.lua`, find:
+
+```lua
+-- SwagBag week-1 slash commands: safe, report, check, reset, debug.
+```
+
+and replace it with:
+
+```lua
+-- SwagBag slash commands: safe, report, check, reset, free (week 3), debug.
+```
+
+<!-- sbw3:edit T5 i06 SwagBag/Core/Commands.lua -->
+In `SwagBag/Core/Commands.lua`, find:
+
+```lua
+Slash.Register("debug", L.HELP_DEBUG, function(arg)
+```
+
+and replace it with:
+
+```lua
+-- /swagbag free tile|all (plan D19): the setting, then every open window regroups (guarded).
+Slash.Register("free", L.HELP_FREE, function(arg)
+	arg = arg:lower()
+	if arg ~= "tile" and arg ~= "all" then
+		return L.FREE_USAGE:format(SB.Config.Get("bags.freeTile") and "tile" or "all")
+	end
+	if not SB.Config.Set("bags.freeTile", arg == "tile") then
+		return L.SETTINGS_READONLY
+	end
+	SB.Emit("SB_FREE_TILE_CHANGED")
+	return arg == "tile" and L.FREE_MODE_TILE or L.FREE_MODE_ALL
+end)
+
+Slash.Register("debug", L.HELP_DEBUG, function(arg)
+```
+
+<!-- sbw3:edit T5 i07 SwagBag/UI/Buttons.lua -->
+In `SwagBag/UI/Buttons.lua`, find:
+
+```lua
+-- info: SB.Adapter.GetSlot(bag, slot) result, or nil for an empty slot.
+function Buttons.Paint(button, info)
+```
+
+and replace it with:
+
+```lua
+-- info: SB.Adapter.GetSlot(bag, slot) result, or nil for an empty slot. A filled button never
+-- shows a free tile's number (plan D19).
+function Buttons.Paint(button, info)
+	if info then
+		Buttons.SetFreeCount(button, nil)
+	end
+```
+
+<!-- sbw3:edit T5 i08 SwagBag/UI/Buttons.lua -->
+In `SwagBag/UI/Buttons.lua`, find:
+
+```lua
+-- Full dim: alpha on the whole button covers icon, border, count and glows.
+function Buttons.SetDimmed(button, dimmed)
+	button:SetAlpha(dimmed and Buttons.DIM_ALPHA or 1)
+end
+```
+
+and replace it with:
+
+```lua
+-- Full dim: alpha on the whole button covers icon, border, count and glows.
+function Buttons.SetDimmed(button, dimmed)
+	button:SetAlpha(dimmed and Buttons.DIM_ALPHA or 1)
+end
+
+-- The free tile (plan D19): n in large white text in the middle of an empty slot button; nil
+-- hides it. A font string on the button itself, made the first time (no frame: allowed in
+-- combat), kept in a side table rather than a field on Blizzard's button.
+Buttons.freeCounts = setmetatable({}, { __mode = "k" })
+function Buttons.SetFreeCount(button, n)
+	local fs = Buttons.freeCounts[button]
+	if n == nil then
+		if fs then
+			fs:Hide()
+		end
+		return
+	end
+	if not fs then
+		fs = button:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
+		fs:SetPoint("CENTER", button, "CENTER", 0, 0)
+		fs:SetTextColor(1, 1, 1)
+		Buttons.freeCounts[button] = fs
+	end
+	fs:SetText(n)
+	fs:Show()
+end
+```
+
+<!-- sbw3:file T5 i09 SwagBag/Engine/Layout.lua -->
+Replace the whole file `SwagBag/Engine/Layout.lua` with:
+
+```lua
+-- SwagBag sections layout (spec 4, F3). Pure Lua: no frames, no WoW calls.
+-- A layout STATE says which section each slot button is in, at which cell index:
+--   state = { columns, newRows, order = { "new", ..., "free" },
+--             sections = { [id] = { id, cells = { [i] = cell }, size, capacity?, overflow } },
+--             where = { [key] = { section = id, index = i } }, deferred = {}, needsReflow,
+--             tiles = nil | { family, families = { f }, cell = { [f] = i }, spares = { [f] = { key } } } }
+--   cell  = { bag, slot }  (a slot button)  |  { bag, slot, placeholder = true, icon }
+--   Cells may have holes (nil) so that nothing after them ever shifts.
+-- Layout.Build(slots, assign, order, opts)   full layout (open, Reflow, sort, view toggle)
+--   slots: physical order { { bag, slot, record } } (record nil = empty slot)
+--   assign(record) -> section id, or nil (pending -> New); empty slots go to Free.
+--   order: section ids in display order; New is forced first and Free last.
+--   opts: { columns, newRows, freeTile, family }
+--     freeTile: Free shows ONE tile per bag family instead of every empty slot (plan D19)
+--     family(bag) -> key: empty slots of one family hold the same items (default: all "any")
+-- Layout.Position(state, opts, collapsed) -> pos   pixel positions (TOPLEFT offsets, y down
+--   negative). Collapsing changes section offsets only, so expanding returns every item
+--   to the same cell (spec 6.4). New always shows its header and newRows reserved rows.
+--   opts: { columns, size, gap, padding, header, sectionGap }
+--   pos = { cells = { {bag, slot, x, y, shown} } (display order), byKey = { [key] = cell },
+--           placeholders = { {bag, slot, icon, x, y, shown} }, headers = { {id, y, count,
+--           overflow, collapsed} }, width, height }
+--   With the free tile (plan D19) a tile's cell entry also has tile = family and count = that
+--   family's free slots, pos.tiles lists the tile entries, and each spare is a cell entry
+--   { bag, slot, shown = false, spare = family } with no x or y.
+-- Layout.Moves(oldPos, newPos) -> keys whose button position changes (hover guard, 4.2 #5)
+-- Layout.Apply(state, changes, isBusy, collapsed) -> result   while the window is open
+--   changes: { { bag, slot, kind, icon } } in order. kind:
+--     "left"    the slot is now empty        "arrived" a different item is now in the slot
+--     "added"   the slot is new (bag grew)   "removed" the slot no longer exists
+--   isBusy(bag, slot) -> true while that button must not move (spec 4.2 rule 5: under the
+--     mouse, or an item on the cursor). Its changes wait in state.deferred, in order, and
+--     the next Apply retries them (the window calls Apply(state, {}) 300 ms later).
+--   result = { moved = { keys }, placeholders = n, overflowed = n, deferred = n }
+-- Transitions (spec 4.3 table):
+--   left    + button in a category section -> placeholder (old icon) in its cell, button to Free's end
+--   left    + button in Free or New        -> stays (repaint only)
+--   arrived + button in a category section -> placeholder in its cell, button to New's next cell
+--   arrived + button in Free               -> to New's next cell; its Free cell becomes a hole
+--   arrived + button in New                -> stays (repaint only)
+--   New full (its reserved rows) or collapsed -> the button goes to Free's end instead (one
+--     already in Free stays put) and New's header counts it ("+N more below")
+--   added -> a new button at Free's end;  removed -> its cell becomes a hole
+-- Nothing else ever moves, so no other button changes position. Any placeholder, move or
+-- hole sets state.needsReflow; the next full Build (close + open, Reflow, sort) clears it.
+-- Free tile (opts.freeTile, plan D19). Free's cells hold one TILE per family -- a real empty
+-- slot button, its family's first in physical order -- plus any filled button that overflowed
+-- New. Every other empty button is a SPARE: it has no cell (where = { section = "free", spare
+-- = family }) and Position reports it hidden. A family keeps its tile cell for the whole
+-- layout. With the tile, these transitions replace the ones above:
+--   the tile arrived  -> to New (or it stays, filled, when New is full); the family's first
+--                        spare takes the tile cell (Free's end when the cell is still taken),
+--                        shown. This SWAP moves two buttons: it waits while either is busy.
+--   the tile removed  -> the same swap
+--   a spare arrived   -> to New (Free's end when New is full), shown
+--   any button that becomes empty (in a section: placeholder as above; in New; in a filled
+--   Free cell) and an added slot -> its family's last spare, hidden; or, when the family
+--   has no tile, its tile (in the family's tile cell when that is a hole, else Free's end)
+local _, SB = ...
+
+local Layout = { NEW = "new", FREE = "free" }
+SB.Layout = Layout
+
+-- Numeric key for a (bag, slot): bags are 0-16 and slots 1-98.
+function Layout.Key(bag, slot)
+	return bag * 1000 + slot
+end
+
+local function section(st, id)
+	local sec = st.sections[id]
+	if not sec then
+		sec = { id = id, cells = {}, size = 0, overflow = 0 }
+		st.sections[id] = sec
+	end
+	return sec
+end
+
+-- Put a cell at the end of a section. Returns its index.
+local function append(st, id, cell)
+	local sec = section(st, id)
+	sec.size = sec.size + 1
+	sec.cells[sec.size] = cell
+	if not cell.placeholder then
+		st.where[Layout.Key(cell.bag, cell.slot)] = { section = id, index = sec.size }
+	end
+	return sec.size
+end
+Layout.Append = append
+
+---------------------------------------------------------------------------
+-- Free tile (plan D19)
+---------------------------------------------------------------------------
+local function bagOf(key)
+	return math.floor(key / 1000)
+end
+
+local function familyOf(st, bag)
+	return st.tiles.family(bag)
+end
+
+-- The key of family f's tile, or nil (no tile cell yet, or the cell is a hole).
+local function tileKey(st, f)
+	local i = st.tiles.cell[f]
+	local free = st.sections[Layout.FREE]
+	local c = i and free and free.cells[i]
+	return c and Layout.Key(c.bag, c.slot) or nil
+end
+
+local function isTile(st, key, w)
+	return st.tiles ~= nil and w.section == Layout.FREE and w.index ~= nil
+		and w.index == st.tiles.cell[familyOf(st, bagOf(key))]
+end
+
+-- Put an empty button into its family: a spare when the family has a tile, else the tile
+-- (in the family's tile cell when that is a hole, otherwise at Free's end).
+function Layout.ToFamily(st, key, cell)
+	local t, f = st.tiles, familyOf(st, cell.bag)
+	if not t.spares[f] then
+		t.spares[f] = {}
+		t.families[#t.families + 1] = f
+	end
+	if tileKey(st, f) then
+		local list = t.spares[f]
+		list[#list + 1] = key
+		st.where[key] = { section = Layout.FREE, spare = f }
+		return
+	end
+	local free = section(st, Layout.FREE)
+	local i = t.cell[f]
+	if i and free.cells[i] == nil then
+		free.cells[i] = cell
+		st.where[key] = { section = Layout.FREE, index = i }
+	else
+		t.cell[f] = append(st, Layout.FREE, cell)
+	end
+end
+
+-- Family f's first spare takes Free's cell i (a hole), or Free's end when i is nil, and is
+-- the family's tile from now on. Returns its key, or nil when the family has no spare left.
+local function promote(st, f, i)
+	local list = st.tiles.spares[f]
+	local key = list and table.remove(list, 1)
+	if not key then
+		st.tiles.cell[f] = i
+		return nil
+	end
+	local cell = { bag = bagOf(key), slot = key % 1000 }
+	if i then
+		section(st, Layout.FREE).cells[i] = cell
+		st.where[key] = { section = Layout.FREE, index = i }
+	else
+		st.tiles.cell[f] = append(st, Layout.FREE, cell)
+	end
+	return key
+end
+
+-- Number of spares (hidden empty buttons) of every family together.
+local function spareCount(st)
+	local n = 0
+	for _, list in pairs(st.tiles and st.tiles.spares or {}) do
+		n = n + #list
+	end
+	return n
+end
+
+function Layout.Build(slots, assign, order, opts)
+	local cols = opts.columns
+	local st = { columns = cols, newRows = opts.newRows or 2, order = { Layout.NEW }, sections = {}, where = {},
+		deferred = {}, needsReflow = false }
+	if opts.freeTile then
+		st.tiles = { family = opts.family or function()
+			return "any"
+		end, families = {}, cell = {}, spares = {} }
+	end
+	local known = { [Layout.NEW] = true, [Layout.FREE] = true }
+	for _, id in ipairs(order) do
+		if not known[id] then
+			known[id] = true
+			st.order[#st.order + 1] = id
+		end
+	end
+	st.order[#st.order + 1] = Layout.FREE
+	for _, s in ipairs(slots) do
+		local id
+		if s.record == nil then
+			id = Layout.FREE
+		else
+			id = assign(s.record) or Layout.NEW
+		end
+		if not known[id] then -- an id missing from the order still gets a section (before Free)
+			known[id] = true
+			table.insert(st.order, #st.order, id)
+		end
+		if id == Layout.FREE and st.tiles then
+			Layout.ToFamily(st, Layout.Key(s.bag, s.slot), { bag = s.bag, slot = s.slot })
+		else
+			append(st, id, { bag = s.bag, slot = s.slot })
+		end
+	end
+	local new = section(st, Layout.NEW)
+	new.capacity = math.max(st.newRows, math.ceil(new.size / cols)) * cols
+	return st
+end
+
+local function countButtons(sec)
+	local n = 0
+	for i = 1, sec.size do
+		local cell = sec.cells[i]
+		if cell and not cell.placeholder then
+			n = n + 1
+		end
+	end
+	return n
+end
+
+function Layout.Position(st, opts, collapsed)
+	collapsed = collapsed or {}
+	local cols, size, gap, pad = opts.columns, opts.size, opts.gap, opts.padding
+	local step = size + gap
+	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {} }
+	local y = pad
+	for _, id in ipairs(st.order) do
+		local sec = st.sections[id]
+		local visible = id == Layout.NEW or (sec ~= nil and sec.size > 0)
+		if visible then
+			sec = sec or { cells = {}, size = 0, overflow = 0 }
+			local closed = collapsed[id] == true
+			local count = countButtons(sec)
+			if id == Layout.FREE then
+				count = count + spareCount(st)
+			end
+			pos.headers[#pos.headers + 1] = { id = id, y = -y, count = count, overflow = sec.overflow,
+				collapsed = closed }
+			y = y + opts.header
+			local slots = sec.size
+			if id == Layout.NEW then
+				slots = math.max(sec.capacity or st.newRows * cols, sec.size)
+			end
+			local rows = closed and 0 or math.ceil(slots / cols)
+			for i = 1, sec.size do
+				local cell = sec.cells[i]
+				if cell then
+					local entry = {
+						bag = cell.bag,
+						slot = cell.slot,
+						x = pad + ((i - 1) % cols) * step,
+						y = -(y + math.floor((i - 1) / cols) * step),
+						shown = not closed,
+					}
+					if cell.placeholder then
+						entry.icon = cell.icon
+						pos.placeholders[#pos.placeholders + 1] = entry
+					else
+						pos.cells[#pos.cells + 1] = entry
+						pos.byKey[Layout.Key(cell.bag, cell.slot)] = entry
+						local f = id == Layout.FREE and st.tiles and familyOf(st, cell.bag)
+						if f and st.tiles.cell[f] == i then
+							entry.tile, entry.count = f, 1 + #st.tiles.spares[f]
+							pos.tiles[#pos.tiles + 1] = entry
+						end
+					end
+				end
+			end
+			if id == Layout.FREE and st.tiles then -- spares: hidden, and never given a position
+				for _, f in ipairs(st.tiles.families) do
+					for _, key in ipairs(st.tiles.spares[f]) do
+						local entry = { bag = bagOf(key), slot = key % 1000, shown = false, spare = f }
+						pos.cells[#pos.cells + 1] = entry
+						pos.byKey[key] = entry
+					end
+				end
+			end
+			if rows > 0 then
+				y = y + rows * step - gap
+			end
+			y = y + opts.sectionGap
+		end
+	end
+	pos.width = pad * 2 + cols * size + (cols - 1) * gap
+	pos.height = y + pad
+	return pos
+end
+
+-- Keys of buttons that are shown in both layouts but at different coordinates, or that
+-- become hidden/shown. Used to hold back a re-stack while one of them is under the cursor.
+function Layout.Moves(oldPos, newPos)
+	local out = {}
+	for key, b in pairs(newPos.byKey) do
+		local a = oldPos and oldPos.byKey[key]
+		if not a or a.x ~= b.x or a.y ~= b.y or a.shown ~= b.shown then
+			out[#out + 1] = key
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+-- Remove a button from its cell (leaving a hole). Returns where it was and the cell.
+local function take(st, key)
+	local w = st.where[key]
+	st.where[key] = nil
+	if w.spare then
+		local list = st.tiles.spares[w.spare]
+		for n = 1, #list do
+			if list[n] == key then
+				table.remove(list, n)
+				break
+			end
+		end
+		return w, { bag = bagOf(key), slot = key % 1000 }
+	end
+	local sec = st.sections[w.section]
+	local cell = sec.cells[w.index]
+	sec.cells[w.index] = nil
+	return w, cell
+end
+
+local function newHasRoom(st, collapsed)
+	local new = section(st, Layout.NEW)
+	return not collapsed[Layout.NEW] and new.size < (new.capacity or st.newRows * st.columns)
+end
+
+-- New's "+N more below" is the size of a set of slot keys, so a slot that arrives again
+-- is not counted twice and one that leaves or is removed stops counting.
+local function overflow(st, result, key)
+	local new = section(st, Layout.NEW)
+	new.overflowKeys = new.overflowKeys or {}
+	if not new.overflowKeys[key] then
+		new.overflowKeys[key] = true
+		new.overflow = new.overflow + 1
+		result.overflowed = result.overflowed + 1
+	end
+end
+
+local function clearOverflow(st, key)
+	local new = section(st, Layout.NEW)
+	if new.overflowKeys and new.overflowKeys[key] then
+		new.overflowKeys[key] = nil
+		new.overflow = new.overflow - 1
+	end
+end
+
+-- The transitions with the free tile (see the header). Returns the keys that moved.
+local function applyTile(st, ch, collapsed, result, key, w)
+	if ch.kind == "added" then
+		Layout.ToFamily(st, key, { bag = ch.bag, slot = ch.slot })
+		return { key }
+	elseif ch.kind == "removed" then
+		clearOverflow(st, key)
+		local tile = isTile(st, key, w)
+		take(st, key)
+		return { key, tile and promote(st, familyOf(st, ch.bag), w.index) or nil }
+	elseif ch.kind == "left" then
+		clearOverflow(st, key)
+		if w.spare or isTile(st, key, w) then
+			return {} -- already an empty slot of Free: repaint only
+		end
+		local old, cell = take(st, key)
+		if old.section ~= Layout.FREE and old.section ~= Layout.NEW then
+			st.sections[old.section].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
+			result.placeholders = result.placeholders + 1
+		end
+		Layout.ToFamily(st, key, cell)
+		return { key }
+	elseif ch.kind ~= "arrived" or w.section == Layout.NEW then
+		return {}
+	end
+	local tile = isTile(st, key, w)
+	local room = newHasRoom(st, collapsed)
+	if w.section == Layout.FREE and not (w.spare or tile) then -- a filled button that overflowed New
+		if not room then
+			overflow(st, result, key)
+			return {}
+		end
+		clearOverflow(st, key)
+	elseif w.section ~= Layout.FREE then -- a category section: placeholder in its cell
+		local old, cell = take(st, key)
+		st.sections[old.section].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
+		result.placeholders = result.placeholders + 1
+		if room then
+			append(st, Layout.NEW, cell)
+		else
+			append(st, Layout.FREE, cell)
+			overflow(st, result, key)
+		end
+		return { key }
+	elseif not room and tile then -- it stays, filled; the next spare is the tile, at Free's end
+		overflow(st, result, key)
+		return { promote(st, familyOf(st, ch.bag), nil) }
+	end
+	local _, cell = take(st, key)
+	if room then
+		clearOverflow(st, key)
+		append(st, Layout.NEW, cell)
+	else -- a spare, and New is full: shown at Free's end
+		append(st, Layout.FREE, cell)
+		overflow(st, result, key)
+	end
+	return { key, tile and promote(st, familyOf(st, ch.bag), w.index) or nil }
+end
+
+local function applyOne(st, ch, collapsed, result)
+	local key = Layout.Key(ch.bag, ch.slot)
+	if st.tiles and (st.where[key] or ch.kind == "added") then
+		if ch.kind == "added" and st.where[key] then
+			return
+		end
+		local moved = applyTile(st, ch, collapsed, result, key, st.where[key])
+		for _, k in ipairs(moved) do
+			result.moved[#result.moved + 1] = k
+		end
+		if #moved > 0 then
+			st.needsReflow = true
+		end
+		return
+	end
+	local w = st.where[key]
+	if ch.kind == "added" then
+		if not w then
+			append(st, Layout.FREE, { bag = ch.bag, slot = ch.slot })
+			result.moved[#result.moved + 1] = key
+			st.needsReflow = true
+		end
+		return
+	end
+	if not w then
+		return
+	end
+	local id = w.section
+	if ch.kind == "removed" then
+		clearOverflow(st, key)
+		take(st, key)
+	elseif ch.kind == "left" then
+		clearOverflow(st, key)
+		if id == Layout.FREE or id == Layout.NEW then
+			return
+		end
+		local old, cell = take(st, key)
+		st.sections[id].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
+		result.placeholders = result.placeholders + 1
+		append(st, Layout.FREE, cell)
+	elseif ch.kind == "arrived" then
+		if id == Layout.NEW then
+			return
+		end
+		if id == Layout.FREE then
+			if not newHasRoom(st, collapsed) then
+				overflow(st, result, key)
+				return
+			end
+			clearOverflow(st, key) -- it found room in New: no longer counted as "more below"
+			local _, cell = take(st, key)
+			append(st, Layout.NEW, cell)
+		else
+			local old, cell = take(st, key)
+			st.sections[id].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
+			result.placeholders = result.placeholders + 1
+			if newHasRoom(st, collapsed) then
+				append(st, Layout.NEW, cell)
+			else
+				append(st, Layout.FREE, cell)
+				overflow(st, result, key)
+			end
+		end
+	else
+		return
+	end
+	st.needsReflow = true
+	result.moved[#result.moved + 1] = key
+end
+
+-- Free tile: a change that makes the tile fill or go away hands its cell to the family's first
+-- spare. Returns that spare's key, so the swap waits while either button is busy.
+local function partner(st, ch)
+	if not st.tiles or (ch.kind ~= "arrived" and ch.kind ~= "removed") then
+		return nil
+	end
+	local key = Layout.Key(ch.bag, ch.slot)
+	local w = st.where[key]
+	if not (w and isTile(st, key, w)) then
+		return nil
+	end
+	return st.tiles.spares[familyOf(st, ch.bag)][1]
+end
+
+-- Change tables passed to Apply must not be reused or mutated afterwards: deferred entries
+-- keep references to them.
+function Layout.Apply(st, changes, isBusy, collapsed)
+	collapsed = collapsed or {}
+	local result = { moved = {}, placeholders = 0, overflowed = 0, deferred = 0 }
+	local queue = st.deferred
+	for _, ch in ipairs(changes or {}) do
+		queue[#queue + 1] = ch
+	end
+	st.deferred = {}
+	local held = {}
+	for _, ch in ipairs(queue) do
+		local key = Layout.Key(ch.bag, ch.slot)
+		local spare = partner(st, ch)
+		if held[key] or (isBusy and (isBusy(ch.bag, ch.slot) or (spare and isBusy(bagOf(spare), spare % 1000)))) then
+			held[key] = true -- later changes of a held slot wait too, so order is kept
+			st.deferred[#st.deferred + 1] = ch
+		else
+			applyOne(st, ch, collapsed, result)
+		end
+	end
+	result.deferred = #st.deferred
+	return result
+end
+```
+
+<!-- sbw3:edit T5 i10 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
+```
+
+and replace it with:
+
+```lua
+	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
+	tiled = {}, -- [button] = true while it shows a free tile's number (plan D19)
+```
+
+<!-- sbw3:edit T5 i11 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+local function layoutGrid(bags)
+```
+
+and replace it with:
+
+```lua
+-- The free tile's number (plan D19): each family's tile shows how many empty slots the family
+-- has, but only while the tile really is empty (a drop that waits under the mouse shows the
+-- item and no number). Every other button's number is cleared.
+local function paintTiles(pos)
+	local B, now = SB.Buttons, {}
+	for _, t in ipairs(pos and pos.tiles or {}) do
+		local button = B.Get(t.bag, t.slot)
+		if button and t.shown and not (W.records[t.bag] and W.records[t.bag][t.slot]) then
+			B.SetFreeCount(button, t.count)
+			now[button] = true
+		end
+	end
+	for button in pairs(W.tiled) do
+		if not now[button] then
+			B.SetFreeCount(button, nil)
+		end
+	end
+	W.tiled = now
+end
+
+-- The grid is the physical order (AC3.6): every empty slot is shown there, no tile.
+local function layoutGrid(bags)
+```
+
+<!-- sbw3:edit T5 i12 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+			describe(c.bag, c.slot)
+			button:Show()
+		end
+	end
+	return g.width, g.height
+end
+```
+
+and replace it with:
+
+```lua
+			describe(c.bag, c.slot)
+			button:Show()
+		end
+	end
+	paintTiles(nil)
+	return g.width, g.height
+end
+```
+
+<!-- sbw3:edit T5 i13 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+			pos.width - 2 * W.PAD)
+	end
+	return pos.width, pos.height
+end
+W.Render = render
+```
+
+and replace it with:
+
+```lua
+			pos.width - 2 * W.PAD)
+	end
+	paintTiles(pos)
+	return pos.width, pos.height
+end
+W.Render = render
+```
+
+<!-- sbw3:edit T5 i14 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
+		{ columns = columns(), newRows = SB.Config.Get("bags.newRows") })
+```
+
+and replace it with:
+
+```lua
+	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
+		{ columns = columns(), newRows = SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
+			family = SB.Adapter.BagFamily })
+```
+
+<!-- sbw3:edit T5 i15 SwagBag/UI/BagsWindow.lua -->
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+	if touched then
+		SB.Emit("SB_BAGS_UPDATED")
+	end
+end, "bags"))
+```
+
+and replace it with:
+
+```lua
+	if touched then
+		SB.Emit("SB_BAGS_UPDATED")
+	end
+end, "bags"))
+
+-- /swagbag free tile|all (Core/Commands.lua): regroup now, or once the mouse leaves the items.
+SB.On("SB_FREE_TILE_CHANGED", function()
+	W.RequestLayout("free")
+end, "bags")
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `luajit spec/runner.lua spec/layout_spec.lua spec/bagswindow_sections_spec.lua spec/buttons_spec.lua spec/adapter_spec.lua spec/commands_spec.lua`
+Expected: `125 passed, 0 failed`
+
+- [ ] **Step 5: Run all checks**
+
+Run: `scripts/check.sh`
+Expected: `TOC OK (39 files)`, `539 passed, 0 failed`, `ALL CHECKS PASSED`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add spec/layout_spec.lua \
+  spec/bagswindow_sections_spec.lua \
+  spec/buttons_spec.lua \
+  spec/adapter_spec.lua \
+  spec/commands_spec.lua \
+  SwagBag/Core/Adapter.lua \
+  SwagBag/Core/Config.lua \
+  SwagBag/Core/Commands.lua \
+  SwagBag/Locale/enUS.lua \
+  SwagBag/UI/Buttons.lua \
+  SwagBag/Engine/Layout.lua \
+  SwagBag/UI/BagsWindow.lua
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 5: Free as one tile per bag family with the number of free slots, /swagbag free tile|all" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
+```
+
+- [ ] **Step 7: In-game session F1 (the user does this on Oct 16, after O1; about 3 minutes)**
+
+No new files, so `/reload` is enough. You need a stack of at least two of the same item (potions, food or reagents) and at least two free slots in your bags.
+
+1. Type `/reload`. Press **B**. At the bottom of the window, under `Free`, there is one empty slot with a large white number in it. The number is how many free slots your bags have; your reagent bag is not counted in it. If you have a reagent bag with free slots, there is a second empty slot with its own number and a faint green tint.
+2. Note the number on the first slot.
+3. Hold **Shift** and click your stack of two or more. In the small box that opens, click **Okay**. One item from the stack is now on your mouse cursor, and the stack stays where it was.
+4. Click the slot with the number. The item goes into that slot. While your mouse stays on it, the slot shows the item and no number.
+5. Move the mouse off it. The item moves to `New`. An empty slot with the number **one lower** than in step 2 now shows exactly where the item went in.
+6. Type `/swagbag free all`. Chat says `Every free slot is shown again.` Move the mouse off the window if it is over it. `Free` now shows all your empty slots, with no number.
+7. Type `/swagbag free tile`. Chat says `Free slots now show as one slot with the number of free slots.` `Free` shows the one slot with the number again.
+8. Type `/swagbag report`, press Ctrl+C and paste it into Claude Code. Claude checks no new errors and `Blocked actions: none`.
+
+Pass: steps 1 and 4–7 behave as described.
+
+If it fails: tell Claude which step. Until it is fixed, type `/swagbag free all`: `Free` shows every free slot, as before this task.
+
+---
+
+### Task 6: Button pool and bags-window fixes from the ledgers (growth, retry, parents, bank tabs, per-window pools, incremental redraw, scale)
 
 The week-1 and week-2 ledgers left these for week 3. Each one matters once the bank window exists:
 
@@ -4894,7 +6723,7 @@ The week-1 and week-2 ledgers left these for week 3. Each one matters once the b
 - **SetParentFor after creation is a no-op.** Bank bag frames made at login live under a hidden holder, and a later `SetParentFor("bank", child)` never moved them. Fix: it moves the existing **bag frames** of that kind (never the item buttons), out of combat.
 - **Bank tabs bought after login get no buttons.** Fix: `Buttons.EnsureBankTabs()` runs at login (inside `CreateAll`) and on every `BANKFRAME_OPENED`.
 - **The pools are global** (Review Focus 1). `SectionHeaders.ReleaseAll()` and `Buttons.ReleasePlaceholders()` release every window's frames, so a bags redraw would wipe the bank window's headers. Fix: both take the parent frame and release only frames acquired in it. `SectionHeaders.Acquire` takes an optional owner `{ onClick, onDrop }`, so the bank's headers do not call the bags window's click handler. Owners and parents are kept in side tables, not in fields on the frames.
-- **ApplyChanges redraws every cell** (week-2 final review: "make render incremental for 1,290 slots"). Fix: `renderMoved(oldPos, newPos)` touches only the buttons whose cell changed (`Layout.Moves`), plus the placeholders and headers. The test allows 4 button lookups for one change: the changed slot's repaint, its overlay (Task 4) and the one button that moved.
+- **ApplyChanges redraws every cell** (week-2 final review: "make render incremental for 1,290 slots"). Fix: `renderMoved(oldPos, newPos)` touches only the buttons whose cell changed (`Layout.Moves`), plus the placeholders and headers. The test allows 5 button lookups for one change: the changed slot's repaint, its overlay (Task 4), the one button that moved and the free tile's number (Task 5; `renderMoved` calls `paintTiles(newPos)`, because a tile's number changes without the tile moving).
 - **A cell whose slot is past the bag's size can be shown again** while its "removed" change is held back (week-2 Task 10 minor). Fix: `render` and `renderMoved` never show such a cell, and search skips it.
 - **The window jumps on reopen after Ctrl+wheel** (week-2 final residual). Fix: `W.SetScale` saves the new corner at once. A test covers a second notch from 120 %.
 - **No re-anchoring during a drag** (same residual). While `W.dragging` is true, neither a scale change nor a resize calls `SetPoint`. The drop saves the corner.
@@ -4904,18 +6733,18 @@ The week-1 and week-2 ledgers left these for week 3. Each one matters once the b
 - Test: `spec/buttons_spec.lua`, `spec/bagswindow_sections_spec.lua`
 
 **Interfaces:**
-- Consumes: `SB.Layout.Moves` (on `main`), `spec/helpers/fakeframe.lua` (Task 1), `SB.Overlays.Apply` (Task 4; the bags window already calls it).
+- Consumes: `SB.Layout.Moves` (on `main`), `spec/helpers/fakeframe.lua` (Task 1), `SB.Overlays.Apply` (Task 4; the bags window already calls it), `paintTiles(pos)` and `pos.tiles` (Task 5; `render` already calls it, and `renderMoved` calls it too), `everyFreeSlot()` in `spec/bagswindow_sections_spec.lua` (Task 5).
 - Produces:
   - `SB.Buttons.pendingGrow[bag]`, `SB.Buttons.EnsureBankTabs()`.
   - `SB.Buttons.SetParentFor(kind, frame)` now moves existing bag frames of that kind.
   - `SB.Buttons.ReleasePlaceholders(parent)` (nil = all).
   - `SB.SectionHeaders.Acquire(parent, sectionId, label, x, y, width, owner)` (owner = `{ onClick(id), onDrop(id) }`, optional) and `SB.SectionHeaders.ReleaseAll(parent)` (nil = all).
   - `SB.BagsWindow.dragging`.
-  - Every window must pass its own scroll child to both release calls (Tasks 7, 8, 10 do).
+  - Every window must pass its own scroll child to both release calls (Tasks 8, 9, 11 do).
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T5 s01 spec/bagswindow_sections_spec.lua -->
+<!-- sbw3:edit T6 s01 spec/bagswindow_sections_spec.lua -->
 In `spec/bagswindow_sections_spec.lua`, find:
 
 ```lua
@@ -4971,7 +6800,7 @@ and replace it with:
 		W.Open()
 ```
 
-<!-- sbw3:edit T5 s02 spec/bagswindow_sections_spec.lua -->
+<!-- sbw3:edit T6 s02 spec/bagswindow_sections_spec.lua -->
 In `spec/bagswindow_sections_spec.lua`, find:
 
 ```lua
@@ -4999,12 +6828,13 @@ and replace it with:
 		bagUpdate()
 		B.Get = realGet
 		assert.equal(1, #B.placeholders)
-		-- the changed slot's repaint, its overlay and the one button that moved
-		assert.truthy(gets <= 4, "Buttons.Get called " .. gets .. " times for one change in 16 slots")
+		-- the changed slot's repaint, its overlay, the one button that moved and the free tile's number
+		assert.truthy(gets <= 5, "Buttons.Get called " .. gets .. " times for one change in 16 slots")
 		assert.equal(16, #W.cells, "search still sees every slot")
 	end)
 
 	it("a slot past the bag's size is never shown again while its removal is held back", function()
+		everyFreeSlot() -- with the free tile, bag 1's empty slots would be hidden spares anyway
 		A.SetBagSize(1, 4)
 		SB.Inventory.ScanAll()
 		W.Open()
@@ -5025,7 +6855,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T5 s03 spec/buttons_spec.lua -->
+<!-- sbw3:edit T6 s03 spec/buttons_spec.lua -->
 In `spec/buttons_spec.lua`, find:
 
 ```lua
@@ -5189,7 +7019,7 @@ end)
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/buttons_spec.lua`
-Expected: `65 passed, 12 failed`. Each new test fails on the defect it pins.
+Expected: `70 passed, 12 failed`. Each new test fails on the defect it pins.
 
 Critical tests and the mutation that must make each fail:
 - "growth asked for during combat keeps the largest request, in either order": `Buttons.pendingGrow[bag] = n`.
@@ -5203,10 +7033,11 @@ Critical tests and the mutation that must make each fail:
 - "while the window is dragged a scale change does not re-anchor it…": drop `and not W.dragging` in `W.SetScale` or in `sizeFrame`.
 - "a live change touches only the moved button's frame, not every slot": use `render()` instead of `renderMoved(oldPos, W.pos)` in `W.ApplyChanges`.
 - "a slot past the bag's size is never shown again while its removal is held back": `if c.shown then` in `showAt`.
+- Task 5's "a drop on the tile: the item stays under the mouse with no number…": delete `paintTiles(newPos)` in `renderMoved` (the next empty slot shows no number after the swap).
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T5 i01 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T6 i01 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -5243,7 +7074,7 @@ end
 
 ```
 
-<!-- sbw3:edit T5 i02 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T6 i02 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -5279,7 +7110,7 @@ function Buttons.EnsureCapacity(bag, n)
 		return 0
 ```
 
-<!-- sbw3:edit T5 i03 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T6 i03 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -5324,7 +7155,7 @@ end
 
 ```
 
-<!-- sbw3:edit T5 i04 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T6 i04 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -5344,7 +7175,7 @@ Buttons.PLACEHOLDER_ALPHA = 0.5
 
 ```
 
-<!-- sbw3:edit T5 i05 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T6 i05 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -5364,7 +7195,7 @@ and replace it with:
 	p.icon:SetTexture(icon)
 ```
 
-<!-- sbw3:edit T5 i06 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T6 i06 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -5400,7 +7231,7 @@ function Buttons.ReleasePlaceholders(parent)
 end
 ```
 
-<!-- sbw3:edit T5 i07 SwagBag/UI/Buttons.lua -->
+<!-- sbw3:edit T6 i07 SwagBag/UI/Buttons.lua -->
 In `SwagBag/UI/Buttons.lua`, find:
 
 ```lua
@@ -5427,7 +7258,7 @@ SB.On("BANKFRAME_OPENED", function()
 end, "bank")
 ```
 
-<!-- sbw3:edit T5 i08 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T6 i08 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -5448,7 +7279,7 @@ local _, SB = ...
 
 ```
 
-<!-- sbw3:edit T5 i09 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T6 i09 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -5471,7 +7302,7 @@ local parents, owners = {}, {}
 -- Pure: the header text.
 ```
 
-<!-- sbw3:edit T5 i10 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T6 i10 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -5506,7 +7337,7 @@ and replace it with:
 	end, "bags"))
 ```
 
-<!-- sbw3:edit T5 i11 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T6 i11 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -5537,7 +7368,7 @@ function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	h:SetWidth(width)
 ```
 
-<!-- sbw3:edit T5 i12 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T6 i12 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -5573,7 +7404,7 @@ function H.ReleaseAll(parent)
 end
 ```
 
-<!-- sbw3:edit T5 i13 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T6 i13 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -5598,7 +7429,7 @@ and replace it with:
 end, "bags"))
 ```
 
-<!-- sbw3:edit T5 i14 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T6 i14 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -5629,7 +7460,7 @@ frame:SetScript("OnDragStop", Guard("bags.dragStop", function()
 	savePosition()
 ```
 
-<!-- sbw3:edit T5 i15 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T6 i15 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -5650,7 +7481,7 @@ and replace it with:
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 ```
 
-<!-- sbw3:edit T5 i16 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T6 i16 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -5672,7 +7503,7 @@ function W.SetScale(scale)
 	scale = SB.GridLayout.ClampScale(scale)
 ```
 
-<!-- sbw3:edit T5 i17 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T6 i17 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -5698,7 +7529,7 @@ and replace it with:
 	W.Flash(L.BAGS_SCALE:format(math.floor(scale * 100 + 0.5)))
 ```
 
-<!-- sbw3:edit T5 i18 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T6 i18 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -5754,7 +7585,7 @@ local function renderExtras(pos)
 		if p.shown then
 ```
 
-<!-- sbw3:edit T5 i19 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T6 i19 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -5765,6 +7596,7 @@ In `SwagBag/UI/BagsWindow.lua`, find:
 		H.Acquire(child, h.id, H.Label(SB.Categories.Name(h.id), h.count, h.collapsed, h.overflow), W.PAD, h.y,
 			pos.width - 2 * W.PAD)
 	end
+	paintTiles(pos)
 	return pos.width, pos.height
 end
 W.Render = render
@@ -5808,12 +7640,14 @@ local function render()
 		end
 	end
 	renderExtras(pos)
+	paintTiles(pos)
 	return pos.width, pos.height
 end
 W.Render = render
 
 -- After Layout.Apply only the buttons whose cell changed are touched (Layout.Moves), plus the
--- placeholders and headers: a few frame calls however many slots the window holds (spec 9).
+-- placeholders, the headers and the free tiles' numbers: a few frame calls however many slots
+-- the window holds (spec 9).
 local function renderMoved(oldPos, newPos)
 	local B = SB.Buttons
 	for _, key in ipairs(SB.Layout.Moves(oldPos, newPos)) do
@@ -5833,13 +7667,14 @@ local function renderMoved(oldPos, newPos)
 	end
 	W.cells = cellsOf(newPos)
 	renderExtras(newPos)
+	paintTiles(newPos)
 	return newPos.width, newPos.height
 end
 
 local function layoutSections(bags)
 ```
 
-<!-- sbw3:edit T5 i20 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T6 i20 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -5862,7 +7697,7 @@ and replace it with:
 	if W.View() == "grid" then
 ```
 
-<!-- sbw3:edit T5 i21 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T6 i21 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -5889,12 +7724,12 @@ and replace it with:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/buttons_spec.lua`
-Expected: `77 passed, 0 failed`
+Expected: `82 passed, 0 failed`
 
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (39 files)`, `518 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (39 files)`, `551 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -5904,7 +7739,7 @@ git add spec/bagswindow_sections_spec.lua \
   SwagBag/UI/Buttons.lua \
   SwagBag/UI/SectionHeaders.lua \
   SwagBag/UI/BagsWindow.lua
-git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 5: pool growth max-merge, CreateAll retry, bank bag frames, per-window pools, incremental redraw, scale position" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 6: pool growth max-merge, CreateAll retry, bank bag frames, per-window pools, incremental redraw, scale position" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
@@ -5922,7 +7757,7 @@ Pass: steps 2–5 behave as described.
 
 ---
 
-### Task 6: One search per window (`SearchState.New`, `SearchBox.New`)
+### Task 7: One search per window (`SearchState.New`, `SearchBox.New`)
 
 Spec AC5.1 asks for "a search box per window". Today `SB.Search` is a single module state, and `UI/SearchBox.lua` builds one box bound to the bags window. The bank and guild bank windows need their own search text and dimming, so this task makes the search state an instance (`SB.SearchState.New()`). `SB.Search` stays the bags window's instance, so every existing caller and test keeps working. The box becomes a factory, `SB.SearchBox.New(o)`, which builds a box on any frame with its own state, slot iterator and dimmer; the bags box is built through it. `ErrorSpan` and `VOLATILE_REFRESH` are shared and stay on every instance. Both files are replaced whole, because the search body is now indented inside the constructor.
 
@@ -5941,7 +7776,7 @@ Spec AC5.1 asks for "a search box per window". Today `SB.Search` is a single mod
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T6 s01 spec/search_spec.lua -->
+<!-- sbw3:edit T7 s01 spec/search_spec.lua -->
 In `spec/search_spec.lua`, find:
 
 ```lua
@@ -5974,7 +7809,7 @@ and replace it with:
 end)
 ```
 
-<!-- sbw3:edit T6 s02 spec/searchbox_spec.lua -->
+<!-- sbw3:edit T7 s02 spec/searchbox_spec.lua -->
 In `spec/searchbox_spec.lua`, find:
 
 ```lua
@@ -6031,7 +7866,7 @@ Critical test and its mutation: `searchbox_spec` "another window's box has its o
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:file T6 i01 SwagBag/Engine/Search.lua -->
+<!-- sbw3:file T7 i01 SwagBag/Engine/Search.lua -->
 Replace the whole file `SwagBag/Engine/Search.lua` with:
 
 ```lua
@@ -6163,7 +7998,7 @@ end
 SB.Search = SearchState.New()
 ```
 
-<!-- sbw3:file T6 i02 SwagBag/UI/SearchBox.lua -->
+<!-- sbw3:file T7 i02 SwagBag/UI/SearchBox.lua -->
 Replace the whole file `SwagBag/UI/SearchBox.lua` with:
 
 ```lua
@@ -6336,7 +8171,7 @@ Expected: `28 passed, 0 failed`
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (39 files)`, `520 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (39 files)`, `553 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -6345,22 +8180,23 @@ git add spec/search_spec.lua \
   spec/searchbox_spec.lua \
   SwagBag/Engine/Search.lua \
   SwagBag/UI/SearchBox.lua
-git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 6: one search state and search box per window" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 7: one search state and search box per window" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
 ---
 
-### Task 7: GroupView: stacked groups with their own sections, the hover guard across groups, the 1,290-slot budget
+### Task 8: GroupView: stacked groups with their own sections, the hover guard across groups, the 1,290-slot budget
 
 The bank window shows two groups (character bank, warband bank) and the guild bank one group per tab. Both need what the bags window does for one group: week-2 `Layout` sections or a grid, collapse, the spec §4.3 transitions while open, and spec §4.2 rule 5. `UI/GroupView.lua` provides that for a stack of groups in one scroll child:
 
 - Each group has a header (`"#" .. groupId`) that collapses the whole group, its own `Layout` state, and its own collapse set: `ui.collapsed["bank:warband"]`, `ui.collapsed["bank:#"]` for whole groups.
-- Section headers are `groupId .. ":" .. sectionId` and are acquired with the view's own owner (Task 5), so clicks never reach the bags window.
+- Section headers are `groupId .. ":" .. sectionId` and are acquired with the view's own owner (Task 6), so clicks never reach the bags window.
 - `Layout.Position` gains `opts.top`, so each group's sections start under the group above.
 - **Cross-group pushes.** A change in one group can push the groups below it (the character bank's Free gains a row). That push is held back while one of the pushed buttons is under the mouse or an item is on the cursor (Review Focus 4). It retries 300 ms later; `v.stats.heldRedraws` counts the holds.
 - **Incremental redraws.** Redraws touch only `Layout.Moves` keys plus the placeholders and headers. The 1,290-slot fixture is laid out in plain Lua well inside the 80 ms first-open budget (spec §9), and a live change looks up at most 4 buttons.
 - **Drops on headers.** A drop on a section header goes to `cfg.onDrop(sectionId)`. The click that follows the drop is ignored for 0.3 s, exactly like the bags window (week-2 ruling).
+- **The free tile (D19, Task 5).** An optional `cfg.freeTile()` returning true builds each group's `Layout` state with `freeTile = true` and `family = SB.Adapter.BagFamily`. Each group's Free then shows one tile per bag family with its number of free slots. `render` and `renderMoved` call a local `paintTiles(pos)`, which draws the number with `SB.Buttons.SetFreeCount`, only on a tile whose record is empty, and clears every other number. `positionAll` collects the groups' `pos.tiles` into one list. The swap after a drop on a tile goes through `Layout.Apply`'s busy check (Task 5), so a group's tile never swaps under the mouse. Without `cfg.freeTile` (the guild bank), nothing changes. Task 9 turns it on for the bank.
 
 **Files:**
 - Create: `SwagBag/UI/GroupView.lua`
@@ -6371,19 +8207,20 @@ The bank window shows two groups (character bank, warband bank) and the guild ba
 - Consumes:
   - `SB.Layout.Build/Position/Apply/Moves/Key/NEW` and `SB.GridLayout.Compute` (on `main`);
   - `SB.Categorizer.Assign`, `SB.Categories.SectionOrder/Name`, `SB.Config.UI` (on `main`);
-  - Task 5's `SB.SectionHeaders.Acquire(…, owner)`, `ReleaseAll(parent)` and `SB.Buttons.AcquirePlaceholder/ReleasePlaceholders(parent)`.
+  - Task 6's `SB.SectionHeaders.Acquire(…, owner)`, `ReleaseAll(parent)` and `SB.Buttons.AcquirePlaceholder/ReleasePlaceholders(parent)`;
+  - Task 5: `Layout.Build` options `freeTile` and `family`, `pos.tiles` (entries with `tile` and `count`), `SB.Buttons.SetFreeCount(button, n | nil)`, `SB.Adapter.BagFamily`.
 - Produces:
   - `SB.Layout.Position(state, opts, collapsed)` with `opts.top` (default 0; the height includes it).
-  - `SB.GroupView.New(cfg) -> v` (the cfg fields are listed at the top of the file).
+  - `SB.GroupView.New(cfg) -> v` (the cfg fields are listed at the top of the file), including the optional `cfg.freeTile() -> bool`.
   - Layout: `v.Layout(reason) -> width, height`, `v.RequestLayout(reason) -> bool`.
   - Live changes and collapse: `v.Changes(groupId, list)`, `v.Retry()`, `v.Restack() -> bool`, `v.ToggleSection(groupId, sectionId)`, `v.ToggleGroup(groupId)`.
   - Access: `v.ForEachSlot(fn(button, record, bag, slot))`, `v.Record(bag, slot)`, `v.SetRecord(bag, slot, record)`, `v.GroupOf(bag)`, `v.Size(bag)`, `v.IsOpen()`, `v.Clear()`, `v.Collapsed(id)`.
-  - Fields: `v.groups`, `v.pos`, `v.cells`, `v.stats.lastLayoutMs`, `v.stats.lastLayoutReason`, `v.stats.heldRedraws`.
+  - Fields: `v.groups`, `v.pos` (with `pos.tiles`), `v.cells`, `v.tiled`, `v.stats.lastLayoutMs`, `v.stats.lastLayoutReason`, `v.stats.heldRedraws`.
   - Constants: `SB.GroupView.SLOT/GAP/PAD/SECTION_HEADER/SECTION_GAP/GROUP_HEADER/GROUP_GAP/RETRY/DROP_GUARD`.
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:file T7 s01 spec/groupview_spec.lua -->
+<!-- sbw3:file T8 s01 spec/groupview_spec.lua -->
 Create `spec/groupview_spec.lua`:
 
 ```lua
@@ -6448,6 +8285,7 @@ local function newView(SB, opts)
 		view = function() return opts.view or "sections" end,
 		columns = function() return opts.columns or 4 end,
 		newRows = function() return 1 end,
+		freeTile = opts.freeTile and function() return true end or nil,
 		onResize = function(w, h, keepTop) resized[#resized + 1] = { w, h, keepTop } end,
 	}
 	local v = SB.GroupView.New(cfg)
@@ -6603,6 +8441,34 @@ describe("GroupView", function()
 		A.Advance(0.3)
 		assert.truthy(at(btn(6, 1))[2] < potionAt[2])
 	end)
+
+	-- Plan D19 (Task 9 turns it on for the bank window). Mutations: drop `freeTile = ...` from
+	-- v.Layout's Build options; delete paintTiles(pos) in renderMoved.
+	it("with cfg.freeTile each group's Free is one tile with its number; a drop on it swaps after the mouse leaves",
+		function()
+			v, f = newView(SB, { freeTile = true })
+			v.Layout("open")
+			assert.same({ "bank:free=- Free (5)", "warband:free=- Free (6)" },
+				{ labels()[6], labels()[10] }, "Free's header still counts every free slot")
+			local fc = SB.Buttons.freeCounts
+			assert.same({ true, "5" }, { btn(6, 4).shown, tostring(fc[btn(6, 4)].text) })
+			assert.same({ true, "6" }, { btn(12, 3).shown, tostring(fc[btn(12, 3)].text) })
+			for slot = 5, 8 do
+				assert.falsy(btn(6, slot).shown, "bank slot " .. slot)
+			end
+			local tileAt = at(btn(6, 4))
+			btn(6, 4).mouseOver = true
+			A.Put(6, 4, Fixtures.ORE, 1)
+			v.SetRecord(6, 4, SB.Items.Describe(6, 4))
+			v.Changes("bank", { { bag = 6, slot = 4, kind = "arrived" } })
+			assert.same(tileAt, at(btn(6, 4)), "nothing moves under the mouse")
+			assert.falsy(btn(6, 5).shown)
+			btn(6, 4).mouseOver = false
+			A.Advance(0.3)
+			assert.same(tileAt, at(btn(6, 5)), "the next empty slot takes the tile's place")
+			assert.same({ true, "4" }, { btn(6, 5).shown, tostring(fc[btn(6, 5)].text) })
+			assert.falsy(fc[btn(6, 4)].shown, "the filled slot shows no number")
+		end)
 
 	it("the grid view shows each group's slots in physical order under its header", function()
 		v, f = newView(SB, { view = "grid" })
@@ -6835,7 +8701,7 @@ describe("GroupView randomized (Park-Miller): hover holds across groups, section
 end)
 ```
 
-<!-- sbw3:edit T7 s02 spec/layout_spec.lua -->
+<!-- sbw3:edit T8 s02 spec/layout_spec.lua -->
 In `spec/layout_spec.lua`, find:
 
 ```lua
@@ -6873,7 +8739,7 @@ and replace it with:
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `luajit spec/runner.lua spec/groupview_spec.lua spec/layout_spec.lua`
-Expected: `28 passed, 16 failed`. `UI/GroupView.lua` does not exist, and `Layout.Position` ignores `top`.
+Expected: `37 passed, 17 failed`. `UI/GroupView.lua` does not exist, and `Layout.Position` ignores `top`.
 
 The randomized test uses Park-Miller (`seed * 16807 % 2147483647`, exact in doubles): 12 runs of 40 steps, with 0–2 hovered buttons per step. It asserts coverage minimums, so it can never pass vacuously: ≥ 150 lefts, ≥ 150 arrivals, ≥ 100 drains, ≥ 5 held pushes, ≥ 5 pushes of the warband group. Measured: 165 / 315 / 132 / 12 / 10.
 
@@ -6884,10 +8750,11 @@ Critical tests and the mutation that must make each fail:
 - "the grid view shows each group's slots…" (its collapse half): `c.shown = c.shown` in `positionAll`.
 - "1,290 slots: … a live change touches a few buttons": `render(pos)` instead of `renderMoved(v.pos, pos)` in `redraw`.
 - "dropping an item on a section header calls onDrop once…": delete the `dropGuard == id` test in `owner.onClick`.
+- "with cfg.freeTile each group's Free is one tile with its number…": drop `freeTile = cfg.freeTile and cfg.freeTile() or nil,` from `v.Layout`'s Build options; or delete `paintTiles(pos)` in `renderMoved`.
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T7 i01 SwagBag/SwagBag.toc -->
+<!-- sbw3:edit T8 i01 SwagBag/SwagBag.toc -->
 In `SwagBag/SwagBag.toc`, find:
 
 ```text
@@ -6907,7 +8774,7 @@ UI/BankWindow.lua
 UI/GuildButtons.lua
 ```
 
-<!-- sbw3:edit T7 i02 SwagBag/Engine/Layout.lua -->
+<!-- sbw3:edit T8 i02 SwagBag/Engine/Layout.lua -->
 In `SwagBag/Engine/Layout.lua`, find:
 
 ```lua
@@ -6929,12 +8796,12 @@ and replace it with:
 --           placeholders = { {bag, slot, icon, x, y, shown} }, headers = { {id, y, count,
 ```
 
-<!-- sbw3:edit T7 i03 SwagBag/Engine/Layout.lua -->
+<!-- sbw3:edit T8 i03 SwagBag/Engine/Layout.lua -->
 In `SwagBag/Engine/Layout.lua`, find:
 
 ```lua
 	local step = size + gap
-	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {} }
+	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {} }
 	local y = pad
 	for _, id in ipairs(st.order) do
 		local sec = st.sections[id]
@@ -6944,13 +8811,13 @@ and replace it with:
 
 ```lua
 	local step = size + gap
-	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {} }
+	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {} }
 	local y = (opts.top or 0) + pad
 	for _, id in ipairs(st.order) do
 		local sec = st.sections[id]
 ```
 
-<!-- sbw3:file T7 i04 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:file T8 i04 SwagBag/UI/GroupView.lua -->
 Create `SwagBag/UI/GroupView.lua`:
 
 ```lua
@@ -6984,7 +8851,9 @@ Create `SwagBag/UI/GroupView.lua`:
 --   view() -> "sections" | "grid";  columns() -> n;  newRows() -> n,
 --   onResize(width, height, keepTop);  onUpdated() optional, after a redraw while open,
 --   onDrop(sectionId) optional: an item dropped on a section header,
---   sectionLabel(groupId, header) optional: header = { id, count, collapsed, overflow } }
+--   sectionLabel(groupId, header) optional: header = { id, count, collapsed, overflow },
+--   freeTile() optional -> true: each group's Free shows one tile per bag family with its
+--   number of free slots (Engine/Layout.lua, plan D19; families from Adapter.BagFamily) }
 -- Collapse state is saved per character in ui.collapsed[key .. ":" .. groupId] (sections)
 -- and ui.collapsed[key .. ":#"] (whole groups).
 local _, SB = ...
@@ -7000,7 +8869,7 @@ end
 function GV.New(cfg)
 	local Guard = SB.ErrorTrap.Guard
 	local v = { groups = {}, byId = {}, records = {}, cells = {}, placed = {}, sizes = {}, groupOf = {}, pos = nil,
-		redrawPending = false, stats = {} }
+		redrawPending = false, stats = {}, tiled = {} }
 
 	-- Collapse sets, saved per character.
 	local function collapsedFor(id)
@@ -7033,10 +8902,10 @@ function GV.New(cfg)
 
 	-- Pixel positions of every group, stacked top to bottom. Combined result:
 	-- { cells, byKey, placeholders, headers = { { group, id, y, count, overflow, collapsed } },
-	--   groupHeaders = { { id, y, count, collapsed } }, width, height }
+	--   groupHeaders = { { id, y, count, collapsed } }, tiles = { free tile cells }, width, height }
 	local function positionAll()
 		local cols = cfg.columns()
-		local all = { cells = {}, byKey = {}, placeholders = {}, headers = {}, groupHeaders = {},
+		local all = { cells = {}, byKey = {}, placeholders = {}, headers = {}, groupHeaders = {}, tiles = {},
 			width = GV.PAD * 2 + cols * GV.SLOT + (cols - 1) * GV.GAP }
 		local y = 0
 		for _, g in ipairs(v.groups) do
@@ -7068,6 +8937,9 @@ function GV.New(cfg)
 			for _, p in ipairs(pos.placeholders) do
 				p.shown = p.shown and not closed
 				all.placeholders[#all.placeholders + 1] = p
+			end
+			for _, t in ipairs(pos.tiles or {}) do -- the same tables as their cells (shown follows)
+				all.tiles[#all.tiles + 1] = t
 			end
 			if not closed then
 				for _, h in ipairs(pos.headers) do
@@ -7196,6 +9068,25 @@ function GV.New(cfg)
 		return cells
 	end
 
+	-- The free tiles' numbers (plan D19): a tile shows its family's free-slot count while it
+	-- really is empty (a drop held under the mouse shows the item); other numbers are cleared.
+	local function paintTiles(pos)
+		local now = {}
+		for _, t in ipairs(pos.tiles) do
+			local button = cfg.button(t.bag, t.slot)
+			if button and t.shown and not v.records[keyOf(t.bag, t.slot)] then
+				SB.Buttons.SetFreeCount(button, t.count)
+				now[button] = true
+			end
+		end
+		for button in pairs(v.tiled) do
+			if not now[button] then
+				SB.Buttons.SetFreeCount(button, nil)
+			end
+		end
+		v.tiled = now
+	end
+
 	local function render(pos)
 		for _, c in ipairs(pos.cells) do
 			local button = cfg.button(c.bag, c.slot)
@@ -7205,6 +9096,7 @@ function GV.New(cfg)
 		end
 		v.cells = cellsOf(pos)
 		renderExtras(pos)
+		paintTiles(pos)
 		v.pos = pos
 	end
 
@@ -7230,6 +9122,7 @@ function GV.New(cfg)
 		hideGone(old, pos)
 		v.cells = cellsOf(pos)
 		renderExtras(pos)
+		paintTiles(pos)
 		v.pos = pos
 	end
 
@@ -7284,8 +9177,9 @@ function GV.New(cfg)
 				end
 			end
 			if sections then
-				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order,
-					{ columns = cfg.columns(), newRows = cfg.newRows() })
+				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order, { columns = cfg.columns(),
+					newRows = cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile() or nil,
+					family = SB.Adapter.BagFamily })
 			end
 			v.groups[#v.groups + 1] = g
 			v.byId[g.id] = g
@@ -7483,12 +9377,12 @@ end
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `luajit spec/runner.lua spec/groupview_spec.lua spec/layout_spec.lua`
-Expected: `44 passed, 0 failed`
+Expected: `54 passed, 0 failed`
 
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (40 files)`, `536 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (40 files)`, `570 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -7498,18 +9392,18 @@ git add spec/groupview_spec.lua \
   SwagBag/SwagBag.toc \
   SwagBag/Engine/Layout.lua \
   SwagBag/UI/GroupView.lua
-git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 7: GroupView, stacked groups with their own sections and a hover guard across groups" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 8: GroupView, stacked groups with their own sections and a hover guard across groups" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
 ---
-### Task 8: Bank window contents: Character bank and Warband bank groups, deposit highlight, live updates, Sort per bank type, Reflow, grid, search
+### Task 9: Bank window contents: Character bank and Warband bank groups, deposit highlight, live updates, Sort per bank type, Reflow, grid, search
 
 This task fills Task 1's window (spec F2, §5.1).
 
 **Groups and highlight.** A `GroupView` holds two groups, `"bank"` (Character bank) and `"warband"` (Warband bank). Each lists the purchased tabs the client reports, never a hardcoded count. The group that receives deposits is tinted, and its header ends with `  - deposits go here` (AC2.3). A tab click moves that highlight with `v.Relabel()`, and nothing moves.
 
-**Opening.** The bank tabs' bag frames move into this window's scroll child (`Buttons.SetParentFor("bank"/"warband", child)`; Task 5 made that work after login). `Inventory.ScanKind` rescans the bank on `BANKFRAME_OPENED` without marking anything "new": what was already in the bank is not a new arrival.
+**Opening.** The bank tabs' bag frames move into this window's scroll child (`Buttons.SetParentFor("bank"/"warband", child)`; Task 6 made that work after login). `Inventory.ScanKind` rescans the bank on `BANKFRAME_OPENED` without marking anything "new": what was already in the bank is not a new arrival.
 
 **Live updates (spec §4.3).** While open, a deposit shows in that group's New, a withdrawal leaves a placeholder and its button goes to that group's Free, and count/lock/load changes repaint in place. A same-itemID link change (a keystone after a run) is a repaint, not an arrival (week-2 W12).
 
@@ -7517,13 +9411,15 @@ This task fills Task 1's window (spec F2, §5.1).
 
 **Sort.** `Sort bank` and `Sort warband` call `Adapter.SortBank(kind)` (spec §5.5, D12). The window regroups 0.3 s after the last bank update, held back while the mouse is over the items. In combat a Sort says `Sort after combat ends` and nothing runs later (week-2 ruling W11). A sort that changes nothing stops waiting after 1.5 s.
 
-**Buttons, search and drops.** `Reflow` and `Grid`/`Categories` work as in the bags window. The window has its own search box (Task 6). A drop on a bank section header goes to the bags window's drag-to-assign (D13).
+**Free as one tile (D19, Task 5).** The bank's GroupView gets `freeTile = function() return SB.Config.Get("bags.freeTile") end`. Each group (Character bank, Warband bank) shows one free tile with its number of free slots, by default, exactly like the bags window. One setting covers both windows. `/swagbag free tile|all` emits `SB_FREE_TILE_CHANGED`, and the bank window lays itself out again through `view.RequestLayout("free")`, held back like any full layout. Bank and warband tabs are all family `"any"` (a tab's "reagents only" deposit setting is not a bag family, so such a tab shares its group's tile). A withdrawal makes its slot a hidden free slot of its group, and the group's tile number goes up.
+
+**Buttons, search and drops.** `Reflow` and `Grid`/`Categories` work as in the bags window. The window has its own search box (Task 7). A drop on a bank section header goes to the bags window's drag-to-assign (D13).
 
 **Report.** The report gains `Last bank layout: … ms (open)` for the 80 ms budget (spec §9).
 
-The bank buttons get their overlays in Task 11, once the guild bank has contents too.
+The bank buttons get their overlays in Task 12, once the guild bank has contents too.
 
-The task also adds `spec/helpers/uienv.lua`, the shared set-up of the window specs (this task's and Tasks 10, 11 and 12): the engine file list, the paint globals and loading the bank window. It also adds the Review Focus 1 test: the real bags window and the real bank window open together, and a bags redraw never takes the bank's headers or placeholders.
+The task also adds `spec/helpers/uienv.lua`, the shared set-up of the window specs (this task's and Tasks 11, 12 and 13): the engine file list, the paint globals and loading the bank window. It also adds the Review Focus 1 test: the real bags window and the real bank window open together, and a bags redraw never takes the bank's headers or placeholders.
 
 **Files:**
 - Modify: `SwagBag/UI/BankWindow.lua`, `SwagBag/UI/GroupView.lua` (`Relabel`), `SwagBag/Core/Adapter.lua` (`SortBank`, optional check), `SwagBag/Engine/Inventory.lua` (`ScanKind`), `SwagBag/Core/Config.lua` (`bank.view`, `bank.columns`), `SwagBag/Locale/enUS.lua`, `SwagBag/Core/Report.lua`
@@ -7532,9 +9428,10 @@ The task also adds `spec/helpers/uienv.lua`, the shared set-up of the window spe
 **Interfaces:**
 - Consumes:
   - Task 1: `SB.BankWindow` (frame, mode, target, `Flash`, `TitleButton`, `GroupName`);
-  - Task 5: `SB.Buttons.SetParentFor/EnsureBankTabs/ReleasePlaceholders(parent)`;
-  - Task 6: `SB.SearchState.New`, `SB.SearchBox.New`;
-  - Task 7: `SB.GroupView.New`;
+  - Task 6: `SB.Buttons.SetParentFor/EnsureBankTabs/ReleasePlaceholders(parent)`;
+  - Task 7: `SB.SearchState.New`, `SB.SearchBox.New`;
+  - Task 8: `SB.GroupView.New` (with `cfg.freeTile`);
+  - Task 5: setting `bags.freeTile`, internal event `SB_FREE_TILE_CHANGED`, `SB.Buttons.freeCounts` (tests);
   - on `main`: `SB.BagsWindow.DropOnSection(id)`, `SB.Inventory.OnChanged/Has/R`, `SB.Items.Describe`.
 - Produces:
   - `SB.Adapter.SortBank(kind) -> ok, err` and `SB.Inventory.ScanKind(kind)`.
@@ -7548,7 +9445,7 @@ The task also adds `spec/helpers/uienv.lua`, the shared set-up of the window spe
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:file T8 s01 spec/helpers/uienv.lua -->
+<!-- sbw3:file T9 s01 spec/helpers/uienv.lua -->
 Create `spec/helpers/uienv.lua`:
 
 ```lua
@@ -7607,7 +9504,7 @@ end
 return Env
 ```
 
-<!-- sbw3:edit T8 s02 spec/mock_adapter.lua -->
+<!-- sbw3:edit T9 s02 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -7632,7 +9529,7 @@ and replace it with:
 	end
 ```
 
-<!-- sbw3:file T8 s03 spec/bankwindow_groups_spec.lua -->
+<!-- sbw3:file T9 s03 spec/bankwindow_groups_spec.lua -->
 Create `spec/bankwindow_groups_spec.lua`:
 
 ```lua
@@ -7749,20 +9646,42 @@ describe("BankWindow contents", function()
 		assert.equal("- Character bank (3)  - deposits go here", header("#bank").text.text)
 	end)
 
-	it("a withdrawal leaves a placeholder in its group; the button goes to that group's Free", function()
-		openBank()
-		local herbAt = at(6, 2)
-		A.Clear(6, 2)
-		bankUpdate(6)
-		assert.equal(1, #B.placeholdersInUse)
-		assert.truthy(at(6, 2)[2] < herbAt[2])
-		assert.equal("- Free (7)", header("bank:free").text.text)
-		A.Clear(12, 2)
-		bankUpdate(12)
-		assert.equal(2, #B.placeholdersInUse)
-		assert.equal("- Free (7)", header("warband:free").text.text, "the warband item went to the warband's Free")
-		assert.truthy(at(12, 2)[2] < header("warband:free").points[1][5])
-	end)
+	-- The free slot's number on a button (nil: none), plan D19.
+	local function number(bag, slot)
+		local fs = B.freeCounts[B.Get(bag, slot)]
+		return fs and fs.shown and tonumber(fs.text) or nil
+	end
+
+	it("a withdrawal leaves a placeholder in its group; the slot joins that group's free slots (its tile's number)",
+		function()
+			openBank()
+			assert.same({ 6, 6 }, { number(6, 3), number(12, 3) }, "one tile per group: its first empty slot")
+			A.Clear(6, 2)
+			bankUpdate(6)
+			assert.equal(1, #B.placeholdersInUse)
+			assert.falsy(B.Get(6, 2).shown, "the emptied slot is a hidden free slot of the bank group")
+			assert.equal("- Free (7)", header("bank:free").text.text)
+			assert.same({ 7, 6 }, { number(6, 3), number(12, 3) })
+			A.Clear(12, 2)
+			bankUpdate(12)
+			assert.equal(2, #B.placeholdersInUse)
+			assert.equal("- Free (7)", header("warband:free").text.text, "the warband item went to the warband's Free")
+			assert.same({ 7, 7 }, { number(6, 3), number(12, 3) })
+		end)
+
+	-- Plan D19. Mutations: delete `freeTile = function() ... end` from the bank's GroupView cfg; delete
+	-- the bank window's SB_FREE_TILE_CHANGED handler.
+	it("the bank follows bags.freeTile: one tile per group by default, every free slot after /swagbag free all",
+		function()
+			openBank()
+			assert.same({ true, false }, { B.Get(6, 3).shown, B.Get(6, 4).shown })
+			SB.Config.Set("bags.freeTile", false) -- what /swagbag free all does (Core/Commands.lua)
+			SB.Emit("SB_FREE_TILE_CHANGED")
+			for slot = 3, 8 do
+				assert.truthy(B.Get(6, slot).shown, "bank slot " .. slot)
+			end
+			assert.is_nil(number(6, 3))
+		end)
 
 	it("Sort bank sorts the character bank and regroups after the bank settles; Sort warband sorts the warband", function()
 		openBank()
@@ -7977,7 +9896,7 @@ describe("Bags and bank windows open together (Review Focus 1)", function()
 end)
 ```
 
-<!-- sbw3:edit T8 s04 spec/bankwindow_spec.lua -->
+<!-- sbw3:edit T9 s04 spec/bankwindow_spec.lua -->
 In `spec/bankwindow_spec.lua`, find:
 
 ```lua
@@ -8002,7 +9921,7 @@ local FILES = Env.ENGINE
 -- Blizzard's bank as Blizzard shows it: parented to UIParent, two real tabs underneath.
 ```
 
-<!-- sbw3:edit T8 s05 spec/bankwindow_spec.lua -->
+<!-- sbw3:edit T9 s05 spec/bankwindow_spec.lua -->
 In `spec/bankwindow_spec.lua`, find:
 
 ```lua
@@ -8036,7 +9955,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T8 s06 spec/bankwindow_spec.lua -->
+<!-- sbw3:edit T9 s06 spec/bankwindow_spec.lua -->
 In `spec/bankwindow_spec.lua`, find:
 
 ```lua
@@ -8059,7 +9978,7 @@ and replace it with:
 		assert.truthy(ok, tostring(err))
 ```
 
-<!-- sbw3:edit T8 s07 spec/report_spec.lua -->
+<!-- sbw3:edit T9 s07 spec/report_spec.lua -->
 In `spec/report_spec.lua`, find:
 
 ```lua
@@ -8083,7 +10002,7 @@ and replace it with:
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `luajit spec/runner.lua spec/bankwindow_groups_spec.lua spec/bankwindow_spec.lua spec/report_spec.lua`
-Expected: `24 passed, 19 failed`. The window has no contents, sort or search yet.
+Expected: `29 passed, 20 failed`. The window has no contents, sort or search yet.
 
 Critical tests and the mutation that must make each fail:
 - "what is already in the bank at a visit is not marked new": delete `Inv.scanned = false` in `Inv.ScanKind`.
@@ -8094,10 +10013,11 @@ Critical tests and the mutation that must make each fail:
 - "Sort bank sorts the character bank and regroups after the bank settles…": delete `BW.Reflow("sort")` from the settle debounce.
 - "a second Sort during a settle keeps the first sort's regroup…": `if false then` instead of `if saw then`.
 - "a bags redraw (Reflow, a bag change) never takes the bank window's headers or placeholders": `H.ReleaseAll()` (no parent), or `B.ReleasePlaceholders()`, in the bags window's `renderExtras`.
+- "the bank follows bags.freeTile…": delete the `freeTile = function() … end` entry of the bank's GroupView cfg; or delete the bank window's `SB_FREE_TILE_CHANGED` handler. (The first also fails "a withdrawal leaves a placeholder in its group…".)
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T8 i01 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T9 i01 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -8126,7 +10046,7 @@ end
 -- Blizzard frames and the bank (week 3). SwagBag only READS Blizzard's bank state
 ```
 
-<!-- sbw3:edit T8 i02 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T9 i02 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -8146,7 +10066,7 @@ and replace it with:
 	{ path = "ClearCursor", window = "bags", required = false },
 ```
 
-<!-- sbw3:edit T8 i03 SwagBag/Core/Config.lua -->
+<!-- sbw3:edit T9 i03 SwagBag/Core/Config.lua -->
 In `SwagBag/Core/Config.lua`, find:
 
 ```lua
@@ -8168,7 +10088,7 @@ and replace it with:
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 ```
 
-<!-- sbw3:edit T8 i04 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T9 i04 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -8194,7 +10114,7 @@ L.REPORT_BANK_LAYOUT = "Last bank layout: %.1f ms (%s)"
 -- Guild bank window (spec F16)
 ```
 
-<!-- sbw3:edit T8 i05 SwagBag/Engine/Inventory.lua -->
+<!-- sbw3:edit T9 i05 SwagBag/Engine/Inventory.lua -->
 In `SwagBag/Engine/Inventory.lua`, find:
 
 ```lua
@@ -8225,7 +10145,7 @@ end
 function Inv.ScanAll()
 ```
 
-<!-- sbw3:edit T8 i06 SwagBag/Engine/Inventory.lua -->
+<!-- sbw3:edit T9 i06 SwagBag/Engine/Inventory.lua -->
 In `SwagBag/Engine/Inventory.lua`, find:
 
 ```lua
@@ -8245,7 +10165,7 @@ SB.On("BANKFRAME_OPENED", function()
 end, "bank")
 ```
 
-<!-- sbw3:edit T8 i07 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:edit T9 i07 SwagBag/UI/GroupView.lua -->
 In `SwagBag/UI/GroupView.lua`, find:
 
 ```lua
@@ -8265,7 +10185,7 @@ and replace it with:
 --   v.Record(bag, slot), v.SetRecord(bag, slot, record), v.GroupOf(bag), v.Size(bag), v.IsOpen()
 ```
 
-<!-- sbw3:edit T8 i08 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:edit T9 i08 SwagBag/UI/GroupView.lua -->
 In `SwagBag/UI/GroupView.lua`, find:
 
 ```lua
@@ -8291,12 +10211,12 @@ and replace it with:
 		if not v.pos then
 ```
 
-<!-- sbw3:edit T8 i09 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T9 i09 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
--- window and nothing else (spec 5.6); if the bank is still open, the bags window shows
--- "Bank still open", which only shows this window again.
+-- window (spec 5.6) and gives Blizzard's bank back its parent, so it is visible while the
+-- visit lasts; the bags window shows "Bank still open", which shows this window again.
 local _, SB = ...
 
 ```
@@ -8304,8 +10224,8 @@ local _, SB = ...
 and replace it with:
 
 ```lua
--- window and nothing else (spec 5.6); if the bank is still open, the bags window shows
--- "Bank still open", which only shows this window again.
+-- window (spec 5.6) and gives Blizzard's bank back its parent, so it is visible while the
+-- visit lasts; the bags window shows "Bank still open", which shows this window again.
 -- Contents (UI/GroupView.lua): the "Character bank" group on top, the "Warband bank" group
 -- below, each with its own category sections (or grid), for the purchased tabs the client
 -- reports. The receiving group is tinted and says "deposits go here". Items move only into
@@ -8316,7 +10236,7 @@ local _, SB = ...
 
 ```
 
-<!-- sbw3:edit T8 i10 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T9 i10 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -8344,7 +10264,7 @@ and replace it with:
 SB.BankWindow = BW
 ```
 
-<!-- sbw3:edit T8 i11 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T9 i11 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -8394,7 +10314,7 @@ end, "bank"))
 local function blizzardBank()
 ```
 
-<!-- sbw3:edit T8 i12 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T9 i12 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -8421,7 +10341,7 @@ function BW.RefreshTarget()
 end
 ```
 
-<!-- sbw3:edit T8 i13 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T9 i13 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -8510,6 +10430,9 @@ BW.view = SB.GroupView.New({
 	end,
 	newRows = function()
 		return SB.Config.Get("bags.newRows")
+	end,
+	freeTile = function() -- one setting for the bags and the bank (plan D19, /swagbag free)
+		return SB.Config.Get("bags.freeTile")
 	end,
 	onResize = sizeFrame,
 	onUpdated = function()
@@ -8697,7 +10620,7 @@ end, "bank"))
 ---------------------------------------------------------------------------
 ```
 
-<!-- sbw3:edit T8 i14 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T9 i14 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -8723,11 +10646,11 @@ and replace it with:
 	BW.RefreshStillOpen()
 ```
 
-<!-- sbw3:edit T8 i15 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T9 i15 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
-		return
+		host.Restore()
 	end
 	SB.Emit("SB_BANK_CLOSED")
 	BW.RefreshStillOpen()
@@ -8736,7 +10659,7 @@ In `SwagBag/UI/BankWindow.lua`, find:
 and replace it with:
 
 ```lua
-		return
+		host.Restore()
 	end
 	BW.view.Clear()
 	BW.sortPending, BW.sortSawUpdate = false, false
@@ -8744,7 +10667,7 @@ and replace it with:
 	BW.RefreshStillOpen()
 ```
 
-<!-- sbw3:edit T8 i16 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T9 i16 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -8775,9 +10698,16 @@ SB.On("BANK_TAB_SETTINGS_UPDATED", function()
 	end
 end, "bank")
 
+-- /swagbag free tile|all (plan D19): the bank regroups too, held back like any full layout.
+SB.On("SB_FREE_TILE_CHANGED", function()
+	if frame:IsShown() and BW.view.RequestLayout("free") then
+		searchBox.Apply()
+	end
+end, "bank")
+
 ```
 
-<!-- sbw3:edit T8 i17 SwagBag/Core/Report.lua -->
+<!-- sbw3:edit T9 i17 SwagBag/Core/Report.lua -->
 In `SwagBag/Core/Report.lua`, find:
 
 ```lua
@@ -8803,12 +10733,12 @@ and replace it with:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `luajit spec/runner.lua spec/bankwindow_groups_spec.lua spec/bankwindow_spec.lua spec/report_spec.lua`
-Expected: `43 passed, 0 failed`
+Expected: `49 passed, 0 failed`
 
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (40 files)`, `554 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (40 files)`, `589 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -8825,22 +10755,22 @@ git add spec/helpers/uienv.lua \
   SwagBag/UI/GroupView.lua \
   SwagBag/UI/BankWindow.lua \
   SwagBag/Core/Report.lua
-git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 8: bank window contents, deposit highlight, live updates, sort per bank type, search" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 9: bank window contents, deposit highlight, live updates, sort per bank type, search" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
-Session B1 (the bank contents) runs after Task 9, so it can check the snapshots too.
+Session B1 (the bank contents) runs after Task 10, so it can check the snapshots too.
 
 ---
 
-### Task 9: Snapshots captured: format, timing, combat, budget, `/swagbag snapshot`
+### Task 10: Snapshots captured: format, timing, combat, budget, `/swagbag snapshot`
 
 Spec F13 ships its offline view in November. The data has to start now (spec §12.1: "bank snapshots are still captured in October"), because the character bank can only be read at a banker (§5.7). `Engine/Snapshots.lua` stores the spec §8.3 format:
 - `{ v = 1, at, containers = { [bag] = { size, s } } }`;
 - one `"slot:link;count\n"` string per container, links verbatim;
 - `Deserialize` reads it back. A link that contains `;` round-trips, because the line pattern takes the last `;`.
 
-**Where it saves:** `SwagBagDB.chars["Name-Realm"]` (with class, level, lastSeen), `SwagBagDB.warband`, and `SwagBagDB.guilds["Guild-Realm"]` (used by Task 10). There is no schema bump (D7): `Snapshots.DB()` creates the tables and repairs damaged ones.
+**Where it saves:** `SwagBagDB.chars["Name-Realm"]` (with class, level, lastSeen), `SwagBagDB.warband`, and `SwagBagDB.guilds["Guild-Realm"]` (used by Task 11). There is no schema bump (D7): `Snapshots.DB()` creates the tables and repairs damaged ones.
 
 **When (D6):**
 - bags at logout and 5 s after the last bag update;
@@ -8868,7 +10798,7 @@ The close snapshot is read from SwagBag's inventory model, so a client that alre
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T9 s01 spec/mock_adapter.lua -->
+<!-- sbw3:edit T10 s01 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -8901,7 +10831,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T9 s02 spec/report_spec.lua -->
+<!-- sbw3:edit T10 s02 spec/report_spec.lua -->
 In `spec/report_spec.lua`, find:
 
 ```lua
@@ -8926,7 +10856,7 @@ and replace it with:
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 ```
 
-<!-- sbw3:file T9 s03 spec/snapshots_spec.lua -->
+<!-- sbw3:file T10 s03 spec/snapshots_spec.lua -->
 Create `spec/snapshots_spec.lua`:
 
 ```lua
@@ -9138,7 +11068,7 @@ Critical tests and the mutation that must make each fail:
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T9 i01 SwagBag/SwagBag.toc -->
+<!-- sbw3:edit T10 i01 SwagBag/SwagBag.toc -->
 In `SwagBag/SwagBag.toc`, find:
 
 ```text
@@ -9158,7 +11088,7 @@ Engine/OverlayData.lua
 
 ```
 
-<!-- sbw3:edit T9 i02 .luacheckrc -->
+<!-- sbw3:edit T10 i02 .luacheckrc -->
 In `.luacheckrc`, find:
 
 ```lua
@@ -9179,7 +11109,7 @@ and replace it with:
 }
 ```
 
-<!-- sbw3:edit T9 i03 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T10 i03 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -9213,7 +11143,7 @@ end
 
 ```
 
-<!-- sbw3:edit T9 i04 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T10 i04 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -9247,7 +11177,7 @@ L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
 L.OVERLAY_TRACK = "%s%d/%d"
 ```
 
-<!-- sbw3:file T9 i05 SwagBag/Engine/Snapshots.lua -->
+<!-- sbw3:file T10 i05 SwagBag/Engine/Snapshots.lua -->
 Create `SwagBag/Engine/Snapshots.lua`:
 
 ```lua
@@ -9556,7 +11486,7 @@ SB.Slash.Register("snapshot", SB.L.HELP_SNAPSHOT, function()
 end)
 ```
 
-<!-- sbw3:edit T9 i06 SwagBag/Core/Report.lua -->
+<!-- sbw3:edit T10 i06 SwagBag/Core/Report.lua -->
 In `SwagBag/Core/Report.lua`, find:
 
 ```lua
@@ -9587,7 +11517,7 @@ Expected: `22 passed, 0 failed`
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (41 files)`, `568 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (41 files)`, `603 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -9601,7 +11531,7 @@ git add spec/mock_adapter.lua \
   SwagBag/Locale/enUS.lua \
   SwagBag/Engine/Snapshots.lua \
   SwagBag/Core/Report.lua
-git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 9: snapshots of bags, bank and warband bank, with budget and /swagbag snapshot" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 10: snapshots of bags, bank and warband bank, with budget and /swagbag snapshot" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
@@ -9638,11 +11568,11 @@ Pass: steps 2–13 behave as described, and no item moved while the mouse was on
 
 ---
 
-### Task 10: Guild bank window on GroupView: sections per tab, on-demand queries with a session cache, live changes, search, per-guild snapshot
+### Task 11: Guild bank window on GroupView: sections per tab, on-demand queries with a session cache, live changes, search, per-guild snapshot
 
 Task 2's guild window draws each tab as a plain grid. This task replaces it with a `GroupView` (AC16.1): every viewable tab is a group (`"tab" .. N`, pseudo bag `100 + N`) with its own category sections or grid, its own search box, Reflow and Grid. The tab header shows the marker, name, item count and withdrawals left, for example `- Mats (12) - 5 withdrawals left today`.
 
-Guild items are not container items, so `Items.DescribeLink(info, bag, slot, tab)` builds their records from the link. It uses `Adapter.GetLinkIlvl(link)` for the item level, sets location `"guild"`, and marks guild items as never bound, never on cooldown and never new. Like bag records (Task 3) it carries `track` (from `Adapter.UpgradeInfo`) and `hasNoValue` (always false), so Task 11 can draw overlays on guild buttons.
+Guild items are not container items, so `Items.DescribeLink(info, bag, slot, tab)` builds their records from the link. It uses `Adapter.GetLinkIlvl(link)` for the item level, sets location `"guild"`, and marks guild items as never bound, never on cooldown and never new. Like bag records (Task 3) it carries `track` (from `Adapter.UpgradeInfo`) and `hasNoValue` (always false), so Task 12 can draw overlays on guild buttons.
 
 **Queries (Review Focus 3).** One tab is queried at a time. A `GUILDBANKBAGSLOTS_CHANGED` that arrives while tab T is being queried is T's answer, and only tabs that answered during this visit are read. A tab whose answer is still on its way never reads as empty and never turns into a screen of placeholders. A tab with no answer in 0.3 s is asked once more at the end of the queue.
 
@@ -9650,7 +11580,15 @@ Guild items are not container items, so `Items.DescribeLink(info, bag, slot, tab
 
 **Snapshot.** A per-guild snapshot is saved 1 s after an answer and when the vault closes (AC16.4, `Snapshots.SaveGuild`).
 
-**Unchanged from Task 2:** the window's frame handling (tiny/view, re-hosted tabs, read-only selected tab, Esc, Safe Mode, the slot actions). `GW.ApplyMode` still moves nothing while Blizzard's frame is hidden; a new test pins that. The window file and its spec are replaced whole.
+**Unchanged from Task 2 (as built, with its fix round):** the window's frame handling (tiny/view, re-hosted tabs, read-only selected tab, Safe Mode, the slot actions). This includes:
+- ruling W3-1: a re-apply during a tiny visit stays full;
+- ruling W3-5: withdrawals left are re-read on every slot change. Here they show in the group headers;
+- ruling W3-10: `withdrawAnyTab` is off by default, and `/swagbag guild anytab on|off` switches it;
+- ruling W3-11: Esc or the X during a visit makes Blizzard's guild bank visible again;
+- the chat line when the client refuses a click;
+- `GW.ApplyMode` does nothing while Blizzard's frame or SwagBag's window is hidden, or in Safe Mode.
+
+The window file and its spec are replaced whole. The replacements below already contain every fix-round change and test from `2b37296`. Only the W3-5 test now reads the tab's group header instead of the old `GW.labels`.
 
 **Files:**
 - Modify (replace whole files): `SwagBag/UI/GuildBankWindow.lua`, `spec/guildbank_spec.lua`
@@ -9661,10 +11599,10 @@ Guild items are not container items, so `Items.DescribeLink(info, bag, slot, tab
 - Consumes:
   - Task 2: `SB.GuildButtons`, the Adapter guild functions, `SB.TinyHost`;
   - Task 3: `SB.Adapter.UpgradeInfo` (records carry `track`);
-  - Task 6: `SB.SearchState.New`, `SB.SearchBox.New`;
-  - Task 7: `SB.GroupView.New` (with `Relabel` from Task 8);
-  - Task 8: `spec/helpers/uienv.lua`;
-  - Task 9: `SB.Snapshots.SaveGuild`.
+  - Task 7: `SB.SearchState.New`, `SB.SearchBox.New`;
+  - Task 8: `SB.GroupView.New` (with `Relabel` from Task 9);
+  - Task 9: `spec/helpers/uienv.lua`;
+  - Task 10: `SB.Snapshots.SaveGuild`.
 - Produces:
   - `SB.Items.DescribeLink(info, bag, slot, tab) -> record` and `SB.Adapter.GetLinkIlvl(link) -> number | nil`.
   - `SB.GuildBankWindow` keeps the Task 2 names listed there. `ReadTab`, `Render` and `labels` are gone (the GroupView draws). `TabLabel` now takes `(tab, collapsed, count)`. It gains:
@@ -9674,7 +11612,7 @@ Guild items are not container items, so `Items.DescribeLink(info, bag, slot, tab
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T10 s01 spec/helpers/uienv.lua -->
+<!-- sbw3:edit T11 s01 spec/helpers/uienv.lua -->
 In `spec/helpers/uienv.lua`, find:
 
 ```lua
@@ -9704,7 +11642,7 @@ end
 return Env
 ```
 
-<!-- sbw3:edit T10 s02 spec/mock_adapter.lua -->
+<!-- sbw3:edit T11 s02 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -9730,7 +11668,7 @@ and replace it with:
 	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
 ```
 
-<!-- sbw3:file T10 s03 spec/guildbank_spec.lua -->
+<!-- sbw3:file T11 s03 spec/guildbank_spec.lua -->
 Replace the whole file `spec/guildbank_spec.lua` with:
 
 ```lua
@@ -9745,6 +11683,7 @@ local Env = dofile("spec/helpers/uienv.lua")
 local Fixtures = dofile("spec/fixtures/items.lua")
 
 -- Blizzard's guild bank as Blizzard shows it, with two tab buttons on its right edge.
+-- All five frames are STRICT fakes (ruling W3-2): every method SwagBag calls on them is logged.
 local function blizzardGuildBank(A)
 	local gf = Fake.New("Frame", UIParent)
 	gf:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
@@ -9759,9 +11698,52 @@ local function blizzardGuildBank(A)
 		end
 		tabs[i] = t
 	end
+	Fake.Strict(gf)
+	for i = 1, 2 do
+		Fake.Strict(tabs[i])
+		Fake.Strict(tabs[i].Button)
+	end
 	A.frames.GuildBankFrame = gf
 	A.guildTabFrames = tabs
 	return gf, tabs
+end
+
+-- Ruling W3-2: the only writes SwagBag may make on Blizzard's guild bank. GuildBankFrame gets
+-- a new parent (tiny mode; never its anchors) and an OnShow hook; a tab container is moved
+-- (parent and anchors, the re-host); a tab button gets an OnClick hook. Getters (Get*, Is*)
+-- are reads. Anything else in the log is a write SwagBag must not make.
+local FRAME_ALLOWED = { SetParent = true, HookScript = true }
+local TAB_ALLOWED = { SetParent = true, ClearAllPoints = true, SetPoint = true }
+local BUTTON_ALLOWED = { HookScript = true }
+
+local function writesOn(f, who, allowed, out)
+	for _, c in ipairs(f.log) do
+		if not (c.name:find("^Get") or c.name:find("^Is") or allowed[c.name]) then
+			out[#out + 1] = who .. ":" .. c.name
+		end
+	end
+	return out
+end
+
+local function blizzardWrites(gf, tabs)
+	local out = {}
+	writesOn(gf, "GuildBankFrame", FRAME_ALLOWED, out)
+	for i, t in ipairs(tabs) do
+		writesOn(t, "tab" .. i, TAB_ALLOWED, out)
+		writesOn(t.Button, "tab" .. i .. ".Button", BUTTON_ALLOWED, out)
+	end
+	return out
+end
+
+-- Every parent SwagBag gave a Blizzard frame.
+local function parentsSet(f)
+	local out = {}
+	for _, c in ipairs(f.log) do
+		if c.name == "SetParent" then
+			out[#out + 1] = c.args[1]
+		end
+	end
+	return out
 end
 
 describe("GuildBankWindow (check G1)", function()
@@ -9834,18 +11816,141 @@ describe("GuildBankWindow (check G1)", function()
 		assert.same({ "TOPLEFT", tabs[1], "BOTTOMLEFT", 0, -6 }, tabs[2].points[1])
 	end)
 
-	it("never calls a method on Blizzard's guild bank frame or its tabs (it only moves them)", function()
+	-- Ruling W3-2: the STRICT fakes log every call, modelled or not (SetScript, SetAlpha, Show,
+	-- Hide, SetShown, SetID, ...). Mutations: add gf:UpdateTabs() (an unmodelled method) or
+	-- gf:SetAlpha(1) (a modelled one) before `if host.Shrink(gf) then` in GW.ApplyMode.
+	it("never writes Blizzard's guild bank state: no call on its frame or tabs besides moving and hooking them", function()
 		openVault()
 		answerQueries()
 		Fake.Fire(tabs[2].Button, "OnClick")
 		A.Advance(0)
 		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		Fake.Fire(button(1, 2), "OnClick", "LeftButton")
+		Fake.Fire(button(1, 2), "OnDragStart")
+		Fake.Fire(button(1, 9), "OnReceiveDrag")
+		Fake.Fire(GW.blizzardButton, "OnClick")
+		Fake.Fire(GW.blizzardButton, "OnClick")
+		SB.Slash.Dispatch("guild view")
+		SB.Slash.Dispatch("guild full")
+		A.combat = true
+		Fake.Fire(gf, "OnShow") -- a second OnShow for the same visit, in combat
+		SB.Slash.Dispatch("guild view")
+		Fake.Fire(GW.blizzardButton, "OnClick")
 		closeVault()
+		openVault()
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		SB.Config.Set("guildBank.mode", "full")
+		SB.SafeMode.Enable("bank", "manual")
+		SB.SafeMode.Disable("bank")
+		SB.eventFrame:Fire("PLAYER_LOGOUT")
+		openVault()
+		GW.frame:Hide()
+		closeVault()
+		A.Advance(5)
+		assert.truthy(#gf.log > 0 and #tabs[1].log > 0 and #tabs[1].Button.log > 0, "the strict fakes saw the calls")
+		assert.same({}, blizzardWrites(gf, tabs))
+		local tiny = SB.TinyHost.Parent()
+		for _, p in ipairs(parentsSet(gf)) do
+			assert.truthy(p == tiny or p == UIParent, "GuildBankFrame only goes to the tiny parent and back")
+		end
+		for i = 1, 2 do
+			for _, p in ipairs(parentsSet(tabs[i])) do
+				assert.truthy(p == GW.frame or p == gf, "the tabs only go to our window and back")
+			end
+		end
 		assert.same({}, gf.calls)
 		for i = 1, 2 do
 			assert.same({}, tabs[i].calls)
 			assert.same({}, tabs[i].Button.calls)
 		end
+		assert.equal(true, gf.shown)
+		assert.equal(UIParent, gf.parent)
+		assert.same({ { "TOPLEFT", UIParent, "TOPLEFT", 16, -116 } }, gf.points, "its anchors were never touched")
+		assert.equal(gf, tabs[1].parent)
+		assert.same({ { "TOPLEFT", tabs[1], "BOTTOMLEFT", 0, -17 } }, tabs[2].points)
+	end)
+
+	-- Ruling W3-1: a second signal for the same visit (Blizzard's frame shown again, the older
+	-- GUILDBANKFRAME_OPENED) while the guild frame is already tiny stays full and only puts our
+	-- window back at its own position. Mutation: delete the host.IsActive() branch in GW.ApplyMode.
+	it("a second OnShow in combat while Blizzard's guild bank is tiny stays full (ruling W3-1)", function()
+		openVault()
+		A.combat = true
+		Fake.Fire(gf, "OnShow")
+		SB.eventFrame:Fire("GUILDBANKFRAME_OPENED")
+		assert.truthy(GW.IsOpen())
+		assert.equal("full", GW.VisitMode())
+		assert.equal(SB.TinyHost.Parent(), gf.parent)
+		assert.equal(GW.frame, tabs[1].parent)
+		assert.same({ "TOPLEFT", UIParent, "TOPLEFT", 60, -120 }, GW.frame.points[#GW.frame.points])
+		assert.equal(SB.L.GUILD_TITLE, GW.frame.title.text, "no 'stays visible' flash")
+	end)
+
+	it("a second OnShow out of combat stays full and only restores our position (ruling W3-1)", function()
+		openVault()
+		GW.frame:ClearAllPoints()
+		GW.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+		Fake.Fire(gf, "OnShow")
+		assert.equal("full", GW.VisitMode())
+		assert.equal(SB.TinyHost.Parent(), gf.parent)
+		assert.same({ { "TOPLEFT", UIParent, "TOPLEFT", 60, -120 } }, GW.frame.points)
+	end)
+
+	-- Mutation: drop the InCombat() test from the host.IsActive() branch in GW.ApplyMode.
+	it("/swagbag guild view in combat during a full visit saves the setting but keeps this visit full (W3-1)", function()
+		openVault()
+		A.combat = true
+		SB.Slash.Dispatch("guild view")
+		assert.equal("view", SB.Config.Get("guildBank.mode"))
+		assert.same({ SB.L.GUILD_MODE_SAVED_NEXT }, A.Lines())
+		assert.equal("full", GW.VisitMode())
+		assert.equal(SB.TinyHost.Parent(), gf.parent)
+		assert.equal(GW.frame, tabs[1].parent)
+		assert.same({ "TOPLEFT", UIParent, "TOPLEFT", 60, -120 }, GW.frame.points[#GW.frame.points])
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal(SB.TinyHost.Parent(), gf.parent, "no restore was waiting for combat")
+		closeVault()
+		openVault()
+		assert.equal("view", GW.VisitMode(), "the next visit uses the new setting")
+		assert.equal(UIParent, gf.parent)
+	end)
+
+	-- Mutations: drop host.Keep() from the host.IsActive() branch in GW.ApplyMode; or make
+	-- GuildButtons.Ensure return false in combat even when every button exists.
+	it("a vault closed and reopened inside one fight stays full after combat (W3-1)", function()
+		openVault()
+		A.combat = true
+		closeVault()
+		openVault()
+		assert.truthy(GW.IsOpen(), "the buttons exist already: nothing to create in combat")
+		assert.equal("full", GW.VisitMode())
+		assert.equal(SB.TinyHost.Parent(), gf.parent)
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal(SB.TinyHost.Parent(), gf.parent, "the restore queued at the close was cancelled")
+		assert.equal(GW.frame, tabs[1].parent)
+		closeVault()
+		assert.equal(UIParent, gf.parent)
+		assert.equal(gf, tabs[1].parent)
+	end)
+
+	-- Ruling W3-5: a withdrawal changes a slot (GUILDBANKBAGSLOTS_CHANGED); the withdrawals left
+	-- are re-read then too, not only on GUILDBANK_UPDATE_TABS. Mutation: drop GW.ReadTabs() from
+	-- the GUILDBANKBAGSLOTS_CHANGED handler.
+	it("withdrawals left are re-read on every guild slot change (W3-5)", function()
+		openVault()
+		answerQueries()
+		assert.equal("- Mats (2) - 5 withdrawals left today  - deposits go here", header("#tab1").text.text)
+		A.guild.tabs[1].withdrawals = 4
+		SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED")
+		assert.equal("- Mats (2) - 4 withdrawals left today  - deposits go here", header("#tab1").text.text)
+		A.guild.tabs[1].withdrawals = 0
+		SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED")
+		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		assert.same({}, A.guild.withdrawn)
+		assert.same({ "No withdrawals left today from Mats." }, A.Lines())
 	end)
 
 	it("lists every viewable tab with its withdrawals left; a tab the player cannot view is left out", function()
@@ -9923,19 +12028,46 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal(header("tab1:new").points[1][5] - 20, at(button(1, 7))[2], "the deposit is first in New")
 	end)
 
-	it("a right-click withdraws to the bags, from any tab by default", function()
+	-- Ruling W3-10: off until check G1 proves the client withdraws from the tab it is given.
+	-- Mutation: default guildBank.withdrawAnyTab = true in Config.Defaults.
+	it("withdrawAnyTab is off by default: a right-click withdraws from the tab Blizzard has selected", function()
+		assert.equal(false, SB.Config.Get("guildBank.withdrawAnyTab"))
+		openVault()
+		answerQueries()
+		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		assert.same({ { 1, 1 } }, A.guild.withdrawn)
+		assert.same({}, A.Lines())
+	end)
+
+	it("/swagbag guild anytab on: a right-click withdraws from any tab; off turns it back off", function()
 		A.guild.tabs[2].withdrawals = 3
+		SB.Slash.Dispatch("guild anytab on")
+		assert.equal(true, SB.Config.Get("guildBank.withdrawAnyTab"))
 		openVault()
 		answerQueries()
 		Fake.Fire(button(1, 1), "OnClick", "RightButton")
 		Fake.Fire(button(2, 1), "OnClick", "RightButton")
 		assert.same({ { 1, 1 }, { 2, 1 } }, A.guild.withdrawn)
-		assert.same({}, A.Lines())
+		SB.Slash.Dispatch("guild anytab off")
+		assert.equal(false, SB.Config.Get("guildBank.withdrawAnyTab"))
+		SB.Slash.Dispatch("guild anytab maybe")
+		assert.same({ SB.L.GUILD_ANYTAB_ON, SB.L.GUILD_ANYTAB_OFF,
+			"Use /swagbag guild anytab on or /swagbag guild anytab off (now: off)." }, A.Lines())
+	end)
+
+	-- Mutation: delete the A.GuildWithdraw / A.GuildPickup result checks in ClickSlot and DragSlot.
+	it("a withdraw or pickup the client refuses says so in chat (P2)", function()
+		openVault()
+		answerQueries()
+		A.GuildWithdraw = function() return false end
+		A.GuildPickup = function() return false end
+		Fake.Fire(button(1, 1), "OnClick", "RightButton")
+		Fake.Fire(button(1, 2), "OnDragStart")
+		assert.same({ SB.L.GUILD_ACTION_FAILED, SB.L.GUILD_ACTION_FAILED }, A.Lines())
 	end)
 
 	it("with withdrawAnyTab off, a right-click in a tab Blizzard has not selected says which tab to click", function()
 		A.guild.tabs[2].withdrawals = 3
-		SB.Config.Set("guildBank.withdrawAnyTab", false)
 		openVault()
 		answerQueries()
 		Fake.Fire(button(2, 1), "OnClick", "RightButton")
@@ -10058,12 +12190,41 @@ describe("GuildBankWindow (check G1)", function()
 		assert.same({ { "TOPLEFT", tabs[1], "BOTTOMLEFT", 0, -17 } }, tabs[2].points)
 	end)
 
-	it("Esc hides only SwagBag's window; Blizzard's frame keeps the visit open", function()
+	-- Fix round 1: a hidden SwagBag window must not leave an invisible open vault that eats bag
+	-- right-clicks. Mutation: delete the host.Restore() in the OnHide handler.
+	it("Esc or the X hides SwagBag's window and makes Blizzard's guild bank visible again (visit still open)", function()
 		openVault()
 		assert.equal("SwagBagGuildBankWindow", UISpecialFrames[#UISpecialFrames])
 		GW.frame:Hide()
-		assert.equal(SB.TinyHost.Parent(), gf.parent)
+		assert.equal(UIParent, gf.parent)
+		assert.equal(gf, tabs[1].parent)
+		assert.equal(true, gf.shown)
 		assert.same({}, gf.calls)
+		Fake.Fire(gf, "OnShow") -- a later signal for the same visit does not shrink it again
+		assert.equal(UIParent, gf.parent)
+		assert.falsy(GW.IsOpen())
+	end)
+
+	it("hiding SwagBag's window in combat makes Blizzard's guild bank visible as soon as combat ends", function()
+		openVault()
+		A.combat = true
+		GW.frame:Hide()
+		assert.equal(SB.TinyHost.Parent(), gf.parent, "parents never change in combat")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal(UIParent, gf.parent)
+	end)
+
+	-- Ruling W3-3: Safe Mode for the bank keeps every guild visit Blizzard's, whichever signal
+	-- arrives first. Mutation: delete the frame:IsShown() / Safe Mode guard at the top of GW.ApplyMode.
+	it("Safe Mode on before the visit: OnShow and the vault event leave Blizzard's guild bank as it is", function()
+		SB.SafeMode.Enable("bank", "manual")
+		Fake.Fire(gf, "OnShow")
+		openVault()
+		SB.eventFrame:Fire("GUILDBANKFRAME_OPENED")
+		assert.falsy(GW.IsOpen())
+		assert.equal(UIParent, gf.parent)
+		assert.equal(gf, tabs[1].parent)
 	end)
 
 	it("works when Blizzard's guild bank UI loads on demand during the visit", function()
@@ -10123,6 +12284,19 @@ describe("GuildBankWindow (check G1)", function()
 		assert.falsy(SB.SafeMode.IsOn("bags"))
 		assert.equal(UIParent, gf.parent)
 	end)
+
+	-- Ruling W3-6: errors in this window's handlers trap with the owning window ("bank").
+	it("an error in a tab-click hook switches only the bank to Safe Mode and hands the guild bank back", function()
+		openVault()
+		A.GuildCurrentTab = function() error("boom") end
+		Fake.Fire(tabs[1].Button, "OnClick")
+		A.Advance(0)
+		assert.truthy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.falsy(GW.IsOpen())
+		assert.equal(UIParent, gf.parent)
+		assert.equal(gf, tabs[1].parent)
+	end)
 end)
 
 describe("GuildBankWindow load order", function()
@@ -10138,7 +12312,7 @@ describe("GuildBankWindow load order", function()
 end)
 ```
 
-<!-- sbw3:edit T10 s04 spec/items_spec.lua -->
+<!-- sbw3:edit T11 s04 spec/items_spec.lua -->
 In `spec/items_spec.lua`, find:
 
 ```lua
@@ -10160,7 +12334,7 @@ and replace it with:
 		Fixtures.SmallBags(A)
 ```
 
-<!-- sbw3:edit T10 s05 spec/items_spec.lua -->
+<!-- sbw3:edit T11 s05 spec/items_spec.lua -->
 In `spec/items_spec.lua`, find:
 
 ```lua
@@ -10194,7 +12368,7 @@ and replace it with:
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `luajit spec/runner.lua spec/guildbank_spec.lua spec/items_spec.lua`
-Expected: `29 passed, 10 failed`. The tab headers, sections, search, answered-tab tracking and snapshot do not exist yet.
+Expected: `38 passed, 11 failed`. The tab headers, sections, search, answered-tab tracking and snapshot do not exist yet.
 
 Critical tests and the mutation that must make each fail:
 - "a reopen shows the session's cached contents at once; a tab whose answer is on its way is not read": `if GW.answered[tab] or GW.cache[tab] then` in `GW.Refresh`.
@@ -10202,12 +12376,13 @@ Critical tests and the mutation that must make each fail:
 - "each tab is a group with its own sections…": `if false then` for the first-load layout in `GW.Refresh`.
 - "a snapshot of the tabs read is saved per guild…": delete the `SaveSnapshot` call in `GW.OnClosed`.
 - "deposits go to the tab Blizzard has selected … its header says so": delete `GW.view.Relabel()` in `GW.RefreshTarget`.
-- "nothing moves while Blizzard's guild bank frame is still hidden…": `if not gf then` instead of `if not (gf and gf:IsShown()) then` in `GW.ApplyMode`.
-- Task 2's mutations still apply to the same tests.
+- "nothing moves while Blizzard's guild bank frame is still hidden…": `if not gf or not frame:IsShown() or SB.SafeMode.IsOn("bank") then` instead of `if not (gf and gf:IsShown()) or not frame:IsShown() or SB.SafeMode.IsOn("bank") then` in `GW.ApplyMode`.
+- "withdrawals left are re-read on every guild slot change (W3-5)": delete `GW.ReadTabs()` from the `GUILDBANKBAGSLOTS_CHANGED` handler.
+- Task 2's mutations (and its fix round's) still apply to the same tests.
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T10 i01 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T11 i01 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -10238,7 +12413,7 @@ function A.GetLinkIlvl(link)
 		return v
 ```
 
-<!-- sbw3:edit T10 i02 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T11 i02 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -10258,13 +12433,14 @@ and replace it with:
 	{ path = "C_Timer.After", window = "bags", required = true },
 ```
 
-<!-- sbw3:edit T10 i03 SwagBag/Core/Config.lua -->
+<!-- sbw3:edit T11 i03 SwagBag/Core/Config.lua -->
 In `SwagBag/Core/Config.lua`, find:
 
 ```lua
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
-		guildBank = { mode = "full", withdrawAnyTab = true },
+		-- Off until check G1 proves the client withdraws from the tab it is given (ruling W3-10).
+		guildBank = { mode = "full", withdrawAnyTab = false },
 		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 ```
@@ -10274,13 +12450,14 @@ and replace it with:
 ```lua
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).
+		-- Off until check G1 proves the client withdraws from the tab it is given (ruling W3-10).
 		-- view / columns: as for the bank window.
-		guildBank = { mode = "full", withdrawAnyTab = true, view = "sections", columns = 14 },
+		guildBank = { mode = "full", withdrawAnyTab = false, view = "sections", columns = 14 },
 		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 ```
 
-<!-- sbw3:edit T10 i04 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T11 i04 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -10301,11 +12478,11 @@ L.GUILD_WITHDRAW_LEFT = "%d withdrawals left today"
 L.GUILD_WITHDRAW_UNLIMITED = "unlimited withdrawals"
 ```
 
-<!-- sbw3:edit T10 i05 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T11 i05 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
-L.GUILD_MODE_VIEW = "Guild bank: Blizzard's window is shown; SwagBag's window beside it is view-only."
+L.GUILD_MODE_SAVED_NEXT = "Guild bank: saved; it applies on your next guild bank visit."
 L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
 
 -- Snapshots (spec F13: captured now, shown offline in November)
@@ -10314,7 +12491,7 @@ L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
 and replace it with:
 
 ```lua
-L.GUILD_MODE_VIEW = "Guild bank: Blizzard's window is shown; SwagBag's window beside it is view-only."
+L.GUILD_MODE_SAVED_NEXT = "Guild bank: saved; it applies on your next guild bank visit."
 L.REPORT_GUILD = "Guild bank: setting %s, last visit %s"
 L.GUILD_VIEW_GRID = "SwagBag guild bank - grid view"
 L.GUILD_VIEW_SECTIONS = "SwagBag guild bank - category view"
@@ -10322,7 +12499,7 @@ L.GUILD_VIEW_SECTIONS = "SwagBag guild bank - category view"
 -- Snapshots (spec F13: captured now, shown offline in November)
 ```
 
-<!-- sbw3:edit T10 i06 SwagBag/Engine/Items.lua -->
+<!-- sbw3:edit T11 i06 SwagBag/Engine/Items.lua -->
 In `SwagBag/Engine/Items.lua`, find:
 
 ```lua
@@ -10343,7 +12520,7 @@ and replace it with:
 --   track           { track, level, max } upgrade track | nil (overlays)
 ```
 
-<!-- sbw3:edit T10 i07 SwagBag/Engine/Items.lua -->
+<!-- sbw3:edit T11 i07 SwagBag/Engine/Items.lua -->
 In `SwagBag/Engine/Items.lua`, find:
 
 ```lua
@@ -10416,7 +12593,7 @@ end
 -- Three cheap lookups, no item-info calls. Returns the same record.
 ```
 
-<!-- sbw3:file T10 i08 SwagBag/UI/GuildBankWindow.lua -->
+<!-- sbw3:file T11 i08 SwagBag/UI/GuildBankWindow.lua -->
 Replace the whole file `SwagBag/UI/GuildBankWindow.lua` with:
 
 ```lua
@@ -10441,6 +12618,8 @@ Replace the whole file `SwagBag/UI/GuildBankWindow.lua` with:
 -- queried is T's answer. Only tabs that answered during this visit are read, so a tab whose
 -- answer is still on its way never looks empty. A tab that gets no answer in QUERY_GAP is
 -- asked once more at the end of the queue.
+-- Hiding SwagBag's window (Esc, the X) while the vault is open makes Blizzard's guild bank
+-- visible again; nothing re-shrinks it until the next visit.
 local _, SB = ...
 
 local L = SB.L
@@ -10618,14 +12797,28 @@ end
 -- Put Blizzard's guild bank and SwagBag's window in the visit's mode. Blizzard's frame is
 -- load-on-demand: until it exists (or while it is hidden) there is nothing to move yet, and
 -- its OnShow hook calls this again. In combat parents cannot change: the visit stays "view".
+-- Ruling W3-1: re-applied while Blizzard's guild bank is already tiny (its second OnShow,
+-- GUILDBANKFRAME_OPENED, /swagbag guild, a reopen inside one fight), the visit stays full and
+-- only our own position is restored; it never flips to "view" (that would anchor us to the
+-- invisible frame). Out of combat a "view" request still hands Blizzard's frame back below.
+-- Fix round 1: only while SwagBag's window is shown and the bank is not in Safe Mode. A
+-- signal for a visit SwagBag is not showing (Safe Mode, or our window hidden) never shrinks
+-- Blizzard's guild bank: that would leave an invisible vault that takes bag right-clicks.
 function GW.ApplyMode()
 	local gf = blizzardGuildBank()
-	if not (gf and gf:IsShown()) then
+	if not (gf and gf:IsShown()) or not frame:IsShown() or SB.SafeMode.IsOn("bank") then
 		return
 	end
 	local tabFrames = SB.Adapter.GuildTabFrames()
 	hookTabs(tabFrames)
-	if GW.VisitMode() == "full" then
+	if host.IsActive() and (GW.VisitMode() == "full" or SB.Adapter.InCombat()) then
+		host.Keep()
+		if GW.VisitMode() ~= "full" then
+			GW.visit = "full"
+			GW.Flash(L.BANK_NOT_IN_COMBAT)
+		end
+		GW.RestorePosition()
+	elseif GW.VisitMode() == "full" then
 		if host.Shrink(gf) then
 			rehostTabs(tabFrames)
 			GW.RestorePosition()
@@ -10941,7 +13134,9 @@ function GW.ClickSlot(tab, slot, mouseButton)
 		return "view"
 	end
 	if mouseButton ~= "RightButton" then
-		A.GuildPickup(tab, slot)
+		if not A.GuildPickup(tab, slot) then
+			SB.Print(L.GUILD_ACTION_FAILED)
+		end
 		return "pickup"
 	end
 	if not info then
@@ -10956,7 +13151,9 @@ function GW.ClickSlot(tab, slot, mouseButton)
 		SB.Print(L.GUILD_SELECT_TAB_FIRST:format(tabName(tab)))
 		return "tab"
 	end
-	A.GuildWithdraw(tab, slot)
+	if not A.GuildWithdraw(tab, slot) then
+		SB.Print(L.GUILD_ACTION_FAILED)
+	end
 	return "withdraw"
 end
 
@@ -10965,7 +13162,9 @@ function GW.DragSlot(tab, slot)
 		SB.Print(L.GUILD_VIEW_ONLY)
 		return false
 	end
-	SB.Adapter.GuildPickup(tab, slot)
+	if not SB.Adapter.GuildPickup(tab, slot) then
+		SB.Print(L.GUILD_ACTION_FAILED)
+	end
 	return true
 end
 
@@ -11009,6 +13208,9 @@ frame:SetScript("OnHide", Guard("guild.hide", function(self)
 		return
 	end
 	GW.queue, GW.querying = {}, nil
+	if GW.interaction then -- the vault is still open: make Blizzard's guild bank visible again
+		host.Restore()
+	end
 	GW.view.Clear()
 	SB.Emit("SB_GUILD_CLOSED")
 end, "bank"))
@@ -11081,11 +13283,14 @@ SB.On("GUILDBANKFRAME_CLOSED", function()
 end, "bank")
 
 -- A queried tab's contents arrived, or an item moved: query the next tab and re-read the
--- tabs that answered.
+-- tabs that answered. The tabs' withdrawals left are re-read too: a withdrawal changes a
+-- slot first (ruling W3-5).
 SB.On("GUILDBANKBAGSLOTS_CHANGED", function()
 	if not GW.interaction then
 		return
 	end
+	GW.ReadTabs()
+	SB.GuildButtons.Ensure(GW.order) -- a tab that became viewable; missing buttons are skipped
 	if GW.querying then
 		GW.answered[GW.querying] = true
 		SB.Debounce("guild.queryNext", 0.05, GW.QueryNext, "bank")
@@ -11129,6 +13334,16 @@ end, "none")
 
 SB.Slash.Register("guild", L.HELP_GUILD, function(arg)
 	arg = (arg or ""):lower()
+	local anyTab = arg:match("^anytab%s*(.*)$")
+	if anyTab then -- ruling W3-10: off until check G1 proves the client honours the tab
+		if anyTab ~= "on" and anyTab ~= "off" then
+			return L.GUILD_ANYTAB_USAGE:format(SB.Config.Get("guildBank.withdrawAnyTab") and "on" or "off")
+		end
+		if not SB.Config.Set("guildBank.withdrawAnyTab", anyTab == "on") then
+			return L.SETTINGS_READONLY
+		end
+		return anyTab == "on" and L.GUILD_ANYTAB_ON or L.GUILD_ANYTAB_OFF
+	end
 	if arg ~= "full" and arg ~= "view" then
 		return L.GUILD_USAGE:format(GW.Mode())
 	end
@@ -11139,6 +13354,9 @@ SB.Slash.Register("guild", L.HELP_GUILD, function(arg)
 	if frame:IsShown() then
 		GW.ApplyMode()
 	end
+	if SB.Adapter.InCombat() then -- this visit may not follow it (ruling W3-1)
+		return L.GUILD_MODE_SAVED_NEXT
+	end
 	return arg == "full" and L.GUILD_MODE_FULL or L.GUILD_MODE_VIEW
 end, "bank")
 ```
@@ -11146,12 +13364,12 @@ end, "bank")
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `luajit spec/runner.lua spec/guildbank_spec.lua spec/items_spec.lua`
-Expected: `39 passed, 0 failed`
+Expected: `49 passed, 0 failed`
 
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (41 files)`, `574 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (41 files)`, `609 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -11165,17 +13383,17 @@ git add spec/helpers/uienv.lua \
   SwagBag/Locale/enUS.lua \
   SwagBag/Engine/Items.lua \
   SwagBag/UI/GuildBankWindow.lua
-git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 10: guild bank on GroupView with sections per tab, queries, cache, search, snapshot" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 11: guild bank on GroupView with sections per tab, queries, cache, search, snapshot" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
-Session G2 (the guild bank contents) runs after Task 11, so it can check the overlays on bank and guild items too.
+Session G2 (the guild bank contents) runs after Task 12, so it can check the overlays on bank and guild items too.
 
 ---
 
-### Task 11: Overlays on bank and guild bank buttons
+### Task 12: Overlays on bank and guild bank buttons
 
-Task 4 drew overlays on the bags only, because the bank and guild bank windows had no contents yet. Now they do (Tasks 8 and 10), so this task applies the same `SB.Overlays.Apply(button, record, bag)` there (spec F9: overlays on every item button):
+Task 4 drew overlays on the bags only, because the bank and guild bank windows had no contents yet. Now they do (Tasks 9 and 11), so this task applies the same `SB.Overlays.Apply(button, record, bag)` there (spec F9: overlays on every item button):
 - the bank window applies overlays in its `describe` and when a live change refreshes a record in place;
 - the guild bank window applies them in its `describe` and in `GW.Refresh`, when a tab's answer changes a slot;
 - `Overlays.RefreshAll` also redraws the open bank and guild bank windows after a gear change or a `/swagbag overlays` switch.
@@ -11189,13 +13407,13 @@ Task 4 drew overlays on the bags only, because the bank and guild bank windows h
 **Interfaces:**
 - Consumes:
   - Task 4: `SB.Overlays.Apply/RefreshAll/regions`;
-  - Task 8: `SB.BankWindow.view.ForEachSlot`, `Env.LoadBank`;
-  - Task 10: `SB.GuildBankWindow.view.ForEachSlot`, `SB.Items.DescribeLink` (records carry `track`), `Env.LoadGuild`.
+  - Task 9: `SB.BankWindow.view.ForEachSlot`, `Env.LoadBank`;
+  - Task 11: `SB.GuildBankWindow.view.ForEachSlot`, `SB.Items.DescribeLink` (records carry `track`), `Env.LoadGuild`.
 - Produces: `SB.Overlays.RefreshAll()` now redraws every open window (bags, bank, guild bank). No new names.
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T11 s01 spec/helpers/uienv.lua -->
+<!-- sbw3:edit T12 s01 spec/helpers/uienv.lua -->
 In `spec/helpers/uienv.lua`, find:
 
 ```lua
@@ -11215,7 +13433,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T11 s02 spec/helpers/uienv.lua -->
+<!-- sbw3:edit T12 s02 spec/helpers/uienv.lua -->
 In `spec/helpers/uienv.lua`, find:
 
 ```lua
@@ -11236,7 +13454,7 @@ and replace it with:
 	end
 ```
 
-<!-- sbw3:edit T11 s03 spec/helpers/uienv.lua -->
+<!-- sbw3:edit T12 s03 spec/helpers/uienv.lua -->
 In `spec/helpers/uienv.lua`, find:
 
 ```lua
@@ -11257,7 +13475,7 @@ and replace it with:
 	end
 ```
 
-<!-- sbw3:edit T11 s04 spec/bankwindow_groups_spec.lua -->
+<!-- sbw3:edit T12 s04 spec/bankwindow_groups_spec.lua -->
 In `spec/bankwindow_groups_spec.lua`, find:
 
 ```lua
@@ -11282,7 +13500,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T11 s05 spec/guildbank_spec.lua -->
+<!-- sbw3:edit T12 s05 spec/guildbank_spec.lua -->
 In `spec/guildbank_spec.lua`, find:
 
 ```lua
@@ -11308,7 +13526,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T11 s06 spec/overlays_spec.lua -->
+<!-- sbw3:edit T12 s06 spec/overlays_spec.lua -->
 In `spec/overlays_spec.lua`, find:
 
 ```lua
@@ -11356,7 +13574,7 @@ end)
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `luajit spec/runner.lua spec/bankwindow_groups_spec.lua spec/guildbank_spec.lua spec/overlays_spec.lua`
-Expected: `57 passed, 3 failed`. The bank and guild windows do not apply overlays yet, and `Overlays.RefreshAll` redraws only the bags window. The fourth new test (Use Pawn and a guild slot) already passes, because Task 4's `Ov.Context` asks Pawn only about container slots; it is there to keep it that way now that guild buttons draw overlays.
+Expected: `68 passed, 3 failed`. The bank and guild windows do not apply overlays yet, and `Overlays.RefreshAll` redraws only the bags window. The fourth new test (Use Pawn and a guild slot) already passes, because Task 4's `Ov.Context` asks Pawn only about container slots; it is there to keep it that way now that guild buttons draw overlays.
 
 Critical tests and the mutation that must make each fail:
 - `bankwindow_groups_spec` "bank items get their overlays (the BoE ring's item level and badge)": delete the `SB.Overlays.Apply(button, record, bag)` block in the bank window's `describe`.
@@ -11366,7 +13584,7 @@ Critical tests and the mutation that must make each fail:
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T11 i01 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T12 i01 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -11388,7 +13606,7 @@ and replace it with:
 end
 ```
 
-<!-- sbw3:edit T11 i02 SwagBag/UI/BankWindow.lua -->
+<!-- sbw3:edit T12 i02 SwagBag/UI/BankWindow.lua -->
 In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
@@ -11410,7 +13628,7 @@ and replace it with:
 			else
 ```
 
-<!-- sbw3:edit T11 i03 SwagBag/UI/GuildBankWindow.lua -->
+<!-- sbw3:edit T12 i03 SwagBag/UI/GuildBankWindow.lua -->
 In `SwagBag/UI/GuildBankWindow.lua`, find:
 
 ```lua
@@ -11435,7 +13653,7 @@ end
 
 ```
 
-<!-- sbw3:edit T11 i04 SwagBag/UI/GuildBankWindow.lua -->
+<!-- sbw3:edit T12 i04 SwagBag/UI/GuildBankWindow.lua -->
 In `SwagBag/UI/GuildBankWindow.lua`, find:
 
 ```lua
@@ -11460,7 +13678,7 @@ and replace it with:
 					if (a and a.itemID) ~= (b and b.itemID) then
 ```
 
-<!-- sbw3:edit T11 i05 SwagBag/UI/Overlays.lua -->
+<!-- sbw3:edit T12 i05 SwagBag/UI/Overlays.lua -->
 In `SwagBag/UI/Overlays.lua`, find:
 
 ```lua
@@ -11481,7 +13699,7 @@ local _, SB = ...
 
 ```
 
-<!-- sbw3:edit T11 i06 SwagBag/UI/Overlays.lua -->
+<!-- sbw3:edit T12 i06 SwagBag/UI/Overlays.lua -->
 In `SwagBag/UI/Overlays.lua`, find:
 
 ```lua
@@ -11502,7 +13720,7 @@ function Ov.RefreshAll()
 	local function each(fn)
 ```
 
-<!-- sbw3:edit T11 i07 SwagBag/UI/Overlays.lua -->
+<!-- sbw3:edit T12 i07 SwagBag/UI/Overlays.lua -->
 In `SwagBag/UI/Overlays.lua`, find:
 
 ```lua
@@ -11536,12 +13754,12 @@ end
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `luajit spec/runner.lua spec/bankwindow_groups_spec.lua spec/guildbank_spec.lua spec/overlays_spec.lua`
-Expected: `60 passed, 0 failed`
+Expected: `71 passed, 0 failed`
 
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (41 files)`, `578 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (41 files)`, `613 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -11553,7 +13771,7 @@ git add spec/helpers/uienv.lua \
   SwagBag/UI/BankWindow.lua \
   SwagBag/UI/GuildBankWindow.lua \
   SwagBag/UI/Overlays.lua
-git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 11: overlays on bank and guild bank buttons" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 12: overlays on bank and guild bank buttons" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
@@ -11579,7 +13797,7 @@ Pass: steps 1–13 behave as described, and no item moved while the mouse was on
 
 ---
 
-### Task 12: Prices: Vendor and Auctionator providers, session cache, per-category totals in section headers, the `value` keyword
+### Task 13: Prices: Vendor and Auctionator providers, session cache, per-category totals in section headers, the `value` keyword
 
 Spec F10 and §3.3. `Engine/Prices.lua` is a provider registry.
 
@@ -11602,7 +13820,7 @@ The setting is `prices.headerTotals`. Week-2 header strings stay exactly as they
 - Test: `spec/mock_adapter.lua` (sell prices, Auctionator), `spec/helpers/uienv.lua`, `spec/prices_spec.lua` (new), `spec/bagswindow_sections_spec.lua`, `spec/bankwindow_groups_spec.lua`, `spec/report_spec.lua`
 
 **Interfaces:**
-- Consumes: `SB.Adapter.GetItemInfo(itemID).sellPrice`, `SB.Adapter.Resolve`, `SB.Adapter.Now` (on `main`); Layout states (`state.sections[id].cells`, placeholders flagged `placeholder = true`); Task 7's GroupView section headers; Task 8's `spec/helpers/uienv.lua`. Prices come last because nothing earlier needs them: the overlays (Tasks 3, 4, 11) never read a price.
+- Consumes: `SB.Adapter.GetItemInfo(itemID).sellPrice`, `SB.Adapter.Resolve`, `SB.Adapter.Now` (on `main`); Layout states (`state.sections[id].cells`, placeholders flagged `placeholder = true`); Task 8's GroupView section headers; Task 9's `spec/helpers/uienv.lua`. Prices come last because nothing earlier needs them: the overlays (Tasks 3, 4, 12) never read a price.
 - Produces:
   - `SB.Prices.RegisterProvider(p)`, with `p = { name, priority, available(), value(link, itemID), onUpdate(cb) }`.
   - `SB.Prices.Value(link, itemID, bound) -> copper | nil, source`, `.Source() -> name`, `.SectionTotals(state, recordOf) -> { [sectionId] = copper }`, `.Money(copper) -> text`, `.Invalidate()`, `.cached`.
@@ -11612,7 +13830,7 @@ The setting is `prices.headerTotals`. Week-2 header strings stay exactly as they
 
 - [ ] **Step 1: Write the failing tests**
 
-<!-- sbw3:edit T12 s01 spec/helpers/uienv.lua -->
+<!-- sbw3:edit T13 s01 spec/helpers/uienv.lua -->
 In `spec/helpers/uienv.lua`, find:
 
 ```lua
@@ -11633,7 +13851,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T12 s02 spec/mock_adapter.lua -->
+<!-- sbw3:edit T13 s02 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -11671,7 +13889,7 @@ and replace it with:
 	return m
 ```
 
-<!-- sbw3:edit T12 s03 spec/mock_adapter.lua -->
+<!-- sbw3:edit T13 s03 spec/mock_adapter.lua -->
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -11692,7 +13910,7 @@ and replace it with:
 			expansionID = 0,
 ```
 
-<!-- sbw3:edit T12 s04 spec/bagswindow_sections_spec.lua -->
+<!-- sbw3:edit T13 s04 spec/bagswindow_sections_spec.lua -->
 In `spec/bagswindow_sections_spec.lua`, find:
 
 ```lua
@@ -11712,7 +13930,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T12 s05 spec/bagswindow_sections_spec.lua -->
+<!-- sbw3:edit T13 s05 spec/bagswindow_sections_spec.lua -->
 In `spec/bagswindow_sections_spec.lua`, find:
 
 ```lua
@@ -11748,7 +13966,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T12 s06 spec/bankwindow_groups_spec.lua -->
+<!-- sbw3:edit T13 s06 spec/bankwindow_groups_spec.lua -->
 In `spec/bankwindow_groups_spec.lua`, find:
 
 ```lua
@@ -11776,7 +13994,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:file T12 s07 spec/prices_spec.lua -->
+<!-- sbw3:file T13 s07 spec/prices_spec.lua -->
 Create `spec/prices_spec.lua`:
 
 ```lua
@@ -11905,7 +14123,7 @@ describe("Prices (spec F10, 3.3)", function()
 end)
 ```
 
-<!-- sbw3:edit T12 s08 spec/report_spec.lua -->
+<!-- sbw3:edit T13 s08 spec/report_spec.lua -->
 In `spec/report_spec.lua`, find:
 
 ```lua
@@ -11933,7 +14151,7 @@ and replace it with:
 - [ ] **Step 2: Run them to verify they fail**
 
 Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/bankwindow_groups_spec.lua spec/prices_spec.lua spec/report_spec.lua`
-Expected: `9 passed, 92 failed`. `prices_spec`, `bagswindow_sections_spec` and `bankwindow_groups_spec` now load `Engine/Prices.lua` and `Providers/Auctionator.lua`, which do not exist yet, so all of their tests fail. Only `report_spec`'s older tests pass.
+Expected: `9 passed, 97 failed`. `prices_spec`, `bagswindow_sections_spec` and `bankwindow_groups_spec` now load `Engine/Prices.lua` and `Providers/Auctionator.lua`, which do not exist yet, so all of their tests fail. Only `report_spec`'s older tests pass.
 
 Critical tests and the mutation that must make each fail:
 - "a bound item is worth its vendor price only": `if true then` instead of `if not bound or p.name == "Vendor" then` in `lookup`.
@@ -11945,7 +14163,7 @@ Critical tests and the mutation that must make each fail:
 
 - [ ] **Step 3: Implement**
 
-<!-- sbw3:edit T12 i01 SwagBag/SwagBag.toc -->
+<!-- sbw3:edit T13 i01 SwagBag/SwagBag.toc -->
 In `SwagBag/SwagBag.toc`, find:
 
 ```text
@@ -11970,7 +14188,7 @@ Providers/Auctionator.lua
 # UI
 ```
 
-<!-- sbw3:edit T12 i02 SwagBag/Core/Adapter.lua -->
+<!-- sbw3:edit T13 i02 SwagBag/Core/Adapter.lua -->
 In `SwagBag/Core/Adapter.lua`, find:
 
 ```lua
@@ -12025,12 +14243,12 @@ end
 -- flag a failed REQUIRED check turns on. value: exact value expected.
 ```
 
-<!-- sbw3:edit T12 i03 SwagBag/Core/Config.lua -->
+<!-- sbw3:edit T13 i03 SwagBag/Core/Config.lua -->
 In `SwagBag/Core/Config.lua`, find:
 
 ```lua
 		-- view / columns: as for the bank window.
-		guildBank = { mode = "full", withdrawAnyTab = true, view = "sections", columns = 14 },
+		guildBank = { mode = "full", withdrawAnyTab = false, view = "sections", columns = 14 },
 		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 ```
@@ -12039,14 +14257,14 @@ and replace it with:
 
 ```lua
 		-- view / columns: as for the bank window.
-		guildBank = { mode = "full", withdrawAnyTab = true, view = "sections", columns = 14 },
+		guildBank = { mode = "full", withdrawAnyTab = false, view = "sections", columns = 14 },
 		-- headerTotals: each section header shows its total value (spec F10).
 		prices = { headerTotals = true },
 		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
 ```
 
-<!-- sbw3:edit T12 i04 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T13 i04 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -12067,7 +14285,7 @@ L.PLACEHOLDER_TIP = "This item moved or was used - items regroup when you close 
 
 ```
 
-<!-- sbw3:edit T12 i05 SwagBag/Locale/enUS.lua -->
+<!-- sbw3:edit T13 i05 SwagBag/Locale/enUS.lua -->
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -12090,7 +14308,7 @@ L.REPORT_PRICES = "Prices: %s, %d cached"
 L.OVERLAY_TRACK = "%s%d/%d"
 ```
 
-<!-- sbw3:edit T12 i06 SwagBag/Engine/Keywords.lua -->
+<!-- sbw3:edit T13 i06 SwagBag/Engine/Keywords.lua -->
 In `SwagBag/Engine/Keywords.lua`, find:
 
 ```lua
@@ -12112,7 +14330,7 @@ local _, SB = ...
 
 ```
 
-<!-- sbw3:edit T12 i07 SwagBag/Engine/Keywords.lua -->
+<!-- sbw3:edit T13 i07 SwagBag/Engine/Keywords.lua -->
 In `SwagBag/Engine/Keywords.lua`, find:
 
 ```lua
@@ -12139,7 +14357,7 @@ and replace it with:
 	-- State (volatile) ---------------------------------------------------------
 ```
 
-<!-- sbw3:file T12 i08 SwagBag/Engine/Prices.lua -->
+<!-- sbw3:file T13 i08 SwagBag/Engine/Prices.lua -->
 Create `SwagBag/Engine/Prices.lua`:
 
 ```lua
@@ -12308,7 +14526,7 @@ SB.On("SB_LOGIN", function()
 end, "none")
 ```
 
-<!-- sbw3:file T12 i09 SwagBag/Providers/Auctionator.lua -->
+<!-- sbw3:file T13 i09 SwagBag/Providers/Auctionator.lua -->
 Create `SwagBag/Providers/Auctionator.lua`:
 
 ```lua
@@ -12336,7 +14554,7 @@ SB.Prices.RegisterProvider({
 })
 ```
 
-<!-- sbw3:edit T12 i10 SwagBag/UI/SectionHeaders.lua -->
+<!-- sbw3:edit T13 i10 SwagBag/UI/SectionHeaders.lua -->
 In `SwagBag/UI/SectionHeaders.lua`, find:
 
 ```lua
@@ -12386,7 +14604,7 @@ end
 
 ```
 
-<!-- sbw3:edit T12 i11 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:edit T13 i11 SwagBag/UI/GroupView.lua -->
 In `SwagBag/UI/GroupView.lua`, find:
 
 ```lua
@@ -12425,7 +14643,7 @@ and replace it with:
 
 ```
 
-<!-- sbw3:edit T12 i12 SwagBag/UI/GroupView.lua -->
+<!-- sbw3:edit T13 i12 SwagBag/UI/GroupView.lua -->
 In `SwagBag/UI/GroupView.lua`, find:
 
 ```lua
@@ -12449,7 +14667,7 @@ and replace it with:
 	end
 ```
 
-<!-- sbw3:edit T12 i13 SwagBag/UI/BagsWindow.lua -->
+<!-- sbw3:edit T13 i13 SwagBag/UI/BagsWindow.lua -->
 In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
@@ -12478,7 +14696,7 @@ and replace it with:
 end
 ```
 
-<!-- sbw3:edit T12 i14 SwagBag/Core/Report.lua -->
+<!-- sbw3:edit T13 i14 SwagBag/Core/Report.lua -->
 In `SwagBag/Core/Report.lua`, find:
 
 ```lua
@@ -12503,12 +14721,12 @@ and replace it with:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `luajit spec/runner.lua spec/bagswindow_sections_spec.lua spec/bankwindow_groups_spec.lua spec/prices_spec.lua spec/report_spec.lua`
-Expected: `101 passed, 0 failed`
+Expected: `106 passed, 0 failed`
 
 - [ ] **Step 5: Run all checks**
 
 Run: `scripts/check.sh`
-Expected: `TOC OK (43 files)`, `590 passed, 0 failed`, `ALL CHECKS PASSED`
+Expected: `TOC OK (43 files)`, `625 passed, 0 failed`, `ALL CHECKS PASSED`
 
 - [ ] **Step 6: Commit**
 
@@ -12530,7 +14748,7 @@ git add spec/helpers/uienv.lua \
   SwagBag/UI/GroupView.lua \
   SwagBag/UI/BagsWindow.lua \
   SwagBag/Core/Report.lua
-git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 12: prices from Auctionator or the vendor, per-category totals in headers, value keyword" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 3 Task 13: prices from Auctionator or the vendor, per-category totals in headers, value keyword" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
@@ -12567,7 +14785,7 @@ Any "yes" to questions 2, 3 or 5, and any "no" to question 4, is a bug report. C
 The user ticks these in game on Oct 21 and pastes the final `/swagbag report` into Claude Code:
 
 1. [ ] Sessions V2 and G1 passed on Oct 15, or their fallback (`/swagbag bank beside`, `/swagbag guild view`) became the default on Oct 16.
-2. [ ] Sessions O1, S3, B1, G2 and P1 passed, or every failure was fixed and its step re-run.
+2. [ ] Sessions O1, F1, S3, B1, G2 and P1 passed, or every failure was fixed and its step re-run.
 3. [ ] At least three bank visits and two guild vault visits through SwagBag during normal play, with deposits, withdrawals and one Sort.
 4. [ ] The daily bank check had no bug answers, or every one was fixed.
 5. [ ] Every crest item the user carries is in Keystone & Crests, and its item ID is in `Engine/Crests.lua`.
@@ -12577,7 +14795,7 @@ The user ticks these in game on Oct 21 and pastes the final `/swagbag report` in
    - `Last bank layout` at or below 80 ms for `open`;
    - `Snapshots:` at or below about 30 KB per character (check V10);
    - a `Prices:` line naming the source.
-7. [ ] Claude ran `scripts/check.sh` on the branch: `ALL CHECKS PASSED`, 590 passed, 0 failed or more. The branch is merged (or kept), as the user chooses.
+7. [ ] Claude ran `scripts/check.sh` on the branch: `ALL CHECKS PASSED`, 625 passed, 0 failed or more. The branch is merged (or kept), as the user chooses.
 
 If a line fails, paste the report, and Claude fixes it before week 4 starts. Any slip is reported at the end of the week (spec §12.2).
 
@@ -12586,8 +14804,8 @@ If a line fails, paste the report, and Claude fixes it before week 4 starts. Any
 Week 4 (M5 focus modes, signals, the consumables warning, quick setup, settings pages) uses these interfaces unchanged:
 
 - **Windows.** Spec §6.3's "AH/Vendor/Bank" mode expands everything at the bank, and it needs the bank window open. Use `SB.BankWindow.IsOpen()`, `SB.BankWindow.interaction` (the visit is open) and `SB.GuildBankWindow.interaction`. Collapse state lives in `ui.collapsed["bank:<group>"]`, `["bank:#"]`, `["guild:tab<N>"]` and `["guild:#"]`. A focus mode that collapses sections in the bank window writes the group's set and calls `view.Restack()`.
-- **Settings pages.** The keys are `bank.blizzardFrame` ("tiny" / "beside"), `guildBank.mode` ("full" / "view"), `guildBank.withdrawAnyTab`, `bank.view`, `bank.columns`, `guildBank.view`, `guildBank.columns`, `prices.headerTotals`, `overlays.ilvl/track/upgrade/keystone/junk/bind/usePawn`, `bags.showIlvl`. Each setting's alternative is next to it (P1); the slash commands give the wording.
-- **GroupView** (`SB.GroupView.New(cfg)`) is window-agnostic. Spec §12.3 M8's offline alt view can draw snapshot contents through it with a `describe` that reads `Snapshots.Deserialize` records.
+- **Settings pages.** The keys are `bank.blizzardFrame` ("tiny" / "beside"), `guildBank.mode` ("full" / "view"), `guildBank.withdrawAnyTab`, `bank.view`, `bank.columns`, `guildBank.view`, `guildBank.columns`, `prices.headerTotals`, `overlays.ilvl/track/upgrade/keystone/junk/bind/usePawn`, `bags.showIlvl`, `bags.freeTile` ("Show every free slot" is its alternative; a change emits `SB_FREE_TILE_CHANGED`). Each setting's alternative is next to it (P1); the slash commands give the wording.
+- **GroupView** (`SB.GroupView.New(cfg)`) is window-agnostic; `cfg.freeTile` gives any window the free tile (D19). Spec §12.3 M8's offline alt view can draw snapshot contents through it with a `describe` that reads `Snapshots.Deserialize` records.
 - **Snapshots.** `SB.Snapshots.Deserialize`, `SwagBagDB.chars[...].bags/bank`, `SwagBagDB.warband`, `SwagBagDB.guilds[...]` are what M8 reads.
 - **Prices.** `SB.Prices.Value/Source/SectionTotals`. Spec §2.2 v1.1's worth-money highlight uses `Value`.
 - **Deferred to week 5 hardening** (logged now, so they are not lost):
@@ -12601,36 +14819,40 @@ Week 4 (M5 focus modes, signals, the consumables warning, quick setup, settings 
 | V2 first-day check: deposit in tiny mode, Hearthstone afterwards; fallback `bank.blizzardFrame = "beside"` (§5.4, AC2.6) | 1 (session V2) |
 | G1 first-day check: withdraw, deposit, tab switch, Hearthstone; fallback `guildBank.mode = "view"` (AC16.6) | 2 (session G1) |
 | §5.2 tiny mode: BankFrame shown in a 0.001 parent; TabSystem re-hosted; restored on close, out of combat (§13.2 item 5), on logout (§8.6) | 1 |
-| AC2.3 / §5.2 deposit target read from `GetActiveBankType`, receiving group highlighted | 1, 8 |
+| AC2.3 / §5.2 deposit target read from `GetActiveBankType`, receiving group highlighted | 1, 9 |
 | AC2.5 / §5.3 never write bank state; forbidden tokens | 1 (tests), all (check.sh) |
 | §5.6 Esc hides only SwagBag's window; "Bank still open" | 1 |
-| AC2.1 / §5.1 Character bank and Warband bank stacked, sections or grid, purchased tabs only | 7, 8 |
-| AC2.7 / §5.5 SortBank per type; regroup after the bank settles; combat refusal with no auto-run (W11) | 8 |
-| §9 first bank open ≤ 80 ms, hidden until complete; incremental update budget | 7, 8 (tests + report line) |
-| AC16.1 guild tabs stacked, sections or grid, search, per-category totals | 10, 12 |
-| AC16.2 withdraw by right-click or drag; withdrawals left in the tab header; limits respected | 2, 10 |
-| AC16.3 deposit by right-click into Blizzard's selected tab, highlighted | 2, 10 |
-| AC16.4 on-demand `QueryGuildBankTab`, session cache, per-guild snapshot | 2, 9, 10 |
+| AC2.1 / §5.1 Character bank and Warband bank stacked, sections or grid, purchased tabs only | 8, 9 |
+| AC2.7 / §5.5 SortBank per type; regroup after the bank settles; combat refusal with no auto-run (W11) | 9 |
+| §9 first bank open ≤ 80 ms, hidden until complete; incremental update budget | 8, 9 (tests + report line) |
+| AC16.1 guild tabs stacked, sections or grid, search, per-category totals | 11, 13 |
+| AC16.2 withdraw by right-click or drag; withdrawals left in the tab header; limits respected | 2, 11 |
+| AC16.3 deposit by right-click into Blizzard's selected tab, highlighted | 2, 11 |
+| AC16.4 on-demand `QueryGuildBankTab`, session cache, per-guild snapshot | 2, 10, 11 |
 | AC16.5 "Blizzard guild bank" button; AC16.7 never write guild bank state; re-hosted tab buttons | 2 |
-| F9 overlays: ilvl, track, arrow (AC9.3, both rings/trinkets, two-hand summed, Use Pawn), keystone level + dungeon, junk coin, BoE/WuE, stack count (Blizzard's), no tooltip parsing; AC9.2 switches | 3, 4 (bags), 11 (bank, guild bank) |
-| F10 Prices provider interface (§3.3), Auctionator with session cache, vendor fallback, totals in headers with "vendor" | 12 |
-| F13 / §5.7 / §8.3 / §8.4 snapshots captured on every visit, compact strings, size budget | 9, 10 |
-| §7.3 `crest`, `value` keywords; §13.2 item 4 crest data file | 3 (`crest`), 12 (`value`) |
-| Ledger: EnsureCapacity max-merge; CreateAll retry; SetParentFor after creation; tabs bought after login | 5, 8 |
-| Ledger: incremental ApplyChanges (1,290 slots); skip cells with slot > size | 5, 7 |
-| Ledger: savePosition after SetScale + second-notch test; no re-anchor while dragging | 5 |
+| F9 overlays: ilvl, track, arrow (AC9.3, both rings/trinkets, two-hand summed, Use Pawn), keystone level + dungeon, junk coin, BoE/WuE, stack count (Blizzard's), no tooltip parsing; AC9.2 switches | 3, 4 (bags), 12 (bank, guild bank) |
+| F10 Prices provider interface (§3.3), Auctionator with session cache, vendor fallback, totals in headers with "vendor" | 13 |
+| F13 / §5.7 / §8.3 / §8.4 snapshots captured on every visit, compact strings, size budget | 10, 11 |
+| §7.3 `crest`, `value` keywords; §13.2 item 4 crest data file | 3 (`crest`), 13 (`value`) |
+| Ledger: EnsureCapacity max-merge; CreateAll retry; SetParentFor after creation; tabs bought after login | 6, 9 |
+| Ledger: incremental ApplyChanges (1,290 slots); skip cells with slot > size | 6, 8 |
+| Ledger: savePosition after SetScale + second-notch test; no re-anchor while dragging | 6 |
 | Ledger: reagent-bag empties in Free (UI cue) | 4 |
 | Ledger: week-3 crest item IDs | 3 (data file + names), O1 step 16 (the IDs) |
-| A search box per window (AC5.1) | 6, 8, 10 |
-| §9 / §13.2 item 6 `BANK_TAB_SETTINGS_UPDATED`, feature-detected | 8 |
+| A search box per window (AC5.1) | 7, 9, 11 |
+| §9 / §13.2 item 6 `BANK_TAB_SETTINGS_UPDATED`, feature-detected | 9 |
 | D18 (user, 2026-10-02): average equipped item level in the bags title, one decimal, feature-detected, back after every flash, `bags.showIlvl` | 4 (session O1 steps 2, 6–8, 14) |
+| D19 (user, 2026-10-02, W3-12): Free as one real empty slot per bag family with the number of free slots (reagent bag separate), swap held by the hover guard, `bags.freeTile` and `/swagbag free tile` or `all`, not in the grid view; same in the bank and warband groups | 5 (session F1), 8 (GroupView), 9 (bank) |
 
 Not in week 3 by design: the offline snapshot view and tooltip alt counts (F13 AC13.2–13.3, November M8), the worth-money highlight and the AH value overlay (v1.1), focus modes and settings pages (week 4), bank/guild window scaling (D14).
 
 ## How this plan was checked (while writing it)
 
-- **Replay.** Every code block above was extracted from this file and applied, task by task, to a fresh clone of the repo's `main` (`5be2c2b`) in a scratch folder outside the repo (`/tmp/sbw3b`), in the task order above (after the 2026-10-02 reorder, D18). For each task the spec blocks were applied alone first, and the `Expected` line under Step 2 is that red run. Then the whole task was applied and `scripts/check.sh` was run: the totals above (427 → 590 passed, 0 failed) and `ALL CHECKS PASSED` are those green runs.
-- **Mutations.** Every "Critical tests" mutation listed under a Step 2 (88 runs, counting each alternative) was applied to the finished code of the reordered plan, and the named test failed.
+- **Replay (amendment of 2026-10-02: the free tile, Task 5).** Tasks 1 and 2 are built (HEAD `2b37296`, 493 tests). Every code block of Tasks 3–13 was extracted from this file and applied, task by task in the order above, to a fresh clone of `2b37296` in a scratch folder outside the repo (`/tmp/sbw3c`).
+  - For each task, the spec blocks were applied alone first, and the `Expected` line under Step 2 is that red run. Then the whole task was applied, Step 4's run gave its `Expected` line, and `scripts/check.sh` gave Step 5's: the totals above (493 → 625 passed, 0 failed) and `ALL CHECKS PASSED`.
+  - The replay also rebased the later tasks on Tasks 1–2 as built. Six edits had find-text from before the fix rounds: Task 4's and Task 13's `Config.lua` edits, Task 9's two `BankWindow.lua` edits, and Task 11's `Config.lua` and `enUS.lua` edits. They now match `2b37296` and keep `withdrawAnyTab = false` (W3-10).
+  - Task 11's two whole-file replacements (`GuildBankWindow.lua`, `spec/guildbank_spec.lua`) now include Task 2's fix-round code and tests. Without that, they would have undone W3-1, W3-5, W3-10, W3-11 and the refused-click line.
+- **Mutations.** Every "Critical tests" mutation listed under a Step 2 of Tasks 3–13 was applied to the finished code of this order, and the named test failed: 90 runs, counting each alternative (Tasks 1 and 2 were checked when they were built). This includes the 20 runs added for the free tile (Tasks 5, 6, 8, 9) and the W3-5 test in Task 11.
 - **Timing.** The two wall-clock budget tests (1,078 bank slots ≤ 80 ms) measured 7–22 ms over several runs.
 - **Spec coverage.** See the table above.
 - **Placeholder scan.** No TBD, TODO or "similar to"; every step that changes code shows the code.

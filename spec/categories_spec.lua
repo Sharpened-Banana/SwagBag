@@ -11,7 +11,7 @@ local FILES = {
 -- A misspelled keyword silently becomes a name search, so check the keywords really used.
 -- c_fish (name search by design), c_other (fallback) are exempt; c_tools also has an item list.
 local EXPECTED = {
-	c_keystone = { "keystone" }, c_consumables = { "consumable" }, c_gear = { "gear" },
+	c_keystone = { "crest", "keystone" }, c_consumables = { "consumable" }, c_gear = { "gear" },
 	c_boe = { "boe", "gear" }, c_tradegoods = { "reagent", "tradegoods" }, c_herbs = { "herb" }, c_ore = { "ore" },
 	c_leathercloth = { "cloth", "leather" }, c_enchanting = { "enchanting" }, c_cooking = { "cooking" },
 	c_quest = { "questitem" }, c_housing = { "housing" }, c_collect = { "mount", "pet", "toy" },
@@ -130,6 +130,13 @@ describe("Categories", function()
 	it("stores no built-in in SavedVariables until the user edits one (spec 8.5)", function()
 		assert.same({}, SB.Config.db.userEdits)
 		assert.same({}, SB.Config.db.categories)
+	end)
+
+	it("the Keystone & Crests default change keeps a user's stored query and gives others the new one", function()
+		assert.equal("keystone | crest", C.Get("c_keystone").query)
+		SB.Config.db.userEdits.c_keystone = { query = "keystone" }
+		C.Load()
+		assert.equal("keystone", C.Get("c_keystone").query)
 	end)
 
 	it("applies a stored diff over a built-in, and ResetBuiltin removes it", function()

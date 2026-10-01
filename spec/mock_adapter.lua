@@ -79,6 +79,20 @@ function M.New(SB)
 		return (fmt:gsub("%%(%a)", DATE_PARTS))
 	end
 
+	m.epoch = 1791000000 -- seconds since the epoch at clock 0
+	m.charKey = "Swagger-Argent Dawn"
+	function m.Time()
+		return m.epoch + math.floor(m.clock)
+	end
+
+	function m.CharKey()
+		return m.charKey
+	end
+
+	function m.CharInfo()
+		return { class = "MAGE", level = 90 }
+	end
+
 	function m.BuildInfo()
 		return { version = "12.1.0", build = "69933", toc = 120100, locale = "enUS" }
 	end
@@ -126,6 +140,110 @@ function M.New(SB)
 		return true
 	end
 
+	m.bankSorts = {}
+	function m.SortBank(kind)
+		m.bankSorts[#m.bankSorts + 1] = kind
+		return true
+	end
+
+	-- Blizzard frames by global name, and Blizzard's selected bank type (week 3).
+	m.frames = {}
+	m.activeBankType = nil
+	function m.Frame(name)
+		return m.frames[name]
+	end
+
+	function m.ActiveBankType()
+		return m.activeBankType
+	end
+
+	-- Guild bank: m.guild.tabs = { { tab, name, viewable, canDeposit, withdrawals } },
+	-- m.guild.slots[tab][slot] = { itemID, count, link?, isLocked? }; calls are recorded.
+	m.guild = { tabs = {}, slots = {}, current = 1, key = "Tidewatch-Argent Dawn", queried = {}, withdrawn = {},
+		picked = {} }
+	m.modified = false
+	m.tooltip = nil
+	m.guildTabFrames = {}
+	function m.GuildTabs()
+		local out = {}
+		for i, t in ipairs(m.guild.tabs) do
+			out[i] = { tab = t.tab, name = t.name, icon = t.icon, viewable = t.viewable ~= false,
+				canDeposit = t.canDeposit ~= false, withdrawals = t.withdrawals or -1 }
+		end
+		return out
+	end
+
+	function m.GuildSlot(tab, slot)
+		local s = m.guild.slots[tab] and m.guild.slots[tab][slot]
+		if not s then
+			return nil
+		end
+		local it = m.items[s.itemID] or {}
+		return { itemID = s.itemID, link = s.link or ("item:" .. s.itemID), count = s.count or 1, icon = s.itemID,
+			quality = it.quality, isLocked = s.isLocked == true }
+	end
+
+	function m.GuildQuery(tab)
+		m.guild.queried[#m.guild.queried + 1] = tab
+	end
+
+	function m.GuildCurrentTab()
+		return m.guild.current
+	end
+
+	function m.GuildWithdraw(tab, slot)
+		m.guild.withdrawn[#m.guild.withdrawn + 1] = { tab, slot }
+		return true
+	end
+
+	function m.GuildPickup(tab, slot)
+		m.guild.picked[#m.guild.picked + 1] = { tab, slot }
+		return true
+	end
+
+	function m.GuildKey()
+		return m.guild.key
+	end
+
+	function m.GuildTooltip(owner, tab, slot)
+		m.tooltip = { owner = owner, tab = tab, slot = slot }
+	end
+
+	function m.HideTooltip()
+		m.tooltip = nil
+	end
+
+	function m.ModifiedClick()
+		return m.modified
+	end
+
+	function m.IsGuildBanker(interactionType)
+		return interactionType == "GuildBanker"
+	end
+
+	function m.GuildTabFrames()
+		return m.guildTabFrames
+	end
+
+	-- Auctionator: m.auctionator = { prices = { [link] = copper } } while "loaded"; nil otherwise.
+	m.auctionator = nil
+	m.auctionatorCalls = 0
+	function m.AuctionatorAvailable()
+		return m.auctionator ~= nil
+	end
+
+	function m.AuctionatorPrice(link)
+		m.auctionatorCalls = m.auctionatorCalls + 1
+		if m.auctionator and m.auctionator.fail then
+			error("Auctionator broke")
+		end
+		return m.auctionator and m.auctionator.prices[link] or nil
+	end
+
+	function m.AuctionatorOnUpdate(cb)
+		m.auctionatorCallback = cb
+	end
+
 	M.AddContainers(m)
 	return m
 end
@@ -157,6 +275,9 @@ function M.AddContainers(m)
 		local s = extra or {}
 		s.itemID = itemID
 		s.count = count or 1
+		if s.upgrade then
+			m.upgradeLinks[s.link or ("item:" .. itemID)] = true
+		end
 		m.slots[bag] = m.slots[bag] or {}
 		m.slots[bag][slot] = s
 	end
@@ -204,7 +325,7 @@ function M.AddContainers(m)
 			isLocked = s.isLocked == true,
 			isBound = s.isBound == true,
 			name = (not it.pending) and it.name or nil,
-			hasNoValue = false,
+			hasNoValue = s.hasNoValue == true,
 		}
 	end
 
@@ -227,7 +348,7 @@ function M.AddContainers(m)
 			baseIlvl = it.ilvl,
 			reqLevel = it.reqLevel or 0,
 			maxStack = it.maxStack or 1,
-			sellPrice = 0,
+			sellPrice = it.sellPrice or 0,
 			bind = it.bind or "none",
 			expansionID = 0,
 			isCraftingReagent = it.isCraftingReagent == true,
@@ -246,14 +367,58 @@ function M.AddContainers(m)
 		return s.ilvl or it.ilvl
 	end
 
+	-- Links in fixtures carry the itemID ("item:<id>..."); the item level is the fixture's.
+	function m.GetLinkIlvl(link)
+		local id = type(link) == "string" and tonumber(link:match("item:(%d+)"))
+		local it = id and m.items[id]
+		return it and not it.pending and it.ilvl or nil
+	end
+
+	-- Overlays: m.tracks[link] = { track, level, max }; m.dungeons[mapID] = name;
+	-- m.equipped[invSlot] = { ilvl, equipLoc }; m.cannotUse[itemID] = true; m.pawn[bag .. ":" .. slot] = bool.
+	m.tracks, m.dungeons, m.equipped, m.cannotUse, m.pawn = {}, {}, {}, {}, nil
+	-- m.upgradeLinks[link] = true: the item has an upgrade track but no readable one. Put(..., { upgrade = true })
+	-- sets it for that slot's link, so give such a slot its own link when another slot holds the same item.
+	m.upgradeLinks = {}
+	function m.UpgradeInfo(link)
+		return m.tracks[link], m.tracks[link] ~= nil or m.upgradeLinks[link] == true
+	end
+
+	function m.DungeonName(mapID)
+		return m.dungeons[mapID]
+	end
+
+	function m.EquippedItems()
+		local out = {}
+		for slot, e in pairs(m.equipped) do
+			out[slot] = { ilvl = e.ilvl, equipLoc = e.equipLoc, unknown = e.unknown }
+		end
+		return out
+	end
+
+	function m.CanUse(itemID)
+		return not m.cannotUse[itemID]
+	end
+
+	-- m.avgIlvl: the average equipped item level (nil = the client gives none).
+	function m.EquippedItemLevel()
+		return m.avgIlvl
+	end
+
+	function m.HasPawn()
+		return m.pawn ~= nil
+	end
+
+	function m.PawnUpgrade(bag, slot)
+		if m.pawn == nil then
+			return nil
+		end
+		return m.pawn[bag .. ":" .. slot] == true
+	end
+
 	function m.IsWarboundUntilEquip(bag, slot)
 		local s = slotOf(bag, slot)
 		return s ~= nil and s.isWUE == true
-	end
-
-	function m.HasUpgradeTrack(bag, slot)
-		local s = slotOf(bag, slot)
-		return s ~= nil and s.upgrade == true
 	end
 
 	function m.IsOnCooldown(bag, slot)

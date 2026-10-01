@@ -105,5 +105,25 @@ function Report.Build()
 	if bags and bags.lastLayoutMs then -- spec 9: first open <= 25 ms, warm open <= 10 ms
 		lines[#lines + 1] = L.REPORT_LAYOUT:format(bags.lastLayoutMs, tostring(bags.lastLayoutReason))
 	end
+	local bank = SB.BankWindow
+	if bank then
+		lines[#lines + 1] = L.REPORT_BANK:format(bank.Mode(), tostring(bank.lastVisit or L.REPORT_NONE),
+			bank.target and bank.GroupName(bank.target) or L.REPORT_NONE)
+		local bankStats = bank.view and bank.view.stats
+		if bankStats and bankStats.lastLayoutMs then -- spec 9: first bank open <= 80 ms
+			lines[#lines + 1] = L.REPORT_BANK_LAYOUT:format(bankStats.lastLayoutMs, tostring(bankStats.lastLayoutReason))
+		end
+	end
+	if SB.Prices then
+		lines[#lines + 1] = L.REPORT_PRICES:format(tostring(SB.Prices.Source() or L.REPORT_NONE), SB.Prices.cached)
+	end
+	if SB.Snapshots and SB.Config.db then -- spec 8.4 budgets, check V10
+		local chars, guilds = SB.Snapshots.Count()
+		lines[#lines + 1] = L.REPORT_SNAPSHOTS:format(chars, guilds, math.floor(SB.Snapshots.Bytes() / 1024 + 0.5))
+	end
+	local guild = SB.GuildBankWindow
+	if guild then
+		lines[#lines + 1] = L.REPORT_GUILD:format(guild.Mode(), tostring(guild.lastVisit or L.REPORT_NONE))
+	end
 	return table.concat(lines, "\n")
 end
