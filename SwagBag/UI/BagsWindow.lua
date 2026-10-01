@@ -324,14 +324,25 @@ local function buttonBusy(bag, slot)
 end
 W.ButtonBusy = buttonBusy
 
--- Spec 4.2 rule 5 for a re-stack: wait while an item is on the cursor or one of the
--- buttons that would move is under the mouse.
+-- Spec 4.2 rule 5, one definition for every move: busyCheck() returns isBusy(bag, slot),
+-- true while an item is on the cursor or that button is under the mouse (the cursor is
+-- read once), plus whether the cursor holds an item.
+local function busyCheck()
+	local cursor = SB.Adapter.CursorItem() ~= nil
+	return function(bag, slot)
+		return cursor or buttonBusy(bag, slot)
+	end, cursor
+end
+
+-- A re-stack waits while an item is on the cursor or one of the buttons that would move
+-- is under the mouse.
 local function anyBusy(keys)
-	if SB.Adapter.CursorItem() then
+	local busy, cursor = busyCheck()
+	if cursor then
 		return true
 	end
 	for _, key in ipairs(keys) do
-		if buttonBusy(math.floor(key / 1000), key % 1000) then
+		if busy(math.floor(key / 1000), key % 1000) then
 			return true
 		end
 	end
@@ -437,32 +448,111 @@ function W.Toggle()
 end
 
 ---------------------------------------------------------------------------
--- Live updates while open
+-- Live updates while open (spec 4.3)
+--   grid view:     repaint in place; a bag that changes size lays the grid out again
+--   sections view: count, lock, cooldown and loaded data repaint in place; an emptied
+--                  slot or a different item goes through Layout.Apply (placeholder, New,
+--                  Free); a bag that grows or shrinks adds or removes Free slots. A button
+--                  under the mouse, or every button while an item is on the cursor, waits
+--                  and retries 300 ms later (spec 4.2 rule 5). No OnUpdate anywhere.
 ---------------------------------------------------------------------------
+-- Apply transitions to the open sections layout and redraw. Returns Layout.Apply's result.
+function W.ApplyChanges(changes)
+	local st = W.state
+	if not st then
+		return nil
+	end
+	local result = SB.Layout.Apply(st, changes, (busyCheck()), W.Collapsed())
+	if #result.moved > 0 then
+		W.pos = SB.Layout.Position(st, positionOpts(), W.Collapsed())
+		sizeFrame(render())
+	end
+	if result.deferred > 0 then
+		SB.Debounce("bags.retry", W.RETRY, function()
+			W.ApplyChanges({})
+			SB.Emit("SB_BAGS_UPDATED")
+		end, "bags")
+	end
+	return result
+end
+
+-- Slots added or removed since the last layout (a bag was equipped or taken off).
+local function sizeChanges()
+	local A, B, out = SB.Adapter, SB.Buttons, {}
+	for _, bag in ipairs(A.GetBagIDs("bags")) do
+		local old, new = W.sizes[bag] or 0, A.NumSlots(bag)
+		if new > B.Count(bag) then
+			B.EnsureCapacity(bag, new) -- queued until combat ends; the slot stays invisible meanwhile
+		end
+		for slot = old + 1, new do
+			local button = B.Get(bag, slot)
+			if button then
+				B.Paint(button, A.GetSlot(bag, slot))
+				describe(bag, slot)
+				out[#out + 1] = { bag = bag, slot = slot, kind = "added" }
+			end
+		end
+		for slot = new + 1, old do
+			local button = B.Get(bag, slot)
+			if button then
+				button:Hide()
+			end
+			if W.records[bag] then
+				W.records[bag][slot] = nil
+			end
+			out[#out + 1] = { bag = bag, slot = slot, kind = "removed" }
+		end
+		W.sizes[bag] = new
+	end
+	return out
+end
+
 SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 	if not frame:IsShown() then
 		return
 	end
 	local Inv, B, A = SB.Inventory, SB.Buttons, SB.Adapter
-	if Inv.Has(mask, Inv.R.SIZE) then
-		W.Layout("size")
+	if not W.state and Inv.Has(mask, Inv.R.SIZE) then
+		W.RequestLayout("size") -- grid view: the grid is the physical order; guarded by rule 5
 		return
 	end
+	local touched = false
 	if Inv.Has(mask, Inv.R.COOLDOWN) then
 		W.ForEachSlot(function(button, record)
 			if record and button.UpdateCooldown then
 				pcall(button.UpdateCooldown, button, record.icon)
 			end
 		end)
-	end
-	local touched = false
-	for _, c in ipairs(changes) do
-		local button = B.Get(c.bag, c.slot)
-		if B.KindOf(c.bag) == "bags" and button and button:IsShown() then
-			B.Paint(button, A.GetSlot(c.bag, c.slot))
-			describe(c.bag, c.slot)
+		-- A cooldown/usable search must not go stale; never a rescan otherwise (spec 9).
+		if SB.Search and SB.Search.NeedsVolatileRefresh() then
+			W.ForEachSlot(function(_, record)
+				if record then
+					SB.Items.RefreshVolatile(record)
+				end
+			end)
 			touched = true
 		end
+	end
+	local moves = {}
+	if W.state and Inv.Has(mask, Inv.R.SIZE) then
+		moves = sizeChanges()
+		touched = touched or #moves > 0
+	end
+	for _, c in ipairs(changes) do
+		local button = B.Get(c.bag, c.slot)
+		if B.KindOf(c.bag) == "bags" and button and c.slot <= (W.sizes[c.bag] or 0) then
+			local old = W.records[c.bag] and W.records[c.bag][c.slot]
+			B.Paint(button, A.GetSlot(c.bag, c.slot))
+			local record = describe(c.bag, c.slot)
+			touched = true
+			if W.state and Inv.Has(c.reasons, Inv.R.ITEM) then
+				moves[#moves + 1] = { bag = c.bag, slot = c.slot, kind = record and "arrived" or "left",
+					icon = old and old.icon }
+			end
+		end
+	end
+	if W.state and (#moves > 0 or #W.state.deferred > 0) then
+		W.ApplyChanges(moves)
 	end
 	if touched then
 		SB.Emit("SB_BAGS_UPDATED")
