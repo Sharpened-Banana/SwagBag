@@ -304,7 +304,7 @@ function A.IsWarboundUntilEquip(bag, slot)
 	local ok, v = pcall(function()
 		return C_Item.IsBoundToAccountUntilEquip(location(bag, slot))
 	end)
-	return ok and v == true
+	return ok and not isSecret(v) and v == true
 end
 
 -- Upgrade track of an item link: returns { track = "Hero", level = 3, max = 6 } or nil, then
@@ -479,7 +479,7 @@ end
 
 local function currencyEntry(id, info)
 	if type(info) ~= "table" or type(id) ~= "number" or isSecret(id) or type(info.quantity) ~= "number"
-		or isSecret(info.quantity) then
+		or isSecret(info.quantity) or isSecret(info.name) then -- a secret name: the entry is skipped (M3)
 		return nil
 	end
 	return { id = id, name = info.name, quantity = info.quantity, icon = info.iconFileID, max = info.maxQuantity }
@@ -915,7 +915,7 @@ function A.IsFishingLoot()
 		return false
 	end
 	local ok, v = pcall(fn)
-	return ok and v == true
+	return ok and not isSecret(v) and v == true
 end
 
 -- The GUID type of the first loot slot's source ("GameObject" for a node, "Creature" for

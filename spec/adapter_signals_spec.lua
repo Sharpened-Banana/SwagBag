@@ -58,6 +58,10 @@ describe("Adapter focus signals (real adapter, stubbed globals)", function()
 		assert.equal(false, A.IsFishingLoot())
 		IsFishingLoot = function() return true end
 		assert.equal(true, A.IsFishingLoot())
+		-- M3 (final review). Mutation: in A.IsFishingLoot, drop the isSecret(v) check.
+		issecretvalue = function(v) return v == true end
+		assert.equal(false, A.IsFishingLoot(), "a secret answer never decides")
+		issecretvalue = nil
 		assert.is_nil(A.LootSourceType())
 		GetLootSourceInfo = function() return "GameObject-0-1-2-3-4-5" end
 		assert.equal("GameObject", A.LootSourceType())

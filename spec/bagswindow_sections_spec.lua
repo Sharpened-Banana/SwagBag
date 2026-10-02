@@ -1312,6 +1312,8 @@ describe("BagsWindow category view", function()
 	-- Ruling W4-22: the frame is clamped to the screen, so a window grown past the bottom edge would be
 	-- pushed up by the client, moving every item. Mutation: in sizeFrame, drop the
 	-- `math.min(viewHeight, top - W.HEADER - foot)` room clamp.
+	-- With W4-25: while the mouse is over the items the scroll area shortens (the window must not move
+	-- under it); once the mouse leaves, the top edge moves up instead and the bottom stays on screen.
 	it("a taller footer near the bottom of the screen shortens the scroll area instead of the window running off", function()
 		local stub = { height = 0 }
 		function stub.Layout()
@@ -1322,12 +1324,18 @@ describe("BagsWindow category view", function()
 		local h = W.frame.h
 		W.frame:ClearAllPoints()
 		W.frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 100, h + 5) -- the bottom edge 5 px above the screen's
+		W.scroll.mouseOver = true
 		stub.height = 34
 		W.Resize()
 		assert.equal(h + 5, W.frame:GetTop(), "the top edge did not move")
 		assert.truthy(W.frame:GetTop() - W.frame.h >= 0, "the bottom edge stays on the screen")
 		local p = W.scroll.points[#W.scroll.points]
 		assert.equal(W.FOOTER + 34, p[5], "the scroll area still ends above the footer")
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.equal(h + 34, W.frame.h, "the whole view is back")
+		assert.equal(0, W.frame:GetTop() - W.frame.h, "the bottom edge stays on the screen")
+		assert.equal(h + 34, W.frame:GetTop(), "the top edge moved up by the shortfall")
 	end)
 
 	it("the grid view only repaints: no placeholders, nothing moves", function()
@@ -1939,6 +1947,129 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.equal("Sorted", W.frame.title.text, "the flash stays up")
 		A.Advance(1.5)
 		assert.equal("SwagBag — M+ — ilvl 279.4", W.frame.title.text)
+	end)
+
+	-- M1 (final review): a world-started re-stack that changes nothing drawn (a signal that keeps the
+	-- same sections, or a held switch the world takes back) moves nothing, so it never holds and never
+	-- leaves the area hold set for the next header click. Mutation: drop the unchanged-view early
+	-- return in W.Restack.
+	it("M1: a world re-stack that changes nothing returns at once and leaves no area hold", function()
+		W.Open()
+		W.scroll.mouseOver = true -- over a header or a gap
+		assert.equal(true, W.Restack(true), "nothing to draw: done")
+		assert.equal(false, W.areaHeld)
+		F.SetSignal("challengeMode", true)
+		assert.equal(true, W.areaHeld, "preflight: the switch waits under the mouse")
+		F.SetSignal("challengeMode", false) -- taken back before the mouse left
+		assert.equal(false, W.areaHeld, "nothing waits any more")
+		assert.equal("SwagBag", W.frame.title.text)
+		W.ToggleSection("c_junk") -- a header click under the mouse: only a button that would move holds it
+		assert.falsy(B.Get(0, 6).shown, "applied at once")
+	end)
+
+	-- M2 (final review): the settings window sits above the bags (DIALOG strata), so with the mouse on
+	-- it nothing under it can be clicked: a mode change made there is drawn at once instead of waiting
+	-- for the mouse to leave the settings. Mutation: drop the settings-window check from the area hold.
+	it("M2: a world-started switch is not held while the mouse is over the settings window", function()
+		local settings = newFake("Frame")
+		SB.SettingsWindow = { frame = settings }
+		W.Open()
+		W.scroll.mouseOver = true -- the settings window lies over the items
+		settings.shown, settings.mouseOver = true, false
+		F.SetSignal("challengeMode", true)
+		assert.truthy(B.Get(0, 3).shown, "mouse on the bags, not on the settings: held as before")
+		F.SetSignal("challengeMode", false)
+		settings.mouseOver = true
+		F.SetSignal("challengeMode", true)
+		assert.falsy(B.Get(0, 3).shown, "mouse on the settings window: applied at once")
+		assert.equal(false, W.areaHeld)
+		A.cursor = { itemID = Fixtures.HERB }
+		F.SetSignal("challengeMode", false)
+		assert.falsy(B.Get(0, 3).shown, "an item on the cursor still holds it")
+	end)
+
+	-- Ruling W4-25: the room clamp of W4-22 must not leave the bag short for good. Opened low (the
+	-- bottom edge at the screen's bottom) in a mode, a Pause wants a taller view than the room below
+	-- the top edge: with nothing under the pointer the top edge moves up, the bottom stays put, and
+	-- the new corner is saved. Mutation: in sizeFrame, remove the grow-up branch.
+	local function lowInMode()
+		SB.Config.UI().positions.bags = { "BOTTOMLEFT", "BOTTOMLEFT", 100, 0 }
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		assert.equal(0, W.frame:GetTop() - W.frame.h, "preflight: the bottom edge sits on the screen's bottom")
+		return W.frame:GetTop()
+	end
+
+	local function viewHeight()
+		return W.frame.h - W.HEADER - W.foot
+	end
+
+	it("W4-25: Pause with the mouse away grows the window up to the whole bag; the bottom stays put", function()
+		local top = lowInMode()
+		local junk = B.Get(0, 6)
+		W.TogglePause()
+		assert.truthy(junk.shown, "paused: Junk is open")
+		assert.equal(W.size[2], viewHeight(), "the view is as tall as the content (under the 75 % max)")
+		assert.truthy(W.frame:GetTop() > top, "the top edge moved up")
+		assert.equal(0, W.frame:GetTop() - W.frame.h, "the bottom edge did not move")
+		assert.same({ "TOPLEFT", "BOTTOMLEFT", 100, W.frame:GetTop() }, SB.Config.UI().positions.bags,
+			"the new corner is saved")
+	end)
+
+	it("W4-25: the grown window stays within 75 % of the screen and scrolls the rest", function()
+		UIParent.h = 400 -- 75 % = 300: less than the bag
+		local top = lowInMode()
+		W.TogglePause()
+		assert.truthy(W.size[2] > viewHeight(), "preflight: the content is taller than the max")
+		assert.equal(300, W.frame.h, "capped at 75 % of the screen")
+		assert.truthy(W.frame:GetTop() >= top)
+		assert.equal(0, W.frame:GetTop() - W.frame.h, "the bottom edge did not move")
+	end)
+
+	-- P5: the whole window moving would slide every item and title button. While the mouse is over
+	-- the window (here the Pause button itself) or an item is on the cursor the view is capped as
+	-- before (W4-22), and the grow retries every 300 ms until the pointer leaves.
+	-- Mutation: in sizeFrame, remove the SB.Debounce("bags.grow", ...) retry.
+	it("W4-25: with the mouse on the window the grow waits; it applies once the mouse leaves", function()
+		local top = lowInMode()
+		W.frame.mouseOver = true -- on the Pause button, in the title bar
+		W.modeButton.scripts.OnClick(W.modeButton)
+		assert.equal(top, W.frame:GetTop(), "nothing moved under the mouse")
+		assert.truthy(viewHeight() < W.size[2], "capped by the room below the top edge, as before")
+		A.Advance(W.RETRY)
+		assert.equal(top, W.frame:GetTop(), "still held")
+		W.frame.mouseOver = false
+		A.cursor = { itemID = Fixtures.HERB }
+		A.Advance(W.RETRY)
+		assert.equal(top, W.frame:GetTop(), "held while an item is on the cursor")
+		A.cursor = nil
+		A.Advance(W.RETRY)
+		assert.equal(W.size[2], viewHeight(), "grown once the pointer left and the cursor emptied")
+		assert.equal(0, W.frame:GetTop() - W.frame.h, "the bottom edge did not move")
+	end)
+
+	-- W10 and P5 with W4-25: a peek clicked on a header at the bottom (the mouse is over the items)
+	-- is drawn at once, capped; no button moves while the mouse is there, and the grow moves the
+	-- whole window, so no button moves relative to its own header.
+	it("W4-25: a peek under the mouse is capped; the grow after the mouse leaves keeps every button by its header",
+		function()
+		local top = lowInMode()
+		W.scroll.mouseOver = true -- on the Junk header
+		local junk = B.Get(0, 6)
+		click("c_junk")
+		assert.truthy(junk.shown, "the peek applied at once")
+		local offset = junk.y - header("c_junk").points[1][5]
+		local x, y = junk.x, junk.y
+		assert.equal(top, W.frame:GetTop(), "the window did not move under the mouse")
+		assert.truthy(viewHeight() < W.size[2], "capped")
+		A.Advance(W.RETRY)
+		assert.equal(top, W.frame:GetTop(), "still held")
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.truthy(W.frame:GetTop() > top, "grown up once the mouse left")
+		assert.equal(W.size[2], viewHeight())
+		assert.same({ x, y }, { junk.x, junk.y }, "the button kept its cell")
+		assert.equal(offset, junk.y - header("c_junk").points[1][5], "W10: its offset to its header is unchanged")
 	end)
 
 	-- Spec 6.5 "Apply with the window open <= 5 ms" (preflight e2), over the bags of the 1,290-slot

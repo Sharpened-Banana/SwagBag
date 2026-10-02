@@ -162,7 +162,13 @@ flag("AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED", "auctionOpen")
 flag("BANKFRAME_OPENED", "BANKFRAME_CLOSED", "bankOpen")
 
 -- A keystone looted or handed in changes the M+ fallback, but only matters in a party dungeon.
-SB.Inventory.OnChanged(SB.ErrorTrap.Guard("signals.inventory", function()
+-- Only an item arriving, leaving or changing its link, or a bag's size, can change it: cooldown and
+-- lock changes (every cast in a key) never scan the bags (ruling W4-26).
+SB.Inventory.OnChanged(SB.ErrorTrap.Guard("signals.inventory", function(mask)
+	local Inv = SB.Inventory
+	if not (Inv.Has(mask, Inv.R.ITEM) or Inv.Has(mask, Inv.R.SIZE)) then
+		return
+	end
 	if Sig.ready and SB.Focus.signals.instanceType == "party" then
 		SB.Focus.SetSignal("keystone", Sig.HasKeystone())
 	end

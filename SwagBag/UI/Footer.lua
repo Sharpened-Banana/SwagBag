@@ -417,7 +417,15 @@ SB.On("SB_CONFIG_CHANGED", function(_, path)
 		soon()
 	end
 end, "bags")
-SB.Inventory.OnChanged(soon) -- bag changes, a keystone's new link (listeners run in ErrorTrap "bags")
+-- Bag changes, a keystone's new link (listeners run in ErrorTrap "bags"). Only an item change or a
+-- bag's size can change what the footer shows: cooldown, lock and count changes (every cast in a
+-- key) start no refresh (ruling W4-26).
+SB.Inventory.OnChanged(function(mask)
+	local Inv = SB.Inventory
+	if Inv.Has(mask, Inv.R.ITEM) or Inv.Has(mask, Inv.R.SIZE) then
+		soon()
+	end
+end)
 
 ---------------------------------------------------------------------------
 -- /swagbag footer and Settings > Footer

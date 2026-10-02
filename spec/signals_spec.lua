@@ -153,6 +153,25 @@ describe("Signals", function()
 		assert.same({ "mplus" }, F.Active())
 	end)
 
+	-- Ruling W4-26: a cast in a key fires cooldown and lock changes many times a minute; only an item
+	-- arriving or leaving, or a bag's size, can change the keystone. Mutation: drop the ITEM/SIZE
+	-- guard in the keystone listener.
+	it("W4-26: cooldown-only and lock-only changes never scan the bags for a keystone", function()
+		enter("party", 23)
+		local scans, has = 0, S.HasKeystone
+		S.HasKeystone = function()
+			scans = scans + 1
+			return has()
+		end
+		local Inv = SB.Inventory
+		Inv.Notify(Inv.R.COOLDOWN, {})
+		Inv.Notify(Inv.R.LOCK, { { bag = 0, slot = 1, reasons = Inv.R.LOCK } })
+		assert.equal(0, scans)
+		Inv.Notify(Inv.R.ITEM, { { bag = 0, slot = 5, reasons = Inv.R.ITEM } })
+		Inv.Notify(Inv.R.SIZE, {})
+		assert.equal(2, scans, "an item or size change still scans")
+	end)
+
 	it("raid and delve (V7) come from the zone", function()
 		enter("raid", 16)
 		assert.same({ "raid" }, F.Active())
