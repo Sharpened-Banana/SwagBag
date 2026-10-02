@@ -838,6 +838,54 @@ describe("BagsWindow week-4 carry-overs (title flash, drop, default place)", fun
 	end)
 end)
 
+describe("BagsWindow look (themes)", function()
+	local SB, A, W
+	before_each(function()
+		SB = Loader.New(FILES)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		A.FontObject = function(name) return { fontObject = name } end
+		CreateFrame = function(kind) return newFake(kind) end
+		UIParent = newFake("Frame")
+		UIParent.h = 2000
+		UISpecialFrames = {}
+		IsControlKeyDown = function() return false end
+		SB.Buttons = fakeButtons()
+		Loader.LoadFile(SB, "SwagBag/UI/Theme.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/ListRows.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/Themes.lua")
+		W = SB.BagsWindow
+		SB.Emit("SB_LOGIN")
+	end)
+
+	after_each(function()
+		UIParent, UISpecialFrames, IsControlKeyDown = nil, nil, nil
+	end)
+
+	-- AC14.1 and the live switch. Mutation: in BagsWindow.lua, drop SB.Theme.Window(frame, "main").
+	it("the window, its title, column labels, headers and list rows follow the look, live and back", function()
+		assert.same({ 0.06, 0.06, 0.08, 0.95 }, W.frame.calls.SetBackdropColor, "the Blizzard look as before")
+		SB.Config.Set("bags.view", "list")
+		W.Open()
+		local row = W.rows.rows[SB.Buttons.Get(0, 1)]
+		assert.falsy(row.bg.shown)
+		assert.truthy(SB.Theme.Apply("flat", false))
+		assert.same({ 0.09, 0.09, 0.1, 0.92 }, W.frame.calls.SetBackdropColor)
+		assert.same({ { fontObject = "GameFontHighlight" } }, W.frame.title.calls.SetFontObject)
+		assert.same({ { fontObject = "GameFontHighlightSmall" } }, W.columnButtons.value.label.calls.SetFontObject)
+		assert.truthy(row.bg.shown, "list rows get the flat stripe")
+		assert.same({ { fontObject = "GameFontHighlightSmall" } }, row.name.calls.SetFontObject)
+		assert.same({ 1, 1, 1, 0.03 }, SB.SectionHeaders.inUse[1].bg.calls.SetColorTexture)
+		SB.Theme.Apply("blizzard", false)
+		assert.same({ 0.06, 0.06, 0.08, 0.95 }, W.frame.calls.SetBackdropColor)
+		assert.falsy(row.bg.shown)
+	end)
+end)
+
+
 describe("Buttons.Place at a scale", function()
 	it("offsets a scaled button by x / scale and y / scale, so it lands on the same spot", function()
 		local SB = Loader.New({ "SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua" })

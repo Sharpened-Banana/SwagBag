@@ -257,7 +257,7 @@ function GV.New(cfg)
 		for _, g in ipairs(pos.groupHeaders) do
 			local h = H.Acquire(child, "#" .. g.id, cfg.groupLabel(g.id, g.collapsed, g.count), GV.PAD, g.y, width, owner)
 			if cfg.groupTint and cfg.groupTint(g.id) then
-				h.bg:SetColorTexture(0.25, 0.85, 0.35, 0.3)
+				H.Tint(h, 0.25, 0.85, 0.35, 0.3)
 			end
 		end
 		local labels = sectionLabels(pos)

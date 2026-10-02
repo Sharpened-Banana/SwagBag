@@ -115,6 +115,9 @@ function LR.New(parent, _window, flash)
 		local fs = row:CreateFontString(nil, "OVERLAY", LR.FONT)
 		fs:SetJustifyH(justify)
 		fs:SetWordWrap(false)
+		if SB.Theme then
+			SB.Theme.Text(fs, "row")
+		end
 		return fs
 	end
 
@@ -129,6 +132,9 @@ function LR.New(parent, _window, flash)
 			text(row, "RIGHT")
 		row:SetScript("OnEnter", Guard("list.rowTip", tip, TRAP))
 		row:SetScript("OnLeave", Guard("list.rowTipHide", hideTip, TRAP))
+		if SB.Theme then
+			SB.Theme.Row(row)
+		end
 		if click then
 			row:SetScript("OnMouseUp", Guard("list.rowClick", click, TRAP))
 		end

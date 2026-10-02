@@ -72,6 +72,10 @@ table.insert(UISpecialFrames, "SwagBagBagsWindow")
 frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 frame.title:SetPoint("TOPLEFT", 10, -8)
 frame.title:SetText(L.BAGS_TITLE)
+if SB.Theme then -- the look (UI/Theme.lua); the Blizzard theme keeps exactly the values above (AC14.1)
+	SB.Theme.Window(frame, "main")
+	SB.Theme.Text(frame.title, "title")
+end
 
 local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
@@ -436,6 +440,9 @@ local function titleButton(text, label, onClick, width)
 	b:SetSize(width or 72, 18)
 	b:SetText(text)
 	b:SetScript("OnClick", Guard(label, onClick, "bags"))
+	if SB.Theme then
+		SB.Theme.Button(b)
+	end
 	return b
 end
 
@@ -472,6 +479,9 @@ for _, id in ipairs(SB.Sort.COLUMNS) do
 	b.label:SetAllPoints(b)
 	b.label:SetJustifyH(id == "name" and "LEFT" or "RIGHT")
 	b.label:SetText(COLUMN_NAMES[id])
+	if SB.Theme then
+		SB.Theme.Text(b.label, "small")
+	end
 	b:SetScript("OnClick", Guard("bags.listColumn", function()
 		W.SortList(id)
 	end, "bags"))
