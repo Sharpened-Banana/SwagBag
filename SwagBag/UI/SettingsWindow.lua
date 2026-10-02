@@ -62,7 +62,7 @@ frame.status:SetWordWrap(true)
 frame.status:SetText(L.SET_SAVED_NOTE)
 if SB.Theme then -- the look (UI/Theme.lua); the Blizzard theme keeps exactly the values above (AC14.1)
 	SB.Theme.Window(frame, "dialog")
-	SB.Theme.Text(frame.title, "title")
+	SB.Theme.Text(frame.title, "titleLarge")
 	SB.Theme.Text(frame.status, "small")
 end
 
