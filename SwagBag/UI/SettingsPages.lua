@@ -19,6 +19,7 @@ local function run(line)
 	end
 	return feedback
 end
+SB.SettingsWindow.RunCommand = run
 
 local function get(path)
 	return function()

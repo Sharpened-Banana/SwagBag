@@ -187,7 +187,17 @@ function SW.Render()
 		local fs = label()
 		fs:SetText(row.label)
 		place(fs, 4, y)
-		y = y - 18
+		if row.kind == "note" then
+			-- A note can be long: wrap it to the page width and move on by its real height.
+			fs:SetWidth((child:GetWidth() or SW.WIDTH) - 8)
+			fs:SetWordWrap(true)
+			local h = fs.GetStringHeight and fs:GetStringHeight()
+			y = y - math.max(18, (type(h) == "number" and h or 0) + 6)
+		else
+			fs:SetWidth(0)
+			fs:SetWordWrap(false)
+			y = y - 18
+		end
 		local items = row.choices or row.actions
 		if row.kind == "drop" then
 			items = { { text = row.text } }
