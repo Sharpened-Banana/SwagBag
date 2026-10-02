@@ -166,6 +166,10 @@ if SB.SettingsWindow then
 				apply = function(v)
 					return SB.SettingsWindow.RunCommand("tooltip " .. v)
 				end },
+			-- the alt viewer (UI/OfflineWindow.lua): runs /swagbag alts (D17)
+			{ kind = "actions", label = L.SET_ALTS_VIEW, actions = { { text = L.SET_ALTS_OPEN, width = 160, run = function()
+				return SB.SettingsWindow.RunCommand("alts")
+			end } } },
 			{ kind = "note", label = L.SET_ALTS_SOURCE:format(name, list and #list or 0, (SB.Snapshots.Count()),
 				math.floor(SB.Snapshots.Bytes() / 1024 + 0.5)) },
 		}

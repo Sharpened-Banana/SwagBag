@@ -577,6 +577,12 @@ L.OFFLINE_NOTHING = "Nothing is saved for %s yet: log in on that character once 
 L.HELP_ALTS = "alts [name]: browse a character's saved bags, bank, warband bank and guild bank"
 L.OFFLINE_OPENED = "Showing the saved items of %s."
 L.OFFLINE_UNKNOWN = "No saved character named \"%s\". Saved: %s."
+L.OFFLINE_PICK = "Character: %s"
+L.OFFLINE_MENU_REALM = "%s (%s)"
+L.OFFLINE_MENU_SEEN = "%s - %s"
+L.OFFLINE_NONE_SAVED = "No character is saved yet."
+L.SET_ALTS_VIEW = "Browse a character's saved bags, bank, warband bank and guild bank"
+L.SET_ALTS_OPEN = "Open the alt viewer"
 L.OFFLINE_SEVERAL = "More than one saved character is named \"%s\": %s. Type one of these."
 
 -- Themes (week 5): the look of SwagBag's own windows

@@ -453,6 +453,9 @@ function GV.New(cfg)
 			return false
 		end
 		commit(b, pos, reason, t0)
+		if cfg.onUpdated then
+			cfg.onUpdated()
+		end
 		return true
 	end
 

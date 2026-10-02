@@ -403,6 +403,137 @@ describe("Alt viewer", function()
 	end)
 end)
 
+describe("Alt viewer: the character picker and the ways in", function()
+	local SB, A, OW
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		Fake.Install()
+		Env.PaintGlobals()
+		OW = loadOffline(SB)
+		SB.Inventory.ScanAll()
+		SB.Categories.Load()
+		SB.Snapshots.Save("bags")
+		SB.Snapshots.DB().chars["Abby-Argent Dawn"] = { class = "PRIEST", lastSeen = A.Time() - 2 * 86400,
+			bags = { v = 1, at = A.Time() - 2 * 86400, containers = { [0] = { size = 16, s = "1:item:211880;20\n" } } } }
+	end)
+
+	after_each(function()
+		Env.ClearPaintGlobals()
+		Fake.Uninstall()
+	end)
+
+	local function menuTexts()
+		local out = {}
+		for _, b in ipairs(OW.menuButtons) do
+			if b.shown then
+				out[#out + 1] = b.text
+			end
+		end
+		return out
+	end
+
+	-- AC13.2 "via the character dropdown". Mutation: in the menu buttons' OnClick, drop OW.Open(self.key).
+	it("the picker lists every saved character (this one first, with ages); a click shows that one", function()
+		OW.Open()
+		assert.equal("Character: Swagger", OW.pickButton.text)
+		Fake.Fire(OW.pickButton, "OnClick")
+		assert.truthy(OW.menu.shown)
+		assert.same({ "Swagger (Argent Dawn) - just now", "Abby (Argent Dawn) - 2 days ago" }, menuTexts())
+		Fake.Fire(OW.menuButtons[2], "OnClick")
+		assert.falsy(OW.menu.shown)
+		assert.equal("SwagBag — Abby (saved)", OW.frame.title.text)
+		assert.equal("Character: Abby", OW.pickButton.text)
+		assert.equal(20, SB.DisplayButtons.Get(0, 1).count)
+	end)
+
+	-- Mutation: drop classColoured from the menu button's SetText.
+	it("the picker colours each name by class through the Adapter", function()
+		_G.RAID_CLASS_COLORS = { PRIEST = { colorStr = "fffffffe" } }
+		OW.Open()
+		OW.ToggleMenu()
+		_G.RAID_CLASS_COLORS = nil
+		assert.equal("|cfffffffeAbby (Argent Dawn) - 2 days ago|r", OW.menuButtons[2].text)
+	end)
+
+	-- F23. Mutation: anchor the picker back at TOPRIGHT -10, -30.
+	it("the picker sits on the source line, clear of the search box's error line", function()
+		local p = OW.pickButton.points[1]
+		assert.equal("TOPRIGHT", p[1])
+		assert.equal(-56, p[5])
+		-- the error line hangs from y -26 for two lines of small text (about 12 px each): its lowest edge is -50
+		assert.truthy(p[5] <= -26 - 2 * 12, "the picker's top is below the error line")
+	end)
+
+	it("a second click closes the list; reopening reuses its buttons; hiding the window hides it", function()
+		OW.Open()
+		OW.ToggleMenu()
+		local n = #Fake.created
+		OW.ToggleMenu()
+		assert.falsy(OW.menu.shown)
+		OW.ToggleMenu()
+		assert.equal(n, #Fake.created, "no new frames")
+		OW.Close()
+		assert.falsy(OW.menu.shown)
+	end)
+
+	it("with Syndicator answering, its characters are listed (no stamp: name and realm only)", function()
+		SB.AltData.RegisterProvider({ name = "Syndicator", priority = 10, available = function() return true end,
+			characters = function() return { { key = "Zed-ArgentDawn", name = "Zed", realm = "Argent Dawn" } } end })
+		OW.Open("Zed-ArgentDawn")
+		OW.ToggleMenu()
+		assert.same({ "Zed (Argent Dawn)" }, menuTexts())
+	end)
+
+	-- Task 9 deferred minor. Mutation: in GroupView.RequestLayout, drop the onUpdated call after commit.
+	it("a held loaded relayout re-applies the search when its retry lands", function()
+		local bags = SB.Snapshots.DB().chars["Abby-Argent Dawn"].bags.containers[0]
+		bags.s = bags.s .. "9:item:" .. Fixtures.UNLOADED .. ";1\n"
+		OW.Open("Abby-ArgentDawn")
+		OW.searchBox.editBox:SetText("zzzz")
+		OW.searchBox.Run()
+		local potion = SB.DisplayButtons.Get(0, 1)
+		potion.mouseOver = true
+		A.items[Fixtures.UNLOADED] = { name = "Chest of Tests", classID = A.ITEM_CLASS.Armor, subclassID = 4,
+			equipLoc = "INVTYPE_CHEST", quality = 3, ilvl = 270, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("GET_ITEM_INFO_RECEIVED", Fixtures.UNLOADED, true)
+		A.Advance(OW.LOADED_DELAY)
+		potion.mouseOver = false
+		local chest = SB.DisplayButtons.Get(0, 9)
+		chest.alpha = 1 -- what a layout leaves on a button it draws
+		A.Advance(SB.GroupView.RETRY)
+		assert.equal(0.2, chest.alpha, "the landed layout was searched again")
+	end)
+
+	it("Settings > Alt data opens the alt viewer through /swagbag alts", function()
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsPages.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/TooltipCounts.lua")
+		local SW = SB.SettingsWindow
+		SW.Show("alts")
+		for i = 1, SW.used.buttons do
+			if SW.buttons[i].text == SB.L.SET_ALTS_OPEN then
+				Fake.Fire(SW.buttons[i], "OnClick")
+			end
+		end
+		assert.truthy(OW.IsOpen())
+		assert.equal("Showing the saved items of Swagger.", SW.lastStatus)
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.falsy(SB.SafeMode.IsOn("bank"))
+	end)
+
+	-- Mutation: drop the offline window from Overlays.RefreshAll.
+	it("switching an overlay redraws the alt viewer's items too", function()
+		OW.Open("Swagger-ArgentDawn")
+		local ring = SB.DisplayButtons.Get(0, 3)
+		assert.equal("285", SB.Overlays.regions[ring].topLeft.text)
+		SB.Slash.Dispatch("overlays ilvl off")
+		assert.equal("", SB.Overlays.regions[ring].topLeft.text)
+	end)
+end)
+
 describe("Alt viewer load order", function()
 	it("loads before Config.Init without touching Config", function()
 		local SB = Loader.New(Env.ENGINE)
