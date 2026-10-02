@@ -139,6 +139,13 @@ function Items.DescribeLink(info, bag, slot, tab, location)
 		r.bind = data.bind
 		if r.bind == "equip" and location ~= nil and location ~= "guild" then
 			r.bind, r.bindUnknown = nil, true
+		elseif location ~= nil and location ~= "guild" then
+			-- static binds of a saved item (W5-11): bound now, as in the live bags (Prices.Bound)
+			if r.bind == "pickup" or r.bind == "account" or r.bind == "warbound" then
+				r.isBound = true
+			elseif r.bind == "wue" then
+				r.isWUE = true
+			end
 		end
 		r.isCraftingReagent = data.isCraftingReagent
 		r.ilvl = A.GetLinkIlvl(info.link) or data.baseIlvl

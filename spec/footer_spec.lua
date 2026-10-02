@@ -196,6 +196,20 @@ describe("Footer (ruling W4-14)", function()
 		assert.truthy(F.dirty)
 	end)
 
+	-- Final fix M4. Mutation: drop the SB_THEME_CHANGED listener.
+	it("a theme switch re-reads the footer, debounced", function()
+		F.Refresh()
+		local reads, items = 0, F.Items
+		F.Items = function()
+			reads = reads + 1
+			return items()
+		end
+		SB.Emit("SB_THEME_CHANGED", "plain")
+		assert.equal(0, reads)
+		A.Advance(0.2)
+		assert.equal(1, reads)
+	end)
+
 	-- Spec 6.5 spirit (no polling). Mutation: make soon() call F.Refresh() at once (no SB.Debounce).
 	it("money, currency and bag events refresh once, debounced, and only while the bags are open", function()
 		F.Refresh()

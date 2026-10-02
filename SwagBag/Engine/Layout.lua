@@ -8,7 +8,8 @@
 --   cell  = { bag, slot }  (a slot button)  |  { bag, slot, placeholder = true, icon }
 --   Cells may have holes (nil) so that nothing after them ever shifts.
 -- Layout.Build(slots, assign, order, opts)   full layout (open, Reflow, sort, view toggle)
---   slots: physical order { { bag, slot, record } } (record nil = empty slot)
+--   slots: { { bag, slot, record } } in the order each section lists them (physical, or the list's
+--     display order); empty slots in physical order (record nil = empty slot)
 --   assign(record) -> section id, or nil (pending -> New); empty slots go to Free.
 --   order: section ids in display order; New is forced first and Free last.
 --   opts: { columns, newRows, freeTile, family, hideEmptyNew }

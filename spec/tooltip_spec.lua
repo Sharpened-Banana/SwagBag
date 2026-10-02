@@ -115,6 +115,19 @@ describe("Tooltip counts", function()
 		assert.equal(first * 2, #lines, "the lines are added again")
 	end)
 
+	-- Final fix M1. Mutation: always forget in the Inventory.OnChanged listener.
+	it("a cooldown-only flush keeps the memo; an item flush clears it", function()
+		local calls, real = 0, SB.AltData.Counts
+		SB.AltData.Counts = function(id) calls = calls + 1 return real(id) end
+		A.tooltipHook("tooltip", Fixtures.HEALING_POTION)
+		SB.Inventory.Notify(SB.Inventory.R.COOLDOWN, {})
+		A.tooltipHook("tooltip", Fixtures.HEALING_POTION)
+		assert.equal(1, calls, "cooldown only: the memo stays")
+		SB.Inventory.Notify(SB.Inventory.R.ITEM, {})
+		A.tooltipHook("tooltip", Fixtures.HEALING_POTION)
+		assert.equal(2, calls, "an item change clears it")
+	end)
+
 	-- F21. Mutation: drop one of the Forget listeners.
 	it("the memo is dropped on bag changes, saved snapshots, Syndicator changes and settings", function()
 		local calls, real = 0, SB.AltData.Counts

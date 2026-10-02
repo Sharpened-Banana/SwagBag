@@ -412,6 +412,7 @@ end
 SB.On("PLAYER_MONEY", soon, "bags")
 SB.On("CURRENCY_DISPLAY_UPDATE", soon, "bags")
 SB.On("CHALLENGE_MODE_COMPLETED", soon, "bags") -- the keystone's level changes after a run
+SB.On("SB_THEME_CHANGED", soon, "bags") -- text widths are re-measured after a theme switch
 SB.On("SB_BAGS_CLOSED", function()
 	F.dirty = true -- re-read on the next open, whatever happened while closed
 end, "bags")

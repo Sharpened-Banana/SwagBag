@@ -128,7 +128,13 @@ SB.On("BAG_UPDATE_DELAYED", TC.Forget, "none")
 SB.On("SB_SNAPSHOT_SAVED", TC.Forget, "none")
 SB.On("SB_ALTDATA_CHANGED", TC.Forget, "none")
 SB.On("SB_CONFIG_CHANGED", TC.Forget, "none")
-SB.Inventory.OnChanged(TC.Forget) -- the flush, 50 ms after BAG_UPDATE_DELAYED: this character's live bags
+-- the flush, 50 ms after BAG_UPDATE_DELAYED: this character's live bags. A cooldown-only flush
+-- changes no count, so the memo stays.
+SB.Inventory.OnChanged(function(mask)
+	if mask ~= SB.Inventory.R.COOLDOWN then
+		TC.Forget()
+	end
+end)
 
 -- No hook (the client lacks the tooltip data processor): recorded once under "none" and named in
 -- /swagbag report; nothing else is affected.

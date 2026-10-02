@@ -324,6 +324,33 @@ describe("Alt viewer", function()
 		assert.equal(0.2, DB.Get(0, 2).alpha, "boe does not match it")
 	end)
 
+	-- Final fix W5-11. Mutation: drop the static-bind branch in Items.DescribeLink.
+	it("a saved bind-on-pickup item is bound and vendor-priced; warbound too; wue is WUE; a guild item is unchanged", function()
+		A.items[Fixtures.BOE_RING].bind = "pickup"
+		A.items[Fixtures.BOE_RING].sellPrice = 500
+		SB.Prices.RegisterProvider({ name = "AH", priority = 10, available = function()
+			return true
+		end, value = function()
+			return 990000
+		end })
+		OW.Open("Abby-ArgentDawn")
+		local record = OW.view.Record(0, 2)
+		assert.equal(true, record.isBound)
+		assert.equal(500, SB.Sort.Value(record), "priced at vendor, as in the live bags")
+		for _, bind in ipairs({ "account", "warbound" }) do
+			A.items[Fixtures.BOE_RING].bind = bind
+			local r = SB.Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = "x", count = 1 }, 0, 2, nil, "bags")
+			assert.equal(true, r.isBound, bind)
+		end
+		A.items[Fixtures.BOE_RING].bind = "wue"
+		local w = SB.Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = "x", count = 1 }, 0, 2, nil, "bags")
+		assert.equal(true, w.isWUE)
+		assert.equal(false, w.isBound)
+		local g = SB.Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = "x", count = 1 }, 101, 6, 1)
+		assert.equal(false, g.isBound)
+		assert.equal(false, g.isWUE)
+	end)
+
 	-- Ruling W5-10, the guild case. Mutation: apply the unknown bind to guild records too.
 	it("a BoE item in a saved guild bank stays BoE (never bound there), beside the same ring in the bags", function()
 		local tab = SB.Snapshots.DB().guilds["Tidewatch-Argent Dawn"].snapshot.containers[1]
