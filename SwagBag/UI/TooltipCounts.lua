@@ -99,10 +99,11 @@ function TC.Lines(counts)
 end
 
 -- itemID -> lines (an empty list is a memo too: "nothing to add" is also an answer).
-local memo = {}
+local memo, memoSize = {}, 0
+TC.MEMO_MAX = 500
 
 function TC.Forget()
-	memo = {}
+	memo, memoSize = {}, 0
 end
 
 function TC.Add(tooltip, itemID)
@@ -112,7 +113,11 @@ function TC.Add(tooltip, itemID)
 	local lines = memo[itemID]
 	if not lines then
 		lines = TC.Lines(SB.AltData.Counts(itemID))
+		if memoSize >= TC.MEMO_MAX then
+			TC.Forget()
+		end
 		memo[itemID] = lines
+		memoSize = memoSize + 1
 	end
 	for _, line in ipairs(lines) do
 		SB.Adapter.TooltipLine(tooltip, line[1], line[2])
@@ -125,8 +130,13 @@ SB.On("SB_ALTDATA_CHANGED", TC.Forget, "none")
 SB.On("SB_CONFIG_CHANGED", TC.Forget, "none")
 SB.Inventory.OnChanged(TC.Forget) -- the flush, 50 ms after BAG_UPDATE_DELAYED: this character's live bags
 
+-- No hook (the client lacks the tooltip data processor): recorded once under "none" and named in
+-- /swagbag report; nothing else is affected.
 SB.On("SB_LOGIN", function()
-	SB.Adapter.HookItemTooltip(SB.ErrorTrap.Guard("tooltip.counts", TC.Add, "none"))
+	if not SB.Adapter.HookItemTooltip(SB.ErrorTrap.Guard("tooltip.counts", TC.Add, "none")) then
+		TC.hookFailed = true
+		SB.ErrorTrap.OnError("tooltip.counts", "none", L.TIP_HOOK_UNAVAILABLE, SB.Adapter.Stack())
+	end
 end, "none")
 
 local STATE = { auto = L.TIP_STATE_AUTO, on = L.TIP_STATE_ON, off = L.TIP_STATE_OFF }

@@ -143,6 +143,43 @@ describe("Tooltip counts", function()
 		end
 	end)
 
+	-- Mutation: drop the memo cap.
+	it("the memo is capped: past 500 items it starts over", function()
+		local calls, real = 0, SB.AltData.Counts
+		SB.AltData.Counts = function(id) calls = calls + 1 return real(id) end
+		for id = 1, TC.MEMO_MAX do
+			A.tooltipHook("tooltip", id)
+		end
+		assert.equal(500, calls)
+		A.tooltipHook("tooltip", 1)
+		assert.equal(500, calls, "still memoized at the cap")
+		A.tooltipHook("tooltip", 100001)
+		assert.equal(501, calls)
+		A.tooltipHook("tooltip", 1)
+		assert.equal(502, calls, "the memo was dropped at the cap")
+	end)
+
+	-- Mutation: ignore the false return of HookItemTooltip.
+	it("no hook: one ring entry under 'none' and a report line; bags unaffected", function()
+		assert.equal(0, #SB.ErrorTrap.Recent(), "a working hook records nothing")
+		A.HookItemTooltip = function() return false end
+		SB.Emit("SB_LOGIN")
+		assert.equal(1, #SB.ErrorTrap.Recent(), "one entry")
+		local e = SB.ErrorTrap.Recent()[1]
+		assert.equal("tooltip.counts", e.label)
+		assert.equal("none", e.window)
+		assert.equal("Tooltip counts: hook unavailable", e.message)
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.truthy(TC.hookFailed)
+	end)
+
+	it("a failing tooltip line is recorded by the Guard under 'none'", function()
+		abby("1:item:211880;20\n")
+		A.TooltipLine = function() error("line failed") end
+		A.tooltipHook("tooltip", Fixtures.HEALING_POTION)
+		assert.equal("none", SB.ErrorTrap.Recent()[1].window)
+	end)
+
 	-- F20 is in the Adapter (below): the hook is only called for the main and link tooltips.
 
 	-- P6. Mutation: hook TC.Add directly instead of through ErrorTrap.Guard.
@@ -273,11 +310,18 @@ describe("Adapter.HookItemTooltip (the real Adapter.lua)", function()
 		assert.same({ GameTooltip, ItemRefTooltip }, seen)
 	end)
 
-	it("falls back to OnTooltipSetItem on the main and the link tooltip without the processor", function()
-		ItemRefTooltip = Fake.New("GameTooltip")
-		assert.truthy(A.HookItemTooltip(function() end))
-		assert.equal(1, #GameTooltip.hooks.OnTooltipSetItem)
-		assert.equal(1, #ItemRefTooltip.hooks.OnTooltipSetItem)
+	it("without the processor, or when AddTooltipPostCall fails, HookItemTooltip returns false", function()
+		assert.equal(false, A.HookItemTooltip(function() end))
+		assert.equal(0, #(GameTooltip.hooks.OnTooltipSetItem or {}), "no OnTooltipSetItem fallback")
+		TooltipDataProcessor = { AddTooltipPostCall = function() error("refused") end }
+		Enum = { TooltipDataType = { Item = 0 } }
+		assert.equal(false, A.HookItemTooltip(function() end))
+	end)
+
+	it("TooltipLine does not swallow errors", function()
+		local bad = { AddLine = function() error("no line") end, AddDoubleLine = function() error("no double") end }
+		assert.has_error(function() A.TooltipLine(bad, "x") end)
+		assert.has_error(function() A.TooltipLine(bad, "x", "y") end)
 	end)
 
 	it("ClassColour reads the client's class colours", function()
