@@ -1,7 +1,10 @@
 -- SwagBag's looks beyond the Blizzard default (UI/Theme.lua holds the registry and that default),
 -- the /swagbag theme command and the Settings > Look page. A change applies at once, in or out of
 -- combat, with no /reload, and is saved (settings.theme.name).
---   "flat"  Modern flat: dark flat panels, a black edge, white text, flat slots and buttons.
+--   "flat"   Modern flat: dark flat panels, a black edge, white text, flat slots and buttons.
+--   "elvui"  Matches ElvUI: ElvUI's font, flat texture and colours, read from ElvUI itself through
+--            Adapter.ElvUIMedia each time it is applied. Only while ElvUI is loaded; otherwise the
+--            choice is refused with the reason, and a saved "elvui" shows the Blizzard look.
 local _, SB = ...
 
 local L = SB.L
@@ -20,6 +23,25 @@ Theme.Register({
 			fonts = { titleLarge = "GameFontHighlightLarge", title = "GameFontHighlight", header = "GameFontHighlight", label = "GameFontHighlight",
 				body = "GameFontHighlightSmall", small = "GameFontHighlightSmall", row = "GameFontHighlightSmall" },
 			button = { bg = { 0.16, 0.16, 0.18, 1 } },
+		}
+	end,
+})
+
+Theme.Register({
+	id = "elvui",
+	name = L.THEME_ELVUI,
+	unavailable = L.THEME_NO_ELVUI,
+	available = function()
+		return SB.Adapter.ElvUIMedia() ~= nil
+	end,
+	palette = function()
+		local m = SB.Adapter.ElvUIMedia()
+		local f, d = m.fade, m.backdrop
+		return {
+			window = { f[1], f[2], f[3], f[4] }, dialog = { f[1], f[2], f[3], math.max(f[4], 0.9) }, border = m.border,
+			header = { d[1], d[2], d[3], 0.6 }, row = { d[1], d[2], d[3], 0.25 }, slot = { d[1], d[2], d[3], 1 },
+			backdrop = m.blank, fonts = { file = m.font, size = m.size, flags = "OUTLINE" },
+			button = { bg = { d[1], d[2], d[3], 1 } },
 		}
 	end,
 })

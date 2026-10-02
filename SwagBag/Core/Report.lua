@@ -136,6 +136,9 @@ function Report.Build()
 		end
 		lines[#lines + 1] = L.REPORT_SPELLS:format(#spells > 0 and table.concat(spells, ", ") or L.REPORT_NONE)
 	end
+	if SB.Theme and SB.Config.db then
+		lines[#lines + 1] = L.REPORT_LOOK:format(SB.Theme.Current(), tostring(SB.Config.Get("theme.name")))
+	end
 	local guild = SB.GuildBankWindow
 	if guild then
 		lines[#lines + 1] = L.REPORT_GUILD:format(guild.Mode(), tostring(guild.lastVisit or L.REPORT_NONE))
