@@ -41,13 +41,14 @@ local function bagsRows()
 	return {
 		{ kind = "choice", label = L.SET_VIEW, get = function()
 			return W.View()
-		end, choices = { { value = "sections", text = L.VIEW_TO_SECTIONS }, { value = "grid", text = L.VIEW_TO_GRID } },
+		end, choices = { { value = "sections", text = L.VIEW_TO_SECTIONS }, { value = "list", text = L.VIEW_TO_LIST },
+			{ value = "grid", text = L.VIEW_TO_GRID } },
 		apply = function(v)
 			if SB.Config.readOnly then
 				return L.SETTINGS_READONLY
 			end
 			W.SetView(v)
-			return v == "grid" and L.VIEW_GRID or L.VIEW_SECTIONS
+			return (v == "grid" and L.VIEW_GRID) or (v == "list" and L.VIEW_LIST) or L.VIEW_SECTIONS
 		end },
 		{ kind = "choice", label = L.SET_COLUMNS, get = get("bags.columns"), width = 56,
 			choices = { { value = 12, text = tostring(12) }, { value = 10, text = tostring(10) },

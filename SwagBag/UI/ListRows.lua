@@ -13,14 +13,15 @@
 --                                              scripts always trap as "none", F3); flash(text): the
 --                                              window's title flash, called on a click on a row's text
 --   rows.Place(button, x, y, width, height, shown)  the row of a slot button (made on first use)
---   rows.Paint(button, bag, slot, record, freeCount)  record nil: an empty slot ("Empty slot"),
---                                              or the free tile when freeCount is a number
+--   rows.Paint(button, bag, slot, record, freeCount, family)  record nil: an empty slot ("Empty
+--                                              slot"), or the free tile when freeCount is a number
+--                                              (family "reagent": it says reagents only, F9)
 --   rows.Ghosts(list, width, height)           rows for placeholders: { { x, y } }, drawn whole
 --   rows.HideAll()                             another view, or a full layout starting
 --   rows.SetDimmed(button, dimmed)             search: a row dims with its button (AC5.1)
 --   rows.IsMouseOver(button) -> bool           P5: a row under the mouse holds its button
 --   ListRows.Columns(width) -> { name, count, ilvl, value } = { x, width }   pure
---   ListRows.Texts(record, freeCount) -> { name, count, ilvl, value }         pure
+--   ListRows.Texts(record, freeCount, family) -> { name, count, ilvl, value } pure
 local _, SB = ...
 
 local L = SB.L
@@ -71,9 +72,12 @@ local function coloured(record)
 	return name
 end
 
-function LR.Texts(record, freeCount)
+function LR.Texts(record, freeCount, family)
 	if not record then
-		local name = type(freeCount) == "number" and L.LIST_FREE:format(freeCount) or L.LIST_EMPTY
+		local name = L.LIST_EMPTY
+		if type(freeCount) == "number" then -- the free tile; a reagent bag's takes reagents only (F9)
+			name = (family == "reagent" and L.LIST_FREE_REAGENT or L.LIST_FREE):format(freeCount)
+		end
 		return { name = name, count = "", ilvl = "", value = "" }
 	end
 	local count = record.count or 1
@@ -209,8 +213,8 @@ function LR.New(parent, _window, flash)
 		row:Show()
 	end
 
-	function R.Paint(button, bag, slot, record, freeCount)
-		local t = LR.Texts(record, freeCount)
+	function R.Paint(button, bag, slot, record, freeCount, family)
+		local t = LR.Texts(record, freeCount, family)
 		t.slot = { bag = bag, slot = slot, filled = record ~= nil }
 		texts[button] = t
 		local row = R.rows[button]

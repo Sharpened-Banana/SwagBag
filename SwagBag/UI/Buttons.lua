@@ -167,10 +167,13 @@ function Buttons.Count(bag)
 	return #(Buttons.buttons[bag] or {})
 end
 
--- Coordinates are TOPLEFT offsets inside the window's scroll child.
+-- Coordinates are TOPLEFT offsets inside the window's scroll child, in its units. A point's
+-- offsets are in the button's own scale, so a button drawn smaller (the list view) is offset by
+-- x / scale, y / scale to land on the same spot.
 function Buttons.Place(button, x, y)
+	local scale = button:GetScale() or 1
 	button:ClearAllPoints()
-	button:SetPoint("TOPLEFT", button:GetParent(), "TOPLEFT", x, y)
+	button:SetPoint("TOPLEFT", button:GetParent(), "TOPLEFT", x / scale, y / scale)
 end
 
 -- info: SB.Adapter.GetSlot(bag, slot) result, or nil for an empty slot. A filled button never

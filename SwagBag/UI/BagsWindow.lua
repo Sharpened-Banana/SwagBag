@@ -1,7 +1,12 @@
--- SwagBag bags window (spec F1, F3). Two views, switched with the header button
+-- SwagBag bags window (spec F1, F3). Three views, switched with the header button
 -- without /reload, in or out of combat (AC3.1):
 --   "sections" (default)  category sections from Engine/Layout.lua: New on top, Free
 --                         at the bottom, collapsible headers remembered per character
+--   "list"                the same sections, one row per slot (spec 2.2 v1.3): the slot's own
+--                         button, scaled to the row's height, then its name, count, item level
+--                         and value (UI/ListRows.lua), each section in the order of
+--                         Engine/Sort.lua. Same layout engine, so New, Free, placeholders,
+--                         collapse, focus modes and the hover guard work exactly as in "sections"
 --   "grid"                one grid in physical slot order (AC3.6)
 -- Movable, Ctrl+wheel scale 50-200 %, remembers its position per character, closes on
 -- Esc, scrolls with a clamped offset (spec 4.4), and stays hidden until laid out.
@@ -19,9 +24,10 @@ local W = {
 	state = nil, -- sections view: Layout state while open (nil when closed or in grid view)
 	pos = nil, -- sections view: last Layout.Position result
 	view = nil, -- sections view: the collapsed lookup W.pos was built with (what is drawn, W4-1)
+	drawn = "sections", -- the view the current layout was drawn in (the setting may change before a held layout)
 	areaHeld = false, -- a world-started re-stack is waiting for the mouse to leave the items (W4-13)
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
-	tiled = {}, -- [button] = true while it shows a free tile's number (plan D19)
+	tiled = {}, -- [button] = its tile entry ({ bag, slot, ... }) while it shows a free tile's number (plan D19)
 	size = { 100, 100 }, -- last content width, height
 	SLOT = 37,
 	GAP = 4,
@@ -36,6 +42,12 @@ local W = {
 	SORT_SETTLE = 0.3, -- regroup this long after the last bag update of a sort
 	SORT_TIMEOUT = 1.5, -- a sort that never changes anything stops waiting after this long (W3)
 	DROP_GUARD = 0.3, -- the click that follows a drop on the same header is ignored for this long
+	LIST_ROW = 24, -- list view: a row's height, and its slot button's size (the button is scaled to it)
+	LIST_GAP = 2, -- list view: the gap between two rows
+	LIST_WIDTH = 480, -- list view: the item area's width
+	LIST_NEW_ROWS = 8, -- list view: rows New keeps while open, a dungeon's loot (F7; the sections view keeps bags.newRows rows)
+	ROW_TEXT_GAP = 4, -- list view: between a row's icon and its texts
+	SCALE_EPSILON = 0.001, -- a button's scale "took" when GetScale() is this close to the wanted one (F6)
 }
 SB.BagsWindow = W
 
@@ -71,6 +83,12 @@ child:SetSize(100, 100)
 scroll:SetScrollChild(child)
 W.scroll, W.child = scroll, child
 SB.Buttons.SetParentFor("bags", child)
+-- The list view's rows (UI/ListRows.lua). Without that file (a load failure) the bags show the
+-- category view instead of the list. A click on a row's text answers in the title (F24); W.Flash
+-- is defined below, so it is looked up when the click comes.
+W.rows = SB.ListRows and SB.ListRows.New(child, "bags", function(text)
+	W.Flash(text)
+end) or nil
 
 function W.ClampScroll()
 	scroll:SetVerticalScroll(SB.GridLayout.ClampOffset(scroll:GetVerticalScroll(), child:GetHeight(), scroll:GetHeight()))
@@ -86,7 +104,7 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 		return
 	end
 	W.state, W.pos, W.view, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, nil, false, false, false
-	W.areaHeld = false
+	W.areaHeld, W.scaleWarned = false, false
 	W.ClearDropGuard()
 	if SB.Focus then
 		SB.Focus.WindowClosed() -- peeks and closes end with the bag; pins stay until the mode changes (spec 6.1)
@@ -296,8 +314,21 @@ end, "bags"))
 ---------------------------------------------------------------------------
 -- Views and collapse state
 ---------------------------------------------------------------------------
+W.VIEWS = { "sections", "list", "grid" } -- the view button's order: each click shows the next one
+local VIEW_NEXT = { sections = "list", list = "grid", grid = "sections" }
+local VIEW_BUTTON = { sections = L.VIEW_TO_SECTIONS, list = L.VIEW_TO_LIST, grid = L.VIEW_TO_GRID }
+local VIEW_FLASH = { sections = L.VIEW_SECTIONS, list = L.VIEW_LIST, grid = L.VIEW_GRID }
+
 function W.View()
-	return SB.Config.Get("bags.view") == "grid" and "grid" or "sections"
+	local v = SB.Config.Get("bags.view")
+	if v == "grid" or v == "list" then
+		return v
+	end
+	return "sections"
+end
+
+local function isList()
+	return W.drawn == "list"
 end
 
 -- [sectionId] = true for collapsed sections, saved per character (AC3.2).
@@ -335,8 +366,48 @@ local function columns()
 end
 
 local function positionOpts()
+	if isList() then -- one column of rows, each as tall as its (scaled) button
+		return { columns = 1, size = W.LIST_ROW, gap = W.LIST_GAP, padding = W.PAD, header = W.SECTION_HEADER,
+			sectionGap = W.SECTION_GAP }
+	end
 	return { columns = columns(), size = W.SLOT, gap = W.GAP, padding = W.PAD, header = W.SECTION_HEADER,
 		sectionGap = W.SECTION_GAP }
+end
+
+-- Layout.Position for the drawn view. A list is LIST_WIDTH wide (its single column of cells is
+-- only an icon wide; the rows' texts fill the rest).
+local function position(st, view)
+	local pos = SB.Layout.Position(st, positionOpts(), view)
+	if isList() then
+		pos.width = W.LIST_WIDTH
+	end
+	return pos
+end
+
+-- A row's texts start right of its icon and end at the item area's right edge.
+local function rowWidth()
+	return W.LIST_WIDTH - 2 * W.PAD - W.LIST_ROW - W.ROW_TEXT_GAP
+end
+
+local function scaleIs(button, scale)
+	return math.abs((button:GetScale() or 1) - scale) < W.SCALE_EPSILON
+end
+
+-- Slot buttons are drawn at row size in the list view and at full size elsewhere. Buttons are not
+-- protected (spec 4.1), so this is legal in combat; Buttons.Place keeps offsets in the parent's
+-- units at any scale. A button whose scale changes is placed again. Returns false when the scale
+-- did not take (F6: the caller must not draw it in a list row, where a full-size button would
+-- overlap the next row's icon and a click there could use or sell the wrong item).
+local function setScale(button, scale)
+	if not scaleIs(button, scale) then
+		button:SetScale(scale)
+		W.placed[button] = nil
+	end
+	return scaleIs(button, scale)
+end
+
+local function slotScale()
+	return isList() and W.LIST_ROW / W.SLOT or 1
 end
 
 local function titleButton(text, label, onClick, width)
@@ -347,8 +418,9 @@ local function titleButton(text, label, onClick, width)
 	return b
 end
 
--- Config is not initialized while this file loads, so the real label is set in W.Open().
-W.viewButton = titleButton(L.VIEW_TO_GRID, "bags.viewButton", function()
+-- Config is not initialized while this file loads, so the real label is set in W.Open(). The button
+-- names the view a click shows next (sections -> list -> grid -> sections).
+W.viewButton = titleButton(L.VIEW_TO_LIST, "bags.viewButton", function()
 	W.ToggleView()
 end)
 W.viewButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -5)
@@ -367,10 +439,18 @@ local function bagList()
 	return list
 end
 
--- Overlays (spec F9) follow the record; an empty reagent-bag slot gets its Free cue.
+-- Overlays (spec F9) follow the record; an empty reagent-bag slot gets its Free cue. In the list
+-- view the row's texts follow it too (every repaint of a slot comes through here).
 local function overlay(bag, slot)
+	local record = W.records[bag] and W.records[bag][slot]
 	if SB.Overlays then
-		SB.Overlays.Apply(SB.Buttons.Get(bag, slot), W.records[bag] and W.records[bag][slot], bag)
+		SB.Overlays.Apply(SB.Buttons.Get(bag, slot), record, bag)
+	end
+	if isList() then
+		local button = SB.Buttons.Get(bag, slot)
+		if button then
+			W.rows.Paint(button, bag, slot, record)
+		end
 	end
 end
 
@@ -415,12 +495,18 @@ local function paintTiles(pos)
 		local button = B.Get(t.bag, t.slot)
 		if button and t.shown and not (W.records[t.bag] and W.records[t.bag][t.slot]) then
 			B.SetFreeCount(button, t.count)
-			now[button] = true
+			now[button] = t
+			if isList() then -- F9: the tile's family, so a reagent bag's row says reagents only
+				W.rows.Paint(button, t.bag, t.slot, nil, t.count, t.tile)
+			end
 		end
 	end
-	for button in pairs(W.tiled) do
+	for button, t in pairs(W.tiled) do
 		if not now[button] then
 			B.SetFreeCount(button, nil)
+			if isList() then -- a tile that filled or became a plain empty slot: its row says what it holds now
+				W.rows.Paint(button, t.bag, t.slot, W.records[t.bag] and W.records[t.bag][t.slot])
+			end
 		end
 	end
 	W.tiled = now
@@ -434,6 +520,7 @@ local function layoutGrid(bags)
 	for _, c in ipairs(g.cells) do
 		local button = B.Get(c.bag, c.slot)
 		if button then
+			setScale(button, 1)
 			place(button, c.x, c.y)
 			B.Paint(button, A.GetSlot(c.bag, c.slot))
 			describe(c.bag, c.slot)
@@ -451,11 +538,15 @@ local function inBag(c)
 end
 
 local function showAt(button, c)
-	if c.shown and inBag(c) then
+	local shown = c.shown and inBag(c)
+	if shown then
 		place(button, c.x, c.y)
 		button:Show()
 	else
 		button:Hide()
+	end
+	if isList() then -- a spare (hidden, no position) has no row either
+		W.rows.Place(button, shown and c.x + W.LIST_ROW + W.ROW_TEXT_GAP, c.y, rowWidth(), W.LIST_ROW, shown)
 	end
 end
 
@@ -486,10 +577,15 @@ end
 local function renderExtras(pos)
 	local B, H = SB.Buttons, SB.SectionHeaders
 	B.ReleasePlaceholders(child)
+	local ghosts = {}
 	for _, p in ipairs(pos.placeholders) do
 		if p.shown then
-			B.AcquirePlaceholder(child, p.icon, W.SLOT, p.x, p.y)
+			B.AcquirePlaceholder(child, p.icon, isList() and W.LIST_ROW or W.SLOT, p.x, p.y)
+			ghosts[#ghosts + 1] = { x = p.x + W.LIST_ROW + W.ROW_TEXT_GAP, y = p.y }
 		end
+	end
+	if isList() then -- a placeholder's row says the item moved or was used
+		W.rows.Ghosts(ghosts, rowWidth(), W.LIST_ROW)
 	end
 	H.ReleaseAll(child)
 	local labels = headerLabels(pos)
@@ -511,8 +607,23 @@ function W.RefreshHeaders()
 	end
 end
 
+-- F8: in the list view each row's Value follows a price change the same way, texts only (it
+-- must add up to its header). Nothing moves and nothing re-sorts: the order changes only with a
+-- full layout (open, Reflow, a view change), which waits while the mouse is over the items.
+function W.RefreshRows()
+	if not (isList() and W.state and frame:IsShown()) then
+		return
+	end
+	W.ForEachSlot(function(button, record, bag, slot)
+		if record then -- an empty slot or a free tile has no value
+			W.rows.Paint(button, bag, slot, record)
+		end
+	end)
+end
+
 SB.On("SB_PRICES_CHANGED", function()
 	W.RefreshHeaders()
+	W.RefreshRows()
 end, "bags")
 
 local function cellsOf(pos)
@@ -561,6 +672,9 @@ local function renderMoved(oldPos, newPos)
 			local button = B.Get(c.bag, c.slot)
 			if button then
 				button:Hide()
+				if isList() then
+					W.rows.Place(button, 0, 0, 0, 0, false)
+				end
 			end
 		end
 	end
@@ -573,22 +687,58 @@ end
 local function layoutSections(bags)
 	local A, B = SB.Adapter, SB.Buttons
 	local slots = {}
+	local scale = slotScale()
 	for _, b in ipairs(bags) do
 		for slot = 1, b.size do
 			local button = B.Get(b.bag, slot)
 			if button then -- nil only while combat delays pool growth (spec 4.3: slot invisible)
+				setScale(button, scale)
 				B.Paint(button, A.GetSlot(b.bag, slot))
 				slots[#slots + 1] = { bag = b.bag, slot = slot, record = describe(b.bag, slot) }
 			end
 		end
 	end
+	-- The list view lays the slots out in its display order (Engine/Sort.lua): Layout keeps the
+	-- order it is given inside each section. Empty slots keep their physical order.
+	if isList() then
+		slots = SB.Sort.DisplayOrder(slots, SB.Sort.Spec(), SB.Sort.Value)
+	end
 	-- New is hidden while empty unless bags.newAlways (ruling W4-15); the bank windows never hide it.
 	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
-		{ columns = columns(), newRows = SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
+		{ columns = isList() and 1 or columns(),
+			newRows = isList() and W.LIST_NEW_ROWS or SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
 			family = SB.Adapter.BagFamily, hideEmptyNew = not SB.Config.Get("bags.newAlways") })
 	W.view = snapshot(W.state, W.EffectiveCollapsed())
-	W.pos = SB.Layout.Position(W.state, positionOpts(), W.view)
+	W.pos = position(W.state, W.view)
 	return render()
+end
+
+-- F6 (item safety): every slot button is sized before the list is laid out. Returns false when a
+-- scale did not take for any button.
+local function scaleAll(bags, scale)
+	local B, ok = SB.Buttons, true
+	for _, b in ipairs(bags) do
+		for slot = 1, b.size do
+			local button = B.Get(b.bag, slot)
+			if button and not setScale(button, scale) then
+				ok = false
+			end
+		end
+	end
+	return ok
+end
+
+-- F6: a button left at full size in a 24 px row would overlap the next row's icon and text, so a
+-- click there could use or sell the item of the row above. That layout draws as categories
+-- instead, recorded in the error list (never Safe Mode) and said once in chat per opening.
+local function listFailed(bags)
+	W.drawn = "sections"
+	scaleAll(bags, 1)
+	SB.ErrorTrap.OnError("bags.listScale", "none", "a slot button's SetScale did not take", nil)
+	if not W.scaleWarned then
+		W.scaleWarned = true
+		SB.Print(L.LIST_SCALE_FALLBACK)
+	end
 end
 
 -- Full layout: every item to its section (or the physical grid). Called on open and by
@@ -596,6 +746,13 @@ end
 function W.Layout(reason)
 	local A, B = SB.Adapter, SB.Buttons
 	local t0 = A.ProfileMs()
+	W.drawn = W.View()
+	if W.drawn == "list" and not W.rows then
+		W.drawn = "sections"
+	end
+	if W.rows then
+		W.rows.HideAll()
+	end
 	local bags = bagList()
 	W.sizes = {}
 	for _, b in ipairs(bags) do
@@ -609,11 +766,14 @@ function W.Layout(reason)
 			B.Get(bag, slot):Hide()
 		end
 	end
+	if isList() and not scaleAll(bags, slotScale()) then
+		listFailed(bags)
+	end
 	W.records, W.state, W.pos, W.view, W.areaHeld = {}, nil, nil, nil, false
 	B.ReleasePlaceholders(child)
 	SB.SectionHeaders.ReleaseAll(child)
 	local width, height
-	if W.View() == "grid" then
+	if W.drawn == "grid" then
 		width, height = layoutGrid(bags)
 	else
 		width, height = layoutSections(bags)
@@ -624,11 +784,20 @@ function W.Layout(reason)
 	SB.Emit("SB_BAGS_LAYOUT", reason)
 end
 
+-- In the list view a row under the mouse holds its button as well (P5: its text would move too).
 local function buttonBusy(bag, slot)
 	local button = SB.Buttons.Get(bag, slot)
-	return button ~= nil and button:IsShown() and button:IsMouseOver()
+	return button ~= nil and button:IsShown() and (button:IsMouseOver() or (isList() and W.rows.IsMouseOver(button)))
 end
 W.ButtonBusy = buttonBusy
+
+-- Search dimming (UI/SearchBox.lua): the button, and in the list view its row (AC5.1: fully dimmed).
+function W.SetDimmed(button, dimmed)
+	SB.Buttons.SetDimmed(button, dimmed)
+	if W.rows then
+		W.rows.SetDimmed(button, dimmed)
+	end
+end
 
 -- Spec 4.2 rule 5, one definition for every move: busyCheck() returns isBusy(bag, slot),
 -- true while an item is on the cursor or that button is under the mouse (the cursor is
@@ -716,7 +885,7 @@ function W.Restack(area)
 		W.RefreshHeaders()
 		return true
 	end
-	local pos = SB.Layout.Position(W.state, positionOpts(), view)
+	local pos = position(W.state, view)
 	local wait = area == true or W.areaHeld
 	if not wait and type(area) == "string" and W.pos then
 		wait = headerY(W.pos, area) ~= headerY(pos, area)
@@ -811,18 +980,24 @@ function W.RequestLayout(reason)
 	return true
 end
 
+-- view: "sections" | "list" | "grid". Returns true when the setting changed (the window regroups
+-- now, or once the mouse leaves the items), false (with a title flash) while read-only.
 function W.SetView(view)
+	if not VIEW_NEXT[view] then
+		return false
+	end
 	if not SB.Config.Set("bags.view", view) then -- read-only settings: nothing changes
 		W.Flash(L.SETTINGS_READONLY)
-		return
+		return false
 	end
-	W.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
-	W.Flash(view == "grid" and L.VIEW_GRID or L.VIEW_SECTIONS)
+	W.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[view]])
+	W.Flash(VIEW_FLASH[view])
 	W.RequestLayout("view")
+	return true
 end
 
 function W.ToggleView()
-	W.SetView(W.View() == "grid" and "sections" or "grid")
+	W.SetView(VIEW_NEXT[W.View()])
 end
 
 -- Reflow button (spec 4.3): regroup now, or as soon as the mouse leaves the items.
@@ -1032,7 +1207,7 @@ function W.Open()
 	W.RestorePosition()
 	frame:SetScale(SB.GridLayout.ClampScale(SB.Config.Get("bags.scale")))
 	W.sortPending, W.sortSawUpdate = false, false
-	W.viewButton:SetText(W.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	W.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[W.View()]])
 	W.RefreshModeButton()
 	W.RefreshTitle()
 	frame:Show()
@@ -1082,7 +1257,7 @@ function W.ApplyChanges(changes)
 	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore then
 		result.rendered = true
 		local oldPos = W.pos
-		W.pos = SB.Layout.Position(st, positionOpts(), W.view)
+		W.pos = position(st, W.view)
 		local width, height = renderMoved(oldPos, W.pos)
 		sizeFrame(width, height, true)
 	end
@@ -1108,6 +1283,12 @@ local function sizeChanges()
 		for slot = old + 1, new do
 			local button = B.Get(bag, slot)
 			if button then
+				if not setScale(button, slotScale()) then
+					-- F6: once this update is done, a full layout draws the list as categories.
+					SB.Debounce("bags.scale", 0, function()
+						W.RequestLayout("scale")
+					end, "bags")
+				end
 				B.Paint(button, A.GetSlot(bag, slot))
 				describe(bag, slot)
 				out[#out + 1] = { bag = bag, slot = slot, kind = "added" }
@@ -1233,6 +1414,18 @@ SB.Slash.Register("new", L.HELP_NEW, function(arg)
 	end
 	W.RequestLayout("new")
 	return arg == "always" and L.NEW_MODE_ALWAYS or L.NEW_MODE_AUTO
+end, "bags")
+
+-- /swagbag view [sections|list|grid]: show or switch the bags' view (the view button's three views).
+SB.Slash.Register("view", L.HELP_VIEW, function(arg)
+	arg = (arg or ""):lower()
+	if not VIEW_NEXT[arg] then
+		return L.VIEW_USAGE:format(W.View())
+	end
+	if not W.SetView(arg) then
+		return L.SETTINGS_READONLY
+	end
+	return VIEW_FLASH[arg]
 end, "bags")
 
 -- A bag equipped, taken off or swapped (W3-21). A swap for a bag of the same size changes no

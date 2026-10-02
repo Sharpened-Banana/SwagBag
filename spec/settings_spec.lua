@@ -80,8 +80,9 @@ describe("Settings window", function()
 		SW.Show("bags")
 		local b = buttons()
 		assert.same({ "Categories", true }, b[1])
-		assert.same({ "Grid", false }, b[2])
-		assert.same({ "12", true }, b[3], "12 slots per row, the default, first")
+		assert.same({ "List", false }, b[2])
+		assert.same({ "Grid", false }, b[3])
+		assert.same({ "12", true }, b[4], "12 slots per row, the default, first")
 	end)
 
 	-- Mutation: in SettingsWindow's act(), drop SW.Say (the status line keeps the old text).

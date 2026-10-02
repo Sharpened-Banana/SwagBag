@@ -74,6 +74,13 @@ describe("ListRows", function()
 		assert.equal(SB.L.LIST_FREE:format(10), LR.Texts(nil, 10).name)
 	end)
 
+	-- F9. Mutation: in Texts, ignore family.
+	it("texts: the reagent bag's tile says it takes reagents; other families read as plain free slots", function()
+		assert.equal(SB.L.LIST_FREE_REAGENT:format(2), LR.Texts(nil, 2, "reagent").name)
+		assert.equal(SB.L.LIST_FREE:format(3), LR.Texts(nil, 3, "family8").name)
+		assert.equal(SB.L.LIST_EMPTY, LR.Texts(nil, nil, "reagent").name, "a plain empty reagent slot")
+	end)
+
 	it("columns fill the row: name on the left, count, item level and value on the right", function()
 		local c = LR.Columns(440)
 		assert.equal(0, c.name.x)
