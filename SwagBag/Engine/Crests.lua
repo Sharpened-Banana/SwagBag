@@ -7,7 +7,10 @@
 -- (spec AC4.3); Claude moves confirmed IDs into `ids` when the user reports them.
 local _, SB = ...
 
+-- currencies: currency IDs of the season's crests, for the bags footer (UI/Footer.lua). Empty until
+-- confirmed in game: the footer then shows every owned currency whose name has one of `words`.
 SB.Crests = {
 	ids = {},
 	words = { "crest", "valorstone" },
+	currencies = {},
 }

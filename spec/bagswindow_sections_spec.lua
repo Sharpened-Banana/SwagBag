@@ -1224,6 +1224,65 @@ describe("BagsWindow category view", function()
 		assert.equal(true, SB.Config.Get("bags.newAlways"))
 	end)
 
+	-- Ruling W4-14: the footer never covers an item. Mutation: in sizeFrame, `local foot = W.FOOTER`.
+	it("the footer's height is part of the window, and the scroll area ends above it", function()
+		SB.Footer = { Layout = function()
+			return 40
+		end }
+		W.Open()
+		local p = W.scroll.points[#W.scroll.points]
+		assert.same({ "BOTTOMRIGHT", "BOTTOMRIGHT", -4, W.FOOTER + 40 }, { p[1], p[3], p[4], p[5] })
+		assert.equal(W.frame, p[2])
+		assert.equal(W.pos.height + W.HEADER + W.FOOTER + 40, W.frame.h)
+	end)
+
+	-- C1 / P5: a footer that grows (a second row, an entry appearing) moves no item. Mutation: in
+	-- W.Resize, `sizeFrame(W.size[1], W.size[2], true)` -> `sizeFrame(W.size[1], W.size[2], false)`.
+	it("a taller footer grows the window downward: its top-left corner and every item stay put", function()
+		local stub = { height = 0 }
+		function stub.Layout()
+			return stub.height
+		end
+		SB.Footer = stub
+		W.Open()
+		W.frame:ClearAllPoints() -- a saved position anchored by the bottom edge, as the client may restore it
+		W.frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 100, 300)
+		local left, top, h = W.frame:GetLeft(), W.frame:GetTop(), W.frame.h
+		local scrollTop, offset, counts = W.scroll.points[1], W.scroll.vscroll, placedCounts()
+		stub.height = 34 -- wrapped to two rows
+		W.Resize()
+		assert.equal(h + 34, W.frame.h, "the window grew by the footer's new height")
+		assert.equal(left, W.frame:GetLeft())
+		assert.equal(top, W.frame:GetTop(), "the top edge did not move")
+		assert.same({ "TOPLEFT", 4, -W.HEADER }, scrollTop)
+		assert.equal(scrollTop, W.scroll.points[1], "the scroll area's top is anchored where it was")
+		assert.equal(offset, W.scroll.vscroll)
+		assert.same(counts, placedCounts(), "no item button was placed again")
+		local p = W.scroll.points[#W.scroll.points]
+		assert.equal(W.FOOTER + 34, p[5], "the scroll area ends above the taller footer")
+	end)
+
+	-- P5: a shorter footer can clamp a scrolled view down, so it waits for the mouse to leave the
+	-- items. Mutation: in W.Resize, drop the `scroll:IsMouseOver() or ...` hold.
+	it("a shorter footer waits while the mouse is over the items, then fits the window", function()
+		local stub = { height = 34 }
+		function stub.Layout()
+			return stub.height
+		end
+		SB.Footer = stub
+		W.Open()
+		local h = W.frame.h
+		W.scroll.mouseOver = true
+		stub.height = 16
+		W.Resize()
+		assert.equal(h, W.frame.h, "held while the mouse is on the items")
+		A.Advance(W.RETRY)
+		assert.equal(h, W.frame.h, "still held")
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.equal(h - 18, W.frame.h)
+	end)
+
 	it("the grid view only repaints: no placeholders, nothing moves", function()
 		SB.Config.Set("bags.view", "grid")
 		W.Open()

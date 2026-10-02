@@ -444,6 +444,44 @@ function M.AddContainers(m)
 		return m.avgIlvl
 	end
 
+	-- The bags footer (W4-14): m.money in copper; m.backpack (Blizzard's "Show on backpack" list) and
+	-- m.currencies (the Currency tab list) = { { id, name, quantity, icon } }. MoneyText is plain "12g".
+	m.money, m.backpack, m.currencies = 0, {}, {}
+	local function copyList(list)
+		local out = {}
+		for i, c in ipairs(list) do
+			out[i] = { id = c.id, name = c.name, quantity = c.quantity, icon = c.icon }
+		end
+		return out
+	end
+
+	function m.Money()
+		return m.money
+	end
+
+	function m.MoneyText(copper)
+		return tostring(math.floor(copper / 10000)) .. "g"
+	end
+
+	function m.BackpackCurrencies()
+		return copyList(m.backpack)
+	end
+
+	function m.CurrencyList()
+		return copyList(m.currencies)
+	end
+
+	function m.CurrencyInfo(id)
+		for _, list in ipairs({ m.backpack, m.currencies }) do
+			for _, c in ipairs(copyList(list)) do
+				if c.id == id then
+					return c
+				end
+			end
+		end
+		return nil
+	end
+
 	function m.HasPawn()
 		return m.pawn ~= nil
 	end
