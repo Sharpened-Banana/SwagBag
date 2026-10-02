@@ -5,7 +5,7 @@ local REQUIRED = {
 	"## Interface: 120100, 120105",
 	"## SavedVariables: SwagBagDB",
 	"## SavedVariablesPerCharacter: SwagBagCharDB",
-	"## OptionalDeps: Auctionator, Syndicator",
+	"## OptionalDeps: Auctionator, Syndicator, ElvUI",
 	"## X-License: All Rights Reserved",
 }
 
