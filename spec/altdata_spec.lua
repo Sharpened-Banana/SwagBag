@@ -105,14 +105,18 @@ describe("AltData", function()
 	end)
 
 	-- Spec 8.4: the index is derived, per container, and rebuilt only for what was saved again.
-	-- Mutation: in the SB_SNAPSHOT_SAVED listener, do nothing.
+	-- Mutations: in the SB_SNAPSHOT_SAVED listener, do nothing; or wipe the whole index (index = {}).
 	it("the index is built once per container and dropped when that container is saved again", function()
 		alt("Abby-Argent Dawn", "1:item:211880;20\n")
+		Snap.DB().chars["Swagger-Argent Dawn"] = { class = "MAGE", bank = { v = 1, containers = { [6] = { size = 98,
+			s = "5:item:211880;4\n" } } } }
 		AD.Counts(Fixtures.HEALING_POTION)
 		assert.truthy(AD.Index()["bags:Abby-Argent Dawn"])
+		assert.truthy(AD.Index()["bank:Swagger-Argent Dawn"])
 		assert.truthy(AD.Index()["bags:Swagger-Argent Dawn"] == nil, "this character's bags are live, not indexed")
-		Snap.Save("bank") -- this character's bank was saved: only its index goes
-		assert.truthy(AD.Index()["bags:Abby-Argent Dawn"])
+		SB.Emit("SB_SNAPSHOT_SAVED", "bank", "Swagger-Argent Dawn") -- only that container's index goes
+		assert.is_nil(AD.Index()["bank:Swagger-Argent Dawn"])
+		assert.truthy(AD.Index()["bags:Abby-Argent Dawn"], "other containers keep their index")
 		Snap.DB().chars["Abby-Argent Dawn"].bags.containers[0].s = "1:item:211880;50\n"
 		SB.Emit("SB_SNAPSHOT_SAVED", "bags", "Abby-Argent Dawn")
 		assert.equal(50, AD.Counts(Fixtures.HEALING_POTION).chars[2].bags)
@@ -139,14 +143,96 @@ describe("AltData", function()
 	it("a save by a character that is certainly in no guild clears the link", function()
 		Snap.Save("bags")
 		A.guild.key, A.guild.inGuild = nil, false
+		SB.Emit("PLAYER_GUILD_UPDATE") -- the client has told us its guild situation (W5-6)
 		Snap.Save("bags")
 		assert.is_nil(Snap.DB().chars["Swagger-Argent Dawn"].guild)
 	end)
 
+	-- W5-6. Mutation: drop the `Snap.guildUpdated and` condition.
+	it("IsInGuild false before PLAYER_GUILD_UPDATE is not believed; unknown (nil) never clears", function()
+		Snap.Save("bags")
+		A.guild.key, A.guild.inGuild = nil, false
+		Snap.Save("bags")
+		assert.equal("Tidewatch-Argent Dawn", Snap.DB().chars["Swagger-Argent Dawn"].guild)
+		SB.Emit("PLAYER_GUILD_UPDATE")
+		A.guild.inGuild = nil -- the client can't say
+		Snap.Save("bags")
+		assert.equal("Tidewatch-Argent Dawn", Snap.DB().chars["Swagger-Argent Dawn"].guild)
+	end)
+
+	it("the guild name of a key splits at the first hyphen: a realm with a hyphen", function()
+		Snap.DB().guilds["Tidewatch-Azjol-Nerub"] = { snapshot = { v = 1, containers = { [1] = { size = 98,
+			s = "4:item:211880;3\n" } } } }
+		assert.same({ { key = "Tidewatch-Azjol-Nerub", name = "Tidewatch", count = 3 } },
+			AD.Counts(Fixtures.HEALING_POTION).guilds)
+		alt("Abby-Argent Dawn", nil, nil, { guild = "Tidewatch-Azjol-Nerub" })
+		assert.equal("Tidewatch", AD.Container("Abby-ArgentDawn", "guild").title)
+	end)
+
+	it("the current character's row carries its class from the client", function()
+		assert.equal("MAGE", AD.Counts(Fixtures.HEALING_POTION).chars[1].class)
+	end)
+
+	it("an available() that throws counts toward the switch-off, with a stack in the ring", function()
+		AD.RegisterProvider({ name = "Shaky", priority = 10, available = function() error("nope") end,
+			characters = function() return {} end })
+		for _ = 1, 2 do
+			assert.equal("Own", select(2, AD.Characters()))
+		end
+		assert.same({}, A.Lines())
+		AD.Characters()
+		assert.same({ SB.L.ALTDATA_PROVIDER_OFF:format("Shaky") }, A.Lines())
+		local e = SB.ErrorTrap.Recent()[1]
+		assert.equal("altdata:Shaky", e.label)
+		assert.equal("none", e.window)
+		assert.truthy(e.stack ~= nil)
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	it("Own is never switched off; each of its errors is recorded", function()
+		local real = AD.Own.characters
+		AD.Own.characters = function() error("own broke") end
+		for _ = 1, 5 do
+			AD.Characters()
+		end
+		AD.Own.characters = real
+		assert.same({}, A.Lines())
+		assert.equal("Own", AD.Source())
+		assert.equal("altdata:Own", SB.ErrorTrap.Recent()[1].label)
+		assert.truthy(#SB.ErrorTrap.Recent() >= 5)
+		assert.equal("Own", select(2, AD.Characters()))
+	end)
+
+	-- W5-7. Mutation: Prebuild does nothing / runs without the OutOfCombat wrapper.
+	it("the index is prebuilt 5 s after login out of combat, so the first tooltip builds nothing", function()
+		alt("Abby-Argent Dawn", "1:item:211880;20\n", "5:item:211880;100\n")
+		SB.Emit("SB_LOGIN")
+		A.Advance(4.9)
+		assert.is_nil(AD.Index()["bags:Abby-Argent Dawn"])
+		A.Advance(0.2)
+		assert.truthy(AD.Index()["bags:Abby-Argent Dawn"])
+		assert.truthy(AD.Index()["bank:Abby-Argent Dawn"])
+		local calls, real = 0, Snap.Deserialize
+		Snap.Deserialize = function(...) calls = calls + 1 return real(...) end
+		assert.equal(20, AD.Counts(Fixtures.HEALING_POTION).chars[2].bags)
+		Snap.Deserialize = real
+		assert.equal(0, calls, "the first count did no build work")
+	end)
+
+	it("the prebuild waits for the end of combat", function()
+		alt("Abby-Argent Dawn", "1:item:211880;20\n")
+		A.combat = true
+		SB.Emit("SB_LOGIN")
+		A.Advance(6)
+		assert.is_nil(AD.Index()["bags:Abby-Argent Dawn"])
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.truthy(AD.Index()["bags:Abby-Argent Dawn"])
+	end)
+
 	-- F16. Mutation: Enforce trims without emitting.
 	it("Enforce announces each bank snapshot it trims, so the index drops its counts", function()
-		local big = string.rep("1:item:211880;20\n", 1)
-		alt("Old-Argent Dawn", nil, big)
+		alt("Old-Argent Dawn", nil, "1:item:211880;20\n")
 		Snap.DB().chars["Old-Argent Dawn"].lastSeen = 1
 		AD.Counts(Fixtures.HEALING_POTION)
 		assert.truthy(AD.Index()["bank:Old-Argent Dawn"])
