@@ -131,9 +131,14 @@ function QS.Apply()
 		C.db.categoryOrder = order
 	end
 	C.Set("setup.done", true)
-	refresh()
+	-- The settings are saved; a refresh error must not turn that into "failed".
+	local refreshed = SB.ErrorTrap.Run("setup.refresh", "none", refresh)
 	QS.Close("done")
-	return L.QS_APPLIED:format(table.concat(list, ", "))
+	local line = L.QS_APPLIED:format(table.concat(list, ", "))
+	if not refreshed then
+		line = line .. " " .. L.QS_REFRESH_NOTE
+	end
+	return line
 end
 
 -- First run: "keeps its defaults". A re-run (/swagbag setup after earlier edits): "keeps your
@@ -267,7 +272,8 @@ frame:SetScript("OnHide", Guard("setup.hide", function(self)
 		return
 	end
 	if QS.closing ~= "done" then
-		SB.Print(L.QS_LATER)
+		-- Once setup is done it never comes back by itself, so do not promise it will.
+		SB.Print(SB.Config.Get("setup.done") and L.QS_LATER_KEPT or L.QS_LATER)
 	end
 	QS.closing = nil
 end, "none"))
@@ -294,12 +300,31 @@ SB.On("SB_LOGIN", function()
 	if SB.Config.Get("setup.done") or SB.Config.readOnly then
 		return
 	end
-	SB.Debounce("setup.show", QS.DELAY, function()
-		if not SB.SafeMode.IsOn("bags") and not SB.Config.Get("setup.done") then
-			QS.Show()
-		end
-	end, "none")
+	SB.Debounce("setup.show", QS.DELAY, QS.TryShow, "none")
 end, "none")
+
+-- Not in combat and not inside an instance (a popup there would cover the fight or the run):
+-- wait, and try again when combat ends or the zone changes. /swagbag setup opens at once.
+function QS.TryShow()
+	if SB.SafeMode.IsOn("bags") or SB.Config.readOnly or SB.Config.Get("setup.done") then
+		QS.waiting = false
+		return
+	end
+	if SB.Adapter.InCombat() or SB.Adapter.InstanceInfo().instanceType then
+		QS.waiting = true
+		return
+	end
+	QS.waiting = false
+	QS.Show()
+end
+
+local function retry()
+	if QS.waiting then
+		QS.TryShow()
+	end
+end
+SB.On("PLAYER_REGEN_ENABLED", retry, "none")
+SB.On("PLAYER_ENTERING_WORLD", retry, "none")
 
 SB.Slash.Register("setup", L.HELP_SETUP, function()
 	QS.Show()

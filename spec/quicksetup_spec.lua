@@ -118,15 +118,69 @@ describe("Quick setup", function()
 		assert.truthy(QS.IsOpen())
 	end)
 
+	-- Mutation: write categoryOrder before the readOnly check.
 	it("read-only settings: Apply and Skip refuse with the reason and change nothing", function()
 		QS.Show()
 		pick("raid")
+		pick("gold")
+		pick("collector")
 		SB.Config.readOnly = true
 		Fake.Fire(QS.applyButton, "OnClick")
 		Fake.Fire(QS.skipButton, "OnClick")
 		assert.same({ SB.L.SETTINGS_READONLY, SB.L.SETTINGS_READONLY }, A.Lines())
 		assert.truthy(QS.IsOpen())
 		assert.is_nil(SB.Config.db.settings.focus)
+		assert.is_nil(SB.Config.db.categoryOrder, "the category order is not written")
+		assert.equal(false, SB.Config.Get("setup.done"))
+		assert.equal(12, SB.Config.Get("bags.columns"))
+	end)
+
+	-- Mutation: make refresh() not run under its own ErrorTrap.Run.
+	it("a refresh error after a successful Apply still reports success, with a note", function()
+		QS.Show()
+		pick("mplus")
+		bags.open = true
+		function bags.RequestLayout() error("layout boom") end
+		Fake.Fire(QS.applyButton, "OnClick")
+		assert.equal(true, SB.Config.Get("setup.done"))
+		assert.falsy(QS.IsOpen())
+		assert.same({ SB.L.QS_APPLIED:format("M+") .. " " .. SB.L.QS_REFRESH_NOTE }, A.Lines())
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	-- Mutation: always print L.QS_LATER from OnHide.
+	it("Esc after setup is done does not promise it comes back at the next login", function()
+		SB.Config.Set("setup.done", true)
+		SB.Slash.Dispatch("setup")
+		QS.frame:Hide()
+		local lines = A.Lines()
+		assert.equal(SB.L.QS_LATER_KEPT, lines[#lines])
+		assert.falsy(SB.L.QS_LATER_KEPT:find("next login", 1, true))
+	end)
+
+	-- Mutation: drop the combat / instance check in QS.TryShow, or the retry handlers.
+	it("W4-21: login in combat waits for combat to end", function()
+		A.combat = true
+		login()
+		assert.falsy(QS.IsOpen())
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.truthy(QS.IsOpen())
+	end)
+
+	it("W4-21: login in an instance waits until the player leaves it", function()
+		A.instance = { instanceType = "party", difficultyID = 8 }
+		login()
+		assert.falsy(QS.IsOpen())
+		A.instance = {}
+		SB.eventFrame:Fire("PLAYER_ENTERING_WORLD")
+		assert.truthy(QS.IsOpen())
+	end)
+
+	it("W4-21: /swagbag setup opens at once in combat", function()
+		A.combat = true
+		SB.Slash.Dispatch("setup")
+		assert.truthy(QS.IsOpen())
 	end)
 
 	it("AC7.4: /swagbag setup shows it again; /swagbag tour answers (P2)", function()
