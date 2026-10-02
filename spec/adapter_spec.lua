@@ -64,7 +64,7 @@ describe("Adapter.EquippedItems (real adapter, stubbed globals)", function()
 	end)
 
 	after_each(function()
-		GetInventoryItemLink, ItemLocation, C_Item, C_Container = nil, nil, nil, nil
+		GetInventoryItemLink, ItemLocation, C_Item, C_Container, issecretvalue = nil, nil, nil, nil, nil
 	end)
 
 	it("a readable item level is a number; an unreadable one is unknown, not 0; empty slots are absent", function()
@@ -91,6 +91,18 @@ describe("Adapter.EquippedItems (real adapter, stubbed globals)", function()
 		GetAverageItemLevel = function() return 1, 279.4 end
 		issecretvalue = function(v) return v == 279.4 end
 		assert.is_nil(A.EquippedItemLevel(), "a secret value")
+		issecretvalue = nil
+	end)
+
+	-- M3 (final review). Mutation: in A.IsWarboundUntilEquip, drop the isSecret(v) check.
+	it("IsWarboundUntilEquip: true only for a plain true; a secret answer is false", function()
+		assert.equal(false, A.IsWarboundUntilEquip(0, 1), "no API")
+		ItemLocation.CreateFromBagAndSlot = function(_, bag, slot) return bag * 100 + slot end
+		C_Item.IsBoundToAccountUntilEquip = function(loc) return loc == 1 end
+		assert.equal(true, A.IsWarboundUntilEquip(0, 1))
+		assert.equal(false, A.IsWarboundUntilEquip(0, 2))
+		issecretvalue = function(v) return v == true end
+		assert.equal(false, A.IsWarboundUntilEquip(0, 1), "a secret answer never decides")
 		issecretvalue = nil
 	end)
 

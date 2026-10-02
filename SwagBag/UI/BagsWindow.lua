@@ -191,6 +191,11 @@ end, "bags"))
 -- With keepTop the view is also no taller than the room between the top edge and the bottom of
 -- the screen (ruling W4-22): the frame is clamped to the screen, and a window that ran past the
 -- bottom would be pushed up by the client, moving every item. The scroll area shortens instead.
+-- Ruling W4-25: that clamp alone would leave a window opened low unable to grow again. When the
+-- wanted view is taller than the room below the top edge and nothing is under the pointer (the
+-- mouse is off the window, the cursor is empty), the top edge moves up by the shortfall (up to the
+-- 75 % limit and the top of the screen) and the new corner is saved. Otherwise the view is capped
+-- as above and W.Resize retries every 300 ms until the pointer leaves (P5).
 local function sizeFrame(width, height, keepTop)
 	local left, top = frame:GetLeft(), frame:GetTop()
 	W.size = { width, height }
@@ -207,13 +212,33 @@ local function sizeFrame(width, height, keepTop)
 	local maxHeight = UIParent:GetHeight() * W.MAX_HEIGHT_FRACTION / frame:GetScale()
 	local viewHeight = math.min(height, maxHeight - W.HEADER - foot)
 	local pinned = keepTop and type(left) == "number" and type(top) == "number" and not W.dragging
+	local grown = false
 	if pinned then
+		local shortfall = viewHeight - (top - W.HEADER - foot)
+		if shortfall > 0 then
+			if not (frame:IsMouseOver() or scroll:IsMouseOver() or SB.Adapter.CursorItem()) then
+				-- Ruling W4-25: nothing is under the pointer, so the whole window may move (P5): the top
+				-- edge goes up by the shortfall, never past the top of the screen. The bottom edge stays
+				-- on the screen (the room clamp below still holds).
+				local screenTop = UIParent:GetHeight() / frame:GetScale()
+				local newTop = math.min(top + shortfall, screenTop)
+				grown = newTop ~= top
+				top = newTop
+			else
+				-- The window would move under the mouse or a held item: capped as before (W4-22), and
+				-- the grow is tried again once the pointer leaves (same pattern as the footer shrink).
+				SB.Debounce("bags.grow", W.RETRY, W.Resize, "bags")
+			end
+		end
 		viewHeight = math.max(0, math.min(viewHeight, top - W.HEADER - foot))
 	end
 	frame:SetSize(width + 8, viewHeight + W.HEADER + foot)
 	if pinned then
 		frame:ClearAllPoints()
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+		if grown then
+			savePosition() -- a reopen lands where the window is now
+		end
 	end
 	W.ClampScroll()
 end
@@ -651,18 +676,53 @@ local function headerY(pos, id)
 	end
 end
 
+-- M2 (final review): the settings window (DIALOG strata) sits above the bags, so while the mouse is
+-- on it nothing under it can be clicked and the area hold does not apply. Nil-safe: the settings
+-- window may not exist (tests, a load failure).
+local function overSettings()
+	local S = SB.SettingsWindow
+	local f = S and S.frame
+	return f ~= nil and f:IsShown() and f:IsMouseOver() == true
+end
+
+-- Two collapsed lookups (snapshots) draw the same sections.
+local function sameView(a, b)
+	if not (a and b) then
+		return false
+	end
+	for id in pairs(a) do
+		if not b[id] then
+			return false
+		end
+	end
+	for id in pairs(b) do
+		if not a[id] then
+			return false
+		end
+	end
+	return true
+end
+
 function W.Restack(area)
 	if not W.state then
 		return true
 	end
 	local view = snapshot(W.state, W.EffectiveCollapsed())
+	if area == true and sameView(view, W.view) then
+		-- M1: the world asked for what is already drawn (or took back a switch still waiting):
+		-- nothing moves, so nothing holds and no area hold is left for the next header click.
+		W.areaHeld = false
+		W.RefreshTitle()
+		W.RefreshHeaders()
+		return true
+	end
 	local pos = SB.Layout.Position(W.state, positionOpts(), view)
 	local wait = area == true or W.areaHeld
 	if not wait and type(area) == "string" and W.pos then
 		wait = headerY(W.pos, area) ~= headerY(pos, area)
 	end
 	local moves = SB.Layout.Moves(W.pos, pos)
-	if (wait and (scroll:IsMouseOver() or SB.Adapter.CursorItem())) or anyBusy(moves) then
+	if (wait and ((scroll:IsMouseOver() and not overSettings()) or SB.Adapter.CursorItem())) or anyBusy(moves) then
 		W.areaHeld = wait
 		SB.Debounce("bags.restack", W.RETRY, function()
 			W.Restack(area)

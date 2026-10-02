@@ -223,6 +223,30 @@ describe("Footer (ruling W4-14)", function()
 		end
 	end)
 
+	-- Ruling W4-26: cooldown and lock changes (every cast in a key) change nothing the footer shows.
+	-- Mutation: drop the ITEM/SIZE guard in the footer's inventory listener.
+	it("W4-26: cooldown-only and lock-only changes never start a footer refresh", function()
+		F.Refresh()
+		local reads, items = 0, F.Items
+		F.Items = function()
+			reads = reads + 1
+			return items()
+		end
+		local Inv = SB.Inventory
+		Inv.Notify(Inv.R.COOLDOWN, {})
+		Inv.Notify(Inv.R.LOCK, { { bag = 0, slot = 1, reasons = Inv.R.LOCK } })
+		Inv.Notify(Inv.R.COUNT + Inv.R.LOCK, { { bag = 0, slot = 1, reasons = Inv.R.COUNT + Inv.R.LOCK } })
+		assert.equal(0, #A.timers, "no refresh timer was started")
+		A.Advance(0.2)
+		assert.equal(0, reads)
+		Inv.Notify(Inv.R.ITEM + Inv.R.LOCK, { { bag = 0, slot = 7, reasons = Inv.R.ITEM } })
+		A.Advance(0.2)
+		assert.equal(1, reads, "an item change still refreshes")
+		Inv.Notify(Inv.R.SIZE, {})
+		A.Advance(0.2)
+		assert.equal(2, reads, "a size change still refreshes")
+	end)
+
 	-- P1, D17. Mutation: in the Footer page's apply, always run "footer <id> on".
 	it("Settings > Footer: Show (default, first) / Hide and Move up / Move down run /swagbag footer", function()
 		local SW = SB.SettingsWindow
@@ -331,5 +355,38 @@ describe("Adapter: money and currencies (the real Adapter)", function()
 		assert.same({ { id = 3056, name = "Kej", quantity = 500, icon = 1 } }, A.BackpackCurrencies())
 		assert.same(crest, A.CurrencyInfo(3107))
 		assert.same({ crest }, A.CurrencyList())
+	end)
+
+	-- M3 (final review): a currency whose name the client keeps secret is left out, never shown or
+	-- matched by name words. Mutation: in currencyEntry, drop the isSecret(info.name) check.
+	it("a currency with a secret name is skipped in every list", function()
+		local back = { { name = "Kej", quantity = 500, iconFileID = 1, currencyTypesID = 3056 },
+			{ name = "Secret", quantity = 5, iconFileID = 2, currencyTypesID = 9 } }
+		issecretvalue = function(v)
+			return v == "Secret"
+		end
+		C_CurrencyInfo = {
+			GetBackpackCurrencyInfo = function(i)
+				return back[i]
+			end,
+			GetCurrencyInfo = function(id)
+				return id == 9 and back[2] or nil
+			end,
+			GetCurrencyListSize = function()
+				return 1
+			end,
+			GetCurrencyListInfo = function()
+				return back[2]
+			end,
+			GetCurrencyListLink = function()
+				return "currency:9"
+			end,
+			GetCurrencyIDFromLink = function()
+				return 9
+			end,
+		}
+		assert.same({ { id = 3056, name = "Kej", quantity = 500, icon = 1 } }, A.BackpackCurrencies())
+		assert.is_nil(A.CurrencyInfo(9))
+		assert.same({}, A.CurrencyList())
 	end)
 end)
