@@ -85,6 +85,14 @@ local function createButton(bag, slot)
 	local b = CreateFrame("ItemButton", nil, bagFrame(bag), "ContainerFrameItemButtonTemplate")
 	b:SetID(slot)
 	addBackground(b)
+	-- Blizzard's blue "new item" glow (W4-15, newglow-diagnosis.md): hovering a slot clears the
+	-- client's flag for it, as Blizzard's bags do. A post-hook, so the template's own OnEnter, its
+	-- tooltip and item use are untouched; legal in combat. Window "none": a glow is cosmetic and
+	-- never takes the bags away.
+	b:HookScript("OnEnter", SB.ErrorTrap.Guard("buttons.newGlow", function(self)
+		Buttons.ClearGlow(self)
+		SB.Adapter.ClearNewItem(self:GetParent():GetID(), self:GetID())
+	end, "none"))
 	b:Hide()
 	Buttons.buttons[bag][slot] = b
 	Buttons.stats.count = Buttons.stats.count + 1
@@ -177,6 +185,24 @@ function Buttons.Paint(button, info)
 	SetItemButtonDesaturated(button, info ~= nil and info.isLocked)
 	if button.UpdateCooldown then
 		pcall(button.UpdateCooldown, button, info and info.icon or nil)
+	end
+	Buttons.ClearGlow(button)
+end
+
+-- Hide the template's new-item glow (W4-15). Methods only: no field on Blizzard's button is
+-- written, and the template's UpdateNewItem is never called. SwagBag's own "New" is a section.
+function Buttons.ClearGlow(button)
+	for _, name in ipairs({ "NewItemTexture", "BattlepayItemTexture" }) do
+		local t = button[name]
+		if type(t) == "table" and t.Hide then
+			t:Hide()
+		end
+	end
+	for _, name in ipairs({ "flashAnim", "newitemglowAnim" }) do
+		local a = button[name]
+		if type(a) == "table" and a.Stop then
+			a:Stop()
+		end
 	end
 end
 
@@ -297,3 +323,19 @@ end, "bags")
 SB.On("BANKFRAME_OPENED", function()
 	Buttons.EnsureBankTabs()
 end, "bank")
+
+-- Blizzard's bags clear the new-item flag of every slot when they close (W4-15): so does SwagBag,
+-- per slot, for the window that closed. Recorded only on error (cosmetic).
+SB.On("SB_BAGS_CLOSED", function()
+	SB.Adapter.ClearNewItems(SB.Adapter.GetBagIDs("bags"))
+end, "none")
+
+SB.On("SB_BANK_CLOSED", function()
+	local A, ids = SB.Adapter, {}
+	for _, kind in ipairs({ "bank", "warband" }) do
+		for _, bag in ipairs(A.GetBagIDs(kind)) do
+			ids[#ids + 1] = bag
+		end
+	end
+	A.ClearNewItems(ids)
+end, "none")

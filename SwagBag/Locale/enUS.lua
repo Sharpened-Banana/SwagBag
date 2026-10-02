@@ -249,7 +249,7 @@ L.HELP_OVERLAYS = "overlays [name on|off]: list or switch item overlays (ilvl, t
 L.OVERLAYS_STATE = "Overlays: %s"
 L.OVERLAYS_SET = "Overlay %s is now %s."
 L.OVERLAYS_USAGE = "Use /swagbag overlays, or /swagbag overlays <ilvl|track|upgrade|keystone|junk|bind|pawn|title> <on|off>."
-L.OVERLAYS_NO_PAWN = "Pawn is not loaded, so the item-level rule still decides the upgrade arrow."
+L.OVERLAYS_NO_PAWN = "Pawn is not loaded or not ready yet, so the item-level rule decides the upgrade arrow."
 
 -- Free tile (plan D19)
 L.HELP_FREE = "free tile|all: show free slots as one slot with a number (tile) or show every free slot (all)"
@@ -456,6 +456,17 @@ L.QS_OPENED = "Quick setup opened."
 L.HELP_SETUP = "setup: show the quick setup screen again"
 L.HELP_TOUR = "tour: the guided tour (arrives in November)"
 L.TOUR_LATER = "The guided tour arrives with the full setup wizard in November. Until then, /swagbag help lists every command."
+
+-- New hidden while empty (ruling W4-15)
+L.HELP_NEW = "new always|auto: keep New's rows at the top even when it is empty (always), or show New only when something"
+	.. " new arrives (auto)"
+L.NEW_USAGE = "Use /swagbag new always or /swagbag new auto (now: %s)."
+L.NEW_MODE_ALWAYS = "New now keeps its rows at the top even when it is empty."
+L.NEW_MODE_AUTO = "New now shows only when something new arrives; an empty New hides when you next open the bags or click"
+	.. " Reflow."
+L.SET_NEW = "The New section when it is empty"
+L.SET_NEW_AUTO = "Hidden"
+L.SET_NEW_ALWAYS = "Always shown"
 
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"

@@ -448,11 +448,28 @@ function M.AddContainers(m)
 		return m.pawn ~= nil
 	end
 
+	-- m.pawn[bag .. ":" .. slot] = true | false; a slot with no entry is Pawn's "no opinion" (nil,
+	-- ruling W4-15: the item-level rule decides it).
 	function m.PawnUpgrade(bag, slot)
 		if m.pawn == nil then
 			return nil
 		end
-		return m.pawn[bag .. ":" .. slot] == true
+		local v = m.pawn[bag .. ":" .. slot]
+		if v == nil then
+			return nil
+		end
+		return v == true
+	end
+
+	-- Blizzard's new-item flag (ruling W4-15): m.newCleared = { "bag:slot" } per slot cleared,
+	-- m.newClearedBags = { { bag IDs } } per ClearNewItems call.
+	m.newCleared, m.newClearedBags = {}, {}
+	function m.ClearNewItem(bag, slot)
+		m.newCleared[#m.newCleared + 1] = bag .. ":" .. slot
+	end
+
+	function m.ClearNewItems(bagIDs)
+		m.newClearedBags[#m.newClearedBags + 1] = { unpack(bagIDs) }
 	end
 
 	function m.IsWarboundUntilEquip(bag, slot)

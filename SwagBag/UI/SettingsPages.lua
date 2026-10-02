@@ -75,6 +75,11 @@ local function bagsRows()
 			apply = function(v)
 				return run(v and "free tile" or "free all")
 			end },
+		{ kind = "choice", label = L.SET_NEW, get = get("bags.newAlways"),
+			choices = { { value = false, text = L.SET_NEW_AUTO }, { value = true, text = L.SET_NEW_ALWAYS } },
+			apply = function(v)
+				return run(v and "new always" or "new auto")
+			end },
 		{ kind = "choice", label = L.SET_REAGENTS, get = get("bags.reagentSeparate"),
 			choices = { { value = false, text = L.SET_REAGENTS_MIXED }, { value = true, text = L.SET_REAGENTS_OWN } },
 			apply = function(v)

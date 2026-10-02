@@ -11,7 +11,9 @@
 --   slots: physical order { { bag, slot, record } } (record nil = empty slot)
 --   assign(record) -> section id, or nil (pending -> New); empty slots go to Free.
 --   order: section ids in display order; New is forced first and Free last.
---   opts: { columns, newRows, freeTile, family }
+--   opts: { columns, newRows, freeTile, family, hideEmptyNew }
+--     hideEmptyNew: an empty New is not drawn (no header, no reserved rows) until something
+--       arrives (ruling W4-15, the bags window unless bags.newAlways); state.newShown says which
 --     freeTile: Free shows ONE tile per bag family instead of every empty slot (plan D19)
 --     family(bag) -> key: empty slots of one family hold the same items (default: all "any").
 --       Called only when a slot JOINS the layout (Build, "added"); the answer is kept in
@@ -19,7 +21,8 @@
 --       family changes before its slots are "removed") still finds its own tile (W3-21).
 -- Layout.Position(state, opts, collapsed) -> pos   pixel positions (TOPLEFT offsets, y down
 --   negative). Collapsing changes section offsets only, so expanding returns every item
---   to the same cell (spec 6.4). New always shows its header and newRows reserved rows.
+--   to the same cell (spec 6.4). New shows its header and newRows reserved rows, except while
+--   state.newShown is false (hideEmptyNew and nothing has arrived since the last Build).
 --   opts: { columns, size, gap, padding, header, sectionGap, top }   top: y offset where the
 --   layout starts (a window that stacks several layouts, default 0); height includes it.
 --   pos = { cells = { {bag, slot, x, y, shown} } (display order), byKey = { [key] = cell },
@@ -29,7 +32,11 @@
 --   family's free slots, pos.tiles lists the tile entries, and each spare is a cell entry
 --   { bag, slot, shown = false, spare = family } with no x or y.
 -- Layout.Moves(oldPos, newPos) -> keys whose button position changes (hover guard, 4.2 #5)
--- Layout.Apply(state, changes, isBusy, collapsed) -> result   while the window is open
+-- Layout.Apply(state, changes, isBusy, collapsed, areaBusy) -> result   while the window is open
+--   areaBusy() -> true while the mouse is over the items or an item is on the cursor (nil: never).
+--   The first "arrived" change while New is hidden shows New, which moves every section below:
+--   it waits in state.deferred while areaBusy() (P5, W4-13). Once shown, New stays shown until
+--   the next Build, even if it empties (nothing jumps while the window is open).
 --   changes: { { bag, slot, kind, icon } } in order. kind:
 --     "left"    the slot is now empty        "arrived" a different item is now in the slot
 --     "added"   the slot is new (bag grew)   "removed" the slot no longer exists
@@ -216,6 +223,9 @@ function Layout.Build(slots, assign, order, opts)
 	end
 	local new = section(st, Layout.NEW)
 	new.capacity = math.max(st.newRows, math.ceil(new.size / cols)) * cols
+	-- Ruling W4-15: with hideEmptyNew an empty New is not drawn until something arrives; without it
+	-- (the bank windows, bags.newAlways) New always keeps its header and rows.
+	st.newShown = not opts.hideEmptyNew or new.size > 0
 	return st
 end
 
@@ -238,7 +248,12 @@ function Layout.Position(st, opts, collapsed)
 	local y = (opts.top or 0) + pad
 	for _, id in ipairs(st.order) do
 		local sec = st.sections[id]
-		local visible = id == Layout.NEW or (sec ~= nil and sec.size > 0)
+		local visible
+		if id == Layout.NEW then
+			visible = st.newShown ~= false
+		else
+			visible = sec ~= nil and sec.size > 0
+		end
 		if visible then
 			sec = sec or { cells = {}, size = 0, overflow = 0 }
 			local closed = collapsed[id] == true
@@ -504,7 +519,7 @@ end
 
 -- Change tables passed to Apply must not be reused or mutated afterwards: deferred entries
 -- keep references to them.
-function Layout.Apply(st, changes, isBusy, collapsed)
+function Layout.Apply(st, changes, isBusy, collapsed, areaBusy)
 	collapsed = collapsed or {}
 	local result = { moved = {}, placeholders = 0, overflowed = 0, deferred = 0 }
 	local queue = st.deferred
@@ -516,11 +531,17 @@ function Layout.Apply(st, changes, isBusy, collapsed)
 	for _, ch in ipairs(queue) do
 		local key = Layout.Key(ch.bag, ch.slot)
 		local spare = partner(st, ch)
-		if held[key] or (isBusy and (isBusy(ch.bag, ch.slot) or (spare and isBusy(bagOf(spare), spare % 1000)))) then
+		-- The first arrival into a hidden New shows it and moves every section below (W4-15).
+		local opensNew = st.newShown == false and ch.kind == "arrived"
+		if held[key] or (isBusy and (isBusy(ch.bag, ch.slot) or (spare and isBusy(bagOf(spare), spare % 1000))))
+			or (opensNew and areaBusy and areaBusy()) then
 			held[key] = true -- later changes of a held slot wait too, so order is kept
 			st.deferred[#st.deferred + 1] = ch
 		else
 			applyOne(st, ch, collapsed, result)
+			if opensNew then
+				st.newShown = true
+			end
 		end
 	end
 	result.deferred = #st.deferred

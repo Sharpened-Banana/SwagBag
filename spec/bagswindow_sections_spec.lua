@@ -116,6 +116,7 @@ describe("BagsWindow category view", function()
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
 		Fixtures.SmallBags(A) -- backpack 16 slots: potion, flask, BoE ring, soulbound helm, keystone, junk
+		SB.Config.Set("bags.newAlways", true) -- New's reserved rows, as these tests were written (Task 11 tests hidden New)
 		CreateFrame = function(kind) return newFake(kind) end
 		UIParent = newFake("Frame")
 		UIParent.h = 2000
@@ -1145,6 +1146,83 @@ describe("BagsWindow category view", function()
 		assert.equal("reflow", W.stats.lastLayoutReason)
 	end)
 
+	-- Ruling W4-15: New is hidden while empty (bags.newAlways = false, the default).
+	-- Mutation: in layoutSections' Build options, `hideEmptyNew = not SB.Config.Get("bags.newAlways")` →
+	-- `hideEmptyNew = false`.
+	it("an empty New is hidden: the first section starts at the top; /swagbag new always brings its rows back", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		assert.is_nil(header("new"))
+		assert.equal("- Keystone & Crests (1)", headers()[1])
+		assert.same({ 4, -24 }, at(0, 5), "keystone: first cell under the first header")
+		A.printed = {}
+		SB.Slash.Dispatch("new always")
+		assert.same({ SB.L.NEW_MODE_ALWAYS }, A.Lines())
+		assert.equal("- New (0)", headers()[1])
+		assert.same({ 4, -128 }, at(0, 5))
+	end)
+
+	-- P5, W4-13, W10. Mutation: in W.ApplyChanges, drop the fifth argument (the area check) of Layout.Apply.
+	it("the first arrival shows New and moves every section down as a whole, once the mouse leaves the items", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		local keyAt, potionAt = at(0, 5), at(0, 1)
+		W.scroll.mouseOver = true
+		A.Put(0, 10, Fixtures.HERB, 20)
+		bagUpdate()
+		assert.is_nil(header("new"), "nothing moves while the mouse is over the items")
+		assert.same(keyAt, at(0, 5))
+		A.Advance(0.3)
+		assert.same(keyAt, at(0, 5), "still waiting")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("- New (1)", header("new").text.text)
+		assert.same({ 4, -24 }, at(0, 10), "the herb is first in New")
+		assert.same({ keyAt[1], keyAt[2] - 104 }, at(0, 5), "W10: the keystone moved with its header")
+		assert.same({ potionAt[1], potionAt[2] - 104 }, at(0, 1))
+	end)
+
+	-- Task 11 addition: New becoming shown is drawn at once (under the area hold), even when the
+	-- arrival itself moves no button, so no later, unguarded change draws the shift.
+	-- Mutation: in W.ApplyChanges, drop `or st.newShown ~= newShownBefore` from the render condition.
+	it("New becoming shown is drawn at once, even when the arrival moves no button", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		local result = W.ApplyChanges({ { bag = 0, slot = 99, kind = "arrived" } })
+		assert.truthy(result.rendered)
+		assert.equal("- New (0)", header("new").text.text)
+	end)
+
+	-- W3-13 with the free tile: a button emptied in New joins Free as a hidden spare.
+	-- Mutation: the Layout.Position mutation of layout_spec "a New that empties stays shown".
+	it("a New that empties while open stays until the next open or Reflow; its emptied button joins Free", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		A.Put(0, 10, Fixtures.HERB, 20)
+		bagUpdate()
+		local keyAt = at(0, 5)
+		A.Clear(0, 10)
+		bagUpdate()
+		assert.equal("- New (0)", header("new").text.text, "New stays, with its rows")
+		assert.same(keyAt, at(0, 5), "nothing jumps")
+		assert.falsy(B.Get(0, 10).shown, "the emptied button is a hidden free slot again")
+		assert.equal("- Free (10)", header("free").text.text)
+		W.Reflow()
+		assert.is_nil(header("new"))
+		assert.same({ 4, -24 }, at(0, 5))
+	end)
+
+	-- P2, read-only. Mutation: in the `new` command, replace `if not SB.Config.Set(...) then return
+	-- L.SETTINGS_READONLY end` with a bare SB.Config.Set(...).
+	it("/swagbag new answers with the current choice; read-only settings refuse and change nothing", function()
+		A.printed = {}
+		SB.Slash.Dispatch("new")
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("new auto")
+		assert.same({ SB.L.NEW_USAGE:format("always"), SB.L.SETTINGS_READONLY }, A.Lines())
+		assert.equal(true, SB.Config.Get("bags.newAlways"))
+	end)
+
 	it("the grid view only repaints: no placeholders, nothing moves", function()
 		SB.Config.Set("bags.view", "grid")
 		W.Open()
@@ -1165,6 +1243,7 @@ describe("BagsWindow focus modes (spec 6)", function()
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
 		Fixtures.SmallBags(A) -- potion, flask, BoE ring, soulbound helm, keystone, junk
+		SB.Config.Set("bags.newAlways", true) -- New's reserved rows, as these tests were written
 		CreateFrame = function(kind) return newFake(kind) end
 		UIParent = newFake("Frame")
 		UIParent.h = 2000

@@ -124,6 +124,47 @@ describe("Overlays (spec F9)", function()
 		assert.same({ "Overlay pawn is now on.", SB.L.OVERLAYS_NO_PAWN }, A.Lines())
 	end)
 
+	-- Ruling W4-15 (supersedes W3-16): Pawn's "no opinion" (nil) leaves the arrow to the item-level
+	-- rule. Mutation: in Ov.Context's ctx.pawn, `return A.PawnUpgrade(record.bag, record.slot) == true`.
+	it("with Use Pawn, an item Pawn has no opinion on gets the item-level rule; Pawn's no hides the arrow", function()
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		A.pawn = {}
+		SB.Config.Set("overlays.usePawn", true)
+		local _, r = draw(0, 3)
+		assert.truthy(r.arrow.shown, "no opinion: 285 beats 270")
+		A.pawn = { ["0:3"] = false }
+		_, r = draw(0, 3)
+		assert.falsy(r.arrow.shown, "Pawn says no")
+	end)
+
+	-- Ruling W4-15, O1 steps 3-5 and 10. Mutations: delete the SetFont call in text(); Ov.ARROW_SIZE = 14.
+	it("legibility: larger outlined text, a larger arrow, a coin with an outline, all inside the button", function()
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		local _, r = draw(0, 3)
+		assert.same({ Ov.FONT, 13, "THICKOUTLINE" }, r.topLeft.calls.SetFont)
+		assert.same({ Ov.FONT, 11, "THICKOUTLINE" }, r.bind.calls.SetFont)
+		assert.same({ 16, 16 }, { r.arrow.w, r.arrow.h })
+		assert.equal(Ov.TEXT_WIDTH, r.bottomLeft.w)
+		assert.truthy(2 + Ov.TEXT_WIDTH <= 37, "text is clipped inside a 37 px button")
+		local _, j = draw(0, 6)
+		assert.truthy(j.junk.shown and j.junkShadow.shown)
+		assert.same({ 16, 16 }, { j.junk.w, j.junk.h })
+		assert.same({ 19, 19 }, { j.junkShadow.w, j.junkShadow.h })
+		assert.same(Ov.JUNK_TINT, j.junk.calls.SetVertexColor)
+	end)
+
+	-- Mutation: in Ov.Apply, `local corner = top == "" and "TOPLEFT" or "BOTTOMLEFT"` → `local corner = "TOPLEFT"`.
+	it("gray gear shows its item level top left and the coin bottom left, so both stay visible", function()
+		A.AddItem(900001, { name = "Rusty Sword", classID = A.ITEM_CLASS.Weapon, subclassID = 0,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "none" })
+		A.Put(0, 7, 900001, 1)
+		local _, r = draw(0, 7)
+		assert.equal("5", r.topLeft.text)
+		assert.truthy(r.junk.shown)
+		assert.equal("BOTTOMLEFT", r.junk.points[#r.junk.points][1])
+	end)
+
 	it("/swagbag overlays title off switches the item level in the bags title off at once", function()
 		local refreshed = 0
 		SB.BagsWindow = { IsOpen = function() return false end, RefreshTitle = function() refreshed = refreshed + 1 end }

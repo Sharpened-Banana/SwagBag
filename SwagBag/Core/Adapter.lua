@@ -383,22 +383,62 @@ function A.EquippedItemLevel()
 	return equipped
 end
 
+-- Pawn (optional; ruling W4-15): ready once PawnIsReady() says so. Pawn 2.13 has no container API,
+-- so the verdict comes from the item link. PawnShouldItemLinkHaveUpgradeArrow is never called
+-- (Pawn throttles it with a budget).
 function A.HasPawn()
-	return type(_G.PawnIsContainerItemAnUpgrade) == "function"
+	local ready = _G.PawnIsReady
+	if type(ready) ~= "function" or type(_G.PawnIsItemDefinitivelyAnUpgrade) ~= "function" then
+		return false
+	end
+	local ok, yes = pcall(ready)
+	return ok and yes == true
 end
 
--- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
+-- Pawn's verdict for a bag or bank slot (spec AC9.3): true (an upgrade), false (not one), or nil
+-- when Pawn is missing, not ready, the slot is empty, or Pawn has no opinion (the item-level rule
+-- then decides; supersedes W3-16's nil -> false). checkLevel true: Pawn also checks the level.
 function A.PawnUpgrade(bag, slot)
-	local fn = _G.PawnIsContainerItemAnUpgrade
-	if type(fn) ~= "function" then
+	if not A.HasPawn() then
 		return nil
 	end
-	local ok, yes = pcall(fn, bag, slot)
-	if not ok then
+	local s = A.GetSlot(bag, slot)
+	local link = s and s.link
+	if type(link) ~= "string" or isSecret(link) then
 		return nil
 	end
-	-- Pawn's nil also means "not an upgrade", so it folds to false here.
-	return yes and true or false
+	local ok, yes = pcall(_G.PawnIsItemDefinitivelyAnUpgrade, link, true)
+	if not ok or isSecret(yes) then
+		return nil
+	end
+	if yes == true then
+		return true
+	elseif yes == false then
+		return false
+	end
+	return nil
+end
+
+-- Blizzard's client-side "new item" flag (newglow-diagnosis.md): it drives the template's blue
+-- glow and survives /reload. Blizzard's bags clear it per slot on hover and when they close;
+-- SwagBag does the same through these. Per slot, never ClearAll. Nil-safe; errors are swallowed.
+function A.ClearNewItem(bag, slot)
+	local N = C_NewItems
+	if N and N.RemoveNewItem then
+		pcall(N.RemoveNewItem, bag, slot)
+	end
+end
+
+function A.ClearNewItems(bagIDs)
+	local N = C_NewItems
+	if not (N and N.RemoveNewItem) then
+		return
+	end
+	for _, bag in ipairs(bagIDs) do
+		for slot = 1, A.NumSlots(bag) do
+			pcall(N.RemoveNewItem, bag, slot)
+		end
+	end
 end
 
 function A.IsOnCooldown(bag, slot)
@@ -904,4 +944,5 @@ A.CHECKS = {
 	{ path = "GetProfessions", window = "bags", required = false },
 	{ path = "GetProfessionInfo", window = "bags", required = false },
 	{ path = "UIErrorsFrame", window = "bags", required = false },
+	{ path = "C_NewItems.RemoveNewItem", window = "bags", required = false },
 }
