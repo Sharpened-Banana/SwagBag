@@ -22,6 +22,21 @@ function SF.Paths()
 	return paths
 end
 
+-- True when any focus setting is this character's own (the layer being edited).
+local function anyOverride()
+	for _, path in ipairs(SF.Paths()) do
+		if SB.Config.IsCharOverride(path) then
+			return true
+		end
+	end
+	return false
+end
+
+-- A label that names the layer when it is this character's.
+local function layered(text)
+	return anyOverride() and L.SET_THIS_CHARACTER:format(text) or text
+end
+
 local function modeName(id)
 	return L[SB.Focus.byId[id].name]
 end
@@ -50,7 +65,7 @@ local function sectionRows(rows)
 	for _, sid in ipairs(F.Sections(id, true)) do
 		open[sid] = true
 	end
-	rows[#rows + 1] = { kind = "note", label = L.SET_SECTIONS_OF:format(modeName(id)) }
+	rows[#rows + 1] = { kind = "note", label = layered(L.SET_SECTIONS_OF:format(modeName(id))) }
 	for _, sid in ipairs(SB.Categories.SectionOrder()) do
 		if sid ~= SB.Categories.NEW then
 			local name = SB.Categories.Name(sid)
@@ -111,20 +126,16 @@ local function rows()
 		end),
 		{ kind = "choice", label = L.SET_FOCUS_SCOPE, choices = { { value = false, text = L.SET_FOCUS_ACCOUNT },
 			{ value = true, text = L.SET_FOCUS_CHARACTER } },
-			get = function()
-				return SB.Config.IsCharOverride("focus.auto")
-			end,
+			get = anyOverride,
 			apply = function(v)
-				for _, path in ipairs(SF.Paths()) do
-					if not SB.Config.CharOverride(path, v) then
-						return L.SETTINGS_READONLY
-					end
+				if not SB.Config.CharOverrideMany(SF.Paths(), v) then
+					return L.SETTINGS_READONLY
 				end
 				return v and L.SET_FOCUS_CHARACTER_DONE or L.SET_FOCUS_ACCOUNT_DONE
 			end },
 	}
 	for _, m in ipairs(F.MODES) do
-		out[#out + 1] = { kind = "choice", label = L.SET_MODE_LABEL:format(L[m.name]),
+		out[#out + 1] = { kind = "choice", label = layered(L.SET_MODE_LABEL:format(L[m.name])),
 			choices = { { value = true, text = L.SET_ON }, { value = false, text = L.SET_OFF } },
 			get = function()
 				return F.IsEnabled(m.id)

@@ -1,4 +1,4 @@
--- luacheck: globals UIParent UISpecialFrames IsControlKeyDown
+-- luacheck: globals UIParent UISpecialFrames IsControlKeyDown GameTooltip
 -- The bags window's category view, end to end over the real engine (Inventory, Items,
 -- Keywords, Categories, Categorizer, Layout, SectionHeaders) with fake frames and buttons.
 local Loader = dofile("spec/helpers/loader.lua")
@@ -1632,6 +1632,26 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.equal(SB.L.SETTINGS_FAILED, W.frame.title.text)
 		assert.equal(1, SB.ErrorTrap.count, "recorded for the report")
 		assert.equal(false, SB.SafeMode.IsOn("bags"))
+	end)
+
+	-- Mutation: delete the `not ok` flash when SettingsFocus is missing.
+	it("a right-click with no settings page flashes L.SETTINGS_FAILED and does not pause", function()
+		SB.SettingsFocus = nil
+		W.Open()
+		W.modeButton.scripts.OnClick(W.modeButton, "RightButton")
+		assert.equal(SB.L.SETTINGS_FAILED, W.frame.title.text)
+		assert.falsy(F.IsPaused())
+	end)
+
+	-- Mutation: delete the AddLine for the right-click.
+	it("the Pause tooltip names both clicks", function()
+		local lines = {}
+		GameTooltip = { SetOwner = function() end, SetText = function(_, t) lines[#lines + 1] = t end,
+			AddLine = function(_, t) lines[#lines + 1] = t end, Show = function() end, Hide = function() end }
+		W.Open()
+		W.modeButton.scripts.OnEnter(W.modeButton)
+		GameTooltip = nil
+		assert.same({ SB.L.MODE_TIP_TITLE, SB.L.MODE_TIP_LEFT, SB.L.MODE_TIP_RIGHT }, lines)
 	end)
 
 	it("/swagbag mode answers every form (P2)", function()
