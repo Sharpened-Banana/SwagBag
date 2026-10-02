@@ -538,6 +538,7 @@ L.SET_LIST_ASC = "Lowest first"
 
 -- Alt data (week 5): other characters' items
 L.ALTDATA_PROVIDER_OFF = "The %s alt data stopped working this session; SwagBag uses its own saved data instead."
+L.REPORT_ALTDATA = "Alt data: %s, %d characters"
 
 -- Themes (week 5): the look of SwagBag's own windows
 L.THEME_BLIZZARD = "Blizzard"

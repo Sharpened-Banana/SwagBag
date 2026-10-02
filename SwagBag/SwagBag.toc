@@ -49,6 +49,7 @@ Engine/Consumables.lua
 
 # Providers
 Providers/Auctionator.lua
+Providers/Syndicator.lua
 
 # UI
 UI/Theme.lua
