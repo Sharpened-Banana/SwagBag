@@ -191,14 +191,16 @@ end
 
 -- Hide the template's new-item glow (W4-15). Methods only: no field on Blizzard's button is
 -- written, and the template's UpdateNewItem is never called. SwagBag's own "New" is a section.
+local GLOW_TEXTURES = { "NewItemTexture", "BattlepayItemTexture" }
+local GLOW_ANIMS = { "flashAnim", "newitemglowAnim" }
 function Buttons.ClearGlow(button)
-	for _, name in ipairs({ "NewItemTexture", "BattlepayItemTexture" }) do
+	for _, name in ipairs(GLOW_TEXTURES) do
 		local t = button[name]
 		if type(t) == "table" and t.Hide then
 			t:Hide()
 		end
 	end
-	for _, name in ipairs({ "flashAnim", "newitemglowAnim" }) do
+	for _, name in ipairs(GLOW_ANIMS) do
 		local a = button[name]
 		if type(a) == "table" and a.Stop then
 			a:Stop()

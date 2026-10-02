@@ -165,6 +165,22 @@ describe("Overlays (spec F9)", function()
 		assert.equal("BOTTOMLEFT", r.junk.points[#r.junk.points][1])
 	end)
 
+	-- A pooled button is reused for another item: the coin goes back to the top left.
+	-- Mutation: in Ov.Apply, delete `r.junkCorner = corner` (the corner is then never moved back).
+	it("a button that showed gray gear's coin bottom left puts the next gray item's coin back top left", function()
+		A.AddItem(900001, { name = "Rusty Sword", classID = A.ITEM_CLASS.Weapon, subclassID = 0,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "none" })
+		A.Put(0, 7, 900001, 1)
+		local b = Fake.New("ItemButton")
+		Ov.Apply(b, SB.Items.Describe(0, 7), 0)
+		local r = Ov.regions[b]
+		assert.equal("BOTTOMLEFT", r.junk.points[#r.junk.points][1])
+		Ov.Apply(b, SB.Items.Describe(0, 6), 0) -- the junk fixture: gray, no item level
+		assert.equal("", r.topLeft.text)
+		assert.truthy(r.junk.shown and r.junkShadow.shown)
+		assert.same({ "TOPLEFT", b, "TOPLEFT", 2, -2 }, r.junk.points[#r.junk.points])
+	end)
+
 	it("/swagbag overlays title off switches the item level in the bags title off at once", function()
 		local refreshed = 0
 		SB.BagsWindow = { IsOpen = function() return false end, RefreshTitle = function() refreshed = refreshed + 1 end }

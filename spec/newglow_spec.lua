@@ -192,7 +192,10 @@ describe("Inventory and the client's new-item flag", function()
 	end)
 
 	-- Pins the diagnosis: SwagBag's newSet is the only "new"; Blizzard's flag is never imported.
-	-- Mutation: in Inventory.ScanBag, `if r == Inv.R.ITEM and Inv.scanned then` → `if r == Inv.R.ITEM then`.
+	-- The C_NewItems.IsNewItem stub only documents that intent: no SwagBag code reads it (the mock
+	-- Adapter has no such call), so the stub alone guards nothing. The real guard is the Inv.scanned
+	-- check below. Mutation: in Inventory.ScanBag, `if r == Inv.R.ITEM and Inv.scanned then` →
+	-- `if r == Inv.R.ITEM then`.
 	it("the login scan marks nothing new, even when the client flags every slot new", function()
 		C_NewItems = { IsNewItem = function()
 			return true

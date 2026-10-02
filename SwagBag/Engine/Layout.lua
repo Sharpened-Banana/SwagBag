@@ -538,8 +538,11 @@ function Layout.Apply(st, changes, isBusy, collapsed, areaBusy)
 			held[key] = true -- later changes of a held slot wait too, so order is kept
 			st.deferred[#st.deferred + 1] = ch
 		else
+			-- New shows only when the arrival lands in it or counts in its "+N more below": a slot the
+			-- layout does not know adds nothing, so no empty "- New (0)" appears.
+			local known, before = st.where[key] ~= nil, st.sections[Layout.NEW].size
 			applyOne(st, ch, collapsed, result)
-			if opensNew then
+			if opensNew and (known or st.sections[Layout.NEW].size > before) then
 				st.newShown = true
 			end
 		end
