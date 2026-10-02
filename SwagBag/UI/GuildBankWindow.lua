@@ -515,10 +515,7 @@ function GW.Reflow(reason)
 	if not frame:IsShown() then
 		return false
 	end
-	local done = GW.view.RequestLayout(reason or "reflow")
-	if done then
-		searchBox.Apply()
-	end
+	local done = GW.view.RequestLayout(reason or "reflow") -- onUpdated applies the search when it lands
 	GW.Flash(done and L.REFLOW_DONE or L.REFLOW_WAITING)
 	return done
 end
@@ -531,9 +528,7 @@ function GW.ToggleView()
 	end
 	GW.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	GW.Flash(view == "grid" and L.GUILD_VIEW_GRID or L.GUILD_VIEW_SECTIONS)
-	if GW.view.RequestLayout("view") then
-		searchBox.Apply()
-	end
+	GW.view.RequestLayout("view")
 end
 
 GW.viewButton = titleButton(L.VIEW_TO_GRID, "guild.viewButton", function()
@@ -597,7 +592,6 @@ function GW.Refresh()
 	end
 	if first then
 		GW.view.RequestLayout("load")
-		searchBox.Apply()
 		return
 	end
 	for _, tab in ipairs(GW.order) do
@@ -832,7 +826,6 @@ SB.On("GUILDBANK_UPDATE_TABS", function()
 	GW.ReadTabs()
 	if frame:IsShown() and SB.GuildButtons.Ensure(GW.order) then
 		GW.view.RequestLayout("tabs")
-		searchBox.Apply()
 	end
 end, "bank")
 

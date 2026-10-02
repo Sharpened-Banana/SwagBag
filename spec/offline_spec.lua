@@ -449,6 +449,67 @@ describe("Alt viewer: the character picker and the ways in", function()
 		assert.equal(20, SB.DisplayButtons.Get(0, 1).count)
 	end)
 
+	-- Mutation: delete the `#all == 0` return in OW.ToggleMenu (a blank menu opens).
+	it("with no saved character the picker shows no menu and says so", function()
+		SB.AltData.Characters = function() return {} end
+		OW.Open()
+		assert.falsy(OW.ToggleMenu())
+		assert.falsy(OW.menu.shown)
+		assert.equal(SB.L.OFFLINE_NONE_SAVED, OW.frame.title.text)
+	end)
+
+	-- Mutation: drop the `list[#list] = c` swap (the shown character falls off the list), or the
+	-- `> OW.MENU_MAX` overflow line.
+	it("a long list stops at MENU_MAX, keeps the shown character in it and says how many more", function()
+		local chars = {}
+		for i = 1, 35 do
+			chars[i] = { key = "C" .. i .. "-Realm", name = "C" .. i, realm = "Realm" }
+		end
+		SB.AltData.Characters = function() return chars end
+		OW.Open("C33-Realm")
+		OW.ToggleMenu()
+		local texts = menuTexts()
+		assert.equal(OW.MENU_MAX, #texts)
+		assert.equal("C33 (Realm)", texts[OW.MENU_MAX])
+		assert.equal("+5 more, type /swagbag alts <name>", OW.menuMore.text)
+		assert.truthy(OW.menuMore.shown)
+		OW.ToggleMenu()
+		chars[2] = nil
+		for i = 3, 35 do chars[i] = nil end
+		OW.ToggleMenu()
+		assert.falsy(OW.menuMore.shown)
+	end)
+
+	-- Mutation: drop the LockHighlight branch in OW.ToggleMenu.
+	it("the shown character's row is highlighted, the others not", function()
+		OW.Open()
+		OW.ToggleMenu()
+		assert.truthy(OW.menuButtons[1].calls.LockHighlight)
+		assert.falsy(OW.menuButtons[2].calls.LockHighlight)
+		assert.truthy(OW.menuButtons[2].calls.UnlockHighlight)
+	end)
+
+	-- Mutation: drop `menu:Hide()` from OW.Open.
+	it("opening another character closes the list", function()
+		OW.Open()
+		OW.ToggleMenu()
+		OW.Open("Abby-ArgentDawn")
+		assert.falsy(OW.menu.shown)
+	end)
+
+	-- Review fix: the source line stops at the picker. Mutation: drop the RIGHT anchor.
+	it("the source line is bound to the picker and the window is at least MIN_WIDTH wide", function()
+		OW.Open()
+		local bound
+		for _, p in ipairs(OW.frame.source.points) do
+			if p[1] == "RIGHT" and p[2] == OW.pickButton and p[3] == "LEFT" then
+				bound = true
+			end
+		end
+		assert.truthy(bound)
+		assert.truthy(OW.frame.w >= OW.MIN_WIDTH)
+	end)
+
 	-- Mutation: drop classColoured from the menu button's SetText.
 	it("the picker colours each name by class through the Adapter", function()
 		_G.RAID_CLASS_COLORS = { PRIEST = { colorStr = "fffffffe" } }

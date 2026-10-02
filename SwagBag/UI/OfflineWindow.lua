@@ -25,7 +25,7 @@ local L = SB.L
 local Guard = SB.ErrorTrap.Guard
 local OW = { HEADER = 80, FOOTER = 6, MAX_HEIGHT_FRACTION = 0.75, GUILD_BASE = 100, key = nil, slots = {}, groups = {},
 	info = {}, KINDS = { "bags", "bank", "warband", "guild" }, LOADED_DELAY = 0.3, pending = {},
-	menuButtons = {}, MENU_ROW = 20, MENU_MAX = 30 }
+	menuButtons = {}, MENU_ROW = 20, MENU_MAX = 30, MIN_WIDTH = 340 }
 SB.OfflineWindow = OW
 
 local frame = CreateFrame("Frame", "SwagBagOfflineWindow", UIParent, "BackdropTemplate")
@@ -220,7 +220,7 @@ end
 local function sizeFrame(width, height)
 	child:SetSize(width, height)
 	local maxHeight = UIParent:GetHeight() * OW.MAX_HEIGHT_FRACTION / frame:GetScale()
-	frame:SetSize(width + 8, math.min(height, maxHeight - OW.HEADER - OW.FOOTER) + OW.HEADER + OW.FOOTER)
+	frame:SetSize(math.max(width + 8, OW.MIN_WIDTH), math.min(height, maxHeight - OW.HEADER - OW.FOOTER) + OW.HEADER + OW.FOOTER)
 	clampScroll()
 end
 
@@ -328,6 +328,7 @@ end
 function OW.Open(key)
 	OW.key = key or SB.AltData.Canon(SB.Adapter.CharKey())
 	OW.name = nameOf(OW.key)
+	OW.menu:Hide()
 	if not frame:IsShown() then
 		OW.RestorePosition()
 		frame:Show()
@@ -352,7 +353,15 @@ OW.pickButton:SetScript("OnClick", Guard("offline.pick", function()
 	OW.ToggleMenu()
 end, "none"))
 
+-- The source line stops at the picker (two lines at most); MIN_WIDTH leaves it about 120 px.
+frame.source:SetPoint("RIGHT", OW.pickButton, "LEFT", -8, 0)
+frame.source:SetJustifyV("TOP")
+if frame.source.SetMaxLines then
+	frame.source:SetMaxLines(2)
+end
+
 local menu = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+menu:EnableMouse(true)
 menu:SetPoint("TOPRIGHT", OW.pickButton, "BOTTOMRIGHT", 0, -2)
 menu:SetFrameStrata("DIALOG")
 menu:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
@@ -360,6 +369,8 @@ menu:SetBackdropColor(0.06, 0.06, 0.08, 0.97)
 menu:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
 menu:Hide()
 OW.menu = menu
+OW.menuMore = menu:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+OW.menuMore:Hide()
 if SB.Theme then
 	SB.Theme.Button(OW.pickButton)
 	SB.Theme.Window(menu, "dialog")
@@ -405,8 +416,30 @@ function OW.ToggleMenu()
 		menu:Hide()
 		return false
 	end
-	local list = SB.AltData.Characters() or {}
-	local n = math.min(#list, OW.MENU_MAX)
+	local all = SB.AltData.Characters() or {}
+	if #all == 0 then
+		OW.Flash(L.OFFLINE_NONE_SAVED) -- nothing to list: no blank menu
+		return false
+	end
+	-- Up to MENU_MAX rows; the one shown always stays visible. The menu is at most about 690 px tall.
+	local list = {}
+	for i = 1, math.min(#all, OW.MENU_MAX) do
+		list[i] = all[i]
+	end
+	if #all > OW.MENU_MAX then
+		local shown = false
+		for _, c in ipairs(list) do
+			shown = shown or c.key == OW.key
+		end
+		if not shown then
+			for _, c in ipairs(all) do
+				if c.key == OW.key then
+					list[#list] = c
+				end
+			end
+		end
+	end
+	local n = #list
 	for i = 1, n do
 		local b = menuButton(i)
 		b.key = list[i].key
@@ -420,11 +453,19 @@ function OW.ToggleMenu()
 	for i = n + 1, #OW.menuButtons do
 		OW.menuButtons[i]:Hide()
 	end
-	menu:SetSize(268, 8 + math.max(1, n) * (OW.MENU_ROW + 2))
-	menu:Show()
-	if n == 0 then
-		OW.Flash(L.OFFLINE_NONE_SAVED)
+	local height = 8 + n * (OW.MENU_ROW + 2)
+	local more = #all - n
+	if more > 0 then
+		OW.menuMore:ClearAllPoints()
+		OW.menuMore:SetPoint("TOPLEFT", menu, "TOPLEFT", 8, -height)
+		OW.menuMore:SetText(L.OFFLINE_MENU_MORE:format(more))
+		OW.menuMore:Show()
+		height = height + 16
+	else
+		OW.menuMore:Hide()
 	end
+	menu:SetSize(268, height)
+	menu:Show()
 	return true
 end
 
