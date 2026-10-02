@@ -24,9 +24,10 @@ local function fakeSyndicator()
 		["Hidden-ArgentDawn"] = { details = { character = "Hidden", className = "ROGUE", show = { inventory = false } },
 			bags = {} },
 	}
-	local api = { ready = true, calls = 0, chars = chars }
+	local api = { ready = true, calls = 0, chars = chars, current = "Swagger-ArgentDawn" }
 	function api.IsReady() return api.ready end
 	function api.GetAllCharacters()
+		api.listCalls = (api.listCalls or 0) + 1
 		local keys = {}
 		for k in pairs(chars) do
 			keys[#keys + 1] = k
@@ -35,6 +36,7 @@ local function fakeSyndicator()
 		return keys
 	end
 	function api.GetByCharacterFullName(k) return chars[k] end
+	function api.GetCurrentCharacter() return api.current end
 	function api.GetWarband() return { bank = { { slots = { [3] = { itemLink = "item:156654", itemCount = 7 } } } } } end
 	function api.GetInventoryInfoByItemID(id)
 		api.calls = api.calls + 1
@@ -42,7 +44,7 @@ local function fakeSyndicator()
 			error("syndicator broke")
 		end
 		if id ~= 211880 then
-			return nil
+			return { characters = {}, guilds = {}, warband = { 0 } } -- v284's real answer for an unknown item
 		end
 		return { characters = {
 			{ character = "Swagger", realmNormalized = "ArgentDawn", className = "MAGE", bags = 5, bank = 0, mail = 0,
@@ -213,6 +215,77 @@ describe("Syndicator provider", function()
 		assert.falsy(SB.SafeMode.IsOn("bank"))
 	end)
 
+	-- Ruling W5-8. Mutation: drop the empty -> nil check in P.counts.
+	it("an item Syndicator reports as empty (its real answer for an unknown item) is counted by Own", function()
+		local id = Fixtures.FLASK
+		local info = api.GetInventoryInfoByItemID(id)
+		assert.equal(0, #info.characters)
+		local c, source = AD.Counts(id)
+		assert.equal("Own", source)
+		assert.equal(2, c.chars[1].bags)
+	end)
+
+	it("an empty Syndicator answer still lets Own's guild banks be counted, and a pet cage goes to Own", function()
+		SB.Snapshots.DB().guilds["Vault-Argent Dawn"] = { snapshot = { v = 1, containers = { [1] = { size = 98,
+			s = "4:item:" .. Fixtures.FLASK .. ";5\n" } } } }
+		local c, source = AD.Counts(Fixtures.FLASK)
+		assert.equal("Own", source)
+		assert.equal(5, c.guilds[1].count)
+		local before = api.calls
+		local _, petSource = AD.Counts(AD.PET_CAGE)
+		assert.equal("Own", petSource)
+		assert.equal(before, api.calls, "Syndicator is not asked about a caged pet")
+	end)
+
+	-- Ruling W5-9. Mutation: mark current by SwagBag's key only.
+	it("the current character is found through Syndicator's own key when it is regional (Name-PvE)", function()
+		api.chars["Swagger-PvE"] = api.chars["Swagger-ArgentDawn"]
+		api.chars["Swagger-ArgentDawn"] = nil
+		api.current = "Swagger-PvE"
+		local list = AD.Characters()
+		assert.equal("Swagger-PvE", list[1].key)
+		assert.equal(true, list[1].current)
+		assert.equal(false, list[2].current)
+		assert.equal("Swagger-PvE", A.SyndicatorCurrentKey())
+		api.GetCurrentCharacter = nil
+		assert.is_nil(A.SyndicatorCurrentKey())
+	end)
+
+	it("a key Syndicator never has rebuilds the name cache once, not on every call", function()
+		AD.Container("Abby-ArgentDawn", "bags")
+		local start = api.listCalls
+		for _ = 1, 4 do
+			AD.Container("Nobody-ArgentDawn", "bags")
+		end
+		assert.equal(start + 1, api.listCalls)
+	end)
+
+	it("a failure in Syndicator's callback is recorded under 'none', never Safe Mode", function()
+		SB.Emit("SB_LOGIN")
+		SB.Debounce = function() error("boom") end
+		reg.events.MailCacheUpdate()
+		local last = SB.ErrorTrap.Recent()
+		last = last[#last] or last[1]
+		assert.equal("none", last.window)
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	-- F18 with a hyphenated realm: Own's "Vault-Azjol-Nerub" and Syndicator's "AzjolNerub" are one guild.
+	it("counts: a hyphenated realm names the same guild in both sources", function()
+		local G = SB.Snapshots.DB().guilds
+		G["Tidewatch-Azjol-Nerub"] = { snapshot = { v = 1, containers = { [1] = { size = 98, s = "4:item:211880;9\n" } } } }
+		G["Vault-Azjol-Nerub"] = { snapshot = { v = 1, containers = { [1] = { size = 98, s = "4:item:211880;5\n" } } } }
+		local old = api.GetInventoryInfoByItemID
+		api.GetInventoryInfoByItemID = function(id)
+			local info = old(id)
+			info.guilds = { { guild = "Tidewatch", realmNormalized = "AzjolNerub", bank = 3 } }
+			return info
+		end
+		local c = AD.Counts(Fixtures.HEALING_POTION)
+		assert.same({ { key = "Tidewatch-AzjolNerub", name = "Tidewatch", count = 3 },
+			{ key = "Vault-AzjolNerub", name = "Vault", count = 5 } }, c.guilds)
+	end)
+
 	it("the report names the alt data source and how many characters it has", function()
 		Loader.LoadFile(SB, "SwagBag/Core/Checks.lua")
 		Loader.LoadFile(SB, "SwagBag/Core/Report.lua")
@@ -243,7 +316,7 @@ describe("Adapter: Syndicator and currency reads (the real Adapter.lua)", functi
 		assert.is_nil(A.SyndicatorAPI())
 	end)
 
-	it("SyndicatorOnUpdate registers for the four events, or says there is no registry", function()
+	it("SyndicatorOnUpdate registers for every event, or says there is no registry", function()
 		assert.equal(false, A.SyndicatorOnUpdate(function() end))
 		local _, reg = fakeSyndicator()
 		Syndicator = { CallbackRegistry = reg }
