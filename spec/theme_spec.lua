@@ -463,6 +463,13 @@ describe("Themes: Matches ElvUI", function()
 		assert.equal("blizzard", T.Current())
 	end)
 
+	it("the elvui palette() returns nil (no error logged) when ElvUI's media is gone", function()
+		media = nil
+		assert.is_nil(T.themes.elvui.palette())
+		assert.same({ false, "unavailable" }, { T.Apply("elvui", false) })
+		assert.equal(0, #SB.ErrorTrap.Recent())
+	end)
+
 	it("a palette ElvUI cannot fill is refused by validation, not applied (W5-5)", function()
 		media.fade = { 0.2, "x", 0.3, 0.7 }
 		assert.same({ false, "unavailable" }, { T.Apply("elvui", true) })
@@ -504,6 +511,21 @@ describe("Adapter.ElvUIMedia (ElvUI's public globals, read only)", function()
 		assert.is_nil(SB.Adapter.ElvUIMedia())
 		ElvUI = setmetatable({}, { __index = function() error("boom") end })
 		assert.is_nil(SB.Adapter.ElvUIMedia())
+	end)
+
+	it("clamps the font size to 6-32, falling back to 12 when missing or out of range", function()
+		local function sizeOf(v)
+			ElvUI = { { media = { normFont = "F.ttf", blankTex = "Blank", bordercolor = { 0, 0, 0, 1 },
+				backdropcolor = { 0.1, 0.1, 0.1, 1 }, backdropfadecolor = { 0.1, 0.1, 0.1, 0.8 } },
+				db = { general = { fontSize = v } } } }
+			return SB.Adapter.ElvUIMedia().size
+		end
+		assert.equal(6, sizeOf(6))
+		assert.equal(32, sizeOf(32))
+		assert.equal(12, sizeOf(5))
+		assert.equal(12, sizeOf(33))
+		assert.equal(12, sizeOf(nil))
+		assert.equal(12, sizeOf("big"))
 	end)
 
 	it("is nil when a required value is missing or secret", function()

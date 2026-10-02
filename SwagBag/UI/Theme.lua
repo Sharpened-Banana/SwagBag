@@ -142,6 +142,7 @@ local function styleText(fs, t)
 			fs:SetFontObject(t.original)
 		end
 	elseif f.file then
+		-- SetFont's return value is ignored on purpose: a bad path keeps the previous font.
 		fs:SetFont(f.file, f.size + (SIZES[t.role] or 0), f.flags)
 	else
 		local object = f[t.role] and SB.Adapter.FontObject(f[t.role])
