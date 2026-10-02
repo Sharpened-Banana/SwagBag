@@ -73,11 +73,16 @@ local function bagFrame(bag)
 	return f
 end
 
+-- SwagBag's own slot background under the item (a texture region on the button, as since week 1).
+-- The theme (UI/Theme.lua) restyles it; the Blizzard theme is the atlas below.
 local function addBackground(button)
 	local bg = button:CreateTexture(nil, "BACKGROUND", nil, -7)
 	bg:SetAllPoints(button)
 	if not pcall(bg.SetAtlas, bg, "bags-item-slot64") then
 		bg:SetColorTexture(0.15, 0.15, 0.15, 0.8)
+	end
+	if SB.Theme then
+		SB.Theme.Slot(bg)
 	end
 end
 

@@ -623,6 +623,12 @@ function A.Frame(name)
 	return _G[name]
 end
 
+-- One of Blizzard's font objects by its global name (GameFontHighlight, ...), or nil (themes).
+function A.FontObject(name)
+	local object = _G[name]
+	return type(object) == "table" and object or nil
+end
+
 -- "bank" (character bank) | "warband" | nil: the bank type Blizzard's bank frame has
 -- selected, which is where a right-clicked bag item goes. Read only.
 function A.ActiveBankType()

@@ -64,6 +64,11 @@ frame.title:SetText(L.BANK_TITLE)
 frame.deposit = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 frame.deposit:SetPoint("TOPLEFT", 14, -58)
 frame.deposit:SetJustifyH("LEFT")
+if SB.Theme then -- the look (UI/Theme.lua); the Blizzard theme keeps exactly the values above (AC14.1)
+	SB.Theme.Window(frame, "main")
+	SB.Theme.Text(frame.title, "title")
+	SB.Theme.Text(frame.deposit, "small")
+end
 
 local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
@@ -237,6 +242,9 @@ local function titleButton(text, label, onClick, width)
 	b:SetSize(width or 72, 18)
 	b:SetText(text)
 	b:SetScript("OnClick", Guard(label, onClick, "bank"))
+	if SB.Theme then
+		SB.Theme.Button(b)
+	end
 	return b
 end
 BW.TitleButton = titleButton
@@ -549,6 +557,9 @@ BW.stillOpenButton:SetScript("OnClick", Guard("bank.stillOpen", function()
 	BW.Open()
 end, "bank"))
 BW.stillOpenButton:Hide()
+if SB.Theme then
+	SB.Theme.Button(BW.stillOpenButton)
+end
 
 -- The bags title ends left of the leftmost shown title button: this one while it shows.
 function BW.RefreshStillOpen()

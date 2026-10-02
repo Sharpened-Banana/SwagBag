@@ -15,7 +15,15 @@ SB.SectionHeaders = H
 
 -- [header] = the frame it was acquired in / its owner's { onClick, onDrop, window }. Kept beside the
 -- frames, not on them, so a field name can never clash with a frame method.
-local parents, owners, labels = {}, {}, {}
+local parents, owners, labels, tinted = {}, {}, {}, {}
+
+-- The header background: the theme's (UI/Theme.lua), else the look SwagBag always had.
+local function headerColor()
+	if SB.Theme then
+		return SB.Theme.HeaderColor()
+	end
+	return 1, 1, 1, 0.06
+end
 
 -- Pure: the header text. value (copper, optional) is the section's total value (spec F10),
 -- shown when above 0; vendor = the value is the vendor price (no Auctionator).
@@ -50,10 +58,13 @@ local function create(parent)
 	h:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	h.bg = h:CreateTexture(nil, "BACKGROUND")
 	h.bg:SetAllPoints(h)
-	h.bg:SetColorTexture(1, 1, 1, 0.06)
+	h.bg:SetColorTexture(headerColor())
 	h.text = h:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	h.text:SetPoint("LEFT", h, "LEFT", 4, 0)
 	h.text:SetJustifyH("LEFT")
+	if SB.Theme then
+		SB.Theme.Text(h.text, "header")
+	end
 	-- The ErrorTrap window is the owner's (W3-22, spec P6): an error in a bank header puts the
 	-- bank window, not the bags window, in Safe Mode. No owner window: the bags window.
 	h:SetScript("OnClick", function(self, mouseButton)
@@ -84,7 +95,8 @@ function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	h:SetParent(parent)
 	parents[h], owners[h] = parent, owner
 	h.sectionId = sectionId
-	h.bg:SetColorTexture(1, 1, 1, 0.06)
+	tinted[h] = nil
+	h.bg:SetColorTexture(headerColor())
 	h.text:SetText(label)
 	labels[h] = label
 	h:SetWidth(width)
@@ -94,6 +106,24 @@ function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	H.inUse[#H.inUse + 1] = h
 	return h
 end
+
+-- A header with its own colour (the bank group that receives deposits): kept through theme changes
+-- until the header is acquired again.
+function H.Tint(h, r, g, b, a)
+	tinted[h] = true
+	h.bg:SetColorTexture(r, g, b, a)
+end
+
+-- A new look (UI/Theme.lua): every header that is not tinted takes the theme's background.
+SB.On("SB_THEME_CHANGED", function()
+	for _, list in ipairs({ H.inUse, H.pool }) do
+		for _, h in ipairs(list) do
+			if not tinted[h] then
+				h.bg:SetColorTexture(headerColor())
+			end
+		end
+	end
+end, "none")
 
 -- Change the text of the header (parent, sectionId) in place, only when it differs. Group headers
 -- (ids starting with "#") are never touched. Nothing is released or acquired.

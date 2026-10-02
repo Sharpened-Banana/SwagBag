@@ -324,6 +324,9 @@ local function widget(i)
 		w.text = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		w.text:SetJustifyH("LEFT")
 		w.text:SetWordWrap(false)
+		if SB.Theme then
+			SB.Theme.Text(w.text, "small")
+		end
 		w:SetScript("OnEnter", Guard("footer.tip", function(self)
 			F.Tooltip(self, self.item)
 		end, "bags"))

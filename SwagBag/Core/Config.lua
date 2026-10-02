@@ -70,6 +70,9 @@ Config.Defaults = {
 		-- done: the quick setup screen was applied or skipped (UI/QuickSetup.lua); account-wide,
 		-- like the settings it sets, so it shows once per account, not once per character.
 		setup = { done = false },
+		-- name: the look of SwagBag's own windows (UI/Theme.lua): "blizzard" (the default, AC14.1) |
+		-- "flat" | "elvui" (UI/Themes.lua).
+		theme = { name = "blizzard" },
 	},
 }
 

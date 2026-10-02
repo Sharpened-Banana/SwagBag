@@ -536,6 +536,22 @@ L.SET_LIST_ORDER = "The list view's order"
 L.SET_LIST_DESC = "Highest first"
 L.SET_LIST_ASC = "Lowest first"
 
+-- Themes (week 5): the look of SwagBag's own windows
+L.THEME_BLIZZARD = "Blizzard"
+L.THEME_FALLBACK = "The %s look cannot be used now, so SwagBag looks like Blizzard's bags this session."
+L.THEME_FLAT = "Modern flat"
+L.THEME_NOT_LOADED = "%s, not available now"
+L.THEME_ITEM = "%s (%s)"
+L.HELP_THEME = "theme [blizzard|flat|elvui]: show or switch the look of SwagBag's windows"
+L.THEME_STATE = "Look: %s. Looks: %s."
+L.THEME_SET = "Look: %s. Only SwagBag's own windows change."
+L.THEME_UNAVAILABLE = "That look cannot be used now. The look stays %s."
+L.THEME_USAGE = "Use /swagbag theme, or /swagbag theme <name>. Looks: %s."
+L.SET_PAGE_LOOK = "Look"
+L.SET_LOOK = "The look of SwagBag's windows"
+L.SET_LOOK_NOTE = "Only SwagBag's own windows, headers, rows and buttons change. Item buttons keep Blizzard's icons and"
+	.. " quality borders."
+
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
 L.V1_SHOWN = "V1 strip shown with %d usable items. Enter combat, right-click them 3 times, then /swagbag report."

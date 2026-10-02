@@ -60,6 +60,11 @@ frame.status:SetPoint("RIGHT", frame, "RIGHT", -12, 0)
 frame.status:SetJustifyH("LEFT")
 frame.status:SetWordWrap(true)
 frame.status:SetText(L.SET_SAVED_NOTE)
+if SB.Theme then -- the look (UI/Theme.lua); the Blizzard theme keeps exactly the values above (AC14.1)
+	SB.Theme.Window(frame, "dialog")
+	SB.Theme.Text(frame.title, "title")
+	SB.Theme.Text(frame.status, "small")
+end
 
 local scroll = CreateFrame("ScrollFrame", nil, frame)
 scroll:SetPoint("TOPLEFT", SW.NAV + 8, -40)
@@ -102,6 +107,9 @@ local function label()
 	if not fs then
 		fs = child:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 		fs:SetJustifyH("LEFT")
+		if SB.Theme then
+			SB.Theme.Text(fs, "label")
+		end
 		SW.labels[SW.used.labels] = fs
 	end
 	fs:Show()
@@ -124,6 +132,9 @@ local function button()
 				self.onDrop()
 			end
 		end, "none"))
+		if SB.Theme then
+			SB.Theme.Button(b)
+		end
 		SW.buttons[SW.used.buttons] = b
 	end
 	b.onClick, b.onDrop = nil, nil
@@ -160,6 +171,9 @@ function SW.AddPage(page)
 	b:SetScript("OnClick", Guard("settings.page", function()
 		SW.Show(page.id)
 	end, "none"))
+	if SB.Theme then
+		SB.Theme.Button(b)
+	end
 	SW.nav[page.id] = b
 	return page
 end

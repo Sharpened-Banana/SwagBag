@@ -190,6 +190,13 @@ frame.columnsLabel:SetText(L.SET_COLUMNS)
 frame.status = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 frame.status:SetPoint("BOTTOMLEFT", 14, 44)
 frame.status:SetText(L.QS_HINT)
+if SB.Theme then -- the look (UI/Theme.lua); the Blizzard theme keeps exactly the values above (AC14.1)
+	SB.Theme.Window(frame, "dialog")
+	SB.Theme.Text(frame.title, "title")
+	SB.Theme.Text(frame.intro, "body")
+	SB.Theme.Text(frame.columnsLabel, "label")
+	SB.Theme.Text(frame.status, "small")
+end
 
 local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
@@ -264,6 +271,16 @@ QS.skipButton:SetText(L.QS_SKIP)
 QS.skipButton:SetScript("OnClick", Guard("setup.skip", function()
 	finish(QS.Skip)
 end, "none"))
+if SB.Theme then
+	for _, b in pairs(QS.styleButtons) do
+		SB.Theme.Button(b)
+	end
+	for _, b in pairs(QS.columnButtons) do
+		SB.Theme.Button(b)
+	end
+	SB.Theme.Button(QS.applyButton)
+	SB.Theme.Button(QS.skipButton)
+end
 
 -- Closing without Apply or Skip (Esc, the X) is "later": it says when the screen comes back.
 -- The OnHide guard comes first (Alt+Z hides UIParent while this frame stays shown).
