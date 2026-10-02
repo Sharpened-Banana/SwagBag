@@ -225,8 +225,11 @@ end
 
 -- Show the window at a page (default: the last one shown, else the first).
 function SW.Show(pageId)
+	local before = SW.current
 	SW.current = (pageId and SW.byId[pageId] and pageId) or SW.current or (SW.pages[1] and SW.pages[1].id)
-	scroll:SetVerticalScroll(0)
+	if not (frame:IsShown() and SW.current == before) then -- re-showing the open page keeps its scroll
+		scroll:SetVerticalScroll(0)
+	end
 	frame:Show()
 	SW.Render()
 	return true
@@ -239,6 +242,16 @@ end
 function SW.IsOpen()
 	return frame:IsShown()
 end
+
+-- Something changed outside the window (a typed command, the bags window's own buttons, a pause,
+-- a focus mode): redraw so the selected buttons are never stale. Only while the window is open.
+local function refresh()
+	if frame:IsShown() then
+		SW.Render()
+	end
+end
+SB.On("SB_CONFIG_CHANGED", refresh, "none")
+SB.On("SB_FOCUS_CHANGED", refresh, "none")
 
 -- /swagbag and /swagbag settings [page] (spec 10.5).
 local function open(arg)

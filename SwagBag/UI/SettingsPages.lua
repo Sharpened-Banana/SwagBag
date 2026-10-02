@@ -12,6 +12,9 @@ local SW = SB.SettingsWindow
 local function run(line)
 	local ok, feedback = SB.Slash.Run(line)
 	if not ok then
+		if not SB.Slash.commands[(line:match("^%s*(%S*)") or ""):lower()] then
+			return feedback -- an unknown command: nothing was recorded, so say what it was
+		end
 		return L.SETTINGS_FAILED -- recorded under the command's own label; the status line says so (W4-7)
 	end
 	return feedback
