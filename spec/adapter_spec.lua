@@ -1,6 +1,15 @@
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
--- luacheck: globals Auctionator
+-- luacheck: globals Auctionator ColorManager ITEM_QUALITY_COLORS
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
+-- F1: spec/runner.lua installs format51 before any spec loads, so this first-sorting spec (no loader,
+-- no single-file escape) is as strict as WoW too. Mutation: delete the require from spec/runner.lua.
+describe("Test format reaches the Adapter specs", function()
+	it("%s of a boolean or nil is an error here, with nothing but the real Adapter loaded", function()
+		assert.has_error(function() return ("%s"):format(true) end, "string expected, got boolean")
+		assert.has_error(function() return ("%s"):format(nil) end, "string expected, got nil")
+	end)
+end)
+
 describe("Adapter cursor and sort helpers", function()
 	local A
 	before_each(function()
@@ -153,5 +162,37 @@ describe("Adapter Auctionator (real adapter, stubbed global)", function()
 		Auctionator = nil
 		assert.equal(7, A.AuctionatorPrice("item:1"), "the resolved API is kept until the next availability check")
 		assert.equal(2, calls)
+	end)
+end)
+
+-- F5: the row's name colour. Mutation: drop the pcall, or skip the ITEM_QUALITY_COLORS fallback.
+describe("Adapter.QualityColor", function()
+	local A
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+	end)
+
+	after_each(function()
+		ColorManager, ITEM_QUALITY_COLORS = nil, nil
+	end)
+
+	it("reads ColorManager's item quality colour when the client has it", function()
+		ColorManager = { GetColorDataForItemQuality = function(q)
+			assert.equal(4, q)
+			return { color = { GetRGB = function() return 0.64, 0.21, 0.93 end } }
+		end }
+		assert.same({ 0.64, 0.21, 0.93 }, { A.QualityColor(4) })
+	end)
+
+	it("falls back to ITEM_QUALITY_COLORS, and answers nil with neither, for an unknown quality or an error", function()
+		assert.is_nil(A.QualityColor(4))
+		ITEM_QUALITY_COLORS = { [4] = { r = 0.6, g = 0.2, b = 0.9 } }
+		assert.same({ 0.6, 0.2, 0.9 }, { A.QualityColor(4) })
+		assert.is_nil(A.QualityColor(7))
+		assert.is_nil(A.QualityColor(nil))
+		ColorManager = { GetColorDataForItemQuality = function() error("boom") end }
+		assert.same({ 0.6, 0.2, 0.9 }, { A.QualityColor(4) })
 	end)
 end)

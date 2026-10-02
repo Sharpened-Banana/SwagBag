@@ -499,6 +499,15 @@ L.FOOTER_DOWN = "Move down"
 L.FOOTER_NOTE = "Backpack currencies are the ones you tick \"Show on backpack\" for in Blizzard's Currency tab. Crests show"
 	.. " by themselves once you own any."
 
+-- The list view (week 5): rows of name, count, item level and value
+L.LIST_LOADING = "Loading..."
+L.LIST_EMPTY = "Empty slot"
+L.LIST_FREE = "%d free - drop items here"
+L.LIST_GONE = "(moved or used - regroups when you close the bag)"
+L.LIST_ROW_TIP = "Click the icon on the left to use, sell or move this item."
+L.LIST_ROW_CLICK = "Click the icon on the left to use the item."
+L.LIST_EMPTY_TIP = "An empty bag slot: drop an item on the icon on the left."
+
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"
 L.V1_SHOWN = "V1 strip shown with %d usable items. Enter combat, right-click them 3 times, then /swagbag report."

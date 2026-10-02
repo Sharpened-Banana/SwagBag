@@ -171,6 +171,10 @@ assert = setmetatable(A, {
 ---------------------------------------------------------------------------
 -- Main
 ---------------------------------------------------------------------------
+-- Every spec formats %s as strictly as WoW's Lua 5.1 (week 5, F1): installed here, before any spec
+-- file loads, so the Adapter specs that run first are covered too.
+require("spec.helpers.format51")
+
 if #arg == 0 then
 	print("usage: luajit spec/runner.lua spec/*_spec.lua")
 	os.exit(2)

@@ -3,6 +3,7 @@
 -- Usage:  local SB = Loader.New({ "SwagBag/Core/SafeMode.lua", ... })
 local Stub = dofile("spec/helpers/wow_stub.lua")
 local Mock = dofile("spec/mock_adapter.lua")
+require("spec.helpers.format51") -- %s as strict as WoW's Lua 5.1 (week 5); spec/runner.lua already did it, so this is a no-op
 
 local Loader = { Stub = Stub }
 

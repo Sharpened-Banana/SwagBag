@@ -26,6 +26,9 @@ Config.Defaults = {
 		-- and rows when empty; false (default) shows New only once something new arrives (W4-15).
 		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
 			showIlvl = true, freeTile = true, newAlways = false,
+			-- list: the list view's order (Engine/Sort.lua; the bags window's third view). sort: "value" |
+			-- "name" | "count" | "ilvl"; desc: highest first (Z to A for names). Default: worth most first.
+			list = { sort = "value", desc = true },
 			-- footer.entries: the bar under the items (UI/Footer.lua, W4-14), left to right; "-" before
 			-- an entry that is off. Unknown ids are dropped; an entry added later joins at its default place, on (W4-23).
 			footer = { entries = "gold,currencies,crests,keystone,free" } },

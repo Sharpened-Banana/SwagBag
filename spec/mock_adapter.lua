@@ -213,6 +213,21 @@ function M.New(SB)
 		m.tooltip = nil
 	end
 
+	-- The list view's row tooltips: m.slotTip = { owner, bag, slot, hint }.
+	function m.SlotTooltip(owner, bag, slot, hint)
+		m.slotTip = { owner = owner, bag = bag, slot = slot, hint = hint }
+	end
+
+	-- A row's name colour: m.qualityColors[quality] = { r, g, b } (none by default, like a client without it).
+	m.qualityColors = {}
+	function m.QualityColor(quality)
+		local c = m.qualityColors[quality]
+		if c then
+			return c[1], c[2], c[3]
+		end
+		return nil
+	end
+
 	function m.ModifiedClick()
 		return m.modified
 	end
