@@ -14,6 +14,7 @@ Env.ENGINE = {
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
 	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
 	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua", "SwagBag/Engine/OverlayData.lua",
+	"SwagBag/Engine/Sort.lua",
 }
 
 -- SetItemButton* record what they were given on the fake button.

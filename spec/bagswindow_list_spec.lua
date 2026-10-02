@@ -46,15 +46,23 @@ local function newFake(kind)
 			local p = { ... }
 			if p[3] == "BOTTOMLEFT" and (p[1] == "TOPLEFT" or p[1] == "BOTTOMLEFT") then
 				self.anchor, self.left, self.edgeY = p[1], p[4], p[5]
+			elseif p[1] == "BOTTOMRIGHT" and p[3] == "BOTTOMRIGHT" then -- the default place (RestorePosition)
+				self.anchor, self.right, self.edgeY = "BOTTOMRIGHT", p[4], p[5]
 			end
 		end,
-		GetLeft = function(self) return self.left end,
+		GetLeft = function(self)
+			if self.anchor == "BOTTOMRIGHT" then
+				return (UIParent.w or 0) + self.right - self.w
+			end
+			return self.left
+		end,
 		GetTop = function(self)
-			if self.anchor == "BOTTOMLEFT" then
+			if self.anchor == "BOTTOMLEFT" or self.anchor == "BOTTOMRIGHT" then
 				return self.edgeY + self.h
 			end
 			return self.edgeY
 		end,
+		IsTruncated = function(self) return self.truncated == true end,
 		SetText = function(self, s) self.text = s end,
 		CreateFontString = function() return newFake("FontString") end,
 		CreateTexture = function() return newFake("Texture") end,
@@ -323,6 +331,163 @@ describe("BagsWindow list view", function()
 		assert.equal("list", W.View())
 	end)
 
+	local function lastTopLeft(f)
+		local found
+		for _, p in ipairs(f.points) do
+			if p[1] == "TOPLEFT" then
+				found = p
+			end
+		end
+		return found
+	end
+
+	it("the column bar shows above the list only, and the items start under it", function()
+		W.Open()
+		assert.truthy(W.columnsBar.shown)
+		assert.equal(-(W.HEADER + W.COLUMNS_H), lastTopLeft(W.scroll)[5])
+		assert.equal(W.child.h + W.HEADER + W.COLUMNS_H + W.foot, W.frame.h, "the bar is part of the window")
+		assert.equal("Value v", W.columnButtons.value.label.text, "the sorted column carries a marker")
+		assert.equal("Name", W.columnButtons.name.label.text)
+		W.SetView("grid")
+		assert.falsy(W.columnsBar.shown)
+		assert.equal(-W.HEADER, lastTopLeft(W.scroll)[5])
+	end)
+
+	-- Preflight a2: each header sits exactly over its column of row texts (same left edge, width and
+	-- justification, in the window's units). Mutation: place the bar at 4 + W.PAD + W.LIST_ROW (drop
+	-- W.ROW_TEXT_GAP).
+	it("each column header lines up with its column of row texts", function()
+		W.Open()
+		local r = row(1)
+		local barX = lastTopLeft(W.columnsBar)[4]
+		local rowX = lastTopLeft(W.scroll)[4] + r.points[1][4] -- the scroll child sits at the scroll frame's corner
+		for _, id in ipairs(SB.Sort.COLUMNS) do
+			local b, fs = W.columnButtons[id], r[id]
+			assert.equal(rowX + fs.points[1][4], barX + b.points[1][4], id .. ": the same left edge")
+			assert.equal(fs.calls.SetWidth[1], b.w, id .. ": the same width")
+			assert.equal(fs.calls.SetJustifyH[1], b.label.calls.SetJustifyH[1], id .. ": the same justification")
+		end
+		assert.equal(-W.HEADER, lastTopLeft(W.columnsBar)[5], "the bar sits right under the search row")
+	end)
+
+	-- W4-1: the bar follows the DRAWN view, not the setting. Mutation: in W.HeaderHeight, read
+	-- W.View() instead of W.drawn.
+	it("the column bar follows the drawn view while a view change is held under the mouse", function()
+		W.Open()
+		local h = W.frame.h
+		W.scroll.mouseOver = true
+		W.SetView("grid")
+		W.Resize()
+		assert.truthy(W.columnsBar.shown, "held: the list and its bar stay")
+		assert.equal(h, W.frame.h, "the header room stays")
+		assert.equal(-(W.HEADER + W.COLUMNS_H), lastTopLeft(W.scroll)[5])
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.equal("grid", W.drawn)
+		assert.falsy(W.columnsBar.shown)
+		assert.equal(-W.HEADER, lastTopLeft(W.scroll)[5])
+	end)
+
+	-- F6 + W4-1: a list that falls back to categories draws no column bar. Mutation: in W.Layout, show
+	-- the bar before the scale check (keyed on the setting's view).
+	it("a list that falls back to categories (F6) has no column bar", function()
+		SB.Config.Set("bags.view", "sections")
+		W.Open()
+		for slot = 1, 16 do
+			B.Get(0, slot).SetScale = function() end
+		end
+		W.SetView("list")
+		assert.equal("sections", W.drawn)
+		assert.falsy(W.columnsBar.shown)
+		assert.equal(-W.HEADER, lastTopLeft(W.scroll)[5])
+	end)
+
+	-- Mutation: in W.SortList, drop the W.RequestLayout("listsort") call.
+	it("a click on the sorted column flips it: saved, answered in the title, and the list regroups", function()
+		W.Open()
+		W.columnButtons.value.scripts.OnClick(W.columnButtons.value)
+		assert.same({ by = "value", desc = false }, SB.Sort.Spec())
+		assert.equal("Sorted by Value, lowest first", W.frame.title.text)
+		assert.equal("Value ^", W.columnButtons.value.label.text)
+		assert.truthy(B.Get(0, 1).y > B.Get(0, 2).y, "potion (500) above flask (2000) now")
+	end)
+
+	it("a click on another column sorts by it in its natural direction (names A to Z)", function()
+		W.Open()
+		W.columnButtons.name.scripts.OnClick(W.columnButtons.name)
+		assert.same({ by = "name", desc = false }, SB.Sort.Spec())
+		assert.equal("Sorted by Name, A to Z", W.frame.title.text)
+		assert.equal("Name ^", W.columnButtons.name.label.text)
+		assert.equal("Value", W.columnButtons.value.label.text)
+	end)
+
+	-- P5: re-sorting never moves a row under the mouse. Mutation: in W.SortList, call W.Layout
+	-- instead of W.RequestLayout.
+	it("a re-sort waits while the mouse is over the items or an item is on the cursor", function()
+		W.Open()
+		local potion, flask = B.Get(0, 1), B.Get(0, 2)
+		local py, fy = potion.y, flask.y
+		W.scroll.mouseOver = true
+		W.SortList("value")
+		assert.equal(py, potion.y, "held while the mouse is over the items")
+		assert.equal(fy, flask.y)
+		W.scroll.mouseOver = false
+		A.cursor = { itemID = Fixtures.HERB }
+		A.Advance(W.RETRY)
+		assert.equal(py, potion.y, "held while an item is on the cursor")
+		A.cursor = nil
+		A.Advance(W.RETRY)
+		assert.equal(fy, potion.y, "swapped once both are clear")
+	end)
+
+	-- Mutation: in W.SortList, ignore Sort.Save's result.
+	it("read-only settings: a column click refuses with the reason and the order stays", function()
+		W.Open()
+		local y = B.Get(0, 1).y
+		SB.Config.readOnly = true
+		W.columnButtons.name.scripts.OnClick(W.columnButtons.name)
+		assert.equal(SB.L.SETTINGS_READONLY, W.frame.title.text)
+		assert.same({ by = "value", desc = true }, SB.Sort.Spec())
+		assert.equal(y, B.Get(0, 1).y)
+	end)
+
+	it("/swagbag list shows and sets the order, and answers every form (P2)", function()
+		W.Open()
+		SB.Slash.Dispatch("list")
+		SB.Slash.Dispatch("list name")
+		SB.Slash.Dispatch("list count asc")
+		SB.Slash.Dispatch("list weight")
+		assert.same({ "List view: sorted by Value, highest first.", "Sorted by Name, A to Z", "Sorted by Count, lowest first",
+			SB.L.LIST_USAGE }, A.Lines())
+		assert.same({ by = "count", desc = false }, SB.Sort.Spec())
+		W.SetView("grid")
+		SB.Slash.Dispatch("list ilvl")
+		assert.equal(SB.L.LIST_NOT_SHOWN, A.Lines()[6])
+	end)
+
+	-- The Settings rows run this command through Slash.Run. Mutation: in the list command, ignore
+	-- W.SortList's result.
+	it("/swagbag list (and so the Settings rows) refuses with read-only settings and changes nothing", function()
+		W.Open()
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("list name")
+		assert.same({ SB.L.SETTINGS_READONLY }, A.Lines())
+		local ok, feedback = SB.Slash.Run("list count asc")
+		assert.truthy(ok)
+		assert.equal(SB.L.SETTINGS_READONLY, feedback)
+		assert.same({ by = "value", desc = true }, SB.Sort.Spec())
+	end)
+
+	-- D27 without a double line: the command already answers in chat, so its title flash never adds
+	-- a second chat line. Mutation: in the list command, call W.SortList without its quiet flag.
+	it("/swagbag list answers once in chat even when its title flash is cut short", function()
+		W.Open()
+		W.frame.title.truncated = true
+		SB.Slash.Dispatch("list name")
+		assert.same({ "Sorted by Name, A to Z" }, A.Lines())
+		assert.equal("Sorted by Name, A to Z", W.frame.title.text, "the title still answers")
+	end)
+
 	it("a layout held under the mouse keeps drawing the old view's geometry until it runs", function()
 		SB.Config.Set("bags.newAlways", true) -- New shown, so loot under the mouse lands at once (W4-15)
 		W.Open()
@@ -501,6 +666,78 @@ describe("BagsWindow list view", function()
 		W.Open()
 		assert.equal(SB.L.LIST_FREE_REAGENT:format(2), W.rows.rows[B.Get(5, 1)].name.text)
 		assert.equal(SB.L.LIST_FREE:format(10), W.rows.rows[B.Get(0, 7)].name.text)
+	end)
+end)
+
+describe("BagsWindow week-4 carry-overs (title flash, drop, default place)", function()
+	local SB, A, W, B, F
+	before_each(function()
+		SB = Loader.New(FILES)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		CreateFrame = function(kind) return newFake(kind) end
+		UIParent = newFake("Frame")
+		UIParent.h = 2000
+		UISpecialFrames = {}
+		IsControlKeyDown = function() return false end
+		B = fakeButtons()
+		SB.Buttons = B
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/ListRows.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+		W, F = SB.BagsWindow, SB.Focus
+		SB.Emit("SB_LOGIN")
+	end)
+
+	after_each(function()
+		UIParent, UISpecialFrames, IsControlKeyDown = nil, nil, nil
+	end)
+
+	local function viewHeight()
+		return W.frame.h - W.HEADER - W.foot
+	end
+
+	-- Week-4 deferred M4. Mutation: in W.Flash, drop the SB.Print when the title is truncated.
+	it("a flash cut short by the title's room also goes to chat; one that fits does not", function()
+		W.Open()
+		W.Flash("short")
+		assert.same({}, A.Lines())
+		W.frame.title.truncated = true
+		W.Flash("Sorted by Value, lowest first")
+		assert.same({ "Sorted by Value, lowest first" }, A.Lines())
+	end)
+
+	-- Week-4 deferred: a drag stopped the W4-25 grow retry and the drop did not fit the window again.
+	-- Mutation: in OnDragStop, drop the W.Resize() call.
+	it("a drop fits the window again: a grow that waited during the drag applies once the pointer leaves", function()
+		SB.Config.UI().positions.bags = { "BOTTOMLEFT", "BOTTOMLEFT", 100, 0 }
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		local top = W.frame:GetTop()
+		W.frame.mouseOver = true
+		W.TogglePause()
+		assert.equal(top, W.frame:GetTop(), "capped under the mouse")
+		W.frame.scripts.OnDragStart(W.frame)
+		A.Advance(W.RETRY)
+		W.frame.scripts.OnDragStop(W.frame)
+		assert.equal(top, W.frame:GetTop(), "the drop moved nothing under the mouse")
+		W.frame.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.truthy(W.frame:GetTop() > top, "grown up once the pointer left")
+		assert.equal(W.size[2], viewHeight())
+		assert.equal(0, W.frame:GetTop() - W.frame.h, "the bottom edge stays on the screen")
+	end)
+
+	-- Week-4 deferred: no test opened the window at its default place (bottom right, 100 up).
+	it("at the default place, Pause with the mouse away grows the window to the whole bag, on the screen", function()
+		F.SetSignal("challengeMode", true)
+		W.Open()
+		assert.equal(100, W.frame:GetTop() - W.frame.h, "preflight: the default place, 100 above the bottom")
+		W.TogglePause()
+		assert.equal(W.size[2], viewHeight(), "the view is as tall as the bag")
+		assert.truthy(W.frame:GetTop() - W.frame.h >= 0, "the bottom edge is on the screen")
+		assert.truthy(W.frame:GetTop() <= UIParent.h, "the top edge is on the screen")
 	end)
 end)
 
