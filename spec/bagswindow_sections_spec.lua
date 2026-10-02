@@ -1264,6 +1264,7 @@ describe("BagsWindow category view", function()
 
 	-- P5: a shorter footer can clamp a scrolled view down, so it waits for the mouse to leave the
 	-- items. Mutation: in W.Resize, drop the `scroll:IsMouseOver() or ...` hold.
+	-- M4: an item on the cursor holds it too. Mutation: drop `or SB.Adapter.CursorItem()` in W.Resize.
 	it("a shorter footer waits while the mouse is over the items, then fits the window", function()
 		local stub = { height = 34 }
 		function stub.Layout()
@@ -1279,8 +1280,54 @@ describe("BagsWindow category view", function()
 		A.Advance(W.RETRY)
 		assert.equal(h, W.frame.h, "still held")
 		W.scroll.mouseOver = false
+		A.cursor = { itemID = Fixtures.HERB, link = "item:" .. Fixtures.HERB }
+		A.Advance(W.RETRY)
+		assert.equal(h, W.frame.h, "held while an item is on the cursor")
+		A.cursor = nil
 		A.Advance(W.RETRY)
 		assert.equal(h - 18, W.frame.h)
+	end)
+
+	-- M1. Mutation: in sizeFrame, drop `if W.footHeld and W.foot and foot < W.foot then foot = W.foot end`.
+	it("while a footer shrink is held, no other resize applies it under the mouse", function()
+		local stub = { height = 34 }
+		function stub.Layout()
+			return stub.height
+		end
+		SB.Footer = stub
+		W.Open()
+		W.frame:ClearAllPoints()
+		W.frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 100, 1500)
+		local h = W.frame.h
+		W.scroll.mouseOver = true
+		stub.height = 16
+		W.Resize()
+		W.SetScale(SB.Config.Get("bags.scale")) -- another path that fits the window (sizeFrame)
+		assert.equal(h, W.frame.h, "the old footer room is kept")
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.equal(h - 18, W.frame.h)
+	end)
+
+	-- Ruling W4-22: the frame is clamped to the screen, so a window grown past the bottom edge would be
+	-- pushed up by the client, moving every item. Mutation: in sizeFrame, drop the
+	-- `math.min(viewHeight, top - W.HEADER - foot)` room clamp.
+	it("a taller footer near the bottom of the screen shortens the scroll area instead of the window running off", function()
+		local stub = { height = 0 }
+		function stub.Layout()
+			return stub.height
+		end
+		SB.Footer = stub
+		W.Open()
+		local h = W.frame.h
+		W.frame:ClearAllPoints()
+		W.frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 100, h + 5) -- the bottom edge 5 px above the screen's
+		stub.height = 34
+		W.Resize()
+		assert.equal(h + 5, W.frame:GetTop(), "the top edge did not move")
+		assert.truthy(W.frame:GetTop() - W.frame.h >= 0, "the bottom edge stays on the screen")
+		local p = W.scroll.points[#W.scroll.points]
+		assert.equal(W.FOOTER + 34, p[5], "the scroll area still ends above the footer")
 	end)
 
 	it("the grid view only repaints: no placeholders, nothing moves", function()

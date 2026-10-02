@@ -27,7 +27,7 @@ Config.Defaults = {
 		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
 			showIlvl = true, freeTile = true, newAlways = false,
 			-- footer.entries: the bar under the items (UI/Footer.lua, W4-14), left to right; "-" before
-			-- an entry that is off. Unknown ids are dropped; an entry added later joins at the end, on.
+			-- an entry that is off. Unknown ids are dropped; an entry added later joins at its default place, on (W4-23).
 			footer = { entries = "gold,currencies,crests,keystone,free" } },
 		safeMode = { bags = false, bank = false },
 		-- blizzardFrame: "tiny" (Blizzard's bank invisible, its tabs on SwagBag's window) |

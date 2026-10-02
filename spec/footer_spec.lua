@@ -119,7 +119,11 @@ describe("Footer (ruling W4-14)", function()
 	end)
 
 	-- Mutation: in Footer.Tooltip, the currency branch calls T:SetText(item.text) instead of SetCurrencyByID.
+	-- M5. Mutation: in OnLeave, drop the `GameTooltip:IsOwned(self)` check (always Hide).
 	it("hovering an entry shows its standard tooltip; leaving hides it", function()
+		function GameTooltip.IsOwned(t, owner)
+			return t.calls.SetOwner ~= nil and t.calls.SetOwner[1] == owner
+		end
 		F.Refresh()
 		Fake.Fire(F.widgets[1], "OnEnter")
 		assert.equal(SB.L.FOOTER_GOLD, GameTooltip.text)
@@ -129,8 +133,67 @@ describe("Footer (ruling W4-14)", function()
 		assert.same({ KEYSTONE_LINK }, GameTooltip.calls.SetHyperlink)
 		Fake.Fire(F.widgets[5], "OnEnter")
 		assert.equal(SB.L.FOOTER_FREE_TITLE, GameTooltip.text)
+		GameTooltip:Show()
+		Fake.Fire(F.widgets[4], "OnLeave")
+		assert.truthy(GameTooltip.shown, "leaving another entry leaves someone else's tooltip alone")
 		Fake.Fire(F.widgets[5], "OnLeave")
 		assert.falsy(GameTooltip.shown)
+	end)
+
+	-- Mutation: in Footer.Items, `if not shown[c.id] then` -> `if true then`.
+	it("a crest ticked 'Show on backpack' shows once, under currencies; crests adds nothing", function()
+		A.backpack = { { id = 3056, name = "Kej", quantity = 500, icon = 1 },
+			{ id = 3107, name = "Weathered Ethereal Crest", quantity = 45, icon = 2 } }
+		F.Refresh()
+		assert.same({ "123g", "500", "45", "AKCE +12", "10 free" }, texts())
+		assert.equal("currencies", F.items[3].entry)
+		for _, item in ipairs(F.items) do
+			assert.truthy(item.entry ~= "crests", "no crest entry")
+		end
+	end)
+
+	-- Mutations: in Footer.Entries, drop the loop that adds missing ids; drop `not seen[id]`; drop
+	-- `KNOWN[id]`.
+	it("saved text: spaces, unknown ids, repeats and broken parts are cleaned up; missing ids added", function()
+		SB.Config.Set("bags.footer.entries", " -free ,gold,sparkles,gold,--crests")
+		assert.same({ { id = "free", on = false }, { id = "gold", on = true }, { id = "currencies", on = true },
+			{ id = "crests", on = true }, { id = "keystone", on = true } }, F.Entries())
+	end)
+
+	-- Ruling W4-23. Mutation: in Footer.Entries, `table.insert(out, at + 1, ...)` -> `out[#out + 1] = ...`.
+	it("an entry missing from saved text (a later release) joins at its default place, on", function()
+		SB.Config.Set("bags.footer.entries", "keystone,-gold,free")
+		assert.same({ { id = "keystone", on = true }, { id = "gold", on = false }, { id = "currencies", on = true },
+			{ id = "crests", on = true }, { id = "free", on = true } }, F.Entries())
+		SB.Config.Set("bags.footer.entries", "free,crests")
+		assert.same({ "gold", "currencies", "free", "crests", "keystone" }, (function()
+			local ids = {}
+			for i, e in ipairs(F.Entries()) do
+				ids[i] = e.id
+			end
+			return ids
+		end)())
+	end)
+
+	-- M3. Mutation: in Footer.Items, `add("gold", A.MoneyText(A.Money() or 0), ...)` (no last-known).
+	it("gold the client will not tell (secret or missing) shows the last known amount, never a false 0", function()
+		A.money = nil
+		F.Refresh()
+		assert.same({ "500", "45", "AKCE +12", "10 free" }, texts(), "nothing known yet: no gold entry")
+		A.money = 1234567
+		F.Refresh()
+		assert.equal("123g", texts()[1])
+		A.money = nil
+		F.Refresh()
+		assert.equal("123g", texts()[1], "the last known amount")
+	end)
+
+	-- M2. Mutation: delete the SB_BAGS_CLOSED handler in Footer.lua.
+	it("closing the bags marks the footer to be re-read on the next open", function()
+		F.Refresh()
+		assert.falsy(F.dirty)
+		SB.Emit("SB_BAGS_CLOSED")
+		assert.truthy(F.dirty)
 	end)
 
 	-- Spec 6.5 spirit (no polling). Mutation: make soon() call F.Refresh() at once (no SB.Debounce).
@@ -216,7 +279,7 @@ describe("Adapter: money and currencies (the real Adapter)", function()
 
 	-- Mutation: A.MoneyText skips GetMoneyString (goes straight to the plain fallback).
 	it("Money and MoneyText use the client's money and coin text, and fall back without them", function()
-		assert.equal(0, A.Money())
+		assert.is_nil(A.Money(), "no client function: unknown, not 0")
 		assert.equal("12g", A.MoneyText(123456))
 		GetMoney = function()
 			return 123456
@@ -225,6 +288,11 @@ describe("Adapter: money and currencies (the real Adapter)", function()
 			return "coins:" .. copper .. ":" .. tostring(separate)
 		end
 		assert.equal(123456, A.Money())
+		issecretvalue = function(v)
+			return v == 123456
+		end
+		assert.is_nil(A.Money(), "a secret amount is unknown, not 0")
+		issecretvalue = nil
 		assert.equal("coins:123456:true", A.MoneyText(123456))
 	end)
 

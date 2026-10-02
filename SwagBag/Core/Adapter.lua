@@ -444,17 +444,18 @@ end
 ---------------------------------------------------------------------------
 -- Money and currencies (the bags footer, UI/Footer.lua; ruling W4-14)
 ---------------------------------------------------------------------------
--- The character's gold in copper (0 when the client gives no number).
+-- The character's gold in copper, or nil when the client gives no readable number (missing,
+-- failed or secret): the footer then keeps the last known amount, never a false 0.
 function A.Money()
 	local fn = _G.GetMoney
 	if type(fn) ~= "function" then
-		return 0
+		return nil
 	end
 	local ok, copper = pcall(fn)
 	if ok and type(copper) == "number" and not isSecret(copper) then
 		return copper
 	end
-	return 0
+	return nil
 end
 
 -- Gold as the client writes it, with coin icons; plain "123g" without the client's functions.
@@ -1046,4 +1047,9 @@ A.CHECKS = {
 	{ path = "C_CurrencyInfo.GetBackpackCurrencyInfo", window = "bags", required = false },
 	{ path = "C_CurrencyInfo.GetCurrencyInfo", window = "bags", required = false },
 	{ path = "C_CurrencyInfo.GetCurrencyListInfo", window = "bags", required = false },
+	{ path = "C_CurrencyInfo.GetCurrencyListSize", window = "bags", required = false },
+	{ path = "C_CurrencyInfo.GetCurrencyListLink", window = "bags", required = false },
+	{ path = "C_CurrencyInfo.GetCurrencyIDFromLink", window = "bags", required = false },
+	{ path = "GetMoneyString", window = "bags", required = false },
+	{ path = "GetCoinTextureString", window = "bags", required = false },
 }
