@@ -184,18 +184,41 @@ end, "bags"))
 -- Fit the window around content of width x height (scroll when taller than 75 % of the screen).
 -- With keepTop the top-left corner stays put (every resize except open); otherwise the
 -- window grows around whatever anchor RestorePosition set.
+-- The footer bar (UI/Footer.lua, ruling W4-14) sits under the items: its height (one row or more)
+-- is part of the window and the scroll area ends above it, so it never covers an item.
 local function sizeFrame(width, height, keepTop)
 	local left, top = frame:GetLeft(), frame:GetTop()
 	W.size = { width, height }
 	child:SetSize(width, height)
+	local foot = W.FOOTER + (SB.Footer and SB.Footer.Layout(width + 8) or 0)
+	W.foot = foot
+	scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, foot)
 	local maxHeight = UIParent:GetHeight() * W.MAX_HEIGHT_FRACTION / frame:GetScale()
-	local viewHeight = math.min(height, maxHeight - W.HEADER - W.FOOTER)
-	frame:SetSize(width + 8, viewHeight + W.HEADER + W.FOOTER)
+	local viewHeight = math.min(height, maxHeight - W.HEADER - foot)
+	frame:SetSize(width + 8, viewHeight + W.HEADER + foot)
 	if keepTop and left and top and not W.dragging then
 		frame:ClearAllPoints()
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 	end
 	W.ClampScroll()
+end
+
+-- The footer's height changed: fit the window again, its top-left corner fixed (C1). A taller
+-- footer grows the window downward (or, at the height limit, shortens the scroll area from the
+-- bottom), so nothing in the scroll area moves. A shorter one can pull a scrolled view down (the
+-- scroll offset is clamped to the taller view), so it waits like any other move while the mouse
+-- is over the items or an item is on the cursor (spec 4.2 rule 5), retrying every 300 ms; until
+-- then the smaller bar leaves a gap and covers nothing.
+function W.Resize()
+	if not frame:IsShown() then
+		return
+	end
+	local foot = W.FOOTER + (SB.Footer and SB.Footer.height or 0)
+	if W.foot and foot < W.foot and (scroll:IsMouseOver() or SB.Adapter.CursorItem()) then
+		SB.Debounce("bags.footerResize", W.RETRY, W.Resize, "bags")
+		return
+	end
+	sizeFrame(W.size[1], W.size[2], true)
 end
 
 -- Scaling only resizes the window; nothing is regrouped. The new corner is saved at once, so

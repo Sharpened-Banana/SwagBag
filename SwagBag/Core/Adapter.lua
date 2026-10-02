@@ -441,6 +441,103 @@ function A.ClearNewItems(bagIDs)
 	end
 end
 
+---------------------------------------------------------------------------
+-- Money and currencies (the bags footer, UI/Footer.lua; ruling W4-14)
+---------------------------------------------------------------------------
+-- The character's gold in copper (0 when the client gives no number).
+function A.Money()
+	local fn = _G.GetMoney
+	if type(fn) ~= "function" then
+		return 0
+	end
+	local ok, copper = pcall(fn)
+	if ok and type(copper) == "number" and not isSecret(copper) then
+		return copper
+	end
+	return 0
+end
+
+-- Gold as the client writes it, with coin icons; plain "123g" without the client's functions.
+function A.MoneyText(copper)
+	local fn = _G.GetMoneyString
+	if type(fn) == "function" then
+		local ok, text = pcall(fn, copper, true)
+		if ok and type(text) == "string" and not isSecret(text) then
+			return text
+		end
+	end
+	fn = _G.GetCoinTextureString
+	if type(fn) == "function" then
+		local ok, text = pcall(fn, copper)
+		if ok and type(text) == "string" and not isSecret(text) then
+			return text
+		end
+	end
+	return SB.L.FOOTER_GOLD_PLAIN:format(math.floor(copper / 10000))
+end
+
+local function currencyEntry(id, info)
+	if type(info) ~= "table" or type(id) ~= "number" or isSecret(id) or type(info.quantity) ~= "number"
+		or isSecret(info.quantity) then
+		return nil
+	end
+	return { id = id, name = info.name, quantity = info.quantity, icon = info.iconFileID, max = info.maxQuantity }
+end
+
+-- The currencies ticked "Show on backpack" in Blizzard's Currency tab, in Blizzard's order:
+-- { { id, name, quantity, icon, max } }. Empty without the API.
+A.MAX_BACKPACK_CURRENCIES = 10
+function A.BackpackCurrencies()
+	local C, out = C_CurrencyInfo, {}
+	if not (C and C.GetBackpackCurrencyInfo) then
+		return out
+	end
+	for i = 1, A.MAX_BACKPACK_CURRENCIES do
+		local ok, info = pcall(C.GetBackpackCurrencyInfo, i)
+		if not ok or type(info) ~= "table" then
+			break
+		end
+		out[#out + 1] = currencyEntry(info.currencyTypesID, info)
+	end
+	return out
+end
+
+-- One currency by ID, or nil.
+function A.CurrencyInfo(id)
+	local C = C_CurrencyInfo
+	if not (C and C.GetCurrencyInfo) then
+		return nil
+	end
+	local ok, info = pcall(C.GetCurrencyInfo, id)
+	return ok and currencyEntry(id, info) or nil
+end
+
+-- Every currency in the Currency tab's list that is not a header, as the list shows it (a header
+-- the user collapsed hides its currencies; confirmed IDs in Engine/Crests.lua do not depend on it).
+function A.CurrencyList()
+	local C, out = C_CurrencyInfo, {}
+	if not (C and C.GetCurrencyListSize and C.GetCurrencyListInfo and C.GetCurrencyListLink
+		and C.GetCurrencyIDFromLink) then
+		return out
+	end
+	local okN, n = pcall(C.GetCurrencyListSize)
+	if not okN or type(n) ~= "number" or isSecret(n) then
+		return out
+	end
+	for i = 1, n do
+		local ok, info = pcall(C.GetCurrencyListInfo, i)
+		if ok and type(info) == "table" and not info.isHeader then
+			local okL, link = pcall(C.GetCurrencyListLink, i)
+			local okI, id = false, nil
+			if okL and type(link) == "string" then
+				okI, id = pcall(C.GetCurrencyIDFromLink, link)
+			end
+			out[#out + 1] = okI and currencyEntry(id, info) or nil
+		end
+	end
+	return out
+end
+
 function A.IsOnCooldown(bag, slot)
 	local ok, start, duration, enable = pcall(C_Container.GetContainerItemCooldown, bag, slot)
 	if not ok or isSecret(start) or isSecret(duration) then
@@ -945,4 +1042,8 @@ A.CHECKS = {
 	{ path = "GetProfessionInfo", window = "bags", required = false },
 	{ path = "UIErrorsFrame", window = "bags", required = false },
 	{ path = "C_NewItems.RemoveNewItem", window = "bags", required = false },
+	{ path = "GetMoney", window = "bags", required = false },
+	{ path = "C_CurrencyInfo.GetBackpackCurrencyInfo", window = "bags", required = false },
+	{ path = "C_CurrencyInfo.GetCurrencyInfo", window = "bags", required = false },
+	{ path = "C_CurrencyInfo.GetCurrencyListInfo", window = "bags", required = false },
 }

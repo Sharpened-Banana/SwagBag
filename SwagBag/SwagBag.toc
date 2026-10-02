@@ -65,6 +65,7 @@ UI/SettingsWindow.lua
 UI/SettingsPages.lua
 UI/SettingsFocus.lua
 UI/SettingsConsumables.lua
+UI/Footer.lua
 UI/QuickSetup.lua
 UI/DebugV1.lua
 
