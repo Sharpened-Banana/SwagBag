@@ -15,19 +15,8 @@ local FILES = {
 
 describe("Consumables", function()
 	local SB, A, C
-	-- Lua 5.1's %s takes only strings and numbers; LuaJIT is more lenient and hides W4-18.
-	local realFormat = string.format
+	-- %s is as strict as WoW's Lua 5.1 here too: spec/runner.lua installs spec/helpers/format51.lua (W4-18).
 	before_each(function()
-		string.format = function(fmt, ...)
-			local args, i = { ... }, 0
-			for spec in fmt:gmatch("%%[%-%d%.]*(%a)") do
-				i = i + 1
-				if spec == "s" and type(args[i]) ~= "string" and type(args[i]) ~= "number" then
-					error("bad argument #" .. (i + 1) .. " to 'format' (string expected, got " .. type(args[i]) .. ")", 2)
-				end
-			end
-			return realFormat(fmt, ...)
-		end
 		SB = Loader.New(FILES)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
@@ -220,10 +209,6 @@ describe("Consumables", function()
 		assert.equal(SB.L.SET_WATCH_KNOWN, C.ReasonText("known"))
 		assert.equal(SB.L.SETTINGS_READONLY, C.ReasonText("readonly"))
 		assert.truthy(SB.L.SET_WATCH_INVALID ~= SB.L.DROP_INVALID)
-	end)
-
-	after_each(function()
-		string.format = realFormat
 	end)
 
 	-- Mutation (W4-18): in List(), keep `name = e.name` unchecked.
