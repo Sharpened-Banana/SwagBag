@@ -968,7 +968,6 @@ function W.ApplyChanges(changes)
 	end
 	local newSec = st.sections[SB.Layout.NEW]
 	local overflowBefore = newSec and newSec.overflow or 0
-	local newShownBefore = st.newShown
 	-- The drawn view, never a fresh one: a mode switch or collapse held under the mouse must not
 	-- be drawn by loot or an emptied slot (ruling W4-1). The held Restack retry applies it.
 	-- The first arrival into a hidden New moves every section below, so it also waits while the
@@ -977,9 +976,9 @@ function W.ApplyChanges(changes)
 		return scroll:IsMouseOver() or SB.Adapter.CursorItem() ~= nil
 	end)
 	newSec = st.sections[SB.Layout.NEW]
-	-- New's "+N more below" can change with no button moving, so the headers redraw then too; so
-	-- does New becoming shown (W4-15), here while it is held, not by a later unguarded change.
-	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore or st.newShown ~= newShownBefore then
+	-- New's "+N more below" can change with no button moving, so the headers redraw then too. New
+	-- becoming shown (W4-15) always comes with one of the two (Layout.Apply shows it only then).
+	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore then
 		result.rendered = true
 		local oldPos = W.pos
 		W.pos = SB.Layout.Position(st, positionOpts(), W.view)

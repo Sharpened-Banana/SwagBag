@@ -1267,6 +1267,17 @@ describe("Layout hidden New (ruling W4-15)", function()
 		assert.same({ 0, true }, { r.deferred, st.newShown })
 	end)
 
+	-- Fix round 1: New shows only when the arrival put something in it (or counts it as "+N more
+	-- below"). Mutation: in Layout.Apply, `if opensNew and (known or new.size > before)` → `if opensNew`.
+	it("an arrival on a slot the layout does not know leaves New hidden; a collapsed New shows its overflow", function()
+		local st = build()
+		L.Apply(st, { { bag = 0, slot = 9, kind = "arrived" } }, nil, {})
+		assert.equal(false, st.newShown)
+		L.Apply(st, { { bag = 0, slot = 2, kind = "arrived" } }, nil, { new = true })
+		assert.equal(true, st.newShown, "collapsed: the arrival overflows, and New's header counts it")
+		assert.equal(1, st.sections.new.overflow)
+	end)
+
 	-- Mutation: in Layout.Position, `visible = st.newShown ~= false` → `visible = st.newShown ~= false
 	-- and sec ~= nil and countButtons(sec) > 0` (New would vanish, and everything jump, while open).
 	-- With the free tile (W3-13) the emptied button leaves New for Free, so New really is empty.

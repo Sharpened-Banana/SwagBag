@@ -1182,15 +1182,16 @@ describe("BagsWindow category view", function()
 		assert.same({ potionAt[1], potionAt[2] - 104 }, at(0, 1))
 	end)
 
-	-- Task 11 addition: New becoming shown is drawn at once (under the area hold), even when the
-	-- arrival itself moves no button, so no later, unguarded change draws the shift.
-	-- Mutation: in W.ApplyChanges, drop `or st.newShown ~= newShownBefore` from the render condition.
-	it("New becoming shown is drawn at once, even when the arrival moves no button", function()
+	-- Fix round 1: an arrival on a slot the layout does not know puts nothing in New, so New stays
+	-- hidden (no empty "- New (0)") and nothing is drawn. Mutation: in Layout.Apply, show New on
+	-- every applied opening arrival (`if opensNew then st.newShown = true end`).
+	it("an arrival on a slot the layout does not know leaves New hidden and draws nothing", function()
 		SB.Config.Set("bags.newAlways", false)
 		W.Open()
 		local result = W.ApplyChanges({ { bag = 0, slot = 99, kind = "arrived" } })
-		assert.truthy(result.rendered)
-		assert.equal("- New (0)", header("new").text.text)
+		assert.falsy(result.rendered)
+		assert.equal(false, W.state.newShown)
+		assert.is_nil(header("new"))
 	end)
 
 	-- W3-13 with the free tile: a button emptied in New joins Free as a hidden spare.
@@ -1254,6 +1255,21 @@ describe("BagsWindow focus modes (spec 6)", function()
 		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
 		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
 		W, F = SB.BagsWindow, SB.Focus
+		-- Like the client: a hovered item button lies inside the scroll frame, so the mouse is over
+		-- the items too (the fake must not produce a state the client cannot).
+		W.scroll.IsMouseOver = function(self)
+			if self.mouseOver == true then
+				return true
+			end
+			for _, list in pairs(B.buttons) do
+				for _, b in pairs(list) do
+					if b.shown and rawget(b, "mouseOver") == true then
+						return true
+					end
+				end
+			end
+			return false
+		end
 		SB.Emit("SB_LOGIN")
 	end)
 
@@ -1364,6 +1380,30 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.falsy(ring.shown, "the switch applied")
 		assert.equal("+ BoE gear (1)", header("c_boe").text.text)
 		assert.equal("+ Junk (1)", header("c_junk").text.text)
+	end)
+
+	-- Ruling W4-15 with W4-1/W4-13: the same loot with New hidden (bags.newAlways = false, the default).
+	-- The arrival would show New and move every section, so it waits too; both apply once the mouse
+	-- leaves. Mutation: in W.ApplyChanges, drop the fifth argument (the area check) of Layout.Apply.
+	it("hidden New: loot during a held switch waits with it; New and the switch apply once the mouse leaves", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		assert.is_nil(header("new"))
+		local ring = B.Get(0, 3)
+		local x, y = ring.x, ring.y
+		ring.mouseOver = true -- the ring would hide under M+
+		F.SetSignal("challengeMode", true)
+		A.Put(0, 10, Fixtures.HERB, 20) -- an arrival: ApplyChanges runs
+		bagUpdate()
+		assert.is_nil(header("new"), "the arrival waits: showing New would move the ring")
+		assert.truthy(ring.shown, "the hovered ring is still shown")
+		assert.same({ x, y }, { ring.x, ring.y }, "the hovered ring has not moved")
+		assert.equal("- BoE gear (1)", header("c_boe").text.text, "the old sections are still drawn")
+		ring.mouseOver = false
+		A.Advance(0.3)
+		assert.falsy(ring.shown, "the switch applied")
+		assert.equal("- New (1)", header("new").text.text, "the arrival applied")
+		assert.equal("+ BoE gear (1)", header("c_boe").text.text)
 	end)
 
 	-- Ruling W4-1, the same hole for the user's own header click: a collapse of New held under the
@@ -1615,6 +1655,29 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.same({}, SB.Config.UI().collapsed.bags, "the saved set is untouched")
 		ring.mouseOver = false
 		A.Advance(0.3)
+		assert.equal("- Consumables (2)  (peek - right-click keeps it open)", header("c_consumables").text.text)
+		assert.truthy(B.Get(0, 1).shown)
+	end)
+
+	-- Ruling W4-15 with W4-1: the held peek with New hidden. Mutation: in W.ApplyChanges, drop the
+	-- fifth argument (the area check) of Layout.Apply.
+	it("hidden New: loot during a held peek waits with it; New and the peek apply once the mouse leaves", function()
+		SB.Config.Set("bags.newAlways", false)
+		F.SetSignal("merchantOpen", true) -- Consumables collapse; BoE gear and Junk open below them
+		W.Open()
+		assert.is_nil(header("new"))
+		local ring = B.Get(0, 3)
+		local x, y = ring.x, ring.y
+		ring.mouseOver = true -- below Consumables: a peek would move it down
+		click("c_consumables")
+		assert.equal("+ Consumables (2)", header("c_consumables").text.text, "held")
+		A.Put(0, 10, Fixtures.HERB, 20) -- an arrival: ApplyChanges runs
+		bagUpdate()
+		assert.is_nil(header("new"), "the arrival waits: showing New would move the ring")
+		assert.same({ x, y }, { ring.x, ring.y }, "the hovered ring has not moved")
+		ring.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("- New (1)", header("new").text.text, "the arrival applied")
 		assert.equal("- Consumables (2)  (peek - right-click keeps it open)", header("c_consumables").text.text)
 		assert.truthy(B.Get(0, 1).shown)
 	end)
