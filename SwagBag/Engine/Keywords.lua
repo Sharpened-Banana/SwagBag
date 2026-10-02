@@ -177,8 +177,13 @@ function K.RegisterAll()
 
 	-- Binding (instance) -------------------------------------------------------
 	local ACCOUNT = has({ "account", "warbound" })
+	-- A saved item's bind that cannot be known (record.bindUnknown, ruling W5-10) matches no bind
+	-- keyword: false, not nil, so it is still categorised (never left waiting in New).
 	local function bindKnown(test)
 		return function(r)
+			if r.bindUnknown then
+				return false
+			end
 			if r.bind == nil then
 				return nil
 			end
@@ -206,7 +211,7 @@ function K.RegisterAll()
 	-- Tradeable = can be given to another player / listed on the AH: not bound, not
 	-- warbound-until-equipped, not account/warbound, not a quest item.
 	kw("tradeable", "instance", function(r)
-		if r.isBound or r.isWUE or r.isQuestItem then
+		if r.isBound or r.isWUE or r.isQuestItem or r.bindUnknown then
 			return false
 		end
 		if r.bind == nil then
@@ -240,7 +245,7 @@ function K.RegisterAll()
 		if r.pending then
 			return nil
 		end
-		local copper = SB.Prices and SB.Prices.Value(r.link, r.itemID, r.isBound or r.isWUE)
+		local copper = SB.Prices and SB.Prices.Value(r.link, r.itemID, SB.Prices.Bound(r))
 		return copper and copper / 10000 or false
 	end, { "gold" })
 

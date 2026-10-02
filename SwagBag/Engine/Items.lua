@@ -89,8 +89,11 @@ end
 -- A record for an item that is not in a container slot (a guild bank slot), built from its
 -- link: info = Adapter.GuildSlot result { itemID, link, count, icon, quality, isLocked }.
 -- bag is the caller's slot key (guild tab N uses bag 100 + N); location is "guild" unless given
--- (the alt viewer passes "bags", "bank" or "warband" for saved items, so location keywords
--- search them). Such items are never bound, never on cooldown and never new.
+-- (the alt viewer passes "backpack", "bags", "reagentbag", "bank" or "warband" for saved items, so location keywords
+-- search them). Such items are never on cooldown and never new. A guild bank item is never bound.
+-- A saved item elsewhere (ruling W5-10) may have been bound since it was saved: a bind-on-equip
+-- item's bind is unknown (bind = nil, bindUnknown = true: no BoE badge, no bind keyword matches)
+-- and it is priced as bound, at its vendor value (Prices.Bound).
 function Items.DescribeLink(info, bag, slot, tab, location)
 	local A = SB.Adapter
 	local inst = A.GetItemInstant(info.itemID) or {}
@@ -134,6 +137,9 @@ function Items.DescribeLink(info, bag, slot, tab, location)
 		r.reqLevel = data.reqLevel
 		r.maxStack = data.maxStack
 		r.bind = data.bind
+		if r.bind == "equip" and location ~= nil and location ~= "guild" then
+			r.bind, r.bindUnknown = nil, true
+		end
 		r.isCraftingReagent = data.isCraftingReagent
 		r.ilvl = A.GetLinkIlvl(info.link) or data.baseIlvl
 	else
@@ -154,12 +160,14 @@ function Items.RefreshVolatile(record)
 end
 
 -- Memo key for a record by cache class (spec 7.8):
---   static -> itemID; instance -> full link + bound/WuE suffix (#b, #uw, #u); volatile -> nil (never memoized)
+--   static -> itemID; instance -> full link + bound/WuE suffix (#b, #uw, #u, #? bind unknown); volatile -> nil
 function Items.Key(record, class)
 	if class == "static" then
 		return record.itemID
 	elseif class == "instance" then
-		return (record.link or tostring(record.itemID)) .. (record.isBound and "#b" or (record.isWUE and "#uw" or "#u"))
+		-- #? a saved item whose bind is unknown (W5-10): never shares a memo with the same link known unbound
+		return (record.link or tostring(record.itemID))
+			.. (record.isBound and "#b" or (record.isWUE and "#uw" or (record.bindUnknown and "#?" or "#u")))
 	end
 	return nil
 end

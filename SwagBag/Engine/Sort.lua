@@ -62,7 +62,7 @@ function Sort.Value(record)
 	if not record or record.pending or not SB.Prices then
 		return nil
 	end
-	local v = SB.Prices.Value(record.link, record.itemID, record.isBound or record.isWUE)
+	local v = SB.Prices.Value(record.link, record.itemID, SB.Prices.Bound(record))
 	if type(v) ~= "number" then
 		return nil
 	end
