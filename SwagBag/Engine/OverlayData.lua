@@ -44,9 +44,10 @@ local function anyUnknown(equipped, slots)
 end
 
 -- Eligible for any upgrade verdict: loaded, worn gear with an item level, usable by this character.
+-- A saved item in the alt viewer (record.offline) never is: it may be another character's.
 function O.CanCompare(record, canUse)
 	local A = SB.Adapter
-	if not O.SLOTS[record.equipLoc or ""] or record.pending or type(record.ilvl) ~= "number" then
+	if record.offline or not O.SLOTS[record.equipLoc or ""] or record.pending or type(record.ilvl) ~= "number" then
 		return false
 	end
 	if record.classID ~= A.ITEM_CLASS.Armor and record.classID ~= A.ITEM_CLASS.Weapon then

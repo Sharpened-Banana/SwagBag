@@ -807,6 +807,16 @@ function A.GuildTooltip(owner, tab, slot)
 	GameTooltip:Show()
 end
 
+-- An item's tooltip from its link (the alt viewer's saved items).
+function A.LinkTooltip(owner, link)
+	if not GameTooltip then
+		return
+	end
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	pcall(GameTooltip.SetHyperlink, GameTooltip, link)
+	GameTooltip:Show()
+end
+
 function A.HideTooltip()
 	if GameTooltip then
 		GameTooltip:Hide()
