@@ -301,7 +301,9 @@ end
 
 -- Scaling only resizes the window; nothing is regrouped. The new corner is saved at once, so
 -- a reopen lands where the window is now (the saved offsets are in the new scale).
-function W.SetScale(scale)
+-- quiet: the caller answers itself (the Settings status line), so a cut-short flash adds no chat
+-- line (ruling W5-4).
+function W.SetScale(scale, quiet)
 	scale = SB.GridLayout.ClampScale(scale)
 	SB.Config.Set("bags.scale", scale)
 	-- Offsets are in the frame's own scale, so keep the corner's screen position across the change.
@@ -312,7 +314,7 @@ function W.SetScale(scale)
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left * oldScale / scale, top * oldScale / scale)
 		savePosition()
 	end
-	W.Flash(L.BAGS_SCALE:format(math.floor(scale * 100 + 0.5)))
+	W.Flash(L.BAGS_SCALE:format(math.floor(scale * 100 + 0.5)), quiet)
 	if frame:IsShown() then
 		sizeFrame(W.size[1], W.size[2], true)
 	end
@@ -458,21 +460,22 @@ W.columnsBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + W.PAD + W.LIST_ROW + W.RO
 W.columnsBar:SetSize(rowWidth(), W.COLUMNS_H)
 W.columnsBar:Hide()
 W.columnButtons = {}
-if SB.ListRows and SB.Sort then -- the list view's files (absent: no list view, see W.rows)
-	local cols = SB.ListRows.Columns(rowWidth())
-	for _, id in ipairs(SB.Sort.COLUMNS) do
-		local b = CreateFrame("Button", nil, W.columnsBar)
-		b:SetPoint("TOPLEFT", W.columnsBar, "TOPLEFT", cols[id].x, 0)
-		b:SetSize(cols[id].width, W.COLUMNS_H)
-		b.label = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-		b.label:SetAllPoints(b)
-		b.label:SetJustifyH(id == "name" and "LEFT" or "RIGHT")
-		b.label:SetText(COLUMN_NAMES[id])
-		b:SetScript("OnClick", Guard("bags.listColumn", function()
-			W.SortList(id)
-		end, "bags"))
-		W.columnButtons[id] = b
-	end
+-- TOC order: Engine/Sort.lua and UI/ListRows.lua load before this file (SwagBag.toc), and each sets
+-- SB.Sort / SB.ListRows on its first line, so the bar, SortList, RefreshColumns and /swagbag list
+-- use them unguarded.
+local barColumns = SB.ListRows.Columns(rowWidth())
+for _, id in ipairs(SB.Sort.COLUMNS) do
+	local b = CreateFrame("Button", nil, W.columnsBar)
+	b:SetPoint("TOPLEFT", W.columnsBar, "TOPLEFT", barColumns[id].x, 0)
+	b:SetSize(barColumns[id].width, W.COLUMNS_H)
+	b.label = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	b.label:SetAllPoints(b)
+	b.label:SetJustifyH(id == "name" and "LEFT" or "RIGHT")
+	b.label:SetText(COLUMN_NAMES[id])
+	b:SetScript("OnClick", Guard("bags.listColumn", function()
+		W.SortList(id)
+	end, "bags"))
+	W.columnButtons[id] = b
 end
 
 -- How a direction reads for a column: names A to Z, numbers highest first.
@@ -1094,16 +1097,18 @@ end
 
 -- view: "sections" | "list" | "grid". Returns true when the setting changed (the window regroups
 -- now, or once the mouse leaves the items), false (with a title flash) while read-only.
-function W.SetView(view)
+-- quiet: the caller answers itself (/swagbag view, the Settings row), so a cut-short flash adds no
+-- chat line (ruling W5-4).
+function W.SetView(view, quiet)
 	if not VIEW_NEXT[view] then
 		return false
 	end
 	if not SB.Config.Set("bags.view", view) then -- read-only settings: nothing changes
-		W.Flash(L.SETTINGS_READONLY)
+		W.Flash(L.SETTINGS_READONLY, quiet)
 		return false
 	end
 	W.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[view]])
-	W.Flash(VIEW_FLASH[view])
+	W.Flash(VIEW_FLASH[view], quiet)
 	W.RequestLayout("view")
 	return true
 end
@@ -1529,7 +1534,7 @@ SB.Slash.Register("view", L.HELP_VIEW, function(arg)
 	if not VIEW_NEXT[arg] then
 		return L.VIEW_USAGE:format(W.View())
 	end
-	if not W.SetView(arg) then
+	if not W.SetView(arg, true) then
 		return L.SETTINGS_READONLY
 	end
 	return VIEW_FLASH[arg]

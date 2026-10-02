@@ -98,6 +98,8 @@ describe("BagsWindow", function()
 		SB.Inventory.OnChanged = function(cb) fake.changed = cb end
 		SB.Items = { Describe = function(bag, slot) return { bag = bag, slot = slot } end }
 		A.sizes[0], A.sizes[1] = 16, 0
+		Loader.LoadFile(SB, "SwagBag/Engine/Sort.lua") -- TOC order: Sort and ListRows before BagsWindow
+		Loader.LoadFile(SB, "SwagBag/UI/ListRows.lua")
 		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
 		W = SB.BagsWindow
 	end)
