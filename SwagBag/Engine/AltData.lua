@@ -24,7 +24,7 @@
 -- 5 s behind the bag.
 local _, SB = ...
 
-local AD = { providers = {}, errors = {}, off = {}, MAX_ERRORS = 3, PET_CAGE = 82800,
+local AD = { providers = {}, errors = {}, off = {}, MAX_ERRORS = 3, PET_CAGE = 82800, PREBUILD_DELAY = 5,
 	KINDS = { "bags", "bank", "warband", "guild" } }
 SB.AltData = AD
 
@@ -67,13 +67,45 @@ local function byPriority(a, b)
 	return a.name < b.name
 end
 
+local function failed(p, message, stack)
+	AD.errors[p.name] = (AD.errors[p.name] or 0) + 1
+	if p.name == "Own" then
+		-- the built-in provider has nothing to fall back to: never switched off, always recorded
+		pcall(SB.ErrorTrap.OnError, "altdata:Own", "none", tostring(message), stack or "")
+	elseif AD.errors[p.name] >= AD.MAX_ERRORS and not AD.off[p.name] then
+		AD.off[p.name] = true
+		pcall(SB.ErrorTrap.OnError, "altdata:" .. p.name, "none", tostring(message), stack or "")
+		SB.Print(SB.L.ALTDATA_PROVIDER_OFF:format(p.name))
+	end
+end
+
+-- pcall that keeps a stack trace: ok, results... | false, message, stack
+local function trapped(fn, ...)
+	local args, n, caught = { ... }, select("#", ...), nil
+	local r = { xpcall(function()
+		return fn(unpack(args, 1, n))
+	end, function(err)
+		local okS, st = pcall(SB.Adapter.Stack)
+		caught = { message = err, stack = okS and st or "" }
+		return caught
+	end) }
+	if r[1] then
+		return true, r[2]
+	end
+	caught = caught or { message = "error in error handler", stack = "" }
+	return false, caught.message, caught.stack
+end
+
 -- The available providers, best first. Asked on every call: Syndicator becomes ready after login.
+-- An available() that throws counts as an error of that provider.
 local function active()
 	local list = {}
 	for _, p in ipairs(AD.providers) do
 		if not AD.off[p.name] then
-			local ok, yes = pcall(p.available)
-			if ok and yes then
+			local ok, yes, stack = trapped(p.available)
+			if not ok then
+				failed(p, yes, stack)
+			elseif yes then
 				list[#list + 1] = p
 			end
 		end
@@ -87,21 +119,12 @@ function AD.Source()
 	return first and first.name or nil
 end
 
-local function failed(p, message)
-	AD.errors[p.name] = (AD.errors[p.name] or 0) + 1
-	if AD.errors[p.name] >= AD.MAX_ERRORS and not AD.off[p.name] then
-		AD.off[p.name] = true
-		pcall(SB.ErrorTrap.OnError, "altdata:" .. p.name, "none", tostring(message), "")
-		SB.Print(SB.L.ALTDATA_PROVIDER_OFF:format(p.name))
-	end
-end
-
 local function call(method, ...)
 	for _, p in ipairs(active()) do
 		if p[method] then
-			local ok, v = pcall(p[method], ...)
+			local ok, v, stack = trapped(p[method], ...)
 			if not ok then
-				failed(p, v)
+				failed(p, v, stack)
 			elseif v ~= nil then
 				return v, p.name
 			end
@@ -175,7 +198,8 @@ local function splitKey(raw)
 end
 
 local function guildName(guildKey)
-	return type(guildKey) == "string" and (guildKey:match("^(.-)%-[^%-]*$") or guildKey) or nil
+	-- guild names have no hyphens; the realm may ("Azjol-Nerub")
+	return type(guildKey) == "string" and (guildKey:match("^([^%-]+)%-") or guildKey) or nil
 end
 
 -- The saved character whose canonical key is key: its raw key and its table.
@@ -254,7 +278,8 @@ function own.counts(itemID)
 			local bank = mapOf("bank:" .. raw, c.bank)[itemID] or 0
 			if bags > 0 or bank > 0 then
 				local name = splitKey(raw)
-				out.chars[#out.chars + 1] = { key = AD.Canon(raw), name = name, class = c.class, current = raw == me,
+				out.chars[#out.chars + 1] = { key = AD.Canon(raw), name = name,
+					class = raw == me and SB.Adapter.CharInfo().class or c.class, current = raw == me,
 					bags = bags, bank = bank }
 			end
 		end
@@ -262,7 +287,8 @@ function own.counts(itemID)
 	if not db.chars[me] then -- not saved yet (the first minutes of a new character)
 		local bags = liveBags(itemID)
 		if bags > 0 then
-			out.chars[#out.chars + 1] = { key = AD.Canon(me), name = splitKey(me), current = true, bags = bags, bank = 0 }
+			out.chars[#out.chars + 1] = { key = AD.Canon(me), name = splitKey(me), class = SB.Adapter.CharInfo().class,
+				current = true, bags = bags, bank = 0 }
 		end
 	end
 	out.warband = mapOf("warband", db.warband)[itemID] or 0
@@ -297,6 +323,33 @@ SB.On("SB_SNAPSHOT_SAVED", function(_, kind, owner)
 	elseif owner then
 		index[kind .. ":" .. owner] = nil
 	end
+end, "none")
+
+-- Build every saved container's index once, out of combat, 5 s after login (W5-7): a first tooltip
+-- hover in a dungeon must not pay for it. The current character's bags are live, not indexed.
+function AD.Prebuild()
+	local db, me = SB.Snapshots.DB(), SB.Adapter.CharKey()
+	for raw, c in pairs(db.chars) do
+		if type(c) == "table" then
+			if raw ~= me then
+				mapOf("bags:" .. raw, c.bags)
+			end
+			mapOf("bank:" .. raw, c.bank)
+		end
+	end
+	mapOf("warband", db.warband)
+	for gk, g in pairs(db.guilds) do
+		if type(g) == "table" then
+			mapOf("guild:" .. gk, g.snapshot)
+		end
+	end
+end
+
+-- OutOfCombat queues the build for PLAYER_REGEN_ENABLED when the login happens in combat.
+SB.On("SB_LOGIN", function()
+	SB.Debounce("altdata.prebuild", AD.PREBUILD_DELAY, function()
+		SB.OutOfCombat(AD.Prebuild, "altdata.prebuild", "none")
+	end, "none")
 end, "none")
 
 -- New or reset settings: every index goes.

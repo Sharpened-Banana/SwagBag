@@ -1,3 +1,4 @@
+-- luacheck: globals IsInGuild
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
 -- luacheck: globals Auctionator ColorManager ITEM_QUALITY_COLORS
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
@@ -194,5 +195,30 @@ describe("Adapter.QualityColor", function()
 		assert.is_nil(A.QualityColor(nil))
 		ColorManager = { GetColorDataForItemQuality = function() error("boom") end }
 		assert.same({ 0.6, 0.2, 0.9 }, { A.QualityColor(4) })
+	end)
+end)
+
+describe("Adapter.IsInGuild (W5-6)", function()
+	local A
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+	end)
+	after_each(function()
+		IsInGuild = nil
+	end)
+
+	it("is true or false when the client answers a boolean, and nil when it cannot say", function()
+		IsInGuild = nil
+		assert.is_nil(A.IsInGuild(), "missing API")
+		IsInGuild = function() error("boom") end
+		assert.is_nil(A.IsInGuild(), "pcall failure")
+		IsInGuild = function() return 1 end
+		assert.is_nil(A.IsInGuild(), "non-boolean")
+		IsInGuild = function() return true end
+		assert.equal(true, A.IsInGuild())
+		IsInGuild = function() return false end
+		assert.equal(false, A.IsInGuild())
 	end)
 end)

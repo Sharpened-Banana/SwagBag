@@ -8,8 +8,9 @@
 -- bags, bank }, SwagBagDB.warband (one for the account), SwagBagDB.guilds["Guild-Realm"] =
 -- { lastSeen, tabs = { [tab] = name }, snapshot }. guild: the character's guild key when last seen
 -- (week 5: the alt viewer shows that guild's bank with the character). It is written only when the
--- guild is known, and cleared only when the Adapter is certain there is none (the client reports no
--- guild for a few seconds after login). Every write emits SB_SNAPSHOT_SAVED(kind, owner) (owner:
+-- guild is known, and cleared only when the Adapter is certain there is none AND the client has
+-- sent PLAYER_GUILD_UPDATE this session (it reports no guild for a few seconds after login).
+-- Every write emits SB_SNAPSHOT_SAVED(kind, owner) (owner:
 -- the character key, the guild key, nil for the warband bank; Enforce emits "bank" for each
 -- character it trims), so Engine/AltData.lua rebuilds only that container's counts.
 -- When (spec AC13.1, 5.7): bags on logout and 5 s after the last bag update; the character
@@ -92,7 +93,7 @@ function Snap.Char()
 	local guild = A.GuildKey()
 	if guild then
 		c.guild = guild
-	elseif A.IsInGuild() == false then
+	elseif Snap.guildUpdated and A.IsInGuild() == false then
 		c.guild = nil
 	end
 	return c, key
@@ -361,6 +362,11 @@ SB.On("PLAYER_LOGOUT", function()
 		capture("warband")
 	end
 	capture("bags")
+end, "none")
+
+-- The client knows the guild situation from now on (W5-6): "not in a guild" can be believed.
+SB.On("PLAYER_GUILD_UPDATE", function()
+	Snap.guildUpdated = true
 end, "none")
 
 SB.On("BANKFRAME_OPENED", function()
