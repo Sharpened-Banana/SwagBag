@@ -1611,6 +1611,29 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.equal("SwagBag — Fishing — ilvl 279.4", W.frame.title.text)
 	end)
 
+	-- Mutation: ignore mouseButton in the mode button's click (always pause).
+	it("AC8.5: a right-click on the Pause button opens the settings at the active mode's sections", function()
+		local edited = {}
+		SB.SettingsFocus = { Edit = function(id) edited[#edited + 1] = id end }
+		F.SetSignal("fishing", true)
+		W.Open()
+		W.modeButton.scripts.OnClick(W.modeButton, "RightButton")
+		assert.same({ "fishing" }, edited)
+		assert.falsy(F.IsPaused(), "a right-click does not pause")
+		W.modeButton.scripts.OnClick(W.modeButton, "LeftButton")
+		assert.truthy(F.IsPaused(), "a left-click still pauses")
+	end)
+
+	-- W4-5. Mutation: run the right-click without ErrorTrap.Run "none" (call Edit directly).
+	it("an error while opening the settings flashes L.SETTINGS_FAILED and never takes the bags to Safe Mode", function()
+		SB.SettingsFocus = { Edit = function() error("page builder broke") end }
+		W.Open()
+		W.modeButton.scripts.OnClick(W.modeButton, "RightButton")
+		assert.equal(SB.L.SETTINGS_FAILED, W.frame.title.text)
+		assert.equal(1, SB.ErrorTrap.count, "recorded for the report")
+		assert.equal(false, SB.SafeMode.IsOn("bags"))
+	end)
+
 	it("/swagbag mode answers every form (P2)", function()
 		SB.Categories.Load()
 		F.SetSignal("challengeMode", true)
