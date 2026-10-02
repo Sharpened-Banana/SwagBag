@@ -92,6 +92,19 @@ local function bagsRows()
 				return v and L.SET_REAGENTS_OWN_DONE or L.SET_REAGENTS_MIXED_DONE
 			end },
 		onOff(L.SET_TITLE_ILVL, "bags.showIlvl", "overlays title"),
+		{ kind = "choice", label = L.SET_LIST_SORT, get = function()
+			return SB.Sort.Spec().by
+		end, width = 90, choices = { { value = "value", text = L.LIST_COL_VALUE }, { value = "name", text = L.LIST_COL_NAME },
+			{ value = "count", text = L.LIST_COL_COUNT }, { value = "ilvl", text = L.LIST_COL_ILVL } },
+		apply = function(v)
+			return run("list " .. v)
+		end },
+		{ kind = "choice", label = L.SET_LIST_ORDER, get = function()
+			return SB.Sort.Spec().desc
+		end, width = 150, choices = { { value = true, text = L.SET_LIST_DESC }, { value = false, text = L.SET_LIST_ASC } },
+		apply = function(v)
+			return run("list " .. SB.Sort.Spec().by .. (v and " desc" or " asc"))
+		end },
 	}
 end
 

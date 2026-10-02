@@ -47,6 +47,7 @@ local W = {
 	LIST_WIDTH = 480, -- list view: the item area's width
 	LIST_NEW_ROWS = 8, -- list view: rows New keeps while open, a dungeon's loot (F7; the sections view keeps bags.newRows rows)
 	ROW_TEXT_GAP = 4, -- list view: between a row's icon and its texts
+	COLUMNS_H = 18, -- list view: the column header bar under the search box
 	SCALE_EPSILON = 0.001, -- a button's scale "took" when GetScale() is this close to the wanted one (F6)
 }
 SB.BagsWindow = W
@@ -74,6 +75,12 @@ frame.title:SetText(L.BAGS_TITLE)
 
 local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
+
+-- The title and search rows, plus the list view's column bar while the list is drawn (W4-1: the
+-- drawn view, never the setting, so a view change held under the mouse keeps the old header room).
+function W.HeaderHeight()
+	return W.HEADER + (W.drawn == "list" and W.COLUMNS_H or 0)
+end
 
 local scroll = CreateFrame("ScrollFrame", nil, frame)
 scroll:SetPoint("TOPLEFT", 4, -W.HEADER)
@@ -144,12 +151,18 @@ function W.RefreshTitle()
 end
 
 -- Show text in the title for 1.5 s (feedback for header buttons and scaling, P2), then
--- the resting title.
-function W.Flash(text)
+-- the resting title. The title ends left of the title buttons (W3-26), so a long flash in a narrow
+-- window is cut short with "...": then the whole text also goes to chat, so the answer is never
+-- lost (week-4 deferred M4). quiet: the caller answers in chat (or the settings status line)
+-- itself, so a cut-short flash adds no second line.
+function W.Flash(text, quiet)
 	titleToken = titleToken + 1
 	local token = titleToken
 	flashing = true
 	frame.title:SetText(text)
+	if not quiet and frame.title.IsTruncated and frame.title:IsTruncated() then
+		SB.Print(text)
+	end
 	SB.Adapter.After(1.5, Guard("bags.flash", function()
 		if token == titleToken then
 			flashing = false
@@ -193,10 +206,13 @@ frame:SetScript("OnDragStart", Guard("bags.dragStart", function()
 	W.dragging = true
 	frame:StartMoving()
 end, "bags"))
+-- The drop fits the window again (week-4 deferred): a grow that waited for the pointer (W4-25) stops
+-- retrying while the window is dragged, so the drop starts it again from the new corner.
 frame:SetScript("OnDragStop", Guard("bags.dragStop", function()
 	W.dragging = false
 	frame:StopMovingOrSizing()
 	savePosition()
+	W.Resize()
 end, "bags"))
 
 -- Fit the window around content of width x height (scroll when taller than 75 % of the screen).
@@ -227,12 +243,13 @@ local function sizeFrame(width, height, keepTop)
 	end
 	W.foot = foot
 	scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, foot)
+	local header = W.HeaderHeight()
 	local maxHeight = UIParent:GetHeight() * W.MAX_HEIGHT_FRACTION / frame:GetScale()
-	local viewHeight = math.min(height, maxHeight - W.HEADER - foot)
+	local viewHeight = math.min(height, maxHeight - header - foot)
 	local pinned = keepTop and type(left) == "number" and type(top) == "number" and not W.dragging
 	local grown = false
 	if pinned then
-		local shortfall = viewHeight - (top - W.HEADER - foot)
+		local shortfall = viewHeight - (top - header - foot)
 		if shortfall > 0 then
 			if not (frame:IsMouseOver() or scroll:IsMouseOver() or SB.Adapter.CursorItem()) then
 				-- Ruling W4-25: nothing is under the pointer, so the whole window may move (P5): the top
@@ -248,9 +265,9 @@ local function sizeFrame(width, height, keepTop)
 				SB.Debounce("bags.grow", W.RETRY, W.Resize, "bags")
 			end
 		end
-		viewHeight = math.max(0, math.min(viewHeight, top - W.HEADER - foot))
+		viewHeight = math.max(0, math.min(viewHeight, top - header - foot))
 	end
-	frame:SetSize(width + 8, viewHeight + W.HEADER + foot)
+	frame:SetSize(width + 8, viewHeight + header + foot)
 	if pinned then
 		frame:ClearAllPoints()
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
@@ -426,6 +443,79 @@ W.viewButton = titleButton(L.VIEW_TO_LIST, "bags.viewButton", function()
 	W.ToggleView()
 end)
 W.viewButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -5)
+
+---------------------------------------------------------------------------
+-- The list view's column bar: Name, Count, ilvl, Value over the rows' texts. A click sorts by
+-- that column (again: the other way round), saved (bags.list), and the list regroups now or once
+-- the mouse leaves the items (P5: re-sorting never moves a row under the mouse). Plain buttons.
+-- Preflight a2: the bar starts at frame x 4 + PAD + LIST_ROW + ROW_TEXT_GAP, where the rows' texts
+-- start (scroll frame x 4, row x PAD + LIST_ROW + ROW_TEXT_GAP), and uses the rows' own columns.
+---------------------------------------------------------------------------
+local COLUMN_NAMES = { name = L.LIST_COL_NAME, count = L.LIST_COL_COUNT, ilvl = L.LIST_COL_ILVL,
+	value = L.LIST_COL_VALUE }
+W.columnsBar = CreateFrame("Frame", nil, frame)
+W.columnsBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + W.PAD + W.LIST_ROW + W.ROW_TEXT_GAP, -W.HEADER)
+W.columnsBar:SetSize(rowWidth(), W.COLUMNS_H)
+W.columnsBar:Hide()
+W.columnButtons = {}
+if SB.ListRows and SB.Sort then -- the list view's files (absent: no list view, see W.rows)
+	local cols = SB.ListRows.Columns(rowWidth())
+	for _, id in ipairs(SB.Sort.COLUMNS) do
+		local b = CreateFrame("Button", nil, W.columnsBar)
+		b:SetPoint("TOPLEFT", W.columnsBar, "TOPLEFT", cols[id].x, 0)
+		b:SetSize(cols[id].width, W.COLUMNS_H)
+		b.label = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		b.label:SetAllPoints(b)
+		b.label:SetJustifyH(id == "name" and "LEFT" or "RIGHT")
+		b.label:SetText(COLUMN_NAMES[id])
+		b:SetScript("OnClick", Guard("bags.listColumn", function()
+			W.SortList(id)
+		end, "bags"))
+		W.columnButtons[id] = b
+	end
+end
+
+-- How a direction reads for a column: names A to Z, numbers highest first.
+local function direction(by, desc)
+	if by == "name" then
+		return desc and L.LIST_Z_TO_A or L.LIST_A_TO_Z
+	end
+	return desc and L.LIST_HIGH_FIRST or L.LIST_LOW_FIRST
+end
+
+-- The column the list is sorted by carries a marker: "Value v" (down) or "Value ^" (up).
+function W.RefreshColumns()
+	local spec = SB.Sort.Spec()
+	for id, b in pairs(W.columnButtons) do
+		if id == spec.by then
+			b.label:SetText((spec.desc and L.LIST_COL_DOWN or L.LIST_COL_UP):format(COLUMN_NAMES[id]))
+		else
+			b.label:SetText(COLUMN_NAMES[id])
+		end
+	end
+end
+
+-- by: a column; desc: the direction, or nil for a click (the same column flips, another starts at
+-- its natural direction, Sort.Next). Saved, answered in the title (P2), and the open list regroups
+-- through a full layout held while the mouse is over the items or an item is on the cursor (P5).
+-- Returns true, or false (with the reason in the title) while the settings are read-only.
+-- quiet: the caller (/swagbag list, so also the Settings rows) answers in chat itself (W.Flash).
+function W.SortList(by, desc, quiet)
+	local spec = SB.Sort.Next(SB.Sort.Spec(), by)
+	if desc ~= nil then
+		spec.desc = desc
+	end
+	if not SB.Sort.Save(spec.by, spec.desc) then
+		W.Flash(L.SETTINGS_READONLY, quiet)
+		return false
+	end
+	W.RefreshColumns()
+	W.Flash(L.LIST_SORTED:format(COLUMN_NAMES[spec.by], direction(spec.by, spec.desc)), quiet)
+	if frame:IsShown() and isList() then
+		W.RequestLayout("listsort")
+	end
+	return true
+end
 
 ---------------------------------------------------------------------------
 -- Layout
@@ -782,6 +872,15 @@ function W.Layout(reason)
 	if isList() and not scaleAll(bags, slotScale()) then
 		listFailed(bags)
 	end
+	-- the column bar shows above a drawn list only (after the F6 check: a fallback draws no bar);
+	-- the scroll area starts under it
+	if isList() then
+		W.RefreshColumns()
+		W.columnsBar:Show()
+	else
+		W.columnsBar:Hide()
+	end
+	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -W.HeaderHeight())
 	W.records, W.state, W.pos, W.view, W.areaHeld = {}, nil, nil, nil, false
 	B.ReleasePlaceholders(child)
 	SB.SectionHeaders.ReleaseAll(child)
@@ -1434,6 +1533,34 @@ SB.Slash.Register("view", L.HELP_VIEW, function(arg)
 		return L.SETTINGS_READONLY
 	end
 	return VIEW_FLASH[arg]
+end, "bags")
+
+-- /swagbag list [name|count|ilvl|value] [asc|desc]: show or set the list view's order (the column
+-- bar's clicks, the Settings rows). Without a direction a column starts at its natural one. The
+-- answer is this command's chat line (or the Settings status line), so the title flash is quiet.
+SB.Slash.Register("list", L.HELP_LIST, function(arg)
+	local by, dir = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
+	local spec = SB.Sort.Spec()
+	if by == "" then
+		return L.LIST_STATE:format(COLUMN_NAMES[spec.by], direction(spec.by, spec.desc))
+	end
+	if not COLUMN_NAMES[by] or not (dir == "" or dir == "asc" or dir == "desc") then
+		return L.LIST_USAGE
+	end
+	local desc
+	if dir == "" then
+		desc = by ~= "name"
+	else
+		desc = dir == "desc"
+	end
+	if not W.SortList(by, desc, true) then
+		return L.SETTINGS_READONLY
+	end
+	local line = L.LIST_SORTED:format(COLUMN_NAMES[by], direction(by, desc))
+	if W.View() ~= "list" then
+		return { line, L.LIST_NOT_SHOWN }
+	end
+	return line
 end, "bags")
 
 -- A bag equipped, taken off or swapped (W3-21). A swap for a bag of the same size changes no

@@ -158,6 +158,22 @@ describe("Settings window", function()
 		assert.equal("ran new always", SW.lastStatus)
 	end)
 
+	-- Week 5: the list view's order runs /swagbag list. Mutation: in the order row's apply, drop
+	-- the saved column (run "list desc").
+	it("the list rows run /swagbag list: a column in its natural direction; the order keeps the column", function()
+		SB.Slash.Register("list", "test", function(arg)
+			ran[#ran + 1] = "list " .. arg
+			return "ran list " .. arg
+		end)
+		SW.Show("bags")
+		assert.truthy(SW.selected[button("Value")], "value, the default, first")
+		assert.truthy(SW.selected[button("Highest first (Z to A)")])
+		click("Name")
+		click("Lowest first (A to Z)")
+		assert.same({ "list name", "list value asc" }, ran)
+		assert.equal("ran list value asc", SW.lastStatus)
+	end)
+
 	it("overlays page: each overlay switches through /swagbag overlays", function()
 		SW.Show("overlays")
 		click("Off") -- the first row: item level on gear
