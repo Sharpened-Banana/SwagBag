@@ -185,18 +185,33 @@ end, "bags"))
 -- With keepTop the top-left corner stays put (every resize except open); otherwise the
 -- window grows around whatever anchor RestorePosition set.
 -- The footer bar (UI/Footer.lua, ruling W4-14) sits under the items: its height (one row or more)
--- is part of the window and the scroll area ends above it, so it never covers an item.
+-- is part of the window and the scroll area ends above it, so it never covers an item. While a
+-- footer shrink is held (W.footHeld, see W.Resize) every resize keeps the old, taller footer room,
+-- so no other path applies the shrink under the mouse.
+-- With keepTop the view is also no taller than the room between the top edge and the bottom of
+-- the screen (ruling W4-22): the frame is clamped to the screen, and a window that ran past the
+-- bottom would be pushed up by the client, moving every item. The scroll area shortens instead.
 local function sizeFrame(width, height, keepTop)
 	local left, top = frame:GetLeft(), frame:GetTop()
 	W.size = { width, height }
 	child:SetSize(width, height)
+	if not keepTop then
+		W.footHeld = false -- opening lays out from scratch
+	end
 	local foot = W.FOOTER + (SB.Footer and SB.Footer.Layout(width + 8) or 0)
+	if W.footHeld and W.foot and foot < W.foot then
+		foot = W.foot
+	end
 	W.foot = foot
 	scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, foot)
 	local maxHeight = UIParent:GetHeight() * W.MAX_HEIGHT_FRACTION / frame:GetScale()
 	local viewHeight = math.min(height, maxHeight - W.HEADER - foot)
+	local pinned = keepTop and type(left) == "number" and type(top) == "number" and not W.dragging
+	if pinned then
+		viewHeight = math.max(0, math.min(viewHeight, top - W.HEADER - foot))
+	end
 	frame:SetSize(width + 8, viewHeight + W.HEADER + foot)
-	if keepTop and left and top and not W.dragging then
+	if pinned then
 		frame:ClearAllPoints()
 		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 	end
@@ -204,20 +219,23 @@ local function sizeFrame(width, height, keepTop)
 end
 
 -- The footer's height changed: fit the window again, its top-left corner fixed (C1). A taller
--- footer grows the window downward (or, at the height limit, shortens the scroll area from the
--- bottom), so nothing in the scroll area moves. A shorter one can pull a scrolled view down (the
--- scroll offset is clamped to the taller view), so it waits like any other move while the mouse
--- is over the items or an item is on the cursor (spec 4.2 rule 5), retrying every 300 ms; until
--- then the smaller bar leaves a gap and covers nothing.
+-- footer grows the window downward (or, at the height limit or the bottom of the screen, shortens
+-- the scroll area from the bottom), so nothing in the scroll area moves. A shorter one can pull a
+-- scrolled view down (the scroll offset is clamped to the taller view), so it waits like any other
+-- move while the mouse is over the items or an item is on the cursor (spec 4.2 rule 5), retrying
+-- every 300 ms; until then the smaller bar leaves a gap and covers nothing.
 function W.Resize()
 	if not frame:IsShown() then
+		W.footHeld = false
 		return
 	end
 	local foot = W.FOOTER + (SB.Footer and SB.Footer.height or 0)
 	if W.foot and foot < W.foot and (scroll:IsMouseOver() or SB.Adapter.CursorItem()) then
+		W.footHeld = true
 		SB.Debounce("bags.footerResize", W.RETRY, W.Resize, "bags")
 		return
 	end
+	W.footHeld = false
 	sizeFrame(W.size[1], W.size[2], true)
 end
 

@@ -13,7 +13,8 @@
 -- window is open (it is re-read when the window next lays out).
 --   Footer.IDS                          entry ids in the default order
 --   Footer.Name(id) -> text             the entry's name
---   Footer.Entries() -> { { id, on } }  the user's order; unknown ids dropped, missing ones added, on
+--   Footer.Entries() -> { { id, on } }  the user's order; unknown ids dropped; a missing one (added by
+--                                       a later release) joins at its default place, on (W4-23)
 --   Footer.SetEntry(id, on) -> ok, why  why: "unknown" | "readonly"
 --   Footer.Move(id, delta) -> ok, why   delta -1 = left, +1 = right; why: "unknown" | "edge" | "readonly"
 --   Footer.Position(id) -> n            the entry's place in the order
@@ -54,9 +55,24 @@ function F.Entries()
 			out[#out + 1] = { id = id, on = off ~= "-" }
 		end
 	end
-	for _, id in ipairs(F.IDS) do
+	-- Ruling W4-23: a missing entry goes right after its nearest preceding default neighbour that
+	-- is present (first if none), on. In default order, so missing neighbours chain together.
+	for n, id in ipairs(F.IDS) do
 		if not seen[id] then
-			out[#out + 1] = { id = id, on = true }
+			local at = 0
+			for k = n - 1, 1, -1 do
+				for pos, e in ipairs(out) do
+					if e.id == F.IDS[k] then
+						at = pos
+						break
+					end
+				end
+				if at > 0 then
+					break
+				end
+			end
+			table.insert(out, at + 1, { id = id, on = true })
+			seen[id] = true
 		end
 	end
 	return out
@@ -199,7 +215,15 @@ function F.Items()
 	end
 	for _, e in ipairs(F.Entries()) do
 		if e.on and e.id == "gold" then
-			add("gold", A.MoneyText(A.Money()), nil, { kind = "money" })
+			-- A secret or missing amount shows the last known one; none known: no gold entry (never a
+			-- false "0g").
+			local copper = A.Money()
+			if copper then
+				F.lastMoney = copper
+			end
+			if F.lastMoney then
+				add("gold", A.MoneyText(F.lastMoney), nil, { kind = "money" })
+			end
 		elseif e.on and e.id == "currencies" then
 			currencies("currencies", A.BackpackCurrencies())
 		elseif e.on and e.id == "crests" then
@@ -242,6 +266,9 @@ function F.TextWidth(fs)
 	return tonumber(w) or 0
 end
 
+-- Ruling W4-24: the bar and its item frames are created lazily, on the first layout, and that may
+-- happen in combat. Accepted: they are plain Frames, Textures and FontStrings (no template, nothing
+-- secure, no item button), which the client creates in combat without restriction.
 local function barFrame()
 	if not F.bar then
 		local W = SB.BagsWindow
@@ -300,8 +327,8 @@ local function widget(i)
 		w:SetScript("OnEnter", Guard("footer.tip", function(self)
 			F.Tooltip(self, self.item)
 		end, "bags"))
-		w:SetScript("OnLeave", Guard("footer.tipHide", function()
-			if GameTooltip then
+		w:SetScript("OnLeave", Guard("footer.tipHide", function(self)
+			if GameTooltip and (not GameTooltip.IsOwned or GameTooltip:IsOwned(self)) then
 				GameTooltip:Hide()
 			end
 		end, "bags"))
@@ -382,6 +409,9 @@ end
 SB.On("PLAYER_MONEY", soon, "bags")
 SB.On("CURRENCY_DISPLAY_UPDATE", soon, "bags")
 SB.On("CHALLENGE_MODE_COMPLETED", soon, "bags") -- the keystone's level changes after a run
+SB.On("SB_BAGS_CLOSED", function()
+	F.dirty = true -- re-read on the next open, whatever happened while closed
+end, "bags")
 SB.On("SB_CONFIG_CHANGED", function(_, path)
 	if path == nil or path == PATH then
 		soon()
