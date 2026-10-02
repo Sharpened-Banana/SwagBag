@@ -72,6 +72,7 @@ UI/SettingsFocus.lua
 UI/SettingsConsumables.lua
 UI/Footer.lua
 UI/Themes.lua
+UI/TooltipCounts.lua
 UI/QuickSetup.lua
 UI/DebugV1.lua
 
