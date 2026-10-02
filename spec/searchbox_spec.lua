@@ -77,6 +77,9 @@ describe("SearchBox", function()
 				fn(s.button, s.record)
 			end
 		end
+		function window.SetDimmed(button, d) -- the bags window dims the button (and a list row) through this
+			SB.Buttons.SetDimmed(button, d)
+		end
 		SB.BagsWindow = window
 		SB.Buttons = { SetDimmed = function(button, d) dimmed[button] = d end }
 		CreateFrame = function() return newFake() end

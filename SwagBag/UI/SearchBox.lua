@@ -119,8 +119,8 @@ local Box = new({
 	forEachSlot = function(fn)
 		return W.ForEachSlot(fn)
 	end,
-	setDimmed = function(button, dimmed)
-		return SB.Buttons.SetDimmed(button, dimmed)
+	setDimmed = function(button, dimmed) -- the button, and in the list view its row (W.SetDimmed)
+		return W.SetDimmed(button, dimmed)
 	end,
 })
 Box.New = new
