@@ -366,3 +366,161 @@ describe("Themes: /swagbag theme, Settings > Look, the windows", function()
 		assert.same({ 1, 1, 1, 0.03 }, again.bg.calls.SetColorTexture, "a reacquired header loses the tint")
 	end)
 end)
+
+describe("Themes: Matches ElvUI", function()
+	local SB, A, T, SW, media
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fake.Install()
+		Env.PaintGlobals()
+		A.FontObject = function(name) return { fontObject = name } end
+		media = { font = "Fonts\\Elv.ttf", size = 12, blank = "Interface\\ElvBlank", border = { 0, 0, 0, 1 },
+			backdrop = { 0.1, 0.1, 0.1, 1 }, fade = { 0.05, 0.05, 0.05, 0.8 } }
+		A.ElvUIMedia = function() return media end
+		Loader.LoadFile(SB, "SwagBag/UI/Theme.lua")
+		T = SB.Theme
+		SB.BagsWindow = { View = function() return "sections" end }
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsPages.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/Themes.lua")
+		SW = SB.SettingsWindow
+	end)
+
+	after_each(function()
+		Env.ClearPaintGlobals()
+		Fake.Uninstall()
+	end)
+
+	-- Mutation: in the elvui palette, use m.border for the window background.
+	it("uses ElvUI's texture, colours and font, sized by role, outlined", function()
+		local w, fs, slot = Fake.New("Frame"), Fake.New("FontString"), Fake.New("Texture")
+		T.Window(w, "main")
+		T.Text(fs, "title")
+		T.Slot(slot)
+		assert.truthy(T.Apply("elvui", true))
+		assert.same({ { bgFile = "Interface\\ElvBlank", edgeFile = "Interface\\ElvBlank", edgeSize = 1 } }, w.calls.SetBackdrop)
+		assert.same({ 0.05, 0.05, 0.05, 0.8 }, w.calls.SetBackdropColor)
+		assert.same({ 0, 0, 0, 1 }, w.calls.SetBackdropBorderColor)
+		assert.same({ "Fonts\\Elv.ttf", 13, "OUTLINE" }, fs.calls.SetFont, "title: one point larger")
+		assert.same({ 0.1, 0.1, 0.1, 1 }, slot.calls.SetColorTexture)
+		assert.same({ 0.1, 0.1, 0.1, 0.6 }, { T.HeaderColor() })
+	end)
+
+	it("reads ElvUI's media again on every switch (a profile change shows after the next /swagbag theme elvui)", function()
+		local w = Fake.New("Frame")
+		T.Window(w, "main")
+		T.Apply("elvui", false)
+		media.fade = { 0.2, 0.2, 0.3, 0.7 }
+		SB.Slash.Dispatch("theme elvui")
+		assert.same({ 0.2, 0.2, 0.3, 0.7 }, w.calls.SetBackdropColor)
+	end)
+
+	-- Mutation: make the elvui theme's available() return true.
+	it("without ElvUI the choice is refused with the reason; nothing changes", function()
+		media = nil
+		SB.Slash.Dispatch("theme elvui")
+		assert.equal("The ElvUI look needs ElvUI, which is not loaded. The look stays Blizzard.", A.Lines()[1])
+		assert.equal("blizzard", T.Current())
+		assert.equal("blizzard", SB.Config.Get("theme.name"))
+		SW.Show("look")
+		Fake.Fire(SW.buttons[3], "OnClick")
+		assert.equal("The ElvUI look needs ElvUI, which is not loaded. The look stays Blizzard.", SW.lastStatus)
+		assert.truthy(SW.selected[SW.buttons[1]], "Blizzard stays selected")
+		assert.equal(0, #SB.ErrorTrap.Recent(), "refused by available(), not by a palette that blew up")
+	end)
+
+	it("read-only settings refuse the ElvUI look and say so", function()
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("theme elvui")
+		assert.equal(SB.L.SETTINGS_READONLY, A.Lines()[1])
+		assert.equal("blizzard", T.Current())
+	end)
+
+	it("a saved ElvUI look while ElvUI is not loaded shows Blizzard's at login, says so, and stays saved", function()
+		SB.Config.Set("theme.name", "elvui")
+		media = nil
+		SB.Emit("SB_LOGIN")
+		assert.equal("blizzard", T.Current())
+		assert.same({ SB.L.THEME_FALLBACK:format("Matches ElvUI") }, A.Lines())
+		assert.equal("elvui", SB.Config.Get("theme.name"))
+	end)
+
+	-- F13. Mutation: in styleText (UI/Theme.lua), skip SetFontObject(original) when the palette has no fonts.
+	it("ElvUI straight back to Blizzard puts back every font object it was made with", function()
+		local fs = Fake.New("FontString")
+		fs.GetFontObject = function() return "GameFontNormal" end
+		local small = Fake.New("FontString")
+		small.GetFontObject = function() return "GameFontHighlightSmall" end
+		T.Text(fs, "title")
+		T.Text(small, "small")
+		assert.truthy(T.Apply("elvui", true))
+		assert.same({ "Fonts\\Elv.ttf", 13, "OUTLINE" }, fs.calls.SetFont)
+		assert.truthy(T.Apply("blizzard", true))
+		assert.same({ "GameFontNormal" }, fs.calls.SetFontObject)
+		assert.same({ "GameFontHighlightSmall" }, small.calls.SetFontObject)
+		assert.equal("blizzard", T.Current())
+	end)
+
+	it("a palette ElvUI cannot fill is refused by validation, not applied (W5-5)", function()
+		media.fade = { 0.2, "x", 0.3, 0.7 }
+		assert.same({ false, "unavailable" }, { T.Apply("elvui", true) })
+		assert.equal("blizzard", T.Current())
+		assert.equal("blizzard", SB.Config.Get("theme.name"))
+	end)
+
+	it("the report names the look and the saved setting", function()
+		Loader.LoadFile(SB, "SwagBag/Core/Checks.lua")
+		Loader.LoadFile(SB, "SwagBag/Core/Report.lua")
+		T.Apply("elvui", true)
+		assert.truthy(SB.Report.Build():find("Look: elvui (setting elvui)", 1, true))
+	end)
+end)
+
+describe("Adapter.ElvUIMedia (ElvUI's public globals, read only)", function()
+	-- luacheck: globals ElvUI issecretvalue
+	local SB
+	before_each(function()
+		SB = Loader.New()
+	end)
+
+	after_each(function()
+		ElvUI = nil
+		issecretvalue = nil
+	end)
+
+	it("reads the font, texture, colours (r/g/b/a or [1]..[4]) and font size", function()
+		ElvUI = { { media = { normFont = "F.ttf", blankTex = "Blank", bordercolor = { r = 0, g = 0, b = 0 },
+			backdropcolor = { 0.1, 0.2, 0.3, 1 }, backdropfadecolor = { r = 0.05, g = 0.05, b = 0.05, a = 0.7 } },
+			db = { general = { fontSize = 11 } } } }
+		assert.same({ font = "F.ttf", size = 11, blank = "Blank", border = { 0, 0, 0, 1 }, backdrop = { 0.1, 0.2, 0.3, 1 },
+			fade = { 0.05, 0.05, 0.05, 0.7 } }, SB.Adapter.ElvUIMedia())
+	end)
+
+	it("is nil without ElvUI, with odd media, and never errors", function()
+		assert.is_nil(SB.Adapter.ElvUIMedia())
+		ElvUI = { { media = { normFont = 3 } } }
+		assert.is_nil(SB.Adapter.ElvUIMedia())
+		ElvUI = setmetatable({}, { __index = function() error("boom") end })
+		assert.is_nil(SB.Adapter.ElvUIMedia())
+	end)
+
+	it("is nil when a required value is missing or secret", function()
+		local function make(over)
+			local m = { normFont = "F.ttf", blankTex = "Blank", bordercolor = { 0, 0, 0, 1 }, backdropcolor = { 0.1, 0.1, 0.1, 1 },
+				backdropfadecolor = { 0.1, 0.1, 0.1, 0.8 } }
+			for k, v in pairs(over) do m[k] = v end
+			ElvUI = { { media = m, db = { general = { fontSize = 12 } } } }
+		end
+		make({})
+		assert.truthy(SB.Adapter.ElvUIMedia())
+		make({ bordercolor = false })
+		assert.is_nil(SB.Adapter.ElvUIMedia())
+		make({ blankTex = false })
+		assert.is_nil(SB.Adapter.ElvUIMedia())
+		make({})
+		issecretvalue = function(v) return v == "F.ttf" end
+		assert.is_nil(SB.Adapter.ElvUIMedia())
+	end)
+end)

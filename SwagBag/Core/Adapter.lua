@@ -629,6 +629,54 @@ function A.FontObject(name)
 	return type(object) == "table" and object or nil
 end
 
+-- ElvUI's look, for the "Matches ElvUI" theme (UI/Themes.lua), or nil while ElvUI is not loaded.
+-- Read only, from ElvUI's public globals: ElvUI[1] is its engine; engine.media.normFont (font
+-- file), .blankTex (flat texture), .bordercolor, .backdropcolor, .backdropfadecolor (colours with
+-- r, g, b, a, also at [1]..[4]); engine.db.general.fontSize. Read again on every theme change.
+-- Returns { font, size, blank, border, backdrop, fade } (colours as { r, g, b, a }), or nil when
+-- anything required is missing, of the wrong type or secret.
+local function elvNumber(v)
+	return type(v) == "number" and not isSecret(v)
+end
+
+local function elvColour(c, alpha)
+	if type(c) ~= "table" or isSecret(c) then
+		return nil
+	end
+	local r, g, b, a = c.r or c[1], c.g or c[2], c.b or c[3], c.a or c[4]
+	if not (elvNumber(r) and elvNumber(g) and elvNumber(b)) then
+		return nil
+	end
+	return { r, g, b, elvNumber(a) and a or alpha or 1 }
+end
+
+function A.ElvUIMedia()
+	local ok, out = pcall(function()
+		local elv = _G.ElvUI
+		local engine = type(elv) == "table" and elv[1]
+		local media = type(engine) == "table" and engine.media
+		if type(media) ~= "table" then
+			return nil
+		end
+		local font, blank = media.normFont, media.blankTex
+		if type(font) ~= "string" or isSecret(font) or type(blank) ~= "string" or isSecret(blank) then
+			return nil
+		end
+		local general = type(engine.db) == "table" and engine.db.general
+		local size = type(general) == "table" and general.fontSize
+		if not elvNumber(size) then
+			size = 12
+		end
+		local border, backdrop = elvColour(media.bordercolor), elvColour(media.backdropcolor)
+		local fade = elvColour(media.backdropfadecolor, 0.8)
+		if not (border and backdrop and fade) then
+			return nil
+		end
+		return { font = font, size = size, blank = blank, border = border, backdrop = backdrop, fade = fade }
+	end)
+	return ok and out or nil
+end
+
 -- "bank" (character bank) | "warband" | nil: the bank type Blizzard's bank frame has
 -- selected, which is where a right-clicked bag item goes. Read only.
 function A.ActiveBankType()
