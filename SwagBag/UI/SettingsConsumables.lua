@@ -6,6 +6,10 @@
 local _, SB = ...
 
 local L = SB.L
+local SW = SB.SettingsWindow
+
+local DROP_ECHO = 0.2 -- a real click can fire OnClick and OnReceiveDrag together
+local lastDrop
 
 local function rows()
 	local C, A = SB.Consumables, SB.Adapter
@@ -14,11 +18,13 @@ local function rows()
 			return SB.Config.Get("consumables.warn")
 		end, choices = { { value = true, text = L.SET_ON }, { value = false, text = L.SET_OFF } },
 		apply = function(v)
-			local _, feedback = SB.Slash.Run(v and "consumables on" or "consumables off")
-			return feedback
+			return SB.SettingsWindow.RunCommand(v and "consumables on" or "consumables off")
 		end },
 		{ kind = "note", label = L.SET_WATCH_WHEN },
 	}
+	if #C.List() == 0 then
+		out[#out + 1] = { kind = "note", label = L.CONSUMABLES_NONE }
+	end
 	for i, e in ipairs(C.List()) do
 		local name = C.Name(e)
 		local function change(n)
@@ -45,13 +51,17 @@ local function rows()
 	out[#out + 1] = { kind = "drop", label = L.SET_WATCH_ADD, text = L.SET_WATCH_DROP, onDrop = function()
 		local itemID = A.CursorItem()
 		if not itemID then
+			if lastDrop and A.Now() - lastDrop < DROP_ECHO then
+				return SW.lastStatus -- the second half of one click: keep the success line
+			end
 			return L.SET_WATCH_DROP_EMPTY
 		end
 		local ok, why = C.Add(itemID)
 		if not ok then
-			return C.ReasonText(why)
+			return C.ReasonText(why) .. " " .. L.SET_WATCH_KEPT
 		end
 		A.ClearCursor() -- only now: a refused item stays on the cursor
+		lastDrop = A.Now()
 		return L.SET_WATCH_ADDED:format(C.Name({ itemID = itemID }))
 	end }
 	out[#out + 1] = { kind = "actions", label = L.SET_WATCH_TOOLS, actions = {
@@ -60,8 +70,9 @@ local function rows()
 			return L.SET_WATCH_CHECKED
 		end },
 		{ text = L.SET_RESET_DEFAULT, run = function()
-			if not C.Reset() then
-				return L.SETTINGS_READONLY
+			local ok, why = C.Reset()
+			if not ok then
+				return C.ReasonText(why)
 			end
 			return L.CONSUMABLES_RESET:format(C.Summary())
 		end },

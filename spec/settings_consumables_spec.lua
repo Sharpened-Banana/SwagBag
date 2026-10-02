@@ -20,6 +20,7 @@ describe("Settings: consumables page", function()
 		Fixtures.SmallBags(A)
 		Fake.Install()
 		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsPages.lua")
 		Loader.LoadFile(SB, "SwagBag/UI/SettingsConsumables.lua")
 		SW, C, L = SB.SettingsWindow, SB.Consumables, SB.L
 		SB.Emit("SB_LOGIN")
@@ -101,15 +102,90 @@ describe("Settings: consumables page", function()
 		SW.Render()
 		A.cursor = { itemID = Fixtures.FLASK, link = "item:212283" }
 		click(L.SET_WATCH_ADD, L.SET_WATCH_DROP)
-		assert.equal(L.SET_WATCH_KNOWN, SW.lastStatus)
+		assert.equal(L.SET_WATCH_KNOWN .. " " .. L.SET_WATCH_KEPT, SW.lastStatus)
+		assert.truthy(A.cursor)
+		A.cursor = { itemID = 0, link = "item:0" }
+		click(L.SET_WATCH_ADD, L.SET_WATCH_DROP)
+		assert.equal(L.SET_WATCH_INVALID .. " " .. L.SET_WATCH_KEPT, SW.lastStatus)
 		assert.truthy(A.cursor)
 		SB.Config.readOnly = true
 		A.cursor = { itemID = Fixtures.HEALING_POTION, link = "item:211880" }
 		click(L.SET_WATCH_ADD, L.SET_WATCH_DROP)
-		assert.equal(L.SETTINGS_READONLY, SW.lastStatus)
+		assert.equal(L.SETTINGS_READONLY .. " " .. L.SET_WATCH_KEPT, SW.lastStatus)
 		assert.truthy(A.cursor)
 		click("Flask: warn below 1", "+")
 		assert.equal(L.SETTINGS_READONLY, SW.lastStatus)
+	end)
+
+	it("read-only settings refuse Remove, Reset to default and the warning switch, saying so", function()
+		SB.Config.readOnly = true
+		click("Food: warn below 5", "Remove")
+		assert.equal(L.SETTINGS_READONLY, SW.lastStatus)
+		SW.Say("x")
+		click(L.SET_WATCH_TOOLS, L.SET_RESET_DEFAULT)
+		assert.equal(L.SETTINGS_READONLY, SW.lastStatus)
+		SW.Say("x")
+		click(L.SET_WATCH_WARN, L.SET_OFF)
+		assert.equal(L.SETTINGS_READONLY, SW.lastStatus)
+		assert.equal("Flask 1, Potions 5, Food 5", C.Summary())
+	end)
+
+	-- Mutation: make Cons.List fall back to DEFAULTS when the saved list is empty.
+	it("an empty watch list shows a note, an empty summary and Check now says nothing is watched", function()
+		click("Flask: warn below 1", "Remove")
+		click("Potions: warn below 5", "Remove")
+		click("Food: warn below 5", "Remove")
+		assert.equal(0, #C.List())
+		assert.equal(L.CONSUMABLES_NONE_SHORT, C.Summary())
+		local found
+		for _, row in ipairs(SW.byId.consumables.rows()) do
+			found = found or (row.kind == "note" and row.label == L.CONSUMABLES_NONE)
+		end
+		assert.truthy(found)
+		click(L.SET_WATCH_TOOLS, L.SET_CHECK_NOW)
+		assert.same({ L.CONSUMABLES_NONE }, A.Lines())
+	end)
+
+	it("a note row wraps to the page width", function()
+		local wrapped
+		for _, fs in ipairs(SW.labels) do
+			if fs.text == L.SET_WATCH_WHEN then
+				wrapped = fs
+			end
+		end
+		assert.truthy(wrapped)
+		assert.equal(SW.child:GetWidth() - 8, wrapped.w)
+		assert.equal(true, wrapped.calls.SetWordWrap[1])
+	end)
+
+	it("a click that also fires the drop keeps the success line; a later empty click explains", function()
+		A.cursor = { itemID = Fixtures.HEALING_POTION, link = "item:211880" }
+		local b = rowButton(L.SET_WATCH_ADD, L.SET_WATCH_DROP)
+		Fake.Fire(b, "OnClick")
+		local said = SW.lastStatus
+		Fake.Fire(rowButton(L.SET_WATCH_ADD, L.SET_WATCH_DROP), "OnReceiveDrag")
+		assert.equal(said, SW.lastStatus)
+		A.clock = A.clock + 1
+		click(L.SET_WATCH_ADD, L.SET_WATCH_DROP)
+		assert.equal(L.SET_WATCH_DROP_EMPTY, SW.lastStatus)
+	end)
+
+	it("a spell on the cursor is refused as not an item and stays on the cursor", function()
+		A.cursor = { kind = "spell", spellID = 1 }
+		click(L.SET_WATCH_ADD, L.SET_WATCH_DROP)
+		assert.equal(L.SET_WATCH_DROP_EMPTY, SW.lastStatus)
+		assert.truthy(A.cursor)
+	end)
+
+	it("/swagbag consumables reset typed while the page is open redraws its rows", function()
+		click("Food: warn below 5", "Remove")
+		SB.Slash.Dispatch("consumables reset")
+		assert.truthy(rowButton("Food: warn below 5", "Remove"))
+		local seen
+		for _, fs in ipairs(SW.labels) do
+			seen = seen or (fs.shown and fs.text == "Food: warn below 5")
+		end
+		assert.truthy(seen)
 	end)
 
 	it("Check now prints the result whatever the rate limit; Reset to default restores the list", function()

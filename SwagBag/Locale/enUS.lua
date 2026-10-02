@@ -430,6 +430,7 @@ L.SET_WATCH_DROP_EMPTY = "Pick up an item first (click it in your bags), then cl
 L.SET_WATCH_ADDED = "Now watching %s (warns below 1; use + to raise it)."
 L.SET_WATCH_TOOLS = "Test or start over"
 L.SET_CHECK_NOW = "Check now"
+L.SET_WATCH_KEPT = "Your item stays on the cursor."
 L.SET_WATCH_CHECKED = "Checked: the result is in chat."
 
 -- In-game check V1 (optional)
