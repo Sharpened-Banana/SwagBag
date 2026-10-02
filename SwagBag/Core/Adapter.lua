@@ -664,7 +664,7 @@ function A.ElvUIMedia()
 		end
 		local general = type(engine.db) == "table" and engine.db.general
 		local size = type(general) == "table" and general.fontSize
-		if not elvNumber(size) then
+		if not elvNumber(size) or size < 6 or size > 32 then
 			size = 12
 		end
 		local border, backdrop = elvColour(media.bordercolor), elvColour(media.backdropcolor)

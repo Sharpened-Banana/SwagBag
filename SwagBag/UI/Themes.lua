@@ -36,6 +36,9 @@ Theme.Register({
 	end,
 	palette = function()
 		local m = SB.Adapter.ElvUIMedia()
+		if not m then
+			return nil
+		end
 		local f, d = m.fade, m.backdrop
 		return {
 			window = { f[1], f[2], f[3], f[4] }, dialog = { f[1], f[2], f[3], math.max(f[4], 0.9) }, border = m.border,
