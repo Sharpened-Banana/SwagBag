@@ -464,6 +464,25 @@ describe("GroupView", function()
 		assert.equal("sort", v.stats.lastLayoutReason)
 	end)
 
+	-- Week 5 Task 10 review. Mutations: call cfg.onUpdated before the hold test in v.RequestLayout (the
+	-- first count fails); drop the call after commit (the second fails).
+	it("onUpdated is not called while a full layout is held, and once when it lands", function()
+		local n = 0
+		f.cfg.onUpdated = function() n = n + 1 end
+		v.Layout("open")
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = 1 } })
+		n = 0
+		btn(6, 1).mouseOver = true
+		assert.falsy(v.RequestLayout("sort"))
+		A.Advance(0.3)
+		assert.equal(0, n, "held")
+		btn(6, 1).mouseOver = false
+		A.Advance(0.3)
+		assert.equal("sort", v.stats.lastLayoutReason)
+		assert.equal(1, n, "landed once")
+	end)
+
 	-- Week-3 carry-over. Mutation: drop the v.heldKey re-check in v.RequestLayout (every retry
 	-- reads every slot again).
 	it("a held full layout re-arms without reading the slots again while the same button stays busy", function()

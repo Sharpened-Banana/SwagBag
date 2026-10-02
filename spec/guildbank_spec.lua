@@ -886,6 +886,23 @@ describe("GuildBankWindow (check G1)", function()
 		assert.truthy(header("tab1:c_herbs"))
 	end)
 
+	-- Week 5 Task 10 review: the search follows a held layout when its retry lands. Mutation: in GroupView
+	-- v.RequestLayout, drop the cfg.onUpdated call after commit.
+	it("a held tab layout re-applies the search when its retry lands", function()
+		openVault()
+		GW.scroll.mouseOver = true
+		button(1, 2).mouseOver = true
+		GW.searchBox.editBox:SetText("zzzz")
+		GW.searchBox.Run()
+		fire() -- tab 1's answer: held
+		assert.equal("open", GW.view.stats.lastLayoutReason)
+		button(1, 2).mouseOver = false
+		button(1, 2).alpha = 1
+		A.Advance(0.31)
+		assert.equal("load", GW.view.stats.lastLayoutReason)
+		assert.equal(SB.Buttons.DIM_ALPHA, button(1, 2).alpha, "dimmed by the search that landed with the layout")
+	end)
+
 	-- Ruling W3-38 (final review: items sat in Free under "(0)" headers while the mouse was
 	-- anywhere over the window). Mutation: in GroupView v.RequestLayout, restore the hold on
 	-- `cfg.scroll:IsMouseOver()`.

@@ -274,8 +274,8 @@ local function bagsOf(kind)
 					-- Ruling W3-27: the growth waits for combat to end; then lay the bank out again
 					-- (this layout creates any buttons still missing, so queue order does not matter).
 					SB.OutOfCombat(function()
-						if frame:IsShown() and BW.view.IsOpen() and BW.view.RequestLayout("grow") then
-							searchBox.Apply()
+						if frame:IsShown() and BW.view.IsOpen() then
+							BW.view.RequestLayout("grow") -- onUpdated applies the search when it lands
 						end
 					end, "bank.grownLayout", "bank")
 				end
@@ -418,10 +418,7 @@ function BW.Reflow(reason)
 	if not frame:IsShown() then
 		return false
 	end
-	local done = BW.view.RequestLayout(reason or "reflow")
-	if done then
-		searchBox.Apply()
-	end
+	local done = BW.view.RequestLayout(reason or "reflow") -- onUpdated applies the search when it lands
 	BW.Flash(done and L.REFLOW_DONE or L.REFLOW_WAITING)
 	return done
 end
@@ -434,9 +431,7 @@ function BW.ToggleView()
 	end
 	BW.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	BW.Flash(view == "grid" and L.BANK_VIEW_GRID or L.BANK_VIEW_SECTIONS)
-	if BW.view.RequestLayout("view") then
-		searchBox.Apply()
-	end
+	BW.view.RequestLayout("view")
 end
 
 -- Config is not initialized while this file loads, so the view label is set in BW.Open().
@@ -493,9 +488,7 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 	end
 	if Inv.Has(mask, Inv.R.SIZE) and bankChange then
 		B.EnsureBankTabs()
-		if BW.view.RequestLayout("size") then
-			searchBox.Apply()
-		end
+		BW.view.RequestLayout("size")
 		return
 	end
 	local byGroup, touched = {}, false
@@ -638,15 +631,13 @@ SB.On("BANK_TAB_SETTINGS_UPDATED", function()
 	SB.Inventory.ScanKind("bank")
 	SB.Inventory.ScanKind("warband")
 	SB.Buttons.EnsureBankTabs()
-	if BW.view.RequestLayout("tabs") then
-		searchBox.Apply()
-	end
+	BW.view.RequestLayout("tabs")
 end, "bank")
 
 -- /swagbag free tile|all (plan D19): the bank regroups too, held back like any full layout.
 SB.On("SB_FREE_TILE_CHANGED", function()
-	if frame:IsShown() and BW.view.RequestLayout("free") then
-		searchBox.Apply()
+	if frame:IsShown() then
+		BW.view.RequestLayout("free")
 	end
 end, "bank")
 
