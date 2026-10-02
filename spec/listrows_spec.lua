@@ -74,10 +74,16 @@ describe("ListRows", function()
 		assert.equal(SB.L.LIST_FREE:format(10), LR.Texts(nil, 10).name)
 	end)
 
+	-- Fix round 1, item 5. Mutation: drop the profession branch in Texts.
+	it("texts: a profession bag's tile says it is for profession items", function()
+		assert.equal(SB.L.LIST_FREE_PROFESSION:format(4), LR.Texts(nil, 4, "family8").name)
+	end)
+
 	-- F9. Mutation: in Texts, ignore family.
 	it("texts: the reagent bag's tile says it takes reagents; other families read as plain free slots", function()
 		assert.equal(SB.L.LIST_FREE_REAGENT:format(2), LR.Texts(nil, 2, "reagent").name)
-		assert.equal(SB.L.LIST_FREE:format(3), LR.Texts(nil, 3, "family8").name)
+		assert.equal(SB.L.LIST_FREE:format(3), LR.Texts(nil, 3, "any").name)
+		assert.equal(SB.L.LIST_FREE:format(3), LR.Texts(nil, 3).name)
 		assert.equal(SB.L.LIST_EMPTY, LR.Texts(nil, nil, "reagent").name, "a plain empty reagent slot")
 	end)
 
