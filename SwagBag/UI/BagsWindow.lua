@@ -307,7 +307,9 @@ scroll:SetScript("OnMouseWheel", Guard("bags.wheel", function(_, delta)
 		W.SetScale(SB.Config.Get("bags.scale") + delta * W.SCALE_STEP)
 		return
 	end
-	scroll:SetVerticalScroll(scroll:GetVerticalScroll() - delta * (W.SLOT + W.GAP) * 3)
+	-- Three rows (or three icon rows) per notch, in the drawn view's pitch.
+	local step = W.drawn == "list" and (W.LIST_ROW + W.LIST_GAP) or (W.SLOT + W.GAP)
+	scroll:SetVerticalScroll(scroll:GetVerticalScroll() - delta * step * 3)
 	W.ClampScroll()
 end, "bags"))
 
@@ -537,8 +539,17 @@ local function inBag(c)
 	return c.slot <= (W.sizes[c.bag] or 0)
 end
 
+-- Ruling W5-1 (F6 invariant): a list row never shows a full-size button. A slot whose scale did
+-- not take (a bag equipped while the list is open) stays hidden, row and all, and a full layout
+-- (which draws the list as categories) follows as soon as the mouse allows.
 local function showAt(button, c)
 	local shown = c.shown and inBag(c)
+	if shown and isList() and not scaleIs(button, W.LIST_ROW / W.SLOT) then
+		shown = false
+		SB.Debounce("bags.scale", 0, function()
+			W.RequestLayout("scale")
+		end, "bags")
+	end
 	if shown then
 		place(button, c.x, c.y)
 		button:Show()
@@ -1283,12 +1294,7 @@ local function sizeChanges()
 		for slot = old + 1, new do
 			local button = B.Get(bag, slot)
 			if button then
-				if not setScale(button, slotScale()) then
-					-- F6: once this update is done, a full layout draws the list as categories.
-					SB.Debounce("bags.scale", 0, function()
-						W.RequestLayout("scale")
-					end, "bags")
-				end
+				setScale(button, slotScale()) -- a scale that does not take is kept hidden by showAt (W5-1)
 				B.Paint(button, A.GetSlot(bag, slot))
 				describe(bag, slot)
 				out[#out + 1] = { bag = bag, slot = slot, kind = "added" }

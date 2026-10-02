@@ -381,8 +381,10 @@ describe("BagsWindow list view", function()
 		assert.equal(0, #A.Lines())
 	end)
 
-	-- F6 for a bag equipped while the list is open. Mutation: in sizeChanges, ignore setScale's result.
-	it("a slot added to the open list whose scale does not take regroups the bag as categories", function()
+	-- F6 for a bag equipped while the list is open, with the free tile: the new slots are hidden
+	-- spares, so nothing full-size shows; the next full layout draws as categories. Mutation: in
+	-- W.Layout, drop the listFailed call.
+	it("a slot added to the open list whose scale does not take is never shown in a row; the next layout falls back", function()
 		W.Open()
 		local ensure = B.EnsureCapacity
 		B.EnsureCapacity = function(bag, n)
@@ -394,9 +396,49 @@ describe("BagsWindow list view", function()
 		A.SetBagSize(1, 4)
 		bagUpdate(1)
 		A.Advance(0)
+		for slot = 1, 4 do
+			assert.falsy(B.Get(1, slot).shown, "slot " .. slot)
+		end
+		W.Reflow()
 		assert.equal("sections", W.drawn)
 		assert.equal(1, B.Get(0, 1).scale, "every button back at full size")
 		assert.same({ SB.L.LIST_SCALE_FALLBACK }, A.Lines())
+	end)
+
+	-- Ruling W5-1: never a full-size button in a list row, also while the fallback layout is held
+	-- under the mouse. Mutation: remove the scaleIs guard in showAt.
+	it("a slot whose scale does not take stays hidden, row and all, until the fallback layout runs", function()
+		SB.Config.Set("bags.freeTile", false) -- every empty slot is shown, so the new ones would be drawn
+		W.Open()
+		local ensure = B.EnsureCapacity
+		B.EnsureCapacity = function(bag, n)
+			ensure(bag, n)
+			for _, b in ipairs(B.buttons[bag]) do
+				b.SetScale = function() end
+			end
+		end
+		W.scroll.mouseOver = true
+		A.SetBagSize(1, 4)
+		bagUpdate(1)
+		A.Advance(0)
+		assert.equal("list", W.drawn, "the fallback waits for the mouse")
+		for slot = 1, 4 do
+			assert.falsy(B.Get(1, slot).shown, "slot " .. slot .. " is not drawn at full size in a row")
+			local r = W.rows.rows[B.Get(1, slot)]
+			assert.truthy(r == nil or not r.shown, "and has no row")
+		end
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.equal("sections", W.drawn)
+		assert.truthy(B.Get(1, 1).shown)
+		assert.same({ SB.L.LIST_SCALE_FALLBACK }, A.Lines())
+	end)
+
+	-- Fix round 1, item 3. Mutation: the wheel steps by W.SLOT + W.GAP in the list.
+	it("the mouse wheel scrolls three rows per notch in the list", function()
+		W.Open()
+		W.scroll.scripts.OnMouseWheel(W.scroll, -1)
+		assert.equal((W.LIST_ROW + W.LIST_GAP) * 3, W.scroll.vscroll)
 	end)
 
 	-- F7: New keeps 8 rows in the list, so a dungeon's loot stays under New. Mutation: LIST_NEW_ROWS = 4.

@@ -15,7 +15,8 @@
 --   rows.Place(button, x, y, width, height, shown)  the row of a slot button (made on first use)
 --   rows.Paint(button, bag, slot, record, freeCount, family)  record nil: an empty slot ("Empty
 --                                              slot"), or the free tile when freeCount is a number
---                                              (family "reagent": it says reagents only, F9)
+--                                              (family "reagent": reagents only; another
+--                                              family than "any": profession items only, F9)
 --   rows.Ghosts(list, width, height)           rows for placeholders: { { x, y } }, drawn whole
 --   rows.HideAll()                             another view, or a full layout starting
 --   rows.SetDimmed(button, dimmed)             search: a row dims with its button (AC5.1)
@@ -75,8 +76,14 @@ end
 function LR.Texts(record, freeCount, family)
 	if not record then
 		local name = L.LIST_EMPTY
-		if type(freeCount) == "number" then -- the free tile; a reagent bag's takes reagents only (F9)
-			name = (family == "reagent" and L.LIST_FREE_REAGENT or L.LIST_FREE):format(freeCount)
+		if type(freeCount) == "number" then -- the free tile; a reagent or profession bag's says what it takes (F9)
+			local fmt = L.LIST_FREE
+			if family == "reagent" then
+				fmt = L.LIST_FREE_REAGENT
+			elseif type(family) == "string" and family ~= "any" then
+				fmt = L.LIST_FREE_PROFESSION
+			end
+			name = fmt:format(freeCount)
 		end
 		return { name = name, count = "", ilvl = "", value = "" }
 	end
