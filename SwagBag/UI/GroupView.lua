@@ -32,7 +32,9 @@
 --   onDrop(sectionId) optional: an item dropped on a section header,
 --   sectionLabel(groupId, header) optional: header = { id, count, collapsed, overflow },
 --   freeTile() optional -> true: each group's Free shows one tile per bag family with its
---   number of free slots (Engine/Layout.lua, plan D19; families from Adapter.BagFamily) }
+--   number of free slots (Engine/Layout.lua, plan D19; families from Adapter.BagFamily),
+--   hideEmptyNew optional: true hides each group's New while it is empty (the alt viewer, where
+--   nothing ever arrives) }
 -- Collapse state is saved per character in ui.collapsed[key .. ":" .. groupId] (sections)
 -- and ui.collapsed[key .. ":#"] (whole groups).
 local _, SB = ...
@@ -385,7 +387,7 @@ function GV.New(cfg)
 			if sections then
 				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order, { columns = cfg.columns(),
 					newRows = cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile() or nil,
-					family = SB.Adapter.BagFamily })
+					family = SB.Adapter.BagFamily, hideEmptyNew = cfg.hideEmptyNew })
 			end
 			b.groups[#b.groups + 1] = g
 			b.byId[g.id] = g

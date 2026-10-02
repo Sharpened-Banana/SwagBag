@@ -88,9 +88,10 @@ end
 
 -- A record for an item that is not in a container slot (a guild bank slot), built from its
 -- link: info = Adapter.GuildSlot result { itemID, link, count, icon, quality, isLocked }.
--- bag is the caller's slot key (guild tab N uses bag 100 + N); location is "guild". Guild
--- bank items are never bound, never on cooldown and never new.
-function Items.DescribeLink(info, bag, slot, tab)
+-- bag is the caller's slot key (guild tab N uses bag 100 + N); location is "guild" unless given
+-- (the alt viewer passes "bags", "bank" or "warband" for saved items, so location keywords
+-- search them). Such items are never bound, never on cooldown and never new.
+function Items.DescribeLink(info, bag, slot, tab, location)
 	local A = SB.Adapter
 	local inst = A.GetItemInstant(info.itemID) or {}
 	local data = A.GetItemInfo(info.itemID)
@@ -121,7 +122,7 @@ function Items.DescribeLink(info, bag, slot, tab)
 		isKeystone = link:find("keystone:", 1, true) ~= nil,
 		isCagedPet = link:find("battlepet:", 1, true) ~= nil,
 		isNew = false,
-		location = "guild",
+		location = location or "guild",
 		tab = tab,
 		pending = data == nil,
 	}

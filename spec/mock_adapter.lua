@@ -214,6 +214,10 @@ function M.New(SB)
 		m.tooltip = { owner = owner, tab = tab, slot = slot }
 	end
 
+	function m.LinkTooltip(owner, link)
+		m.tooltip = { owner = owner, link = link }
+	end
+
 	function m.HideTooltip()
 		m.tooltip = nil
 	end
