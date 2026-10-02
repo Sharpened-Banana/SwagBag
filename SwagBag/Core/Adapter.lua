@@ -527,7 +527,8 @@ function A.CurrencyList()
 	end
 	for i = 1, n do
 		local ok, info = pcall(C.GetCurrencyListInfo, i)
-		if ok and type(info) == "table" and not info.isHeader then
+		-- a secret header flag counts as a header (skipped): its line cannot be told (week-4 deferred)
+		if ok and type(info) == "table" and not isSecret(info.isHeader) and not info.isHeader then
 			local okL, link = pcall(C.GetCurrencyListLink, i)
 			local okI, id = false, nil
 			if okL and type(link) == "string" then
@@ -931,6 +932,61 @@ function A.AuctionatorOnUpdate(cb)
 	if api and type(api.RegisterForDBUpdate) == "function" then
 		pcall(api.RegisterForDBUpdate, "SwagBag", cb)
 	end
+end
+
+---------------------------------------------------------------------------
+-- Syndicator (optional alt data, spec 3.3; Providers/Syndicator.lua). Read only, through its
+-- public API: Syndicator.API.IsReady, .GetAllCharacters, .GetByCharacterFullName, .GetWarband,
+-- .GetInventoryInfoByItemID, and Syndicator.CallbackRegistry:RegisterCallback(event, fn, owner).
+-- No Syndicator code is used; only these public names. This is the only file that names
+-- Syndicator's globals: every read is feature-detected, pcall'd and checked for secret values.
+---------------------------------------------------------------------------
+local SYNDICATOR_NEEDS = { "IsReady", "GetAllCharacters", "GetByCharacterFullName", "GetWarband",
+	"GetInventoryInfoByItemID" }
+A.SYNDICATOR_EVENTS = { "BagCacheUpdate", "WarbandBankCacheUpdate", "GuildCacheUpdate", "Ready" }
+
+-- Syndicator's API table while Syndicator is loaded, has every function above and says it is
+-- ready; nil otherwise (then SwagBag's own snapshots answer). Never errors.
+function A.SyndicatorAPI()
+	local okR, api = pcall(A.Resolve, "Syndicator.API")
+	if not okR or type(api) ~= "table" or isSecret(api) then
+		return nil
+	end
+	for _, name in ipairs(SYNDICATOR_NEEDS) do
+		local okF, fn = pcall(function()
+			return api[name]
+		end)
+		if not okF or type(fn) ~= "function" or isSecret(fn) then
+			return nil
+		end
+	end
+	local ok, ready = pcall(api.IsReady)
+	if ok and not isSecret(ready) and ready == true then
+		return api
+	end
+	return nil
+end
+
+-- cb runs when Syndicator's saved data changes (bags, warband bank, guild) or becomes ready.
+-- Returns false when Syndicator has no callback registry (or none could be registered).
+function A.SyndicatorOnUpdate(cb)
+	local okR, reg = pcall(A.Resolve, "Syndicator.CallbackRegistry")
+	if not okR or type(reg) ~= "table" or isSecret(reg) then
+		return false
+	end
+	local okF, register = pcall(function()
+		return reg.RegisterCallback
+	end)
+	if not okF or type(register) ~= "function" or isSecret(register) then
+		return false
+	end
+	local any = false
+	for _, event in ipairs(A.SYNDICATOR_EVENTS) do
+		if pcall(register, reg, event, cb, A) then
+			any = true
+		end
+	end
+	return any
 end
 
 ---------------------------------------------------------------------------

@@ -1,0 +1,219 @@
+-- SwagBag alt data provider "Syndicator" (spec 3.3, v1.2 pulled forward). Optional (P4): it answers
+-- only while Syndicator is loaded and ready (Adapter.SyndicatorAPI, the only code that names
+-- Syndicator's globals); otherwise SwagBag's own snapshots ("Own", Engine/AltData.lua) answer, and
+-- nothing else changes. While it answers it REPLACES Own for the character list, every character's
+-- bags and bank, the warband bank and the tooltip counts (Syndicator also knows characters SwagBag
+-- never saw), and ADDS what only Syndicator tracks: mail, equipped, auctions and void storage
+-- counts. Guild banks stay SwagBag's own (D11): container "guild" answers nil here, so Own answers,
+-- and counts() appends Own's guild entries for any guild Syndicator did not report (F18).
+-- SwagBag keeps saving its own snapshots either way, so removing Syndicator loses nothing.
+-- Slot data read (names only): bags[i] (bag i - 1), bankTabs[i].slots (bag 5 + i), the warband's
+-- bank[i].slots (bag 11 + i); a slot is { itemLink, itemCount }. Details: character, realm,
+-- realmNormalized, className, show.inventory (false: the user hid the character in Syndicator).
+-- Everything it reads is checked for secret values (never expected: it is saved data). An error
+-- here is AltData's to count (three switch the provider off) and trap under "none".
+local _, SB = ...
+
+local AD = SB.AltData
+local P = { name = "Syndicator", priority = 10, DEBOUNCE = 0.5 }
+SB.SyndicatorProvider = P
+
+local function api()
+	return SB.Adapter.SyndicatorAPI()
+end
+
+local function secret(v)
+	return SB.Adapter.IsSecret(v)
+end
+
+local function n(v)
+	return type(v) == "number" and not secret(v) and v or 0
+end
+
+local function str(v)
+	return type(v) == "string" and not secret(v) and v or nil
+end
+
+local function shown(data)
+	local d = type(data) == "table" and not secret(data) and data.details
+	if type(d) ~= "table" then
+		return nil
+	end
+	if type(d.show) == "table" and d.show.inventory == false then
+		return nil
+	end
+	return d
+end
+
+function P.available()
+	return api() ~= nil
+end
+
+-- canonical key -> Syndicator's own key, built once and dropped on SB_ALTDATA_CHANGED (invalidate);
+-- a key it does not hold is looked up again once, so a character Syndicator learns later is found.
+local names
+function P.invalidate()
+	names = nil
+end
+
+local function fullName(S, key)
+	for pass = 1, 2 do
+		if not names then
+			names = {}
+			for _, full in ipairs(S.GetAllCharacters() or {}) do
+				if str(full) then
+					names[AD.Canon(full)] = full
+				end
+			end
+		elseif pass == 2 then
+			return nil
+		end
+		if names[key] then
+			return names[key]
+		end
+		if pass == 1 then
+			names = nil
+		end
+	end
+	return nil
+end
+
+local function byCurrent(a, b)
+	if a.current ~= b.current then
+		return a.current
+	end
+	return a.key < b.key
+end
+
+function P.characters()
+	local S = api()
+	if not S then
+		return nil
+	end
+	local me, list = AD.Canon(SB.Adapter.CharKey()), {}
+	for _, full in ipairs(S.GetAllCharacters() or {}) do
+		local d = str(full) and shown(S.GetByCharacterFullName(full))
+		if d then
+			local key = AD.Canon(full)
+			list[#list + 1] = { key = key, name = str(d.character) or full:match("^[^%-]+"),
+				realm = str(d.realm) or str(d.realmNormalized), class = str(d.className), current = key == me }
+		end
+	end
+	table.sort(list, byCurrent)
+	return list
+end
+
+-- One Syndicator container (a list of slots) as { size, slots = { [slot] = { link, count } } }.
+local function container(slotList)
+	local out = { size = 0, slots = {} }
+	if type(slotList) ~= "table" or secret(slotList) then
+		return out
+	end
+	for slot, s in pairs(slotList) do
+		if type(slot) == "number" then
+			local link = type(s) == "table" and not secret(s) and str(s.itemLink)
+			if link then
+				out.slots[slot] = { link = link, count = n(s.itemCount) > 0 and s.itemCount or 1 }
+				out.size = math.max(out.size, slot)
+			elseif type(s) == "table" then
+				out.size = math.max(out.size, slot)
+			end
+		end
+	end
+	return out
+end
+
+-- kind "bags" | "bank" | "warband"; "guild" is SwagBag's own (nil here). nil when Syndicator has
+-- nothing for it, so Own answers.
+function P.container(key, kind)
+	local S = api()
+	if not S or kind == "guild" then
+		return nil
+	end
+	local out, any = { containers = {} }, false
+	local function add(bag, list)
+		local c = container(list)
+		if c.size > 0 then
+			out.containers[bag] = c
+			any = true
+		end
+	end
+	if kind == "warband" then
+		local w = S.GetWarband(1)
+		for i, tab in ipairs(type(w) == "table" and type(w.bank) == "table" and w.bank or {}) do
+			add(11 + i, type(tab) == "table" and tab.slots)
+		end
+		return any and out or nil
+	end
+	local full = fullName(S, key)
+	local data = full and S.GetByCharacterFullName(full)
+	if not shown(data) then
+		return nil
+	end
+	if kind == "bags" then
+		for i, list in ipairs(type(data.bags) == "table" and data.bags or {}) do
+			add(i - 1, list)
+		end
+	elseif kind == "bank" then
+		for i, tab in ipairs(type(data.bankTabs) == "table" and data.bankTabs or {}) do
+			add(5 + i, type(tab) == "table" and tab.slots)
+		end
+	end
+	return any and out or nil
+end
+
+function P.counts(itemID)
+	local S = api()
+	if not S then
+		return nil
+	end
+	local info = S.GetInventoryInfoByItemID(itemID, false, false)
+	if type(info) ~= "table" or secret(info) then
+		return nil
+	end
+	local me = AD.Canon(SB.Adapter.CharKey())
+	local out = { chars = {}, warband = n(type(info.warband) == "table" and info.warband[1]), guilds = {} }
+	local seen = {}
+	for _, c in ipairs(type(info.characters) == "table" and info.characters or {}) do
+		if type(c) == "table" and str(c.character) then
+			local key = AD.Canon(c.character .. "-" .. (str(c.realmNormalized) or ""))
+			local e = { key = key, name = c.character, class = str(c.className), current = key == me, bags = n(c.bags),
+				bank = n(c.bank), mail = n(c.mail), equipped = n(c.equipped), auctions = n(c.auctions), void = n(c.void) }
+			if e.bags + e.bank + e.mail + e.equipped + e.auctions + e.void > 0 then
+				out.chars[#out.chars + 1] = e
+			end
+		end
+	end
+	for _, g in ipairs(type(info.guilds) == "table" and info.guilds or {}) do
+		if type(g) == "table" and str(g.guild) and n(g.bank) > 0 then
+			local key = AD.Canon(g.guild .. "-" .. (str(g.realmNormalized) or ""))
+			seen[key] = true
+			out.guilds[#out.guilds + 1] = { key = key, name = g.guild, count = g.bank }
+		end
+	end
+	-- Guild banks stay SwagBag's own (D11): add the guilds only SwagBag has seen (F18).
+	for _, g in ipairs(AD.OwnGuildCounts(itemID)) do
+		local key = AD.Canon(g.key)
+		if not seen[key] then
+			out.guilds[#out.guilds + 1] = { key = key, name = g.name, count = g.count }
+		end
+	end
+	table.sort(out.chars, byCurrent)
+	table.sort(out.guilds, function(a, b)
+		return a.key < b.key
+	end)
+	return out
+end
+
+AD.RegisterProvider(P)
+
+-- Syndicator's data changed: one SB_ALTDATA_CHANGED after the burst (AltData drops the provider's
+-- cache and moves its generation; the alt viewer and tooltip memos follow it). The callback is
+-- Syndicator's call into SwagBag, so it runs under ErrorTrap ("none": record only, never Safe Mode).
+SB.On("SB_LOGIN", function()
+	SB.Adapter.SyndicatorOnUpdate(SB.ErrorTrap.Guard("altdata.syndicator", function()
+		SB.Debounce("altdata.changed", P.DEBOUNCE, function()
+			SB.Emit("SB_ALTDATA_CHANGED", "Syndicator")
+		end, "none")
+	end, "none"))
+end, "none")

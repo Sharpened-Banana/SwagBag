@@ -14,6 +14,8 @@
 --   AltData.Container(key, kind) -> c, source   kind "bags" | "bank" | "warband" | "guild":
 --       { at = epoch | nil, title = text | nil, containers = { [bag or guild tab] = { size, slots =
 --       { [slot] = { link, count } } } } }, or nil when nothing is saved
+--   AltData.Generation() -> n   moves on every SB_ALTDATA_CHANGED; providers may define invalidate()
+--   AltData.OwnGuildCounts(itemID) -> { { key, name, count } }   SwagBag's own guild banks
 --   AltData.Source() -> name   the provider that answers first now
 --   AltData.Canon(key) -> "Name-Realm" with the realm's spaces and hyphens removed (the form
 --       Syndicator uses), so both providers name a character the same way
@@ -225,6 +227,24 @@ local function decode(snap, title)
 	return out
 end
 
+-- SwagBag's own guild-bank counts of an item: { { key = raw guild key, name, count } }, by key. A provider
+-- that does not know guild banks (Syndicator, D11) appends these.
+function AD.OwnGuildCounts(itemID)
+	local out = {}
+	for gk, g in pairs(SB.Snapshots.DB().guilds) do
+		if type(g) == "table" then
+			local n = mapOf("guild:" .. gk, g.snapshot)[itemID] or 0
+			if n > 0 then
+				out[#out + 1] = { key = gk, name = guildName(gk), count = n }
+			end
+		end
+	end
+	table.sort(out, function(a, b)
+		return a.key < b.key
+	end)
+	return out
+end
+
 local own = { name = "Own", priority = 0 }
 
 function own.available()
@@ -292,21 +312,11 @@ function own.counts(itemID)
 		end
 	end
 	out.warband = mapOf("warband", db.warband)[itemID] or 0
-	for gk, g in pairs(db.guilds) do
-		if type(g) == "table" then
-			local n = mapOf("guild:" .. gk, g.snapshot)[itemID] or 0
-			if n > 0 then
-				out.guilds[#out.guilds + 1] = { key = gk, name = guildName(gk), count = n }
-			end
-		end
-	end
+	out.guilds = AD.OwnGuildCounts(itemID)
 	table.sort(out.chars, function(a, b)
 		if a.current ~= b.current then
 			return a.current
 		end
-		return a.key < b.key
-	end)
-	table.sort(out.guilds, function(a, b)
 		return a.key < b.key
 	end)
 	return out
@@ -322,6 +332,27 @@ SB.On("SB_SNAPSHOT_SAVED", function(_, kind, owner)
 		index.warband = nil
 	elseif owner then
 		index[kind .. ":" .. owner] = nil
+	end
+end, "none")
+
+-- A provider's own data changed (Providers/Syndicator.lua announces it once per burst of Syndicator's
+-- callbacks): every provider drops what it cached, and Generation moves so a memo built on top of
+-- AltData (tooltip lines, the alt viewer) knows it is stale. Own's index is not touched: it follows
+-- SwagBag's own saves (SB_SNAPSHOT_SAVED), which Syndicator's data does not change.
+AD.generation = 0
+function AD.Generation()
+	return AD.generation
+end
+
+SB.On("SB_ALTDATA_CHANGED", function()
+	AD.generation = AD.generation + 1
+	for _, p in ipairs(AD.providers) do
+		if p.invalidate then
+			local ok, message, stack = trapped(p.invalidate)
+			if not ok then
+				failed(p, message, stack)
+			end
+		end
 	end
 end, "none")
 
