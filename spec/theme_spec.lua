@@ -129,7 +129,7 @@ describe("Theme", function()
 		assert.equal("gone", SB.Config.Get("theme.name"))
 	end)
 
-	it("restyles in combat and creates no frame (a flat button gets one texture of SwagBag's own)", function()
+	it("a live switch creates no frame (it works on plain frames and SwagBag's own textures, so combat is no obstacle)", function()
 		local b = templateButton()
 		T.Button(b)
 		Loader.LoadFile(SB, "SwagBag/UI/Themes.lua")
@@ -145,6 +145,144 @@ describe("Theme", function()
 		SB2.Config.Get = function() error("Config.Get called while loading") end
 		local ok, err = pcall(Loader.LoadFile, SB2, "SwagBag/UI/Theme.lua")
 		assert.truthy(ok, tostring(err))
+	end)
+end)
+
+describe("Theme hardening (W5-5)", function()
+	local SB, A, T
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		Fake.Install()
+		A.FontObject = function(name) return { fontObject = name } end
+		Loader.LoadFile(SB, "SwagBag/UI/Theme.lua")
+		T = SB.Theme
+		SB.Config.Init(nil, nil)
+		Loader.LoadFile(SB, "SwagBag/UI/Themes.lua")
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	local function unchanged(main)
+		assert.equal("blizzard", T.Current())
+		assert.equal("blizzard", SB.Config.Get("theme.name"))
+		assert.same({ 0.06, 0.06, 0.08, 0.95 }, main.calls.SetBackdropColor)
+	end
+
+	-- Mutations: move Config.Set above the palette check; drop validPalette.
+	it("a palette() that errors is refused: nothing changes, nothing is saved, the error is recorded", function()
+		T.Register({ id = "bad", name = "Bad", available = function() return true end, palette = function() error("boom") end })
+		local main = Fake.New("Frame")
+		T.Window(main, "main")
+		assert.same({ false, "unavailable" }, { T.Apply("bad", true) })
+		unchanged(main)
+		assert.truthy(#SB.ErrorTrap.Recent() > 0)
+		assert.falsy(SB.SafeMode.IsOn("bags"), "a theme glitch never takes the bags away")
+	end)
+
+	it("a palette without its required fields is refused the same way", function()
+		T.Register({ id = "empty", name = "Empty", available = function() return true end, palette = function() return {} end })
+		T.Register({ id = "badcol", name = "BadCol", available = function() return true end, palette = function()
+			return { window = { 1, 1, 1 }, dialog = { 1, 1, 1, 1 }, border = { 1, 1, 1, 1 }, header = { 1, 1, 1, 1 }, backdrop = "x" }
+		end })
+		local main = Fake.New("Frame")
+		T.Window(main, "main")
+		assert.same({ false, "unavailable" }, { T.Apply("empty", true) })
+		assert.same({ false, "unavailable" }, { T.Apply("badcol", true) })
+		unchanged(main)
+	end)
+
+	it("an available() that errors counts as not available", function()
+		T.Register({ id = "bad", name = "Bad", available = function() error("boom") end, palette = function() return {} end })
+		assert.same({ false, "unavailable" }, { T.Apply("bad", true) })
+		assert.equal("blizzard", T.Current())
+	end)
+
+	-- Mutation: drop the ErrorTrap.Run around restyleAll, or the restore.
+	it("a restyle that fails part-way puts the previous look back and saves nothing", function()
+		local main = Fake.New("Frame")
+		T.Window(main, "main")
+		local fs = Fake.New("FontString")
+		fs.GetFontObject = function() return "GameFontNormal" end
+		T.Text(fs, "title")
+		fs.SetFontObject = function(self, obj)
+			if type(obj) == "table" then
+				error("font failed")
+			end
+			self.calls.SetFontObject = { obj }
+		end
+		assert.same({ false, "unavailable" }, { T.Apply("flat", true) })
+		unchanged(main)
+		assert.same({ "GameFontNormal" }, fs.calls.SetFontObject)
+	end)
+
+	it("a header colour is never an error", function()
+		assert.same({ 1, 1, 1, 0.06 }, { T.HeaderColor() })
+	end)
+
+	it("Blizzard-themed font strings get no SetFont and no SetTextColor", function()
+		local fs = Fake.New("FontString")
+		fs.GetFontObject = function() return "GameFontNormal" end
+		T.Text(fs, "title")
+		T.Apply("flat", false)
+		T.Apply("blizzard", false)
+		assert.is_nil(fs.calls.SetFont)
+		assert.is_nil(fs.calls.SetTextColor)
+	end)
+
+	it("Modern flat twice leaves one texture on a button, and a large title stays large", function()
+		local b = Fake.New("Button")
+		T.Button(b)
+		local made = 0
+		b.CreateTexture = function(self) made = made + 1; return Fake.New("Texture", self) end
+		T.Apply("flat", false)
+		T.Apply("flat", false)
+		assert.equal(1, made)
+		local fs = Fake.New("FontString")
+		fs.GetFontObject = function() return "GameFontNormalLarge" end
+		T.Text(fs, "titleLarge")
+		assert.same({ { fontObject = "GameFontHighlightLarge" } }, fs.calls.SetFontObject)
+	end)
+end)
+
+describe("Blizzard values on the guild window and quick setup (AC14.1)", function()
+	local SB
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		SB.Config.Init(nil, nil)
+		Fake.Install()
+		Env.PaintGlobals()
+		SB.Adapter.FontObject = function(name) return { fontObject = name } end
+		Loader.LoadFile(SB, "SwagBag/UI/Theme.lua")
+	end)
+
+	after_each(function()
+		Env.ClearPaintGlobals()
+		Fake.Uninstall()
+	end)
+
+	it("the guild bank window is registered with the main look", function()
+		Env.FakeBags(SB)
+		local GW = Env.LoadGuild(SB)
+		assert.same({ 0.06, 0.06, 0.08, 0.95 }, GW.frame.calls.SetBackdropColor)
+		assert.same({ 0.35, 0.35, 0.4, 1 }, GW.frame.calls.SetBackdropBorderColor)
+		SB.Theme.Register({ id = "flat", name = "x", available = function() return true end, palette = function()
+			return { window = { 0.1, 0.1, 0.1, 0.5 }, dialog = { 0, 0, 0, 1 }, border = { 0, 0, 0, 1 }, header = { 1, 1, 1, 1 },
+				backdrop = "b" }
+		end })
+		SB.Theme.Apply("flat", false)
+		assert.same({ 0.1, 0.1, 0.1, 0.5 }, GW.frame.calls.SetBackdropColor)
+	end)
+
+	it("the quick setup window is a dialog with the old numbers", function()
+		SB.BagsWindow = { RequestLayout = function() end, RefreshTitle = function() end, IsOpen = function() return false end }
+		Loader.LoadFile(SB, "SwagBag/UI/QuickSetup.lua")
+		local f = SB.QuickSetup.frame
+		assert.same({ 0.06, 0.06, 0.08, 0.97 }, f.calls.SetBackdropColor)
+		assert.same({ 0.35, 0.35, 0.4, 1 }, f.calls.SetBackdropBorderColor)
+		assert.is_nil(f.title.calls.SetFont)
 	end)
 end)
 

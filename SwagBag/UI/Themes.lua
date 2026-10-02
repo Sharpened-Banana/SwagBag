@@ -17,7 +17,7 @@ Theme.Register({
 		return {
 			window = { 0.09, 0.09, 0.1, 0.92 }, dialog = { 0.09, 0.09, 0.1, 0.96 }, border = { 0, 0, 0, 1 },
 			header = { 1, 1, 1, 0.03 }, row = { 1, 1, 1, 0.025 }, slot = { 0.14, 0.14, 0.15, 1 }, backdrop = Theme.BLANK,
-			fonts = { title = "GameFontHighlight", header = "GameFontHighlight", label = "GameFontHighlight",
+			fonts = { titleLarge = "GameFontHighlightLarge", title = "GameFontHighlight", header = "GameFontHighlight", label = "GameFontHighlight",
 				body = "GameFontHighlightSmall", small = "GameFontHighlightSmall", row = "GameFontHighlightSmall" },
 			button = { bg = { 0.16, 0.16, 0.18, 1 } },
 		}

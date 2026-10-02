@@ -3,8 +3,8 @@
 -- in or out of combat (no /reload). What a theme touches, and nothing else:
 --   Theme.Window(frame, kind)  a window's backdrop (kind "main": bags, bank, guild bank, alt viewer;
 --                              "dialog": settings, quick setup). frame uses "BackdropTemplate"
---   Theme.Text(fs, role)       a font string's font (role "title" | "header" | "label" | "body" |
---                              "small" | "row"); the Blizzard look puts back the font it was made with
+--   Theme.Text(fs, role)       a font string's font (role "title" | "titleLarge" (settings, setup) |
+--                              "header" | "label" | "body" | "small" | "row"); the Blizzard look puts back the font it was made with
 --   Theme.Button(b)            SwagBag's own UIPanelButtonTemplate buttons (title buttons, settings):
 --                              a flat look hides the template's Left/Middle/Right textures and shows a
 --                              flat texture of SwagBag's own; never an item button or a secure frame
@@ -39,7 +39,7 @@ local rows = setmetatable({}, weak) -- [row] = true
 
 Theme.SLOT_ATLAS = "bags-item-slot64"
 Theme.BLANK = "Interface\\Buttons\\WHITE8x8"
-local SIZES = { title = 1, header = 0, label = 0, body = -1, small = -1, row = -1 } -- one-font themes: size offsets
+local SIZES = { titleLarge = 3, title = 1, header = 0, label = 0, body = -1, small = -1, row = -1 } -- one-font themes: size offsets
 
 function Theme.Register(def)
 	if not Theme.themes[def.id] then
@@ -61,7 +61,50 @@ Theme.Register({
 	end,
 })
 
-local palette = Theme.themes.blizzard.palette()
+local BLIZZARD = Theme.themes.blizzard.palette()
+local palette = BLIZZARD
+
+-- A palette that cannot be used (W5-5): the four colour fields are tables of 4 numbers, the backdrop
+-- a string. Optional keys (row, slot, fonts, button) that are not usable fall back to the Blizzard
+-- look's value (none).
+local function isColour(c)
+	if type(c) ~= "table" then
+		return false
+	end
+	for i = 1, 4 do
+		if type(c[i]) ~= "number" then
+			return false
+		end
+	end
+	return true
+end
+
+local function validPalette(p)
+	if type(p) ~= "table" then
+		return nil
+	end
+	for _, key in ipairs({ "window", "dialog", "border", "header" }) do
+		if not isColour(p[key]) then
+			return nil
+		end
+	end
+	if type(p.backdrop) ~= "string" then
+		return nil
+	end
+	local out = {}
+	for k, v in pairs(p) do
+		out[k] = v
+	end
+	out.row = isColour(p.row) and p.row or BLIZZARD.row
+	out.slot = isColour(p.slot) and p.slot or BLIZZARD.slot
+	if p.fonts ~= nil and type(p.fonts) ~= "table" then
+		out.fonts = BLIZZARD.fonts
+	end
+	if p.button ~= nil and not (type(p.button) == "table" and isColour(p.button.bg)) then
+		out.button = BLIZZARD.button
+	end
+	return out
+end
 
 function Theme.Current()
 	return Theme.current
@@ -77,7 +120,7 @@ function Theme.Available(id)
 	if not def then
 		return false
 	end
-	local ok, yes = pcall(def.available)
+	local ok, yes = SB.ErrorTrap.Run("theme.available", "none", def.available)
 	return ok and yes == true
 end
 
@@ -159,7 +202,10 @@ local function styleRow(row)
 end
 
 function Theme.HeaderColor()
-	local c = palette.header
+	local c = palette and palette.header
+	if not isColour(c) then
+		c = BLIZZARD.header
+	end
 	return c[1], c[2], c[3], c[4]
 end
 
@@ -226,15 +272,24 @@ function Theme.Apply(id, save)
 	if not Theme.Available(id) then
 		return false, "unavailable"
 	end
-	local ok, p = pcall(def.palette)
-	if not ok or type(p) ~= "table" then
+	-- Validate before anything is committed (W5-5): a palette that errors or is unusable changes nothing.
+	local ok, raw = SB.ErrorTrap.Run("theme.palette", "none", def.palette)
+	local p = ok and validPalette(raw)
+	if not p then
+		return false, "unavailable"
+	end
+	local oldPalette, oldCurrent = palette, Theme.current
+	palette, Theme.current = p, id
+	if not SB.ErrorTrap.Run("theme.restyle", "none", restyleAll) then
+		palette, Theme.current = oldPalette, oldCurrent
+		SB.ErrorTrap.Run("theme.restyle", "none", restyleAll)
 		return false, "unavailable"
 	end
 	if save and not SB.Config.Set("theme.name", id) then
+		palette, Theme.current = oldPalette, oldCurrent
+		SB.ErrorTrap.Run("theme.restyle", "none", restyleAll)
 		return false, "readonly"
 	end
-	palette, Theme.current = p, id
-	restyleAll()
 	SB.Emit("SB_THEME_CHANGED", id)
 	return true
 end
