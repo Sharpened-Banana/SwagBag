@@ -20,7 +20,7 @@ read_globals = {
 	"StaticPopup_Show", "YES", "NO",
 	"GetCursorInfo", "ClearCursor", "GameTooltip",
 	"GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink", "QueryGuildBankTab",
-	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "GetRealmName",
+	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "IsInGuild", "GetRealmName",
 	"IsModifiedClick", "HandleModifiedItemClick", "time", "UnitName", "UnitClass", "UnitLevel",
 	"C_ChallengeMode", "C_PlayerInfo", "GetInventoryItemLink",
 	"C_RestrictedActions", "C_PartyInfo", "C_Spell", "C_NewItems", "C_CurrencyInfo",

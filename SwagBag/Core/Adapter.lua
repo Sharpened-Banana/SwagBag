@@ -785,6 +785,18 @@ function A.GuildKey()
 	return name .. "-" .. tostring(realm or (GetRealmName and GetRealmName()) or "")
 end
 
+-- true / false when the client is certain whether the player is in a guild, nil when it can't say.
+function A.IsInGuild()
+	if not IsInGuild then
+		return nil
+	end
+	local ok, yes = pcall(IsInGuild)
+	if not ok or type(yes) ~= "boolean" then
+		return nil
+	end
+	return yes
+end
+
 function A.GuildTooltip(owner, tab, slot)
 	if not GameTooltip then
 		return

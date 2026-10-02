@@ -536,6 +536,9 @@ L.SET_LIST_ORDER = "The list view's order"
 L.SET_LIST_DESC = "Highest first"
 L.SET_LIST_ASC = "Lowest first"
 
+-- Alt data (week 5): other characters' items
+L.ALTDATA_PROVIDER_OFF = "The %s alt data stopped working this session; SwagBag uses its own saved data instead."
+
 -- Themes (week 5): the look of SwagBag's own windows
 L.THEME_BLIZZARD = "Blizzard"
 L.THEME_FALLBACK = "The %s look cannot be used now, so SwagBag looks like Blizzard's bags this session."
