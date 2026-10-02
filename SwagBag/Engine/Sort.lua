@@ -29,7 +29,11 @@ function Sort.Spec()
 	if not KNOWN[by] then
 		by = "value"
 	end
-	return { by = by, desc = SB.Config.Get("bags.list.desc") == true }
+	local desc = SB.Config.Get("bags.list.desc")
+	if type(desc) ~= "boolean" then
+		desc = by ~= "name" -- a damaged saved direction: the column's natural one
+	end
+	return { by = by, desc = desc }
 end
 
 function Sort.Save(by, desc)
@@ -74,6 +78,14 @@ local function nameOf(record)
 end
 
 local function keyOf(record, by, valueOf)
+	local key = Sort.rawKey(record, by, valueOf)
+	if key ~= key then
+		return nil -- NaN would break the comparator's ordering
+	end
+	return key
+end
+
+function Sort.rawKey(record, by, valueOf)
 	if by == "name" then
 		return nameOf(record)
 	elseif by == "count" then

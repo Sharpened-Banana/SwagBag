@@ -33,6 +33,15 @@ describe("Test format (spec/helpers/format51.lua)", function()
 		assert.equal("%s", ("%%s"):format(true))
 		assert.equal("50% x", ("%d%% %s"):format(50, "x"))
 	end)
+
+	-- Mutation: check only "s", or drop the type(fmt) guard.
+	it("checks %q like %s, and hands a non-string format straight to the real format", function()
+		assert.has_error(function() return ("%q"):format(true) end, "string expected, got boolean")
+		assert.equal('"a"', ("%q"):format("a"))
+		assert.has_error(function() return string.format(nil, 1) end)
+		assert.has_error(function() return string.format({}) end)
+		assert.equal("7", string.format(7))
+	end)
 end)
 
 describe("Sort", function()
@@ -118,6 +127,23 @@ describe("Sort", function()
 		assert.same({ by = "name", desc = false }, S.Next({ by = "value", desc = true }, "name"))
 		assert.same({ by = "count", desc = true }, S.Next({ by = "name", desc = false }, "count"))
 		assert.same({ by = "ilvl", desc = true }, S.Next(nil, "ilvl"))
+	end)
+
+	-- Mutation: return the saved desc as it is, whatever its type.
+	it("Sort.Spec: a damaged saved direction falls back to the column's natural one", function()
+		SB.Config.Set("bags.list.desc", "yes")
+		assert.same({ by = "value", desc = true }, S.Spec())
+		SB.Config.Set("bags.list.sort", "name")
+		assert.same({ by = "name", desc = false }, S.Spec())
+	end)
+
+	-- Mutation: drop the NaN check in keyOf.
+	it("a NaN key counts as no value: last, in both directions, and the sort does not break", function()
+		local nan = 0 / 0
+		local slots = { slot(1, rec("A", 1, { v = nan })), slot(2, rec("B", 1, { v = 5 })), slot(3, rec("C", 1, { v = 9 })),
+			slot(4, rec("D", 1, { v = nan })) }
+		assert.same({ "C", "B", "A", "D" }, names(S.DisplayOrder(slots, { by = "value", desc = true }, value)))
+		assert.same({ "B", "C", "A", "D" }, names(S.DisplayOrder(slots, { by = "value", desc = false }, value)))
 	end)
 
 	it("Sort.Spec: value, highest first, by default; a damaged saved column falls back to value", function()

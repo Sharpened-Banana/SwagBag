@@ -2,8 +2,10 @@
 -- -- the name in its quality colour, the count, the item level and the stack's value. The item
 -- part of a row is the slot's own button (UI/Buttons.lua), which the window places at the row's
 -- left edge: every click on the icon is Blizzard's own item click (use, sell, deposit, split,
--- drag), and a row itself takes no click: a click on a row's text only flashes where to click
--- (P2, F24). Hovering a row shows the item's tooltip and a line that says to click the icon (P2).
+-- drag), and a row itself takes no click. Contract with the window: a row starts to the right of
+-- its button (never under it) and sits at the button's parent frame level, not above it, so the
+-- row can never cover the secure button. A row itself takes no item click: a click on a row's text only flashes where to click
+-- (P2, F24; with no flash callback it goes to chat). Hovering a row shows the item's tooltip and a line that says to click the icon (P2).
 -- Every row script is cosmetic, so it traps as "none" (F3, the week-4 glow precedent): one glitch
 -- there never flips Safe Mode and takes the bags away. Plain frames and font strings only, made the first time a
 -- row is needed (allowed in combat, like the footer, ruling W4-24); one set of rows per window.
@@ -107,6 +109,7 @@ function LR.New(parent, _window, flash)
 
 	local function create(tip, click)
 		local row = CreateFrame("Frame", nil, parent)
+		row:SetFrameLevel(parent:GetFrameLevel()) -- not above the item buttons (see the header)
 		row:EnableMouse(true)
 		row.bg = row:CreateTexture(nil, "BACKGROUND")
 		row.bg:SetAllPoints(row)
@@ -133,11 +136,21 @@ function LR.New(parent, _window, flash)
 	end
 
 	-- P2 (F24): a click on a row's text says where to click; nothing secure is involved.
+	local function answer(msg)
+		if flash then
+			flash(msg)
+		else
+			SB.Print(msg) -- never silent (P2), even without a window's title flash
+		end
+	end
+
 	local function itemClick(row)
 		local s = slotOf[row]
-		if flash then
-			flash((s and s.filled) and L.LIST_ROW_CLICK or L.LIST_EMPTY_TIP)
-		end
+		answer((s and s.filled) and L.LIST_ROW_CLICK or L.LIST_EMPTY_CLICK)
+	end
+
+	local function ghostClick()
+		answer(L.PLACEHOLDER_TIP)
 	end
 
 	local function ghostTip(row)
@@ -211,7 +224,7 @@ function LR.New(parent, _window, flash)
 		for i, p in ipairs(list) do
 			local row = R.ghosts[i]
 			if not row then
-				row = create(ghostTip)
+				row = create(ghostTip, ghostClick)
 				R.ghosts[i] = row
 			end
 			layoutTexts(row, width, height)

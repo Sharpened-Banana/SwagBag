@@ -506,6 +506,7 @@ L.LIST_FREE = "%d free - drop items here"
 L.LIST_GONE = "(moved or used - regroups when you close the bag)"
 L.LIST_ROW_TIP = "Click the icon on the left to use, sell or move this item."
 L.LIST_ROW_CLICK = "Click the icon on the left to use the item."
+L.LIST_EMPTY_CLICK = "Drop an item on the icon on the left."
 L.LIST_EMPTY_TIP = "An empty bag slot: drop an item on the icon on the left."
 
 -- In-game check V1 (optional)

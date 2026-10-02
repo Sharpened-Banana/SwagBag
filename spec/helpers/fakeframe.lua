@@ -23,6 +23,11 @@ function Fake.Fire(f, name, ...)
 	end
 end
 
+-- WoW: a new child sits one level above its parent until SetFrameLevel says otherwise.
+function methods.GetFrameLevel(self)
+	return rawget(self, "level") or (rawget(self, "parent") and self.parent:GetFrameLevel() + 1) or 1
+end
+function methods.SetFrameLevel(self, level) rawset(self, "level", level) end
 function methods.IsShown(self) return self.shown end
 function methods.IsVisible(self) return self.shown end
 function methods.Show(self)
