@@ -140,6 +140,9 @@ function Report.Build()
 		local list, source = SB.AltData.Characters()
 		lines[#lines + 1] = L.REPORT_ALTDATA:format(tostring(source or L.REPORT_NONE), list and #list or 0)
 	end
+	if SB.TooltipCounts and SB.TooltipCounts.hookFailed then
+		lines[#lines + 1] = L.TIP_HOOK_UNAVAILABLE
+	end
 	if SB.Theme and SB.Config.db then
 		lines[#lines + 1] = L.REPORT_LOOK:format(SB.Theme.Current(), tostring(SB.Config.Get("theme.name")))
 	end

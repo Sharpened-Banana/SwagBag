@@ -822,14 +822,13 @@ end
 
 -- Item tooltips the client fills (bags, bank, auction house, chat links): fn(tooltip, itemID) runs
 -- after it, to add lines (the alt counts, UI/TooltipCounts.lua), for GameTooltip and ItemRefTooltip
--- only. Taint-free: through TooltipDataProcessor.AddTooltipPostCall for Enum.TooltipDataType.Item
--- when the client has it, else a HookScript on OnTooltipSetItem. A secret or missing item ID is
--- skipped. True when hooked.
+-- only. Taint-free: through TooltipDataProcessor.AddTooltipPostCall for Enum.TooltipDataType.Item.
+-- A secret or missing item ID is skipped. Returns true when hooked, else false (the caller says so).
 function A.HookItemTooltip(fn)
 	local TDP = _G.TooltipDataProcessor
 	local kind = Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item
 	if type(TDP) == "table" and type(TDP.AddTooltipPostCall) == "function" and kind ~= nil then
-		local ok = pcall(TDP.AddTooltipPostCall, kind, function(tooltip, data)
+		return (pcall(TDP.AddTooltipPostCall, kind, function(tooltip, data)
 			if not countsTooltip(tooltip) then
 				return
 			end
@@ -837,33 +836,18 @@ function A.HookItemTooltip(fn)
 			if type(id) == "number" and not isSecret(id) then
 				fn(tooltip, id)
 			end
-		end)
-		return ok
+		end))
 	end
-	local hooked = false
-	for _, tooltip in ipairs({ _G.GameTooltip, _G.ItemRefTooltip }) do
-		if tooltip and tooltip.HookScript then
-			tooltip:HookScript("OnTooltipSetItem", function(self)
-				local ok, _, link = pcall(self.GetItem, self)
-				if ok and type(link) == "string" and not isSecret(link) then
-					local inst = A.GetItemInstant(link)
-					if inst and type(inst.itemID) == "number" then
-						fn(self, inst.itemID)
-					end
-				end
-			end)
-			hooked = true
-		end
-	end
-	return hooked
+	return false
 end
 
--- One line on a tooltip: left in gold, right (optional) in white.
+-- One line on a tooltip: left in gold, right (optional) in white. Errors are not caught here: the
+-- caller's ErrorTrap.Guard records them.
 function A.TooltipLine(tooltip, left, right)
 	if right then
-		pcall(tooltip.AddDoubleLine, tooltip, left, right, 1, 0.82, 0, 1, 1, 1)
+		tooltip:AddDoubleLine(left, right, 1, 0.82, 0, 1, 1, 1)
 	else
-		pcall(tooltip.AddLine, tooltip, left, 1, 0.82, 0)
+		tooltip:AddLine(left, 1, 0.82, 0)
 	end
 end
 
