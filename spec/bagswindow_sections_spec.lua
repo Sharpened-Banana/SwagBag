@@ -11,7 +11,7 @@ local FILES = {
 	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
 	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
-	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua",
+	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua", "SwagBag/Engine/Sort.lua",
 }
 
 -- Fake frame: shown state, scripts (Hide fires OnHide like the client), points, text, mouse-over.
@@ -125,6 +125,7 @@ describe("BagsWindow category view", function()
 		B = fakeButtons()
 		SB.Buttons = B
 		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/ListRows.lua") -- TOC order: ListRows before BagsWindow
 		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
 		Loader.LoadFile(SB, "SwagBag/UI/Overlays.lua")
 		W = SB.BagsWindow
@@ -1373,6 +1374,7 @@ describe("BagsWindow focus modes (spec 6)", function()
 		B = fakeButtons()
 		SB.Buttons = B
 		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/ListRows.lua") -- TOC order: ListRows before BagsWindow
 		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
 		W, F = SB.BagsWindow, SB.Focus
 		-- Like the client: a hovered item button lies inside the scroll frame, so the mouse is over
@@ -2105,6 +2107,7 @@ describe("BagsWindow load order", function()
 		UISpecialFrames = {}
 		SB.Buttons = fakeButtons()
 		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/ListRows.lua")
 		local ok, err = pcall(Loader.LoadFile, SB, "SwagBag/UI/BagsWindow.lua")
 		UIParent, UISpecialFrames = nil, nil
 		assert.truthy(ok, tostring(err))

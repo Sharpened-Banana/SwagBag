@@ -533,8 +533,8 @@ L.LIST_NOT_SHOWN = "The bags show another view now: /swagbag view list shows the
 L.HELP_LIST = "list [name|count|ilvl|value] [asc|desc]: show or set how the list view is sorted"
 L.SET_LIST_SORT = "The list view sorts by"
 L.SET_LIST_ORDER = "The list view's order"
-L.SET_LIST_DESC = "Highest first (Z to A)"
-L.SET_LIST_ASC = "Lowest first (A to Z)"
+L.SET_LIST_DESC = "Highest first"
+L.SET_LIST_ASC = "Lowest first"
 
 -- In-game check V1 (optional)
 L.V1_TITLE = "SwagBag V1 test: right-click these in combat"

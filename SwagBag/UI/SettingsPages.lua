@@ -47,7 +47,7 @@ local function bagsRows()
 			if SB.Config.readOnly then
 				return L.SETTINGS_READONLY
 			end
-			W.SetView(v)
+			W.SetView(v, true)
 			return (v == "grid" and L.VIEW_GRID) or (v == "list" and L.VIEW_LIST) or L.VIEW_SECTIONS
 		end },
 		{ kind = "choice", label = L.SET_COLUMNS, get = get("bags.columns"), width = 56,
@@ -68,7 +68,7 @@ local function bagsRows()
 				if SB.Config.readOnly then
 					return L.SETTINGS_READONLY
 				end
-				W.SetScale(v)
+				W.SetScale(v, true)
 				return L.BAGS_SCALE:format(math.floor(v * 100 + 0.5))
 			end },
 		{ kind = "choice", label = L.SET_FREE, get = get("bags.freeTile"),

@@ -488,6 +488,103 @@ describe("BagsWindow list view", function()
 		assert.equal("Sorted by Name, A to Z", W.frame.title.text, "the title still answers")
 	end)
 
+	-- Ruling W5-4: a caller that answers itself passes quiet, so a cut-short flash adds no chat line.
+	-- Mutation: the view command calls W.SetView(arg) without quiet.
+	it("/swagbag view answers once in chat even when its title flash is cut short", function()
+		W.Open()
+		W.frame.title.truncated = true
+		SB.Slash.Dispatch("view grid")
+		assert.same({ SB.L.VIEW_GRID }, A.Lines())
+		assert.equal(SB.L.VIEW_GRID, W.frame.title.text, "the title still answers")
+	end)
+
+	-- The real Settings pages over the real bags window (ruling W5-4).
+	local function openSettings()
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsPages.lua")
+		local SW = SB.SettingsWindow
+		SW.Show("bags")
+		return SW, function(text)
+			for i = 1, SW.used.buttons do
+				local b = SW.buttons[i]
+				if b.text == text then
+					b.scripts.OnClick(b)
+					return
+				end
+			end
+			error("no button " .. text)
+		end
+	end
+
+	-- Mutation: the Settings view row calls W.SetView(v) without quiet.
+	it("the Settings view row answers once, in the status line, even when the title flash is cut short", function()
+		W.Open()
+		local SW, click = openSettings()
+		W.frame.title.truncated = true
+		click("Grid")
+		assert.equal("grid", W.View())
+		assert.equal(SB.L.VIEW_GRID, SW.lastStatus)
+		assert.same({}, A.Lines(), "no chat line besides the status line")
+	end)
+
+	-- Mutation: the Settings scale row calls W.SetScale(v) without quiet.
+	it("the Settings scale row answers once, in the status line, even when the title flash is cut short", function()
+		W.Open()
+		local SW, click = openSettings()
+		W.frame.title.truncated = true
+		click("125%")
+		assert.equal(1.25, SB.Config.Get("bags.scale"))
+		assert.equal("SwagBag 125%", SW.lastStatus)
+		assert.same({}, A.Lines(), "no chat line besides the status line")
+	end)
+
+	it("the Settings list rows answer once, in the status line, even when the title flash is cut short", function()
+		W.Open()
+		local SW, click = openSettings()
+		W.frame.title.truncated = true
+		click("Name")
+		assert.equal("Sorted by Name, A to Z", SW.lastStatus)
+		assert.same({}, A.Lines(), "no chat line besides the status line")
+	end)
+
+	local function positions()
+		local out = {}
+		for slot = 1, 16 do
+			local b = B.Get(0, slot)
+			out[slot] = { b.x, b.y, b.placed, b.shown }
+		end
+		return out
+	end
+
+	-- Fix round 1, item 3: the order is saved, but only a drawn list regroups. Mutation: in W.SortList,
+	-- request the layout whenever the window is shown (drop the isList() check).
+	it("a sort change while the list is not drawn (grid, or an F6 fallback) requests no layout and moves nothing", function()
+		local layouts = 0
+		SB.On("SB_BAGS_LAYOUT", function() layouts = layouts + 1 end)
+		W.Open()
+		W.SetView("grid")
+		local at, n = positions(), layouts
+		W.columnButtons.name.scripts.OnClick(W.columnButtons.name)
+		SB.Slash.Dispatch("list count")
+		A.Advance(W.RETRY)
+		assert.equal(n, layouts, "grid: no layout")
+		assert.same(at, positions(), "grid: nothing moved")
+		assert.same({ by = "count", desc = true }, SB.Sort.Spec(), "the order is saved")
+		-- F6: the setting says list, the drawn view is categories
+		for slot = 1, 16 do
+			B.Get(0, slot).SetScale = function() end
+		end
+		W.SetView("list")
+		assert.equal("sections", W.drawn)
+		at, n = positions(), layouts
+		W.columnButtons.value.scripts.OnClick(W.columnButtons.value)
+		SB.Slash.Dispatch("list name")
+		A.Advance(W.RETRY)
+		assert.equal(n, layouts, "fallback: no layout")
+		assert.same(at, positions(), "fallback: nothing moved")
+		assert.same({ by = "name", desc = false }, SB.Sort.Spec())
+	end)
+
 	it("a layout held under the mouse keeps drawing the old view's geometry until it runs", function()
 		SB.Config.Set("bags.newAlways", true) -- New shown, so loot under the mouse lands at once (W4-15)
 		W.Open()

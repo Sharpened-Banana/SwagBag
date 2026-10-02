@@ -449,7 +449,8 @@ describe("Bags and bank windows open together (Review Focus 1)", function()
 		Env.PaintGlobals()
 		A.frames.BankFrame = blizzardBank()
 		A.activeBankType = "bank"
-		for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/BagsWindow.lua",
+		for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/ListRows.lua",
+			"SwagBag/UI/BagsWindow.lua",
 			"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua" }) do
 			Loader.LoadFile(SB, path)
 		end
