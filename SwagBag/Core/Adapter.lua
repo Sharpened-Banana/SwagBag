@@ -813,6 +813,70 @@ function A.HideTooltip()
 	end
 end
 
+-- The tooltips that get count lines: the main tooltip and the item link (chat) tooltip. Never the
+-- comparison tooltips (ShoppingTooltip1/2) or embedded ones (quest rewards), which the Item post-call
+-- also fires for (F20).
+local function countsTooltip(tooltip)
+	return tooltip ~= nil and (tooltip == _G.GameTooltip or tooltip == _G.ItemRefTooltip)
+end
+
+-- Item tooltips the client fills (bags, bank, auction house, chat links): fn(tooltip, itemID) runs
+-- after it, to add lines (the alt counts, UI/TooltipCounts.lua), for GameTooltip and ItemRefTooltip
+-- only. Taint-free: through TooltipDataProcessor.AddTooltipPostCall for Enum.TooltipDataType.Item
+-- when the client has it, else a HookScript on OnTooltipSetItem. A secret or missing item ID is
+-- skipped. True when hooked.
+function A.HookItemTooltip(fn)
+	local TDP = _G.TooltipDataProcessor
+	local kind = Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item
+	if type(TDP) == "table" and type(TDP.AddTooltipPostCall) == "function" and kind ~= nil then
+		local ok = pcall(TDP.AddTooltipPostCall, kind, function(tooltip, data)
+			if not countsTooltip(tooltip) then
+				return
+			end
+			local id = type(data) == "table" and data.id or nil
+			if type(id) == "number" and not isSecret(id) then
+				fn(tooltip, id)
+			end
+		end)
+		return ok
+	end
+	local hooked = false
+	for _, tooltip in ipairs({ _G.GameTooltip, _G.ItemRefTooltip }) do
+		if tooltip and tooltip.HookScript then
+			tooltip:HookScript("OnTooltipSetItem", function(self)
+				local ok, _, link = pcall(self.GetItem, self)
+				if ok and type(link) == "string" and not isSecret(link) then
+					local inst = A.GetItemInstant(link)
+					if inst and type(inst.itemID) == "number" then
+						fn(self, inst.itemID)
+					end
+				end
+			end)
+			hooked = true
+		end
+	end
+	return hooked
+end
+
+-- One line on a tooltip: left in gold, right (optional) in white.
+function A.TooltipLine(tooltip, left, right)
+	if right then
+		pcall(tooltip.AddDoubleLine, tooltip, left, right, 1, 0.82, 0, 1, 1, 1)
+	else
+		pcall(tooltip.AddLine, tooltip, left, 1, 0.82, 0)
+	end
+end
+
+-- "|cffRRGGBB" for a class file name ("MAGE") from the client's class colours, or nil.
+function A.ClassColour(class)
+	local colours = _G.RAID_CLASS_COLORS
+	local c = type(colours) == "table" and type(class) == "string" and colours[class]
+	if type(c) == "table" and type(c.colorStr) == "string" then
+		return "|c" .. c.colorStr
+	end
+	return nil
+end
+
 -- A bag or bank slot's item tooltip (the list view's rows), with an optional white hint line.
 function A.SlotTooltip(owner, bag, slot, hint)
 	if not GameTooltip then

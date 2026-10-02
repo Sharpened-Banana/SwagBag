@@ -73,6 +73,9 @@ Config.Defaults = {
 		-- name: the look of SwagBag's own windows (UI/Theme.lua): "blizzard" (the default, AC14.1) |
 		-- "flat" | "elvui" (UI/Themes.lua).
 		theme = { name = "blizzard" },
+		-- counts: other characters' counts on item tooltips (UI/TooltipCounts.lua): "auto" (shown unless
+		-- Syndicator is loaded, which writes its own), "on", "off".
+		tooltip = { counts = "auto" },
 	},
 }
 
