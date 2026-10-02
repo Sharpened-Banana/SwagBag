@@ -129,12 +129,65 @@ describe("Settings: focus modes page", function()
 			assert.truthy(SB.Config.IsCharOverride(path), path)
 		end
 		click("Junk", L.SET_SECTION_OPEN)
-		click(L.SET_MODE_LABEL:format("Raid"), L.SET_OFF)
+		click(L.SET_THIS_CHARACTER:format(L.SET_MODE_LABEL:format("Raid")), L.SET_OFF)
 		assert.is_nil(SB.Config.db.settings.focus, "the account-wide settings are untouched")
 		assert.equal("c_consumables,c_keystone,c_gear,c_junk", SB.Config.charDB.overrides["focus.sections.mplus"])
 		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_ACCOUNT)
 		assert.falsy(SB.Config.IsCharOverride("focus.sections.mplus"))
 		assert.truthy(F.IsEnabled("raid"), "the account setting applies again")
+	end)
+
+	-- Mutation: layered() returns the plain text.
+	it("the layer is named while \"This character\" is on: the sections note and the mode labels", function()
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_CHARACTER)
+		local labels = {}
+		for _, row in ipairs(SW.byId.focus.rows()) do
+			labels[row.label] = true
+		end
+		assert.truthy(labels[L.SET_THIS_CHARACTER:format(L.SET_SECTIONS_OF:format("M+"))])
+		assert.truthy(labels[L.SET_THIS_CHARACTER:format(L.SET_MODE_LABEL:format("Raid"))])
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_ACCOUNT)
+		assert.truthy(SW.byId.focus.rows()[1].label == L.SET_FOCUS_AUTO)
+		assert.falsy(SW.byId.focus.rows()[6].label:find("this character", 1, true))
+	end)
+
+	it("the scope row shows This character when only one focus path is overridden", function()
+		SB.Config.CharOverride("focus.sections.raid", true)
+		SW.Render()
+		assert.truthy(selected(L.SET_FOCUS_SCOPE, L.SET_FOCUS_CHARACTER))
+	end)
+
+	-- Mutation: SettingsFocus applies the scope with one CharOverride per path.
+	it("the scope toggle is one change: exactly one SB_CONFIG_CHANGED, with no path", function()
+		local seen = {}
+		SB.On("SB_CONFIG_CHANGED", function(_, path) seen[#seen + 1] = path == nil and "nil" or path end)
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_CHARACTER)
+		assert.same({ "nil" }, seen)
+		seen = {}
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_ACCOUNT)
+		assert.same({ "nil" }, seen)
+	end)
+
+	-- W4-2. Mutation: in the scope row's apply, also SetSections("gathering", F.Sections("gathering")).
+	it("with only Mining, the override on then off keeps every stored Gathering section", function()
+		F.SetSignal("professions", { ore = true })
+		local all = { "c_herbs", "c_ore", "c_leathercloth", "c_tools" }
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_CHARACTER)
+		assert.same(all, F.Sections("gathering", true))
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_ACCOUNT)
+		assert.same(all, F.Sections("gathering", true))
+	end)
+
+	-- W4-2. Mutation: ResetSections writes F.Sections(id) (filtered) instead of the default.
+	it("with only Mining, Reset on Gathering restores every section", function()
+		F.SetSignal("professions", { ore = true })
+		click(L.SET_EDIT_MODE, "Gathering")
+		click("Junk", L.SET_SECTION_OPEN)
+		click(L.SET_SECTIONS_DEFAULT_LABEL, L.SET_RESET_DEFAULT)
+		assert.same({ "c_herbs", "c_ore", "c_leathercloth", "c_tools" }, F.Sections("gathering", true))
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_CHARACTER)
+		click(L.SET_SECTIONS_DEFAULT_LABEL, L.SET_RESET_DEFAULT)
+		assert.same({ "c_herbs", "c_ore", "c_leathercloth", "c_tools" }, F.Sections("gathering", true))
 	end)
 
 	it("read-only settings: every focus change refuses with the reason", function()
@@ -147,6 +200,7 @@ describe("Settings: focus modes page", function()
 		assert.equal(L.SETTINGS_READONLY, SW.lastStatus)
 		click(L.SET_MODE_LABEL:format("Raid"), L.SET_OFF)
 		assert.equal(L.SETTINGS_READONLY, SW.lastStatus)
+		assert.falsy(SB.Config.CharOverrideMany({ "focus.auto" }, true))
 		click(L.SET_SECTIONS_DEFAULT_LABEL, L.SET_RESET_DEFAULT)
 		assert.equal(L.SETTINGS_READONLY, SW.lastStatus)
 		assert.same({ "c_consumables", "c_keystone", "c_gear" }, F.Sections("mplus"))

@@ -2,6 +2,7 @@
 --   Config.Init(db, charDB) -> status: "new" | "ok" | "migrated" | "reset" | "newer"
 --   Config.Get(path) / Config.Set(path, value)   dotted paths, e.g. "bags.columns"
 --   Config.CharOverride(path, on)                make one setting character-specific
+--   Config.CharOverrideMany(paths, on)           the same for many paths, one SB_CONFIG_CHANGED(nil)
 --   Config.UI()                                  per-character UI state (positions, collapsed)
 --   Config.Reset()                               back up, then start from defaults
 -- Schema rules (spec 8.5): a DB newer than CURRENT is never touched (read-only,
@@ -250,6 +251,25 @@ function Config.CharOverride(path, on)
 		Config.charDB.overrides[path] = nil
 	end
 	changed(path)
+	return true
+end
+
+-- Many overrides as one change: all applied, then one SB_CONFIG_CHANGED(nil). Nothing is
+-- applied while read-only.
+function Config.CharOverrideMany(paths, on)
+	if Config.readOnly then
+		return false
+	end
+	for _, path in ipairs(paths) do
+		if on then
+			if Config.charDB.overrides[path] == nil then
+				Config.charDB.overrides[path] = Config.Get(path)
+			end
+		else
+			Config.charDB.overrides[path] = nil
+		end
+	end
+	changed(nil)
 	return true
 end
 

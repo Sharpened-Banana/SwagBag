@@ -864,8 +864,9 @@ end
 -- sections (AC8.5). The settings open under ErrorTrap "none": a settings glitch flashes
 -- L.SETTINGS_FAILED here and never puts the bags into Safe Mode (W4-5). The tooltip says both.
 W.modeButton = titleButton(L.BTN_PAUSE, "bags.modeButton", function(_, mouseButton)
-	if mouseButton == "RightButton" and SB.SettingsFocus then
-		local ok = SB.ErrorTrap.Run("settings.openFromPause", "none", SB.SettingsFocus.Edit, SB.Focus.active[1])
+	if mouseButton == "RightButton" then
+		local ok = SB.SettingsFocus and
+			SB.ErrorTrap.Run("settings.openFromPause", "none", SB.SettingsFocus.Edit, SB.Focus.active[1])
 		if not ok then
 			W.Flash(L.SETTINGS_FAILED)
 		end
