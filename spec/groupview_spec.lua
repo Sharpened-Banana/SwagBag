@@ -489,6 +489,34 @@ describe("GroupView", function()
 		assert.equal("sort", v.stats.lastLayoutReason)
 	end)
 
+	-- P5 after a re-arm: once the held button is free, the layout is checked again in full.
+	-- Mutation: skip the Layout.Moves loop whenever v.heldKey was set (commit as soon as the
+	-- held button frees).
+	it("a held full layout whose button frees still waits while another button that would move is busy", function()
+		v.Layout("open")
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = 1 } })
+		btn(6, 1).mouseOver = true
+		assert.falsy(v.RequestLayout("sort"))
+		btn(6, 1).mouseOver = false
+		local others = {}
+		for slot = 2, SB.Adapter.NumSlots(6) do
+			local b = btn(6, slot)
+			if b and b:IsShown() then
+				b.mouseOver = true
+				others[#others + 1] = b
+			end
+		end
+		assert.truthy(#others > 0)
+		A.Advance(0.3)
+		assert.equal("open", v.stats.lastLayoutReason, "another moving button is under the mouse")
+		for _, b in ipairs(others) do
+			b.mouseOver = false
+		end
+		A.Advance(0.3)
+		assert.equal("sort", v.stats.lastLayoutReason)
+	end)
+
 	it("W3-38: the mouse over the items but over no button that would move does not hold a full layout", function()
 		v.Layout("open")
 		f.scroll.mouseOver = true

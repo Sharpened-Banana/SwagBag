@@ -398,6 +398,7 @@ function GV.New(cfg)
 		local old = v.pos
 		v.groups, v.byId, v.records, v.sizes, v.groupOf, v.redrawPending = b.groups, b.byId, b.records, b.sizes,
 			b.groupOf, false
+		v.heldKey = nil -- any layout that lands (v.Layout too) ends a held RequestLayout's reason
 		if old then
 			hideGone(old, pos)
 		end
@@ -449,7 +450,6 @@ function GV.New(cfg)
 			end, window)
 			return false
 		end
-		v.heldKey = nil
 		commit(b, pos, reason, t0)
 		return true
 	end

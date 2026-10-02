@@ -327,14 +327,14 @@ SB.On("PLAYER_LOGOUT", function()
 	local Run = SB.ErrorTrap.Run
 	for kind, snap in pairs(pending) do
 		pending[kind] = nil
-		Run("snapshot.logout." .. kind, "none", store, kind, snap)
+		Run("snapshot.logout.pending." .. kind, "none", store, kind, snap)
 	end
 	for key, ser in pairs(pendingGuild) do
 		pendingGuild[key] = nil
-		Run("snapshot.logout.guild", "none", storeGuild, key, ser)
+		Run("snapshot.logout.pending.guild", "none", storeGuild, key, ser)
 	end
 	local function capture(kind)
-		Run("snapshot.logout." .. kind, "none", function()
+		Run("snapshot.logout.capture." .. kind, "none", function()
 			store(kind, Snap.Capture(kind))
 		end)
 	end
