@@ -16,7 +16,8 @@
 - the October half of F7 (§12.1: a one-screen quick setup; AC7.2, AC7.4);
 - §10.5's `/swagbag` (opens settings), `setup`, `tour`, `mode [pause|resume|list]`;
 - checks V5–V8 and V11 (§11.3);
-- every week-3 ledger item marked deferred to week 4 that touches code this week changes (`docs/superpowers/plans/2026-10-02-swagbag-week3-ledger.md`, see "Week-3 carry-overs" below).
+- every week-3 ledger item marked deferred to week 4 that touches code this week changes (`docs/superpowers/plans/2026-10-02-swagbag-week3-ledger.md`, see "Week-3 carry-overs" below);
+- rulings W4-15 (session O1's findings: Pawn, overlay legibility, New hidden while empty, the blue new-item glow; Task 11) and W4-14 (the footer bar; Task 12), from `.superpowers/sdd/2026-10-03-swagbag-week4-focus-modes/progress.md`. Both tasks were appended on 2026-10-01 and run after Task 10.
 
 Week-3 plan (style and interfaces): `docs/superpowers/plans/2026-10-02-swagbag-week3-banks-overlays.md`.
 
@@ -99,6 +100,8 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
    - fishing ends 90 s after the last cast and gathering 120 s after the last gather.
 
    Pinned by Task 2: "V6: a fishing channel by the player turns Fishing on; it decays 90 s after the last cast", "V8: loot from a node within 6 s of Herb Gathering…", "AC8.6: opening a chest or digging (archaeology) never turns Gathering on" and "loot from a player's corpse or an item after a gathering spell is not gathering".
+6. **Loot while the mouse rests on the bags and New is hidden (Task 11).** Expected: New appears only once the mouse leaves the items and the cursor is empty; then every section moves down as a whole. Pinned by `layout_spec` "while the area is busy the first arrival waits; …" and `bagswindow_sections_spec` "the first arrival shows New and moves every section down as a whole, once the mouse leaves the items".
+7. **A narrow bags window with every footer entry on (Task 12).** Expected: entries wrap to more rows and never overlap, and the window grows, so the last row of items stays visible above the bar. Pinned by `footer_spec` "entries that do not fit the width wrap to the next row, …" and `bagswindow_sections_spec` "the footer's height is part of the window, …".
 
 ## Decisions and resolved spec ambiguities (read before Task 1)
 
@@ -125,6 +128,12 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 | D19 | §8.2 `SwagBagCharDB.ui.wizardDone`; F7 four-step wizard | The quick setup is one screen: playstyles (M+, Raid, Gold-making, Casual, Collector, pick any) and slots per row. It shows once **per account** (`settings.setup.done`), 3 s after the first login with this build. Apply, Skip (AC7.2) and Esc (later) all answer. A preset only switches things on for the picked styles; Casual alone (without M+ or Raid) is the one that switches the warning and the upgrade track off. Gold moves Trade Goods and BoE gear up after Keystone & Crests; Collector moves Pets & Mounts & Toys up. | Settings are account-wide, so asking on every alt would repeat the same question. All modes are on by default (settled decision), so no preset turns a mode off. |
 | D20 | §10.5 `tour` | `/swagbag tour` answers that the tour arrives in November. | P2; F7 tour is November (§12.1). |
 | D21 | §6.6 "prints one line through `UIErrorsFrame` (on-screen) and chat" | `Adapter.ScreenMessage` (feature-detected `UIErrorsFrame`) plus chat. | Spec text. |
+| D22 | W4-15 "'New' hidden when empty by default (setting: always show), its appearance shifts sections — hover-guarded" | `bags.newAlways` (default false). The first arrival shows New. That shift waits like any re-stack (P5, W4-13) and is laid out with the drawn view (W4-1). Once shown, New stays until the next full layout (open, Reflow, sort, view toggle), even if it empties. The bank windows always show New. | Nothing jumps while the bag is open. The user asked for New to be hidden, not to vanish mid-use. |
+| D23 | newglow-diagnosis: "HookScript OnEnter (Guard, window label)" | Label `buttons.newGlow`, window `"none"`; the two close handlers also use `"none"`. | The glow is cosmetic, and a failure must never switch the bags to Safe Mode. This is the one exception to "the bags window uses `\"bags\"`" (P6). |
+| D24 | W4-15 "junk coin larger / more pronounced" | 16 px with a gold tint and a black 19 px copy behind it as an outline. On gray gear the coin moves to the bottom left instead of hiding under the item level. | A gray weapon used to show no coin at all, only its item level. |
+| D25 | W4-14 "settings page lists every entry with on/off and order" | A `Footer` page. Each row is a `choice` row: `Show`/`Hide`, plus `Move up`/`Move down` as values that are never highlighted, so `SettingsWindow.lua` is unchanged. `/swagbag footer <entry> up\|down` exists so the page runs the command (D17). | No new row kind, and the page and the command cannot disagree. |
+| D26 | W4-14 "crests (auto when owned)" | `SB.Crests.currencies` (confirmed IDs, empty for now); otherwise every Currency-tab entry whose name has a `SB.Crests.words` word. Only owned currencies (quantity > 0) show, and each shows once. | No confirmed Midnight crest currency IDs exist yet. The name match misses crests under a Currency-tab header the user collapsed; session FT1 asks. |
+| D27 | W4-14 "free-slot count" | The main tile's number (family `any`), plus `(+N reagent)` when the reagent bag has room. Profession bags show only in the tooltip. | The count is the same as the free tile's (week-3 F1 step 1: the reagent bag is not counted in it). |
 
 ## Week-3 carry-overs (from `docs/superpowers/plans/2026-10-02-swagbag-week3-ledger.md`)
 
@@ -154,10 +163,17 @@ SwagBag/UI/SettingsPages.lua           NEW  pages Bags, Bank & guild, Overlays
 SwagBag/UI/SettingsFocus.lua           NEW  page Focus modes (AC8.1-8.5, AC15.1)
 SwagBag/UI/SettingsConsumables.lua     NEW  page Consumables (AC11.2)
 SwagBag/UI/QuickSetup.lua              NEW  one-screen quick setup; /swagbag setup, /swagbag tour
+SwagBag/UI/Footer.lua                  NEW  (Task 12) the bags footer: gold, currencies, crests, keystone, free; /swagbag footer; Settings > Footer
 SwagBag/UI/BagsWindow.lua              MOD  EffectiveCollapsed, incremental Restack, peek/pin, Pause button, mode in the title
 SwagBag/UI/SectionHeaders.lua          MOD  right-click passes the mouse button to the owner
 SwagBag/UI/GroupView.lua               MOD  held full layout re-arms without re-reading; no drop guard without onDrop
 SwagBag/Engine/Snapshots.lua           MOD  each logout write in its own trap
+SwagBag/Engine/Layout.lua              MOD  (Task 11) hideEmptyNew / newShown; Apply's areaBusy
+SwagBag/Engine/Inventory.lua           MOD  (Task 11) an item leaving clears the client's new-item flag
+SwagBag/Engine/Crests.lua              MOD  (Task 12) currencies (season crest currency IDs)
+SwagBag/UI/Buttons.lua                 MOD  (Task 11) ClearGlow, OnEnter post-hook, close handlers
+SwagBag/UI/Overlays.lua                MOD  (Task 11) larger outlined text, larger arrow and coin, size constants
+SwagBag/UI/SettingsPages.lua           MOD  (Task 11) the New row on the Bags page
 SwagBag/Core/Adapter.lua               MOD  instance, challenge mode, delve, spell name, loot source, professions, ScreenMessage; checks
 SwagBag/Core/Config.lua                MOD  focus.*, consumables.*, setup.done defaults
 SwagBag/Core/Slash.lua                 MOD  Slash.Run; a bare /swagbag runs Slash.onEmpty
@@ -165,6 +181,8 @@ SwagBag/Core/Report.lua                MOD  Focus and Spells-before-loot lines
 SwagBag/Core/Init.lua, SwagBag.toc, Locale/enUS.lua, .luacheckrc   MOD
 spec/focus_spec.lua, signals_spec.lua, adapter_signals_spec.lua, consumables_spec.lua, settings_spec.lua,
 spec/settings_focus_spec.lua, settings_consumables_spec.lua, quicksetup_spec.lua                         NEW
+spec/newglow_spec.lua (Task 11), footer_spec.lua (Task 12)                                               NEW
+spec/layout_spec.lua, overlays_spec.lua, settings_spec.lua (Task 11)                                       MOD
 spec/mock_adapter.lua, bagswindow_sections_spec.lua, bankwindow_groups_spec.lua, groupview_spec.lua,
 spec/guildbank_spec.lua, snapshots_spec.lua                                                               MOD
 ```
@@ -181,7 +199,7 @@ The user plays keys every day, so the M+ mode and the warning come first.
 | 4 (Oct 25) | 8 | **yes:** session S1 (settings pages, 10 minutes) |
 | 5 (Oct 26) | 9 | **yes:** session Q1 (quick setup, 3 minutes) |
 | 6 (Oct 27) | 10 | **yes:** session W1 (guild header drag, logout snapshot; 3 minutes) |
-| 7 (Oct 28) | fixes from the user's reports | **yes:** daily focus check; **Week 4 exit check** |
+| 7 (Oct 28) | 11, 12, then fixes from the user's reports | **yes:** session O2 (O1 fixes, 10 minutes), session FT1 (footer, 5 minutes), daily focus check; **Week 4 exit check** |
 
 Cumulative `scripts/check.sh` test totals (from 718 on `aa3fea1`). Each was produced by replaying this file's blocks in order on a fresh clone of `aa3fea1`:
 - T1 742 passed, 0 failed
@@ -194,10 +212,14 @@ Cumulative `scripts/check.sh` test totals (from 718 on `aa3fea1`). Each was prod
 - T8 832 passed, 0 failed
 - T9 844 passed, 0 failed
 - T10 849 passed, 0 failed
+- T11 871 passed, 0 failed (849 + 22; not replayed, see "How this plan was checked")
+- T12 884 passed, 0 failed (871 + 13; not replayed)
+
+The real suite already runs ahead of these totals: each task's report and the SDD ledger record the real count. For Tasks 11 and 12, expect the real count at the end of the previous task plus 22 and plus 13.
 
 ## How the TOC grows
 
-`scripts/check.sh` prints `TOC OK (N files)`: 43 on `aa3fea1`, 44 after Task 1, 46 after Tasks 2–4, 47 after Task 5, 49 after Task 6, 50 after Task 7, 51 after Task 8 and 52 after Tasks 9–10. Final order of the changed sections:
+`scripts/check.sh` prints `TOC OK (N files)`: 43 on `aa3fea1`, 44 after Task 1, 46 after Tasks 2–4, 47 after Task 5, 49 after Task 6, 50 after Task 7, 51 after Task 8, 52 after Tasks 9–11 and 53 after Task 12. Final order of the changed sections:
 
 ```text
 Engine/Prices.lua
@@ -217,6 +239,7 @@ UI/SettingsWindow.lua
 UI/SettingsPages.lua
 UI/SettingsFocus.lua
 UI/SettingsConsumables.lua
+UI/Footer.lua
 UI/QuickSetup.lua
 UI/DebugV1.lua
 ```
@@ -6106,12 +6129,2549 @@ EOF
 ```
 
 ---
+### Task 11: O1 in-game fixes: Pawn, bigger overlays, New hidden while empty, the blue new-item glow (ruling W4-15)
+
+Session O1 (week 3, `docs/superpowers/plans/2026-10-02-swagbag-week3-checklists.md`) passed except for four findings ("USER O1 RESULTS" in the SDD ledger). Ruling W4-15 settles all four:
+
+1. **Pawn.** Pawn 2.13.16 has no `PawnIsContainerItemAnUpgrade`, so `A.HasPawn` and `A.PawnUpgrade` never saw Pawn ("Pawn is not loaded" with Pawn installed). Pawn is ready when `PawnIsReady()` says so. The verdict now comes from the slot's link through `PawnIsItemDefinitivelyAnUpgrade(link, true)`: `true` (an upgrade), `false` (not one), or `nil` (no opinion). `nil` now leaves the arrow to the item-level rule, which supersedes W3-16's nil→false fold. `PawnShouldItemLinkHaveUpgradeArrow` is never called: Pawn throttles it with a budget. Guild slots still never ask Pawn (W3-20). Every call is feature-detected and `pcall`ed, and a secret verdict counts as no opinion.
+2. **Legibility (O1 steps 3–5 and 10).** The item level, track and keystone text are larger (13 px) with a thick outline. The BoE/WuE badge is 11 px, so it fits between them. The arrow and the junk coin are 16 px (were 14 and 12). The coin gets a gold tint and a dark outline: a black copy of the coin, 3 px larger, sits behind it. On gray gear the coin moves to the bottom left, under the item level, instead of disappearing. Every text is clipped to 33 px, so nothing leaves the 37 px button. Nothing is drawn in the bottom-right corner, where Blizzard's stack count lives. Every size is a named constant on `SB.Overlays`, so the user's next check can tune them with a one-line change.
+3. **New is hidden while empty** (default; `bags.newAlways = false`). `Layout.Build` takes `opts.hideEmptyNew` and sets `state.newShown`. While New is hidden, `Layout.Position` draws no New header and reserves no rows. The first `"arrived"` change in `Layout.Apply` shows New, and every section below moves down by the same amount (W10: no button moves relative to its own header). That shift waits like any re-stack, through a new fifth argument `areaBusy` (P5, W4-13). The bags window passes `scroll:IsMouseOver() or an item on the cursor`. The arrival is laid out with the drawn view (W4-1). `newShown` never goes back to false inside `Apply`. A New that empties while the window is open keeps its header and rows until the next full layout (open, Reflow, sort, view toggle), so nothing jumps. With the free tile (W3-13), a button emptied in New joins Free as a hidden spare (unchanged), so the next full layout finds New empty and hides it. The bank and guild bank windows never pass `hideEmptyNew`, so their New is unchanged. `bags.newAlways = true` restores the old always-reserved rows. `/swagbag new always|auto` switches it and answers in chat; Settings → Bags has the row `The New section when it is empty` (`Hidden` / `Always shown`), which runs that command.
+4. **The blue new-item glow** (`.superpowers/sdd/2026-10-03-swagbag-week4-focus-modes/newglow-diagnosis.md`, implemented exactly). Blizzard's client-side flag (`C_NewItems`) survives `/reload` and drives the template's `NewItemTexture` and its glow animations. Blizzard's bags clear the flag per slot on hover and when the bag frame hides; SwagBag replaced those frames and never cleared it. The fix:
+   - `A.ClearNewItem(bag, slot)` and `A.ClearNewItems(bagIDs)` are nil-safe, `pcall`ed per-slot wrappers over `RemoveNewItem` (never `ClearAll`).
+   - `Buttons.ClearGlow(button)` only calls methods (`NewItemTexture:Hide()`, `BattlepayItemTexture:Hide()`, `flashAnim:Stop()`, `newitemglowAnim:Stop()`) and writes no field on Blizzard's button.
+   - Each pool button gets a `HookScript("OnEnter")` post-hook that runs ClearGlow, then `A.ClearNewItem`. Its trap label is `buttons.newGlow` in window `"none"`, decision D23 (a cosmetic glow never takes the bags away).
+   - `Buttons.Paint` ends with `ClearGlow`.
+   - `SB_BAGS_CLOSED` clears bags 0–5, and `SB_BANK_CLOSED` clears the bank and warband tabs.
+   - An item leaving a slot also clears that slot's flag.
+   - `Inventory.newSet` stays the only source of SwagBag's "New"; Blizzard's flag is never read.
+   - The template's `UpdateNewItem` is never called. All of this is legal in combat: `RemoveNewItem` is not protected, `HookScript` is a post-hook, and hiding regions and stopping animations are allowed.
+
+**Runs after Task 10.** Other tasks are still landing on this branch while this text is written. Anchors in files that Tasks 4–10 change were written from those tasks' plan text and are marked "(verify on disk)". Every other anchor was read from the working tree at `3e855b4`, in files that no task in 4–10 touches. If an anchor does not match exactly once, find the block that the surrounding text names, apply the same change there, and grep for the new lines after each edit.
+
+**Files:**
+- Create: `spec/newglow_spec.lua`
+- Modify: `SwagBag/Core/Adapter.lua`, `SwagBag/Core/Config.lua`, `SwagBag/Engine/Layout.lua`, `SwagBag/Engine/Inventory.lua`, `SwagBag/UI/Buttons.lua`, `SwagBag/UI/Overlays.lua`, `SwagBag/UI/BagsWindow.lua`, `SwagBag/UI/SettingsPages.lua`, `SwagBag/Locale/enUS.lua`, `.luacheckrc`, `docs/superpowers/plans/2026-10-02-swagbag-week3-checklists.md` (O1 step 15)
+- Test: `spec/layout_spec.lua`, `spec/overlays_spec.lua`, `spec/bagswindow_sections_spec.lua`, `spec/bagswindow_spec.lua` (loads `Slash.lua`), `spec/settings_spec.lua`, `spec/mock_adapter.lua`
+
+**Interfaces:**
+- Consumes (on `3e855b4` unless named): `Layout.Build/Position/Apply`, `BagsWindow` locals `layoutSections`, `busyCheck`, `scroll` and `W.RequestLayout/ApplyChanges`. Also `Buttons.Paint`, the `createButton` local, `Inventory.ScanBag`, `Overlays` locals `text/texture/regionsFor` and `Ov.Apply/Context`, `SB.ErrorTrap.Guard`, `SB.Slash.Register`, and the events `SB_BAGS_CLOSED` and `SB_BANK_CLOSED`. From Task 6: `SettingsPages.lua`'s `bagsRows` and `run`, and `SB.Slash.Run`.
+- Produces:
+  - `A.HasPawn() -> boolean` and `A.PawnUpgrade(bag, slot) -> true | false | nil` (new meaning: nil is "no opinion");
+  - `A.ClearNewItem(bag, slot)` and `A.ClearNewItems(bagIDs)`;
+  - `Buttons.ClearGlow(button)`;
+  - `Layout.Build` option `hideEmptyNew`, the state field `newShown` (boolean), and `Layout.Apply(state, changes, isBusy, collapsed, areaBusy)`, where `areaBusy() -> boolean` and nil means never busy;
+  - the setting `bags.newAlways` (default `false`) and the slash command `new`;
+  - the overlay constants `Ov.FONT`, `FONT_SIZE`, `BIND_SIZE`, `FONT_FLAGS`, `TEXT_WIDTH`, `ARROW_SIZE`, `JUNK_SIZE`, `JUNK_OUTLINE` and `JUNK_TINT`, and the region `junkShadow`;
+  - the mock's `m.newCleared`, `m.newClearedBags`, `m.ClearNewItem` and `m.ClearNewItems`;
+  - the Locale keys `HELP_NEW`, `NEW_USAGE`, `NEW_MODE_ALWAYS`, `NEW_MODE_AUTO`, `SET_NEW`, `SET_NEW_AUTO` and `SET_NEW_ALWAYS`, plus a new text for `OVERLAYS_NO_PAWN`.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `spec/mock_adapter.lua`, find:
+
+```lua
+	function m.PawnUpgrade(bag, slot)
+		if m.pawn == nil then
+			return nil
+		end
+		return m.pawn[bag .. ":" .. slot] == true
+	end
+```
+
+and replace it with:
+
+```lua
+	-- m.pawn[bag .. ":" .. slot] = true | false; a slot with no entry is Pawn's "no opinion" (nil,
+	-- ruling W4-15: the item-level rule decides it).
+	function m.PawnUpgrade(bag, slot)
+		if m.pawn == nil then
+			return nil
+		end
+		local v = m.pawn[bag .. ":" .. slot]
+		if v == nil then
+			return nil
+		end
+		return v == true
+	end
+
+	-- Blizzard's new-item flag (ruling W4-15): m.newCleared = { "bag:slot" } per slot cleared,
+	-- m.newClearedBags = { { bag IDs } } per ClearNewItems call.
+	m.newCleared, m.newClearedBags = {}, {}
+	function m.ClearNewItem(bag, slot)
+		m.newCleared[#m.newCleared + 1] = bag .. ":" .. slot
+	end
+
+	function m.ClearNewItems(bagIDs)
+		m.newClearedBags[#m.newClearedBags + 1] = { unpack(bagIDs) }
+	end
+```
+
+In `spec/layout_spec.lua`, find:
+
+```lua
+		assert.truthy(totals.zeroToOneReagent >= 15, "'reagent' from 0 free to 1+ " .. totals.zeroToOneReagent)
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		assert.truthy(totals.zeroToOneReagent >= 15, "'reagent' from 0 free to 1+ " .. totals.zeroToOneReagent)
+	end)
+end)
+
+-- Ruling W4-15: New is hidden while it is empty (opts.hideEmptyNew). Its first arrival shows it and
+-- moves every section below by the same amount; that shift waits while the area is busy (P5).
+describe("Layout hidden New (ruling W4-15)", function()
+	local SB, L
+	before_each(function()
+		SB = Loader.New({ "SwagBag/Engine/GridLayout.lua", "SwagBag/Engine/Layout.lua" })
+		L = SB.Layout
+	end)
+
+	-- a: (0,1) (0,5)   b: (0,3)   Free: (0,2) (1,1)   nothing new
+	local function build(extra)
+		local opts = { columns = 4, newRows = 2, hideEmptyNew = true }
+		for k, v in pairs(extra or {}) do
+			opts[k] = v
+		end
+		return L.Build({ S(0, 1, "a"), S(0, 2, false), S(0, 3, "b"), S(0, 5, "a"), S(1, 1, false) }, assign,
+			{ "a", "b" }, opts)
+	end
+
+	local function heads(pos)
+		local out = {}
+		for i, h in ipairs(pos.headers) do
+			out[i] = h.id .. "@" .. h.y
+		end
+		return out
+	end
+
+	-- Mutation: in Layout.Build, `st.newShown = not opts.hideEmptyNew or new.size > 0` → `st.newShown = true`.
+	it("an empty New has no header and no reserved rows; a full layout with a new item shows it", function()
+		assert.same({ "a@-1", "b@-19", "free@-37" }, heads(L.Position(build(), OPTS, {})))
+		local st = L.Build({ S(0, 1, "a"), S(0, 4, nil) }, assign, { "a" }, { columns = 4, newRows = 2, hideEmptyNew = true })
+		assert.equal("new@-1", heads(L.Position(st, OPTS, {}))[1])
+	end)
+
+	it("without hideEmptyNew (the bank windows, bags.newAlways) an empty New keeps its header and rows", function()
+		assert.same({ "new@-1", "a@-31", "b@-49", "free@-67" }, heads(L.Position(build({ hideEmptyNew = false }), OPTS, {})))
+	end)
+
+	-- Mutation: in Layout.Apply, delete `st.newShown = true` after applyOne.
+	it("the first arrival shows New, and everything below moves down by the same amount (W10)", function()
+		local st = build()
+		local old = L.Position(st, OPTS, {})
+		local r = L.Apply(st, { { bag = 0, slot = 2, kind = "arrived" } }, nil, {}, function()
+			return false
+		end)
+		assert.same({ L.Key(0, 2) }, r.moved)
+		local new = L.Position(st, OPTS, {})
+		assert.equal("new@-1", heads(new)[1])
+		for _, k in ipairs({ L.Key(0, 1), L.Key(0, 5), L.Key(0, 3), L.Key(1, 1) }) do
+			assert.equal(old.byKey[k].x, new.byKey[k].x)
+			assert.equal(old.byKey[k].y - 30, new.byKey[k].y, "New's header 5 + two rows 22 + gap 3")
+		end
+	end)
+
+	-- Mutation: in Layout.Apply, delete `or (opensNew and areaBusy and areaBusy())` from the hold.
+	it("while the area is busy the first arrival waits; a change that moves nothing else still applies", function()
+		local st = build()
+		local busy = true
+		local function area()
+			return busy
+		end
+		local r = L.Apply(st, { { bag = 0, slot = 2, kind = "arrived" }, { bag = 0, slot = 5, kind = "left", icon = 7 } },
+			nil, {}, area)
+		assert.same({ 1, false }, { r.deferred, st.newShown })
+		assert.same({ L.Key(0, 5) }, r.moved, "the leave applies: a placeholder, its button to Free's end")
+		busy = false
+		r = L.Apply(st, {}, nil, {}, area)
+		assert.same({ 0, true }, { r.deferred, st.newShown })
+	end)
+
+	-- Mutation: in Layout.Position, `visible = st.newShown ~= false` → `visible = st.newShown ~= false
+	-- and sec ~= nil and countButtons(sec) > 0` (New would vanish, and everything jump, while open).
+	-- With the free tile (W3-13) the emptied button leaves New for Free, so New really is empty.
+	it("a New that empties stays shown until the next full layout", function()
+		local st = build({ freeTile = true })
+		L.Apply(st, { { bag = 0, slot = 2, kind = "arrived" } }, nil, {})
+		L.Apply(st, { { bag = 0, slot = 2, kind = "left" } }, nil, {})
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ "new@-1", 0 }, { heads(pos)[1], pos.headers[1].count })
+		assert.falsy(build({ freeTile = true }).newShown, "the next full layout hides it")
+	end)
+end)
+```
+
+Create `spec/newglow_spec.lua`:
+
+```lua
+-- luacheck: globals PawnIsReady PawnIsItemDefinitivelyAnUpgrade C_Container C_NewItems issecretvalue
+-- Ruling W4-15: Pawn through PawnIsReady + PawnIsItemDefinitivelyAnUpgrade, and Blizzard's blue
+-- new-item glow (newglow-diagnosis.md): the client's flag is cleared per slot on hover, when the
+-- bags or the bank close, and when an item leaves; SwagBag's own New never reads it.
+local Loader = dofile("spec/helpers/loader.lua")
+local Fake = dofile("spec/helpers/fakeframe.lua")
+local Env = dofile("spec/helpers/uienv.lua")
+local Fixtures = dofile("spec/fixtures/items.lua")
+
+describe("Adapter: Pawn and Blizzard's new-item flag (the real Adapter)", function()
+	local A
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+	end)
+
+	after_each(function()
+		PawnIsReady, PawnIsItemDefinitivelyAnUpgrade, C_Container, C_NewItems, issecretvalue = nil, nil, nil, nil, nil
+	end)
+
+	-- Mutation: A.HasPawn returns `type(_G.PawnIsContainerItemAnUpgrade) == "function"` again.
+	it("HasPawn: true only once PawnIsReady exists and says yes", function()
+		assert.falsy(A.HasPawn())
+		PawnIsItemDefinitivelyAnUpgrade = function()
+			return true
+		end
+		PawnIsReady = function()
+			return false
+		end
+		assert.falsy(A.HasPawn(), "loaded, not ready yet")
+		PawnIsReady = function()
+			error("Pawn broke")
+		end
+		assert.falsy(A.HasPawn())
+		PawnIsReady = function()
+			return true
+		end
+		assert.truthy(A.HasPawn())
+	end)
+
+	-- Mutation: fold Pawn's answer again (`return yes and true or false`, the old W3-16 rule).
+	it("PawnUpgrade asks Pawn about the slot's link: true, false, or nil (no opinion: the item-level rule)", function()
+		local asked
+		local verdict = true
+		C_Container = { GetContainerItemInfo = function(bag, slot)
+			return { itemID = 225001, hyperlink = "item:225001:" .. bag .. ":" .. slot }
+		end }
+		PawnIsReady = function()
+			return true
+		end
+		PawnIsItemDefinitivelyAnUpgrade = function(link, checkLevel)
+			asked = { link, checkLevel }
+			return verdict
+		end
+		assert.equal(true, A.PawnUpgrade(0, 3))
+		assert.same({ "item:225001:0:3", true }, asked)
+		verdict = false
+		assert.equal(false, A.PawnUpgrade(0, 3))
+		verdict = nil
+		assert.is_nil(A.PawnUpgrade(0, 3))
+		PawnIsItemDefinitivelyAnUpgrade = function()
+			error("Pawn broke")
+		end
+		assert.is_nil(A.PawnUpgrade(0, 3))
+		PawnIsItemDefinitivelyAnUpgrade = function()
+			return true
+		end
+		issecretvalue = function(v)
+			return v == true
+		end
+		assert.is_nil(A.PawnUpgrade(0, 3), "a secret verdict is no opinion")
+		issecretvalue = nil
+		C_Container = { GetContainerItemInfo = function()
+			return nil
+		end }
+		assert.is_nil(A.PawnUpgrade(0, 3), "an empty slot")
+		PawnIsReady = function()
+			return false
+		end
+		C_Container = { GetContainerItemInfo = function()
+			return { itemID = 1, hyperlink = "item:1" }
+		end }
+		assert.is_nil(A.PawnUpgrade(0, 3), "Pawn not ready yet")
+	end)
+
+	-- Mutation: delete `pcall(N.RemoveNewItem, bag, slot)` in A.ClearNewItem.
+	it("ClearNewItem and ClearNewItems clear the flag slot by slot, and do nothing without the API", function()
+		A.ClearNewItem(0, 1)
+		A.ClearNewItems({ 0 })
+		local cleared = {}
+		C_NewItems = { RemoveNewItem = function(bag, slot)
+			cleared[#cleared + 1] = bag .. ":" .. slot
+		end }
+		C_Container = { GetContainerNumSlots = function(bag)
+			return bag == 0 and 2 or 1
+		end }
+		A.ClearNewItem(0, 3)
+		A.ClearNewItems({ 0, 5 })
+		assert.same({ "0:3", "0:1", "0:2", "5:1" }, cleared)
+		C_NewItems = { RemoveNewItem = function()
+			error("gone")
+		end }
+		A.ClearNewItem(0, 1) -- an error from the client never escapes
+		A.ClearNewItems({ 0 })
+	end)
+end)
+
+describe("Buttons: Blizzard's blue new-item glow", function()
+	local SB, A, B
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		Fake.Install()
+		Env.PaintGlobals()
+		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
+		B = SB.Buttons
+		SB.Emit("SB_LOGIN")
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+		Env.ClearPaintGlobals()
+	end)
+
+	-- The template's glow parts, as ContainerFrameItemButtonTemplate has them.
+	local function glowing(bag, slot)
+		local b = B.Get(bag, slot)
+		b.NewItemTexture = Fake.New("Texture", b)
+		b.BattlepayItemTexture = Fake.New("Texture", b)
+		b.flashAnim = Fake.New("AnimationGroup", b)
+		b.newitemglowAnim = Fake.New("AnimationGroup", b)
+		return b
+	end
+
+	-- Mutation: delete the HookScript("OnEnter", ...) in createButton.
+	it("hovering a button clears the client's flag for its slot and hides the glow", function()
+		local b = glowing(0, 3)
+		Fake.Fire(b, "OnEnter")
+		assert.same({ "0:3" }, A.newCleared)
+		assert.same({ false, false }, { b.NewItemTexture.shown, b.BattlepayItemTexture.shown })
+		assert.truthy(b.flashAnim.calls.Stop, "flashAnim stopped")
+		assert.truthy(b.newitemglowAnim.calls.Stop, "newitemglowAnim stopped")
+	end)
+
+	-- Mutation: pass the bare function to HookScript instead of SB.ErrorTrap.Guard(...).
+	it("an error while clearing is recorded without Safe Mode, and the glow is still hidden", function()
+		local b = glowing(0, 3)
+		A.ClearNewItem = function()
+			error("flag broke")
+		end
+		Fake.Fire(b, "OnEnter")
+		local e = SB.ErrorTrap.Recent()[1]
+		assert.same({ "buttons.newGlow", "none" }, { e.label, e.window })
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.falsy(b.NewItemTexture.shown)
+	end)
+
+	-- Mutation: delete Buttons.ClearGlow(button) at the end of Buttons.Paint.
+	it("painting a button hides a glow the template showed; a button without the parts is fine", function()
+		local b = glowing(0, 3)
+		B.Paint(b, A.GetSlot(0, 3))
+		assert.falsy(b.NewItemTexture.shown)
+		assert.truthy(b.flashAnim.calls.Stop)
+		B.Paint(B.Get(0, 7), nil)
+	end)
+
+	-- Mutation: delete the SB_BAGS_CLOSED handler (or the SB_BANK_CLOSED one) at the end of Buttons.lua.
+	it("closing the bags clears the flags of bags 0-5 only; closing the bank clears its tabs", function()
+		A.bagIDs.bank, A.bagIDs.warband = { 6 }, { 12 }
+		SB.Emit("SB_BAGS_CLOSED")
+		assert.same({ { 0, 1, 2, 3, 4, 5 } }, A.newClearedBags)
+		SB.Emit("SB_BANK_CLOSED")
+		assert.same({ 6, 12 }, A.newClearedBags[2])
+	end)
+end)
+
+describe("Inventory and the client's new-item flag", function()
+	local SB, A, Inv
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		Inv = SB.Inventory
+	end)
+
+	after_each(function()
+		C_NewItems = nil
+	end)
+
+	-- Pins the diagnosis: SwagBag's newSet is the only "new"; Blizzard's flag is never imported.
+	-- Mutation: in Inventory.ScanBag, `if r == Inv.R.ITEM and Inv.scanned then` → `if r == Inv.R.ITEM then`.
+	it("the login scan marks nothing new, even when the client flags every slot new", function()
+		C_NewItems = { IsNewItem = function()
+			return true
+		end }
+		Inv.ScanAll()
+		assert.is_nil(next(Inv.newSet))
+	end)
+
+	-- Mutation: delete `SB.Adapter.ClearNewItem(bag, slot)` in Inventory.ScanBag.
+	it("an item that leaves its slot is no longer new, and the client's flag for the slot is cleared", function()
+		Inv.ScanAll()
+		A.Put(0, 7, Fixtures.HERB, 5)
+		Inv.ScanBag(0)
+		assert.truthy(Inv.IsNew(0, 7))
+		A.Clear(0, 7)
+		Inv.ScanBag(0)
+		assert.falsy(Inv.IsNew(0, 7))
+		assert.same({ "0:7" }, A.newCleared)
+	end)
+end)
+```
+
+In `spec/overlays_spec.lua`, find:
+
+```lua
+	it("/swagbag overlays title off switches the item level in the bags title off at once", function()
+```
+
+and replace it with:
+
+```lua
+	-- Ruling W4-15 (supersedes W3-16): Pawn's "no opinion" (nil) leaves the arrow to the item-level
+	-- rule. Mutation: in Ov.Context's ctx.pawn, `return A.PawnUpgrade(record.bag, record.slot) == true`.
+	it("with Use Pawn, an item Pawn has no opinion on gets the item-level rule; Pawn's no hides the arrow", function()
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		A.equipped[12] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		A.pawn = {}
+		SB.Config.Set("overlays.usePawn", true)
+		local _, r = draw(0, 3)
+		assert.truthy(r.arrow.shown, "no opinion: 285 beats 270")
+		A.pawn = { ["0:3"] = false }
+		_, r = draw(0, 3)
+		assert.falsy(r.arrow.shown, "Pawn says no")
+	end)
+
+	-- Ruling W4-15, O1 steps 3-5 and 10. Mutations: delete the SetFont call in text(); Ov.ARROW_SIZE = 14.
+	it("legibility: larger outlined text, a larger arrow, a coin with an outline, all inside the button", function()
+		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
+		local _, r = draw(0, 3)
+		assert.same({ Ov.FONT, 13, "THICKOUTLINE" }, r.topLeft.calls.SetFont)
+		assert.same({ Ov.FONT, 11, "THICKOUTLINE" }, r.bind.calls.SetFont)
+		assert.same({ 16, 16 }, { r.arrow.w, r.arrow.h })
+		assert.equal(Ov.TEXT_WIDTH, r.bottomLeft.w)
+		assert.truthy(2 + Ov.TEXT_WIDTH <= 37, "text is clipped inside a 37 px button")
+		local _, j = draw(0, 6)
+		assert.truthy(j.junk.shown and j.junkShadow.shown)
+		assert.same({ 16, 16 }, { j.junk.w, j.junk.h })
+		assert.same({ 19, 19 }, { j.junkShadow.w, j.junkShadow.h })
+		assert.same(Ov.JUNK_TINT, j.junk.calls.SetVertexColor)
+	end)
+
+	-- Mutation: in Ov.Apply, `local corner = top == "" and "TOPLEFT" or "BOTTOMLEFT"` → `local corner = "TOPLEFT"`.
+	it("gray gear shows its item level top left and the coin bottom left, so both stay visible", function()
+		A.AddItem(900001, { name = "Rusty Sword", classID = A.ITEM_CLASS.Weapon, subclassID = 0,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "none" })
+		A.Put(0, 7, 900001, 1)
+		local _, r = draw(0, 7)
+		assert.equal("5", r.topLeft.text)
+		assert.truthy(r.junk.shown)
+		assert.equal("BOTTOMLEFT", r.junk.points[#r.junk.points][1])
+	end)
+
+	it("/swagbag overlays title off switches the item level in the bags title off at once", function()
+```
+
+In `spec/bagswindow_sections_spec.lua` (edit 1 of 3), find:
+
+```lua
+		Fixtures.SmallBags(A) -- backpack 16 slots: potion, flask, BoE ring, soulbound helm, keystone, junk
+```
+
+and replace it with:
+
+```lua
+		Fixtures.SmallBags(A) -- backpack 16 slots: potion, flask, BoE ring, soulbound helm, keystone, junk
+		SB.Config.Set("bags.newAlways", true) -- New's reserved rows, as these tests were written (Task 11 tests hidden New)
+```
+
+In `spec/bagswindow_sections_spec.lua` (edit 2 of 3), find:
+
+```lua
+		Fixtures.SmallBags(A) -- potion, flask, BoE ring, soulbound helm, keystone, junk
+```
+
+and replace it with:
+
+```lua
+		Fixtures.SmallBags(A) -- potion, flask, BoE ring, soulbound helm, keystone, junk
+		SB.Config.Set("bags.newAlways", true) -- New's reserved rows, as these tests were written
+```
+
+In `spec/bagswindow_sections_spec.lua` (edit 3 of 3; the last test of the "BagsWindow category view" block), find:
+
+```lua
+	it("the grid view only repaints: no placeholders, nothing moves", function()
+```
+
+and replace it with:
+
+```lua
+	-- Ruling W4-15: New is hidden while empty (bags.newAlways = false, the default).
+	-- Mutation: in layoutSections' Build options, `hideEmptyNew = not SB.Config.Get("bags.newAlways")` →
+	-- `hideEmptyNew = false`.
+	it("an empty New is hidden: the first section starts at the top; /swagbag new always brings its rows back", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		assert.is_nil(header("new"))
+		assert.equal("- Keystone & Crests (1)", headers()[1])
+		assert.same({ 4, -24 }, at(0, 5), "keystone: first cell under the first header")
+		A.printed = {}
+		SB.Slash.Dispatch("new always")
+		assert.same({ SB.L.NEW_MODE_ALWAYS }, A.Lines())
+		assert.equal("- New (0)", headers()[1])
+		assert.same({ 4, -128 }, at(0, 5))
+	end)
+
+	-- P5, W4-13, W10. Mutation: in W.ApplyChanges, drop the fifth argument (the area check) of Layout.Apply.
+	it("the first arrival shows New and moves every section down as a whole, once the mouse leaves the items", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		local keyAt, potionAt = at(0, 5), at(0, 1)
+		W.scroll.mouseOver = true
+		A.Put(0, 10, Fixtures.HERB, 20)
+		bagUpdate()
+		assert.is_nil(header("new"), "nothing moves while the mouse is over the items")
+		assert.same(keyAt, at(0, 5))
+		A.Advance(0.3)
+		assert.same(keyAt, at(0, 5), "still waiting")
+		W.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("- New (1)", header("new").text.text)
+		assert.same({ 4, -24 }, at(0, 10), "the herb is first in New")
+		assert.same({ keyAt[1], keyAt[2] - 104 }, at(0, 5), "W10: the keystone moved with its header")
+		assert.same({ potionAt[1], potionAt[2] - 104 }, at(0, 1))
+	end)
+
+	-- W3-13 with the free tile: a button emptied in New joins Free as a hidden spare.
+	-- Mutation: the Layout.Position mutation of layout_spec "a New that empties stays shown".
+	it("a New that empties while open stays until the next open or Reflow; its emptied button joins Free", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		A.Put(0, 10, Fixtures.HERB, 20)
+		bagUpdate()
+		local keyAt = at(0, 5)
+		A.Clear(0, 10)
+		bagUpdate()
+		assert.equal("- New (0)", header("new").text.text, "New stays, with its rows")
+		assert.same(keyAt, at(0, 5), "nothing jumps")
+		assert.falsy(B.Get(0, 10).shown, "the emptied button is a hidden free slot again")
+		assert.equal("- Free (10)", header("free").text.text)
+		W.Reflow()
+		assert.is_nil(header("new"))
+		assert.same({ 4, -24 }, at(0, 5))
+	end)
+
+	-- P2, read-only. Mutation: in the `new` command, replace `if not SB.Config.Set(...) then return
+	-- L.SETTINGS_READONLY end` with a bare SB.Config.Set(...).
+	it("/swagbag new answers with the current choice; read-only settings refuse and change nothing", function()
+		A.printed = {}
+		SB.Slash.Dispatch("new")
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("new auto")
+		assert.same({ SB.L.NEW_USAGE:format("always"), SB.L.SETTINGS_READONLY }, A.Lines())
+		assert.equal(true, SB.Config.Get("bags.newAlways"))
+	end)
+
+	it("the grid view only repaints: no placeholders, nothing moves", function()
+```
+
+In `spec/bagswindow_spec.lua` (its window now registers `/swagbag new`, so it needs `Slash.lua`), find:
+
+```lua
+			"SwagBag/Core/Config.lua",
+			"SwagBag/Engine/GridLayout.lua",
+```
+
+and replace it with:
+
+```lua
+			"SwagBag/Core/Config.lua",
+			"SwagBag/Core/Slash.lua",
+			"SwagBag/Engine/GridLayout.lua",
+```
+
+In `spec/settings_spec.lua` (created by Task 6; verify on disk), find:
+
+```lua
+	it("overlays page: each overlay switches through /swagbag overlays", function()
+```
+
+and replace it with:
+
+```lua
+	-- Ruling W4-15. Mutation: delete the New row from bagsRows in SettingsPages.lua.
+	it("the New row runs /swagbag new, hidden first (the default), always shown next to it", function()
+		SB.Slash.Register("new", "test", function(arg)
+			ran[#ran + 1] = "new " .. arg
+			return "ran new " .. arg
+		end)
+		SW.Show("bags")
+		assert.truthy(SW.selected[button("Hidden")])
+		click("Always shown")
+		assert.same({ "new always" }, ran)
+		assert.equal("ran new always", SW.lastStatus)
+	end)
+
+	it("overlays page: each overlay switches through /swagbag overlays", function()
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `luajit spec/runner.lua spec/layout_spec.lua spec/newglow_spec.lua spec/overlays_spec.lua spec/bagswindow_sections_spec.lua spec/settings_spec.lua`
+Expected: 18 failed, and every other test in these files passes. The passed count is whatever these files held at the end of Task 10, plus 4. The four new tests that already pass are pins: "without hideEmptyNew …", "a New that empties stays shown until the next full layout", "the login scan marks nothing new …" and "with Use Pawn, an item Pawn has no opinion on …". The mock's nil now reaches code that already handled it. The 18 failures:
+- `layout_spec`: "an empty New has no header…", "the first arrival shows New…" and "while the area is busy…";
+- `newglow_spec`: everything except "the login scan marks nothing new…" (8 tests; `A.ClearNewItem` and `A.ClearNewItems` do not exist yet in the real Adapter);
+- `overlays_spec`: "legibility…" and "gray gear shows its item level top left…";
+- `bagswindow_sections_spec`: the four new tests;
+- `settings_spec`: "the New row runs /swagbag new…".
+
+Critical tests and their mutations:
+
+| Test | Mutation |
+|---|---|
+| "an empty New has no header and no reserved rows; …" (`layout_spec`) | `Layout.lua` Build: `st.newShown = not opts.hideEmptyNew or new.size > 0` → `st.newShown = true` |
+| "the first arrival shows New, and everything below moves down by the same amount (W10)" | `Layout.lua` Apply: delete `st.newShown = true` |
+| "while the area is busy the first arrival waits; …" | `Layout.lua` Apply: delete `or (opensNew and areaBusy and areaBusy())` |
+| "a New that empties stays shown until the next full layout" | `Layout.lua` Position: `visible = st.newShown ~= false` → `visible = st.newShown ~= false and sec ~= nil and countButtons(sec) > 0` |
+| "HasPawn: true only once PawnIsReady exists and says yes" | `Adapter.lua`: `A.HasPawn` body → `return type(_G.PawnIsContainerItemAnUpgrade) == "function"` |
+| "PawnUpgrade asks Pawn about the slot's link: …" | `Adapter.lua`: replace the `if yes == true … return nil` tail with `return yes and true or false` |
+| "ClearNewItem and ClearNewItems clear the flag slot by slot, …" | `Adapter.lua`: delete `pcall(N.RemoveNewItem, bag, slot)` in `A.ClearNewItem` |
+| "hovering a button clears the client's flag for its slot and hides the glow" | `Buttons.lua`: delete the `b:HookScript("OnEnter", …)` call |
+| "an error while clearing is recorded without Safe Mode, …" | `Buttons.lua`: hook the bare function instead of `SB.ErrorTrap.Guard("buttons.newGlow", …, "none")` |
+| "painting a button hides a glow the template showed; …" | `Buttons.lua`: delete `Buttons.ClearGlow(button)` at the end of `Paint` |
+| "closing the bags clears the flags of bags 0-5 only; …" | `Buttons.lua`: delete the `SB_BAGS_CLOSED` handler; separately, delete the `SB_BANK_CLOSED` handler |
+| "the login scan marks nothing new, …" | `Inventory.lua` ScanBag: `if r == Inv.R.ITEM and Inv.scanned then` → `if r == Inv.R.ITEM then` |
+| "an item that leaves its slot is no longer new, …" | `Inventory.lua` ScanBag: delete `SB.Adapter.ClearNewItem(bag, slot)` |
+| "with Use Pawn, an item Pawn has no opinion on gets the item-level rule; …" | `Overlays.lua` ctx.pawn: `return A.PawnUpgrade(record.bag, record.slot)` → `return A.PawnUpgrade(record.bag, record.slot) == true` |
+| "legibility: larger outlined text, …" | `Overlays.lua`: delete the `fs:SetFont(…)` line in `text`; separately, `ARROW_SIZE = 16` → `ARROW_SIZE = 14` |
+| "gray gear shows its item level top left and the coin bottom left, …" | `Overlays.lua` Apply: `local corner = top == "" and "TOPLEFT" or "BOTTOMLEFT"` → `local corner = "TOPLEFT"` |
+| "an empty New is hidden: …" (`bagswindow_sections_spec`) | `BagsWindow.lua` layoutSections: `hideEmptyNew = not SB.Config.Get("bags.newAlways")` → `hideEmptyNew = false` |
+| "the first arrival shows New and moves every section down as a whole, …" | `BagsWindow.lua` ApplyChanges: call `SB.Layout.Apply(st, changes, (busyCheck()), W.view)` (no area check) |
+| "/swagbag new answers with the current choice; …" | `BagsWindow.lua` `new` command: a bare `SB.Config.Set("bags.newAlways", arg == "always")` |
+| "the New row runs /swagbag new, …" (`settings_spec`) | `SettingsPages.lua`: delete the `L.SET_NEW` row |
+
+- [ ] **Step 3: Write the implementation**
+
+In `SwagBag/Engine/Layout.lua` (edit 1 of 6), find:
+
+```lua
+--   opts: { columns, newRows, freeTile, family }
+```
+
+and replace it with:
+
+```lua
+--   opts: { columns, newRows, freeTile, family, hideEmptyNew }
+--     hideEmptyNew: an empty New is not drawn (no header, no reserved rows) until something
+--       arrives (ruling W4-15, the bags window unless bags.newAlways); state.newShown says which
+```
+
+In `SwagBag/Engine/Layout.lua` (edit 2 of 6), find:
+
+```lua
+--   to the same cell (spec 6.4). New always shows its header and newRows reserved rows.
+```
+
+and replace it with:
+
+```lua
+--   to the same cell (spec 6.4). New shows its header and newRows reserved rows, except while
+--   state.newShown is false (hideEmptyNew and nothing has arrived since the last Build).
+```
+
+In `SwagBag/Engine/Layout.lua` (edit 3 of 6), find:
+
+```lua
+-- Layout.Apply(state, changes, isBusy, collapsed) -> result   while the window is open
+```
+
+and replace it with:
+
+```lua
+-- Layout.Apply(state, changes, isBusy, collapsed, areaBusy) -> result   while the window is open
+--   areaBusy() -> true while the mouse is over the items or an item is on the cursor (nil: never).
+--   The first "arrived" change while New is hidden shows New, which moves every section below:
+--   it waits in state.deferred while areaBusy() (P5, W4-13). Once shown, New stays shown until
+--   the next Build, even if it empties (nothing jumps while the window is open).
+```
+
+In `SwagBag/Engine/Layout.lua` (edit 4 of 6), find:
+
+```lua
+	local new = section(st, Layout.NEW)
+	new.capacity = math.max(st.newRows, math.ceil(new.size / cols)) * cols
+	return st
+end
+```
+
+and replace it with:
+
+```lua
+	local new = section(st, Layout.NEW)
+	new.capacity = math.max(st.newRows, math.ceil(new.size / cols)) * cols
+	-- Ruling W4-15: with hideEmptyNew an empty New is not drawn until something arrives; without it
+	-- (the bank windows, bags.newAlways) New always keeps its header and rows.
+	st.newShown = not opts.hideEmptyNew or new.size > 0
+	return st
+end
+```
+
+In `SwagBag/Engine/Layout.lua` (edit 5 of 6), find:
+
+```lua
+		local sec = st.sections[id]
+		local visible = id == Layout.NEW or (sec ~= nil and sec.size > 0)
+```
+
+and replace it with:
+
+```lua
+		local sec = st.sections[id]
+		local visible
+		if id == Layout.NEW then
+			visible = st.newShown ~= false
+		else
+			visible = sec ~= nil and sec.size > 0
+		end
+```
+
+In `SwagBag/Engine/Layout.lua` (edit 6 of 6), find:
+
+```lua
+function Layout.Apply(st, changes, isBusy, collapsed)
+	collapsed = collapsed or {}
+	local result = { moved = {}, placeholders = 0, overflowed = 0, deferred = 0 }
+	local queue = st.deferred
+	for _, ch in ipairs(changes or {}) do
+		queue[#queue + 1] = ch
+	end
+	st.deferred = {}
+	local held = {}
+	for _, ch in ipairs(queue) do
+		local key = Layout.Key(ch.bag, ch.slot)
+		local spare = partner(st, ch)
+		if held[key] or (isBusy and (isBusy(ch.bag, ch.slot) or (spare and isBusy(bagOf(spare), spare % 1000)))) then
+			held[key] = true -- later changes of a held slot wait too, so order is kept
+			st.deferred[#st.deferred + 1] = ch
+		else
+			applyOne(st, ch, collapsed, result)
+		end
+	end
+```
+
+and replace it with:
+
+```lua
+function Layout.Apply(st, changes, isBusy, collapsed, areaBusy)
+	collapsed = collapsed or {}
+	local result = { moved = {}, placeholders = 0, overflowed = 0, deferred = 0 }
+	local queue = st.deferred
+	for _, ch in ipairs(changes or {}) do
+		queue[#queue + 1] = ch
+	end
+	st.deferred = {}
+	local held = {}
+	for _, ch in ipairs(queue) do
+		local key = Layout.Key(ch.bag, ch.slot)
+		local spare = partner(st, ch)
+		-- The first arrival into a hidden New shows it and moves every section below (W4-15).
+		local opensNew = st.newShown == false and ch.kind == "arrived"
+		if held[key] or (isBusy and (isBusy(ch.bag, ch.slot) or (spare and isBusy(bagOf(spare), spare % 1000))))
+			or (opensNew and areaBusy and areaBusy()) then
+			held[key] = true -- later changes of a held slot wait too, so order is kept
+			st.deferred[#st.deferred + 1] = ch
+		else
+			applyOne(st, ch, collapsed, result)
+			if opensNew then
+				st.newShown = true
+			end
+		end
+	end
+```
+
+In `SwagBag/Core/Config.lua`, find:
+
+```lua
+		-- every free slot (plan D19; the bank window follows it too).
+		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
+			showIlvl = true, freeTile = true },
+```
+
+and replace it with:
+
+```lua
+		-- every free slot (plan D19; the bank window follows it too). newAlways: New keeps its header
+		-- and rows when empty; false (default) shows New only once something new arrives (W4-15).
+		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
+			showIlvl = true, freeTile = true, newAlways = false },
+```
+
+In `SwagBag/Core/Adapter.lua` (edit 1 of 2), find:
+
+```lua
+function A.HasPawn()
+	return type(_G.PawnIsContainerItemAnUpgrade) == "function"
+end
+
+-- Pawn's verdict for a bag item: true / false, or nil without Pawn (spec AC9.3).
+function A.PawnUpgrade(bag, slot)
+	local fn = _G.PawnIsContainerItemAnUpgrade
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, yes = pcall(fn, bag, slot)
+	if not ok then
+		return nil
+	end
+	-- Pawn's nil also means "not an upgrade", so it folds to false here.
+	return yes and true or false
+end
+```
+
+and replace it with:
+
+```lua
+-- Pawn (optional; ruling W4-15): ready once PawnIsReady() says so. Pawn 2.13 has no container API,
+-- so the verdict comes from the item link. PawnShouldItemLinkHaveUpgradeArrow is never called
+-- (Pawn throttles it with a budget).
+function A.HasPawn()
+	local ready = _G.PawnIsReady
+	if type(ready) ~= "function" or type(_G.PawnIsItemDefinitivelyAnUpgrade) ~= "function" then
+		return false
+	end
+	local ok, yes = pcall(ready)
+	return ok and yes == true
+end
+
+-- Pawn's verdict for a bag or bank slot (spec AC9.3): true (an upgrade), false (not one), or nil
+-- when Pawn is missing, not ready, the slot is empty, or Pawn has no opinion (the item-level rule
+-- then decides; supersedes W3-16's nil -> false). checkLevel true: Pawn also checks the level.
+function A.PawnUpgrade(bag, slot)
+	if not A.HasPawn() then
+		return nil
+	end
+	local s = A.GetSlot(bag, slot)
+	local link = s and s.link
+	if type(link) ~= "string" or isSecret(link) then
+		return nil
+	end
+	local ok, yes = pcall(_G.PawnIsItemDefinitivelyAnUpgrade, link, true)
+	if not ok or isSecret(yes) then
+		return nil
+	end
+	if yes == true then
+		return true
+	elseif yes == false then
+		return false
+	end
+	return nil
+end
+
+-- Blizzard's client-side "new item" flag (newglow-diagnosis.md): it drives the template's blue
+-- glow and survives /reload. Blizzard's bags clear it per slot on hover and when they close;
+-- SwagBag does the same through these. Per slot, never ClearAll. Nil-safe; errors are swallowed.
+function A.ClearNewItem(bag, slot)
+	local N = C_NewItems
+	if N and N.RemoveNewItem then
+		pcall(N.RemoveNewItem, bag, slot)
+	end
+end
+
+function A.ClearNewItems(bagIDs)
+	local N = C_NewItems
+	if not (N and N.RemoveNewItem) then
+		return
+	end
+	for _, bag in ipairs(bagIDs) do
+		for slot = 1, A.NumSlots(bag) do
+			pcall(N.RemoveNewItem, bag, slot)
+		end
+	end
+end
+```
+
+In `SwagBag/Core/Adapter.lua` (edit 2 of 2; the line Task 5 added — verify on disk), find:
+
+```lua
+	{ path = "UIErrorsFrame", window = "bags", required = false },
+}
+```
+
+and replace it with:
+
+```lua
+	{ path = "UIErrorsFrame", window = "bags", required = false },
+	{ path = "C_NewItems.RemoveNewItem", window = "bags", required = false },
+}
+```
+
+In `.luacheckrc`, find:
+
+```lua
+	"C_RestrictedActions", "C_PartyInfo", "C_Spell",
+}
+```
+
+and replace it with:
+
+```lua
+	"C_RestrictedActions", "C_PartyInfo", "C_Spell", "C_NewItems",
+}
+```
+
+In `SwagBag/Engine/Inventory.lua`, find:
+
+```lua
+			if r == Inv.R.ITEM and Inv.scanned then
+				Inv.newSet[key(bag, slot)] = snap ~= nil or nil
+			end
+```
+
+and replace it with:
+
+```lua
+			if r == Inv.R.ITEM and Inv.scanned then
+				Inv.newSet[key(bag, slot)] = snap ~= nil or nil
+				if snap == nil then -- the item left: the client's own flag for the slot goes too (W4-15)
+					SB.Adapter.ClearNewItem(bag, slot)
+				end
+			end
+```
+
+In `SwagBag/UI/Buttons.lua` (edit 1 of 3), find:
+
+```lua
+local function createButton(bag, slot)
+	local b = CreateFrame("ItemButton", nil, bagFrame(bag), "ContainerFrameItemButtonTemplate")
+	b:SetID(slot)
+	addBackground(b)
+	b:Hide()
+```
+
+and replace it with:
+
+```lua
+local function createButton(bag, slot)
+	local b = CreateFrame("ItemButton", nil, bagFrame(bag), "ContainerFrameItemButtonTemplate")
+	b:SetID(slot)
+	addBackground(b)
+	-- Blizzard's blue "new item" glow (W4-15, newglow-diagnosis.md): hovering a slot clears the
+	-- client's flag for it, as Blizzard's bags do. A post-hook, so the template's own OnEnter, its
+	-- tooltip and item use are untouched; legal in combat. Window "none": a glow is cosmetic and
+	-- never takes the bags away.
+	b:HookScript("OnEnter", SB.ErrorTrap.Guard("buttons.newGlow", function(self)
+		Buttons.ClearGlow(self)
+		SB.Adapter.ClearNewItem(self:GetParent():GetID(), self:GetID())
+	end, "none"))
+	b:Hide()
+```
+
+In `SwagBag/UI/Buttons.lua` (edit 2 of 3), find:
+
+```lua
+	if button.UpdateCooldown then
+		pcall(button.UpdateCooldown, button, info and info.icon or nil)
+	end
+end
+```
+
+and replace it with:
+
+```lua
+	if button.UpdateCooldown then
+		pcall(button.UpdateCooldown, button, info and info.icon or nil)
+	end
+	Buttons.ClearGlow(button)
+end
+
+-- Hide the template's new-item glow (W4-15). Methods only: no field on Blizzard's button is
+-- written, and the template's UpdateNewItem is never called. SwagBag's own "New" is a section.
+function Buttons.ClearGlow(button)
+	for _, name in ipairs({ "NewItemTexture", "BattlepayItemTexture" }) do
+		local t = button[name]
+		if type(t) == "table" and t.Hide then
+			t:Hide()
+		end
+	end
+	for _, name in ipairs({ "flashAnim", "newitemglowAnim" }) do
+		local a = button[name]
+		if type(a) == "table" and a.Stop then
+			a:Stop()
+		end
+	end
+end
+```
+
+In `SwagBag/UI/Buttons.lua` (edit 3 of 3), find:
+
+```lua
+SB.On("BANKFRAME_OPENED", function()
+	Buttons.EnsureBankTabs()
+end, "bank")
+```
+
+and replace it with:
+
+```lua
+SB.On("BANKFRAME_OPENED", function()
+	Buttons.EnsureBankTabs()
+end, "bank")
+
+-- Blizzard's bags clear the new-item flag of every slot when they close (W4-15): so does SwagBag,
+-- per slot, for the window that closed. Recorded only on error (cosmetic).
+SB.On("SB_BAGS_CLOSED", function()
+	SB.Adapter.ClearNewItems(SB.Adapter.GetBagIDs("bags"))
+end, "none")
+
+SB.On("SB_BANK_CLOSED", function()
+	local A, ids = SB.Adapter, {}
+	for _, kind in ipairs({ "bank", "warband" }) do
+		for _, bag in ipairs(A.GetBagIDs(kind)) do
+			ids[#ids + 1] = bag
+		end
+	end
+	A.ClearNewItems(ids)
+end, "none")
+```
+
+In `SwagBag/UI/Overlays.lua` (edit 1 of 5), find:
+
+```lua
+--   top left      junk coin on gray items a vendor pays for       (overlays.junk)
+-- The stack count is Blizzard's own (SetItemButtonCount). overlays.usePawn hands the arrow
+-- to Pawn's PawnIsContainerItemAnUpgrade for bag and bank items.
+```
+
+and replace it with:
+
+```lua
+--   top left      junk coin on gray items a vendor pays for       (overlays.junk)
+--                 (bottom left on gray gear, under its item level)
+-- The stack count is Blizzard's own (SetItemButtonCount); nothing is drawn bottom right. Sizes
+-- are the constants below (W4-15: larger, thick outline), so a check in game can tune them.
+-- overlays.usePawn hands the arrow to Pawn (Adapter.PawnUpgrade) for bag and bank items; where
+-- Pawn has no opinion the item-level rule decides.
+```
+
+In `SwagBag/UI/Overlays.lua` (edit 2 of 5), find:
+
+```lua
+local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind" } }
+```
+
+and replace it with:
+
+```lua
+local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind" },
+	-- Sizes in pixels on a 37 px button (W4-15, O1 steps 3-5 and 10). FONT is the fallback when the
+	-- template font has no file; TEXT_WIDTH clips a text inside the button.
+	FONT = "Fonts\\ARIALN.TTF", FONT_SIZE = 13, BIND_SIZE = 11, FONT_FLAGS = "THICKOUTLINE", TEXT_WIDTH = 33,
+	ARROW_SIZE = 16, JUNK_SIZE = 16, JUNK_OUTLINE = 3, JUNK_TINT = { 1, 0.9, 0.35 } }
+```
+
+In `SwagBag/UI/Overlays.lua` (edit 3 of 5), find:
+
+```lua
+local function text(button, point, x, y)
+	local fs = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+	fs:SetPoint(point, button, point, x, y)
+	return fs
+end
+```
+
+and replace it with:
+
+```lua
+-- Larger than the template, with a thick outline, so it reads on any icon; clipped inside the button.
+local function text(button, point, x, y, size)
+	local fs = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+	fs:SetFont((fs:GetFont()) or Ov.FONT, size, Ov.FONT_FLAGS)
+	fs:SetPoint(point, button, point, x, y)
+	fs:SetWidth(Ov.TEXT_WIDTH)
+	fs:SetJustifyH("LEFT")
+	fs:SetWordWrap(false)
+	return fs
+end
+```
+
+In `SwagBag/UI/Overlays.lua` (edit 4 of 5), find:
+
+```lua
+		r = {
+			topLeft = text(button, "TOPLEFT", 2, -2),
+			bottomLeft = text(button, "BOTTOMLEFT", 2, 2),
+			bind = text(button, "LEFT", 2, 0),
+			arrow = texture(button, 7, "bags-greenarrow", 0.2, 1, 0.2, 0.9),
+			junk = texture(button, 7, "bags-junkcoin", 1, 0.85, 0.1, 0.9),
+			reagent = button:CreateTexture(nil, "OVERLAY", nil, 6),
+		}
+		r.arrow:SetSize(14, 14)
+		r.arrow:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
+		r.junk:SetSize(12, 12)
+		r.junk:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
+```
+
+and replace it with:
+
+```lua
+		r = {
+			topLeft = text(button, "TOPLEFT", 2, -2, Ov.FONT_SIZE),
+			bottomLeft = text(button, "BOTTOMLEFT", 2, 2, Ov.FONT_SIZE),
+			bind = text(button, "LEFT", 2, 0, Ov.BIND_SIZE),
+			arrow = texture(button, 7, "bags-greenarrow", 0.2, 1, 0.2, 0.9),
+			junkShadow = texture(button, 6, "bags-junkcoin", 0, 0, 0, 0.9),
+			junk = texture(button, 7, "bags-junkcoin", 1, 0.85, 0.1, 0.9),
+			reagent = button:CreateTexture(nil, "OVERLAY", nil, 6),
+		}
+		r.arrow:SetSize(Ov.ARROW_SIZE, Ov.ARROW_SIZE)
+		r.arrow:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
+		r.junk:SetSize(Ov.JUNK_SIZE, Ov.JUNK_SIZE)
+		r.junk:SetVertexColor(unpack(Ov.JUNK_TINT))
+		r.junk:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
+		r.junkCorner = "TOPLEFT"
+		-- A black copy of the coin, a little larger, behind it: an outline that reads on any icon.
+		r.junkShadow:SetSize(Ov.JUNK_SIZE + Ov.JUNK_OUTLINE, Ov.JUNK_SIZE + Ov.JUNK_OUTLINE)
+		r.junkShadow:SetVertexColor(0, 0, 0, 0.9)
+		r.junkShadow:SetPoint("CENTER", r.junk, "CENTER", 0, 0)
+```
+
+In `SwagBag/UI/Overlays.lua` (edit 5 of 5), find:
+
+```lua
+	show(r.arrow, on("upgrade") and d.upgrade)
+	show(r.junk, on("junk") and d.junk and top == "")
+	show(r.reagent, reagentEmpty)
+```
+
+and replace it with:
+
+```lua
+	show(r.arrow, on("upgrade") and d.upgrade)
+	-- The coin goes where no text is: top left, or bottom left under gray gear's item level (gear
+	-- never stacks, so Blizzard's count is never there).
+	local junk = on("junk") and d.junk and (top == "" or bottom == "")
+	if junk then
+		local corner = top == "" and "TOPLEFT" or "BOTTOMLEFT"
+		if r.junkCorner ~= corner then
+			r.junk:ClearAllPoints()
+			r.junk:SetPoint(corner, button, corner, 2, corner == "TOPLEFT" and -2 or 2)
+			r.junkCorner = corner
+		end
+	end
+	show(r.junk, junk)
+	show(r.junkShadow, junk)
+	show(r.reagent, reagentEmpty)
+```
+
+In `SwagBag/UI/BagsWindow.lua` (edit 1 of 3), find:
+
+```lua
+	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
+		{ columns = columns(), newRows = SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
+			family = SB.Adapter.BagFamily })
+```
+
+and replace it with:
+
+```lua
+	-- New is hidden while empty unless bags.newAlways (ruling W4-15); the bank windows never hide it.
+	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
+		{ columns = columns(), newRows = SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
+			family = SB.Adapter.BagFamily, hideEmptyNew = not SB.Config.Get("bags.newAlways") })
+```
+
+In `SwagBag/UI/BagsWindow.lua` (edit 2 of 3), find:
+
+```lua
+	local result = SB.Layout.Apply(st, changes, (busyCheck()), W.view)
+```
+
+and replace it with:
+
+```lua
+	-- The first arrival into a hidden New moves every section below, so it also waits while the
+	-- mouse is anywhere over the items or an item is on the cursor (W4-15, same rule as W4-13).
+	local result = SB.Layout.Apply(st, changes, (busyCheck()), W.view, function()
+		return scroll:IsMouseOver() or SB.Adapter.CursorItem() ~= nil
+	end)
+```
+
+In `SwagBag/UI/BagsWindow.lua` (edit 3 of 3), find:
+
+```lua
+-- /swagbag free tile|all (Core/Commands.lua): regroup now, or once the mouse leaves the items.
+SB.On("SB_FREE_TILE_CHANGED", function()
+	W.RequestLayout("free")
+end, "bags")
+```
+
+and replace it with:
+
+```lua
+-- /swagbag free tile|all (Core/Commands.lua): regroup now, or once the mouse leaves the items.
+SB.On("SB_FREE_TILE_CHANGED", function()
+	W.RequestLayout("free")
+end, "bags")
+
+-- /swagbag new always|auto (ruling W4-15): New keeps its rows when empty (always), or shows only
+-- once something new arrives (auto, the default). Regroups now, or once the mouse leaves the items.
+SB.Slash.Register("new", L.HELP_NEW, function(arg)
+	arg = (arg or ""):lower()
+	if arg ~= "always" and arg ~= "auto" then
+		return L.NEW_USAGE:format(SB.Config.Get("bags.newAlways") and "always" or "auto")
+	end
+	if not SB.Config.Set("bags.newAlways", arg == "always") then
+		return L.SETTINGS_READONLY
+	end
+	W.RequestLayout("new")
+	return arg == "always" and L.NEW_MODE_ALWAYS or L.NEW_MODE_AUTO
+end, "bags")
+```
+
+In `SwagBag/UI/SettingsPages.lua` (created by Task 6; verify on disk), find:
+
+```lua
+		{ kind = "choice", label = L.SET_FREE, get = get("bags.freeTile"),
+			choices = { { value = true, text = L.SET_FREE_TILE }, { value = false, text = L.SET_FREE_ALL } },
+			apply = function(v)
+				return run(v and "free tile" or "free all")
+			end },
+```
+
+and replace it with:
+
+```lua
+		{ kind = "choice", label = L.SET_FREE, get = get("bags.freeTile"),
+			choices = { { value = true, text = L.SET_FREE_TILE }, { value = false, text = L.SET_FREE_ALL } },
+			apply = function(v)
+				return run(v and "free tile" or "free all")
+			end },
+		{ kind = "choice", label = L.SET_NEW, get = get("bags.newAlways"),
+			choices = { { value = false, text = L.SET_NEW_AUTO }, { value = true, text = L.SET_NEW_ALWAYS } },
+			apply = function(v)
+				return run(v and "new always" or "new auto")
+			end },
+```
+
+In `SwagBag/Locale/enUS.lua` (edit 1 of 2), find:
+
+```lua
+L.OVERLAYS_NO_PAWN = "Pawn is not loaded, so the item-level rule still decides the upgrade arrow."
+```
+
+and replace it with:
+
+```lua
+L.OVERLAYS_NO_PAWN = "Pawn is not loaded or not ready yet, so the item-level rule decides the upgrade arrow."
+```
+
+In `SwagBag/Locale/enUS.lua` (edit 2 of 2; the end of Task 9's block — verify on disk), find:
+
+```lua
+L.TOUR_LATER = "The guided tour arrives with the full setup wizard in November. Until then, /swagbag help lists every command."
+
+-- In-game check V1 (optional)
+```
+
+and replace it with:
+
+```lua
+L.TOUR_LATER = "The guided tour arrives with the full setup wizard in November. Until then, /swagbag help lists every command."
+
+-- New hidden while empty (ruling W4-15)
+L.HELP_NEW = "new always|auto: keep New's rows at the top even when it is empty (always), or show New only when something"
+	.. " new arrives (auto)"
+L.NEW_USAGE = "Use /swagbag new always or /swagbag new auto (now: %s)."
+L.NEW_MODE_ALWAYS = "New now keeps its rows at the top even when it is empty."
+L.NEW_MODE_AUTO = "New now shows only when something new arrives; an empty New hides when you next open the bags or click"
+	.. " Reflow."
+L.SET_NEW = "The New section when it is empty"
+L.SET_NEW_AUTO = "Hidden"
+L.SET_NEW_ALWAYS = "Always shown"
+
+-- In-game check V1 (optional)
+```
+
+In `docs/superpowers/plans/2026-10-02-swagbag-week3-checklists.md` (the O1 checklist, step 15), find:
+
+```text
+15. If you use Pawn, type `/swagbag overlays pawn on`. Expected: the arrows now follow Pawn; an item Pawn has no data for shows no arrow. Without Pawn, chat says `Overlay pawn is now on.` and `Pawn is not loaded, so the item-level rule still decides the upgrade arrow.` Either way, type `/swagbag overlays pawn off` afterwards.
+```
+
+and replace it with:
+
+```text
+15. If you use Pawn, type `/swagbag overlays pawn on`. Expected: chat says `SwagBag: Overlay pawn is now on.`, and the arrows now follow Pawn wherever Pawn has an opinion; an item Pawn has no opinion on keeps the item-level arrow. Without Pawn (or before Pawn has finished loading), chat also says `SwagBag: Pawn is not loaded or not ready yet, so the item-level rule decides the upgrade arrow.` Either way, type `/swagbag overlays pawn off` afterwards. (Updated by week 4 Task 11, ruling W4-15.)
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `luajit spec/runner.lua spec/layout_spec.lua spec/newglow_spec.lua spec/overlays_spec.lua spec/bagswindow_sections_spec.lua spec/settings_spec.lua`
+Expected: 0 failed. The passed count is Step 2's passed count plus 18.
+
+If an existing test in another spec that opens the real bags window now fails only because New's header or its two empty rows are gone (a position 104 px higher, or `- New (0)` missing from a header list), add `SB.Config.Set("bags.newAlways", true)` right after that `describe`'s `SB.Config.Init(nil, nil)`, as edits 1 and 2 of `bagswindow_sections_spec` do. Do not change the assertions. List each such file in the commit message.
+
+- [ ] **Step 5: Run every check**
+
+Run: `bash scripts/check.sh`
+Expected: `TOC OK (52 files)`, `871 passed, 0 failed` in this plan's count (849 + 22), `ALL CHECKS PASSED`. The real suite already runs ahead of this plan's totals (the SDD ledger records each task's real count). Expect the real count at the end of Task 10 plus 22, and note it in the ledger.
+
+- [ ] **Step 6: Rules grep**
+
+Run: `grep -rnE '(^|[^[:alnum:]_])(C_[A-Z][A-Za-z]*|Enum)\.' SwagBag | grep -v '^SwagBag/Core/Adapter.lua:'; grep -rn 'PawnShouldItemLinkHaveUpgradeArrow\|PawnIsContainerItemAnUpgrade\|ClearAll\|UpdateNewItem' SwagBag`
+Expected: no line from the first grep. The second shows only the comment lines in `Core/Adapter.lua`: the Pawn comment and the "Per slot, never ClearAll" comment.
+
+- [ ] **Step 7: In-game session O2** (see "In-game sessions"; full restart).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add "spec/newglow_spec.lua" "spec/layout_spec.lua" "spec/overlays_spec.lua" "spec/bagswindow_sections_spec.lua" "spec/bagswindow_spec.lua" "spec/settings_spec.lua" "spec/mock_adapter.lua" ".luacheckrc" "SwagBag/Core/Adapter.lua" "SwagBag/Core/Config.lua" "SwagBag/Engine/Inventory.lua" "SwagBag/Engine/Layout.lua" "SwagBag/Locale/enUS.lua" "SwagBag/UI/BagsWindow.lua" "SwagBag/UI/Buttons.lua" "SwagBag/UI/Overlays.lua" "SwagBag/UI/SettingsPages.lua" "docs/superpowers/plans/2026-10-02-swagbag-week3-checklists.md"
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -F - <<'EOF'
+Week 4 Task 11: O1 fixes (Pawn via PawnIsReady, larger overlays, New hidden while empty, blue new-item glow cleared)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx
+EOF
+```
+
+---
+### Task 12: The footer bar: gold, backpack currencies, crests, keystone, free slots (ruling W4-14)
+
+The user asked for gold, crests and "other things pinned at the bottom of the bags window", and then for the keystone and the free-slot count too, letting the user decide what goes there. Ruling W4-14 makes that one bar along the bottom of the bags window. `UI/Footer.lua` holds it all:
+- **Entries:**
+  - `gold`: the character's gold, with Blizzard's coin icons;
+  - `currencies`: the currencies ticked "Show on backpack" in Blizzard's Currency tab;
+  - `crests`: every crest currency the character owns. The IDs come from `SB.Crests.currencies` (new, empty until confirmed in game). Without IDs, every currency in Blizzard's list whose name has a crest word from `SB.Crests.words` (`crest`, `valorstone`) shows. Nothing shows when none is owned;
+  - `keystone`: the keystone in the bags, as its dungeon's short name and level (`AKCE +12`), read with `OverlayData.For` like the keystone overlay;
+  - `free`: the number on the free tile, as `10 free` (`10 free (+2 reagent)` when the reagent bag has room).
+
+  A currency shows once, under the first entry that has it.
+- **Order and choice:** `bags.footer.entries` is comma-separated text, with `-` before an entry that is off (D16 precedent: a value, never a shared table). The default is `gold,currencies,crests,keystone,free`, all on. Unknown ids are dropped, and an entry added later joins at the end, on.
+- **Layout:** each item (an optional 14 px icon and a text) flows left to right. An item that does not fit the window's width starts the next row, so items never overlap. A single item wider than the bar has its text cut at the bar's edge. `BagsWindow`'s `sizeFrame` asks `Footer.Layout(frameWidth)` for the bar's height. That height is added to the window and the scroll area ends above it, so the bar never covers an item. The window's top-left corner stays put (C1), so a taller footer grows the window downward, and nothing in the scroll child moves (P5 holds trivially).
+- **Hover:** each item is a plain `Frame` with `OnEnter`/`OnLeave` (no click, nothing secure):
+  - gold: a title and the amount;
+  - currency: Blizzard's `SetCurrencyByID`, which shows the caps;
+  - keystone: `SetHyperlink` with the keystone's link;
+  - free slots: a title and the counts per kind of bag.
+- **Updates:** `PLAYER_MONEY`, `CURRENCY_DISPLAY_UPDATE`, `CHALLENGE_MODE_COMPLETED`, every `Inventory.OnChanged` (bag changes, including a keystone's new link) and `SB_CONFIG_CHANGED` for its path all go through one `SB.Debounce` (0.1 s). Data is read only while the bags window is open; otherwise the footer is marked dirty and re-read when the window lays out. No `OnUpdate`. Plain frames only, so it is built and redrawn in combat too.
+- **Commands and settings:** `/swagbag footer` lists the entries in order. `/swagbag footer <entry> on|off|up|down` changes one; up and down are added so that the settings page can run the command (D17). Both answer in chat. A new settings page, `Footer`, has one row per entry, `1. Gold` and so on: `Show` (the default, first), `Hide`, `Move up` and `Move down`. Each runs the command. Read-only settings refuse with `L.SETTINGS_READONLY`.
+- **Traps and the Adapter:** ErrorTrap labels are `footer.*` in window `"bags"`; the settings page's clicks go through `SettingsWindow`'s `"none"`. The Adapter gains `Money`, `MoneyText`, `BackpackCurrencies`, `CurrencyInfo` and `CurrencyList`. Only `Adapter.lua` names `C_CurrencyInfo`; `GetMoney`, `GetMoneyString` and `GetCoinTextureString` are read through `_G` and feature-detected.
+
+**Runs after Task 11.** As in Task 11, the anchors marked "(verify on disk)" come from earlier tasks' plan text. In particular, `UI/Footer.lua` goes in the TOC between Task 8's `UI/SettingsConsumables.lua` and Task 9's `UI/QuickSetup.lua`, so the `Footer` page comes last in the settings window.
+
+**Files:**
+- Create: `SwagBag/UI/Footer.lua`, `spec/footer_spec.lua`
+- Modify: `SwagBag/Core/Adapter.lua`, `SwagBag/Core/Config.lua`, `SwagBag/Engine/Crests.lua`, `SwagBag/UI/BagsWindow.lua`, `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`, `.luacheckrc`
+- Test: `spec/mock_adapter.lua`, `spec/bagswindow_sections_spec.lua`
+
+**Interfaces:**
+- Consumes:
+  - on `3e855b4`: `BagsWindow` `frame`, `size`, `FOOTER`, `IsOpen` and the local `sizeFrame`; `Inventory.Iterate/OnChanged`; `OverlayData.For`; `Adapter.BagFamily/BagKind/DungeonName/GetItemInstant`; `SB.Crests.words`; `SB.Debounce`; `SB.On`; `SB.Slash.Register`; `SB.ErrorTrap.Guard`;
+  - from Task 6: `SB.SettingsWindow.AddPage` and `SB.Slash.Run`, and the Locale keys `SET_SHOW` and `SET_HIDE`;
+  - from Task 11: the `C_NewItems.RemoveNewItem` CHECKS line, `A.ClearNewItems`, the `bags` defaults line with `newAlways`, and Locale `SET_NEW_ALWAYS` (all as anchors).
+- Produces:
+  - `SB.Footer` with:
+    - `IDS`, `Name(id)` and `Entries() -> { { id, on } }`;
+    - `SetEntry(id, on) -> ok, why` and `Move(id, delta) -> ok, why`, where `why` is `"unknown" | "edge" | "readonly"`;
+    - `Position(id) -> n` and `Crests() -> { currency }`;
+    - `Keystone() -> { link, itemID, level, dungeon } | nil` and `FreeCounts() -> { any, reagent, other }`;
+    - `Items() -> { { entry, text, icon, tip } }` and `Flow(widths, maxWidth) -> places, rows`;
+    - `Layout(width) -> height`, `Refresh()`, `Tooltip(owner, item)` and `TextWidth(fontString) -> number`;
+    - the fields `items`, `widgets`, `places`, `widths`, `height`, `dirty`, `bar`, and the constants `ROW`, `ROW_GAP`, `GAP`, `ICON`, `PAD`, `INSET` and `DELAY`;
+  - `BagsWindow.Resize()`;
+  - Adapter functions:
+    - `A.Money() -> copper`;
+    - `A.MoneyText(copper) -> text`;
+    - `A.BackpackCurrencies() -> { { id, name, quantity, icon, max } }`;
+    - `A.CurrencyInfo(id) -> currency | nil`;
+    - `A.CurrencyList() -> { currency }`;
+    - `A.MAX_BACKPACK_CURRENCIES`;
+  - the mock's `m.money`, `m.backpack`, `m.currencies` and the same five functions;
+  - `SB.Crests.currencies`;
+  - the setting `bags.footer.entries`, the slash command `footer`, the settings page `footer`, and Locale `FOOTER_*`, `HELP_FOOTER` and `SET_PAGE_FOOTER`.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `spec/mock_adapter.lua`, find:
+
+```lua
+	function m.EquippedItemLevel()
+		return m.avgIlvl
+	end
+```
+
+and replace it with:
+
+```lua
+	function m.EquippedItemLevel()
+		return m.avgIlvl
+	end
+
+	-- The bags footer (W4-14): m.money in copper; m.backpack (Blizzard's "Show on backpack" list) and
+	-- m.currencies (the Currency tab list) = { { id, name, quantity, icon } }. MoneyText is plain "12g".
+	m.money, m.backpack, m.currencies = 0, {}, {}
+	local function copyList(list)
+		local out = {}
+		for i, c in ipairs(list) do
+			out[i] = { id = c.id, name = c.name, quantity = c.quantity, icon = c.icon }
+		end
+		return out
+	end
+
+	function m.Money()
+		return m.money
+	end
+
+	function m.MoneyText(copper)
+		return tostring(math.floor(copper / 10000)) .. "g"
+	end
+
+	function m.BackpackCurrencies()
+		return copyList(m.backpack)
+	end
+
+	function m.CurrencyList()
+		return copyList(m.currencies)
+	end
+
+	function m.CurrencyInfo(id)
+		for _, list in ipairs({ m.backpack, m.currencies }) do
+			for _, c in ipairs(copyList(list)) do
+				if c.id == id then
+					return c
+				end
+			end
+		end
+		return nil
+	end
+```
+
+Create `spec/footer_spec.lua`:
+
+```lua
+-- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip
+-- luacheck: globals GetMoney GetMoneyString GetCoinTextureString C_CurrencyInfo issecretvalue
+-- The bags footer (ruling W4-14): gold, backpack currencies, crests, keystone and free slots, in
+-- the user's order; wraps instead of overlapping; refreshes on events, debounced, while open.
+local Loader = dofile("spec/helpers/loader.lua")
+local Fake = dofile("spec/helpers/fakeframe.lua")
+local Env = dofile("spec/helpers/uienv.lua")
+local Fixtures = dofile("spec/fixtures/items.lua")
+
+local KEYSTONE_LINK = "|cffa335ee|Hkeystone:180653:503:12:10:9:0:0|h[Keystone: Ara-Kara]|h|r"
+
+describe("Footer (ruling W4-14)", function()
+	local SB, A, F, W, resized
+	before_each(function()
+		local files = { unpack(Env.ENGINE) }
+		files[#files + 1] = "SwagBag/Engine/Crests.lua"
+		SB = Loader.New(files)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A) -- 16 slots, 6 items (the keystone in slot 5): 10 free
+		SB.Inventory.ScanAll()
+		Fake.Install()
+		resized = 0
+		-- The bags window as the footer uses it.
+		W = { frame = Fake.New("Frame", UIParent), size = { 495, 300 }, FOOTER = 6, open = true }
+		function W.IsOpen()
+			return W.open
+		end
+		function W.Resize()
+			resized = resized + 1
+		end
+		SB.BagsWindow = W
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/Footer.lua")
+		F = SB.Footer
+		F.TextWidth = function(fs) -- 8 px per character, so the wrap is easy to check by hand
+			return 8 * #(fs.text or "")
+		end
+		A.money = 1234567
+		A.backpack = { { id = 3056, name = "Kej", quantity = 500, icon = 1 } }
+		A.currencies = { { id = 3107, name = "Weathered Ethereal Crest", quantity = 45, icon = 2 },
+			{ id = 3108, name = "Carved Ethereal Crest", quantity = 0, icon = 3 },
+			{ id = 2815, name = "Resonance Crystals", quantity = 900, icon = 4 } }
+		A.dungeons[503] = "Ara-Kara, City of Echoes"
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	local function texts()
+		local out = {}
+		for i, item in ipairs(F.items) do
+			out[i] = item.text
+		end
+		return out
+	end
+
+	-- Mutation: in Footer.Crests, drop `c.quantity > 0` (a crest the character does not own shows as 0).
+	it("default: every entry on, in the order gold, currencies, crests, keystone, free; only owned crests", function()
+		assert.same({ { id = "gold", on = true }, { id = "currencies", on = true }, { id = "crests", on = true },
+			{ id = "keystone", on = true }, { id = "free", on = true } }, F.Entries())
+		F.Refresh()
+		assert.same({ "123g", "500", "45", "AKCE +12", "10 free" }, texts())
+		assert.equal(1, resized, "the window fits the new footer")
+	end)
+
+	-- Mutation: in Footer.Crests, ignore SB.Crests.currencies (always match by name).
+	it("crests come from the season's confirmed currency IDs when Engine/Crests.lua has them", function()
+		SB.Crests.currencies = { 2815 }
+		F.Refresh()
+		assert.same({ "123g", "500", "900", "AKCE +12", "10 free" }, texts())
+	end)
+
+	-- Mutation: in Footer.Flow, `if x > 0 and x + w > maxWidth then` → `if false then`.
+	it("entries that do not fit the width wrap to the next row, never overlap, and the height follows", function()
+		W.size[1] = 100
+		F.Refresh()
+		local rows = 0
+		for i, p in ipairs(F.places) do
+			rows = math.max(rows, p.row)
+			assert.truthy(p.x + F.widths[i] <= 100, "item " .. i .. " inside the bar")
+			for j = 1, i - 1 do
+				local q = F.places[j]
+				if q.row == p.row then
+					assert.truthy(q.x + F.widths[j] <= p.x, "items " .. j .. " and " .. i .. " do not overlap")
+				end
+			end
+		end
+		assert.equal(4, rows)
+		assert.equal(4 * F.ROW + 3 * F.ROW_GAP + F.PAD, F.height)
+		assert.equal(1, resized)
+		assert.equal(F.ROW + F.PAD, F.Layout(1008), "a wide window: one row")
+	end)
+
+	-- P2. Mutation: in the footer command, return nothing after F.Move (no "is now number" line).
+	it("/swagbag footer lists the entries, switches and moves one, and answers each time", function()
+		F.Refresh()
+		SB.Slash.Dispatch("footer")
+		SB.Slash.Dispatch("footer crests off")
+		SB.Slash.Dispatch("footer free up")
+		SB.Slash.Dispatch("footer gold up")
+		SB.Slash.Dispatch("footer sparkles on")
+		assert.same({ "Footer, left to right: Gold on, Backpack currencies on, Crests on, Keystone on, Free slots on",
+			"Footer: Crests is now off.", "Footer: Free slots is now number 4.",
+			"Footer: Gold cannot move further that way.", SB.L.FOOTER_USAGE }, A.Lines())
+		assert.equal("gold,currencies,-crests,free,keystone", SB.Config.Get("bags.footer.entries"))
+		assert.same({ "123g", "500", "10 free", "AKCE +12" }, texts())
+	end)
+
+	-- Mutation: in Footer's save(), ignore SB.Config.Set's result (`SB.Config.Set(...) return true`).
+	it("read-only settings: the command refuses with the reason and changes nothing", function()
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("footer gold off")
+		SB.Slash.Dispatch("footer keystone up")
+		assert.same({ SB.L.SETTINGS_READONLY, SB.L.SETTINGS_READONLY }, A.Lines())
+		assert.equal("gold,currencies,crests,keystone,free", SB.Config.Get("bags.footer.entries"))
+	end)
+
+	-- Mutation: in Footer.Tooltip, the currency branch calls T:SetText(item.text) instead of SetCurrencyByID.
+	it("hovering an entry shows its standard tooltip; leaving hides it", function()
+		F.Refresh()
+		Fake.Fire(F.widgets[1], "OnEnter")
+		assert.equal(SB.L.FOOTER_GOLD, GameTooltip.text)
+		Fake.Fire(F.widgets[2], "OnEnter")
+		assert.same({ 3056 }, GameTooltip.calls.SetCurrencyByID)
+		Fake.Fire(F.widgets[4], "OnEnter")
+		assert.same({ KEYSTONE_LINK }, GameTooltip.calls.SetHyperlink)
+		Fake.Fire(F.widgets[5], "OnEnter")
+		assert.equal(SB.L.FOOTER_FREE_TITLE, GameTooltip.text)
+		Fake.Fire(F.widgets[5], "OnLeave")
+		assert.falsy(GameTooltip.shown)
+	end)
+
+	-- Spec 6.5 spirit (no polling). Mutation: make soon() call F.Refresh() at once (no SB.Debounce).
+	it("money, currency and bag events refresh once, debounced, and only while the bags are open", function()
+		F.Refresh()
+		local reads, items = 0, F.Items
+		F.Items = function()
+			reads = reads + 1
+			return items()
+		end
+		SB.eventFrame:Fire("PLAYER_MONEY")
+		SB.eventFrame:Fire("CURRENCY_DISPLAY_UPDATE")
+		A.Put(0, 7, Fixtures.HERB, 5)
+		SB.eventFrame:Fire("BAG_UPDATE", 0)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		assert.equal(0, reads)
+		A.Advance(0.2)
+		assert.equal(1, reads)
+		assert.equal("9 free", F.items[5].text)
+		W.open = false
+		SB.eventFrame:Fire("PLAYER_MONEY")
+		A.Advance(0.2)
+		assert.equal(1, reads, "closed: nothing is read until the bags open")
+		assert.truthy(F.dirty)
+		for _, w in ipairs(F.widgets) do
+			assert.is_nil(w.scripts.OnUpdate)
+		end
+	end)
+
+	-- P1, D17. Mutation: in the Footer page's apply, always run "footer <id> on".
+	it("Settings > Footer: Show (default, first) / Hide and Move up / Move down run /swagbag footer", function()
+		local SW = SB.SettingsWindow
+		SW.Show("footer")
+		assert.same({ "Show", "Hide", "Move up", "Move down" },
+			{ SW.buttons[1].text, SW.buttons[2].text, SW.buttons[3].text, SW.buttons[4].text })
+		assert.truthy(SW.selected[SW.buttons[1]])
+		Fake.Fire(SW.buttons[2], "OnClick")
+		assert.equal("Footer: Gold is now off.", SW.lastStatus)
+		assert.truthy(SW.selected[SW.buttons[2]])
+		Fake.Fire(SW.buttons[7], "OnClick") -- row 2, Backpack currencies: Move up
+		assert.equal("Footer: Backpack currencies is now number 1.", SW.lastStatus)
+		assert.equal("currencies,-gold,crests,keystone,free", SB.Config.Get("bags.footer.entries"))
+	end)
+
+	it("is built in combat from plain frames only (never an item or secure button)", function()
+		A.combat = true
+		F.Refresh()
+		SB.SettingsWindow.Show("footer")
+		assert.truthy(#F.widgets >= 5)
+		for _, f in ipairs(Fake.created) do
+			assert.truthy(f.kind == "Frame" or f.kind == "Button" or f.kind == "ScrollFrame", f.kind)
+			assert.falsy(tostring(f.template):find("Secure"), tostring(f.template))
+		end
+	end)
+end)
+
+describe("Footer load order", function()
+	it("loads before Config.Init without touching Config", function()
+		local SB = Loader.New(Env.ENGINE)
+		SB.Config.Get = function()
+			error("Config.Get called while loading")
+		end
+		Fake.Install()
+		SB.BagsWindow = { frame = Fake.New("Frame"), size = { 100, 100 }, FOOTER = 6 }
+		local ok, err = pcall(Loader.LoadFile, SB, "SwagBag/UI/Footer.lua")
+		Fake.Uninstall()
+		assert.truthy(ok, tostring(err))
+	end)
+end)
+
+describe("Adapter: money and currencies (the real Adapter)", function()
+	local A
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Locale/enUS.lua"))("SwagBag", SB)
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+	end)
+
+	after_each(function()
+		GetMoney, GetMoneyString, GetCoinTextureString, C_CurrencyInfo, issecretvalue = nil, nil, nil, nil, nil
+	end)
+
+	-- Mutation: A.MoneyText skips GetMoneyString (goes straight to the plain fallback).
+	it("Money and MoneyText use the client's money and coin text, and fall back without them", function()
+		assert.equal(0, A.Money())
+		assert.equal("12g", A.MoneyText(123456))
+		GetMoney = function()
+			return 123456
+		end
+		GetMoneyString = function(copper, separate)
+			return "coins:" .. copper .. ":" .. tostring(separate)
+		end
+		assert.equal(123456, A.Money())
+		assert.equal("coins:123456:true", A.MoneyText(123456))
+	end)
+
+	-- Mutation: in currencyEntry, drop the isSecret(info.quantity) check.
+	it("currencies: the backpack list in order, one by ID, and the Currency tab list without headers", function()
+		assert.same({}, A.BackpackCurrencies())
+		assert.same({}, A.CurrencyList())
+		local back = { { name = "Kej", quantity = 500, iconFileID = 1, currencyTypesID = 3056 },
+			{ name = "Hidden", quantity = 777, iconFileID = 2, currencyTypesID = 9 } }
+		local list = { { name = "Dungeon and Raid", isHeader = true },
+			{ name = "Weathered Ethereal Crest", quantity = 45, iconFileID = 3, maxQuantity = 90 } }
+		issecretvalue = function(v)
+			return v == 777
+		end
+		C_CurrencyInfo = {
+			GetBackpackCurrencyInfo = function(i)
+				return back[i]
+			end,
+			GetCurrencyInfo = function(id)
+				return id == 3107 and list[2] or nil
+			end,
+			GetCurrencyListSize = function()
+				return #list
+			end,
+			GetCurrencyListInfo = function(i)
+				return list[i]
+			end,
+			GetCurrencyListLink = function(i)
+				return "currency:" .. (i == 2 and 3107 or 0)
+			end,
+			GetCurrencyIDFromLink = function(link)
+				return tonumber(link:match("currency:(%d+)"))
+			end,
+		}
+		local crest = { id = 3107, name = "Weathered Ethereal Crest", quantity = 45, icon = 3, max = 90 }
+		assert.same({ { id = 3056, name = "Kej", quantity = 500, icon = 1 } }, A.BackpackCurrencies())
+		assert.same(crest, A.CurrencyInfo(3107))
+		assert.same({ crest }, A.CurrencyList())
+	end)
+end)
+```
+
+In `spec/bagswindow_sections_spec.lua` (the anchor Task 11 also used; still the last test of "BagsWindow category view"), find:
+
+```lua
+	it("the grid view only repaints: no placeholders, nothing moves", function()
+```
+
+and replace it with:
+
+```lua
+	-- Ruling W4-14: the footer never covers an item. Mutation: in sizeFrame, `local foot = W.FOOTER`.
+	it("the footer's height is part of the window, and the scroll area ends above it", function()
+		SB.Footer = { Layout = function()
+			return 40
+		end }
+		W.Open()
+		local p = W.scroll.points[#W.scroll.points]
+		assert.same({ "BOTTOMRIGHT", "BOTTOMRIGHT", -4, W.FOOTER + 40 }, { p[1], p[3], p[4], p[5] })
+		assert.equal(W.frame, p[2])
+		assert.equal(W.pos.height + W.HEADER + W.FOOTER + 40, W.frame.h)
+	end)
+
+	it("the grid view only repaints: no placeholders, nothing moves", function()
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `luajit spec/runner.lua spec/footer_spec.lua spec/bagswindow_sections_spec.lua`
+Expected: 13 failed, and every other test in these files passes:
+- the 10 tests of "Footer (ruling W4-14)" and "Footer load order", each with `cannot open SwagBag/UI/Footer.lua: No such file or directory`;
+- the 2 Adapter tests (`attempt to call field 'Money'` and `attempt to call field 'BackpackCurrencies'`);
+- "the footer's height is part of the window, …".
+
+Critical tests and their mutations:
+
+| Test | Mutation |
+|---|---|
+| "default: every entry on, …; only owned crests" | `Footer.lua` Crests: drop `c.quantity > 0 and` (name branch) |
+| "crests come from the season's confirmed currency IDs …" | `Footer.lua` Crests: `local ids = SB.Crests.currencies or {}` → `local ids = {}` |
+| "entries that do not fit the width wrap to the next row, never overlap, …" | `Footer.lua` Flow: `if x > 0 and x + w > maxWidth then` → `if false then` |
+| "/swagbag footer lists the entries, switches and moves one, …" | `Footer.lua` command: replace `return L.FOOTER_MOVED:format(F.Name(id), F.Position(id))` with `return nil` |
+| "read-only settings: the command refuses …" | `Footer.lua` save: `return SB.Config.Set(PATH, …)` → `SB.Config.Set(PATH, …) return true` |
+| "hovering an entry shows its standard tooltip; …" | `Footer.lua` Tooltip: the currency branch → `T:SetText(item.text)` |
+| "money, currency and bag events refresh once, debounced, …" | `Footer.lua` soon: replace the `SB.Debounce(…)` call with `F.Refresh()` |
+| "Settings > Footer: Show (default, first) / Hide …" | `Footer.lua` page apply: `SB.Slash.Run("footer " .. id .. " on")` for every value |
+| "Money and MoneyText use the client's money and coin text, …" | `Adapter.lua` MoneyText: delete the `GetMoneyString` block |
+| "currencies: the backpack list in order, …" | `Adapter.lua` currencyEntry: drop `or isSecret(info.quantity)` |
+| "the footer's height is part of the window, …" (`bagswindow_sections_spec`) | `BagsWindow.lua` sizeFrame: `local foot = W.FOOTER + (…)` → `local foot = W.FOOTER` |
+
+- [ ] **Step 3: Write the implementation**
+
+In `SwagBag/Core/Adapter.lua` (edit 1 of 2; Task 11's `ClearNewItems`), find:
+
+```lua
+	for _, bag in ipairs(bagIDs) do
+		for slot = 1, A.NumSlots(bag) do
+			pcall(N.RemoveNewItem, bag, slot)
+		end
+	end
+end
+```
+
+and replace it with:
+
+```lua
+	for _, bag in ipairs(bagIDs) do
+		for slot = 1, A.NumSlots(bag) do
+			pcall(N.RemoveNewItem, bag, slot)
+		end
+	end
+end
+
+---------------------------------------------------------------------------
+-- Money and currencies (the bags footer, UI/Footer.lua; ruling W4-14)
+---------------------------------------------------------------------------
+-- The character's gold in copper (0 when the client gives no number).
+function A.Money()
+	local fn = _G.GetMoney
+	if type(fn) ~= "function" then
+		return 0
+	end
+	local ok, copper = pcall(fn)
+	if ok and type(copper) == "number" and not isSecret(copper) then
+		return copper
+	end
+	return 0
+end
+
+-- Gold as the client writes it, with coin icons; plain "123g" without the client's functions.
+function A.MoneyText(copper)
+	local fn = _G.GetMoneyString
+	if type(fn) == "function" then
+		local ok, text = pcall(fn, copper, true)
+		if ok and type(text) == "string" and not isSecret(text) then
+			return text
+		end
+	end
+	fn = _G.GetCoinTextureString
+	if type(fn) == "function" then
+		local ok, text = pcall(fn, copper)
+		if ok and type(text) == "string" and not isSecret(text) then
+			return text
+		end
+	end
+	return SB.L.FOOTER_GOLD_PLAIN:format(math.floor(copper / 10000))
+end
+
+local function currencyEntry(id, info)
+	if type(info) ~= "table" or type(id) ~= "number" or isSecret(id) or type(info.quantity) ~= "number"
+		or isSecret(info.quantity) then
+		return nil
+	end
+	return { id = id, name = info.name, quantity = info.quantity, icon = info.iconFileID, max = info.maxQuantity }
+end
+
+-- The currencies ticked "Show on backpack" in Blizzard's Currency tab, in Blizzard's order:
+-- { { id, name, quantity, icon, max } }. Empty without the API.
+A.MAX_BACKPACK_CURRENCIES = 10
+function A.BackpackCurrencies()
+	local C, out = C_CurrencyInfo, {}
+	if not (C and C.GetBackpackCurrencyInfo) then
+		return out
+	end
+	for i = 1, A.MAX_BACKPACK_CURRENCIES do
+		local ok, info = pcall(C.GetBackpackCurrencyInfo, i)
+		if not ok or type(info) ~= "table" then
+			break
+		end
+		out[#out + 1] = currencyEntry(info.currencyTypesID, info)
+	end
+	return out
+end
+
+-- One currency by ID, or nil.
+function A.CurrencyInfo(id)
+	local C = C_CurrencyInfo
+	if not (C and C.GetCurrencyInfo) then
+		return nil
+	end
+	local ok, info = pcall(C.GetCurrencyInfo, id)
+	return ok and currencyEntry(id, info) or nil
+end
+
+-- Every currency in the Currency tab's list that is not a header, as the list shows it (a header
+-- the user collapsed hides its currencies; confirmed IDs in Engine/Crests.lua do not depend on it).
+function A.CurrencyList()
+	local C, out = C_CurrencyInfo, {}
+	if not (C and C.GetCurrencyListSize and C.GetCurrencyListInfo and C.GetCurrencyListLink
+		and C.GetCurrencyIDFromLink) then
+		return out
+	end
+	local okN, n = pcall(C.GetCurrencyListSize)
+	if not okN or type(n) ~= "number" or isSecret(n) then
+		return out
+	end
+	for i = 1, n do
+		local ok, info = pcall(C.GetCurrencyListInfo, i)
+		if ok and type(info) == "table" and not info.isHeader then
+			local okL, link = pcall(C.GetCurrencyListLink, i)
+			local okI, id = false, nil
+			if okL and type(link) == "string" then
+				okI, id = pcall(C.GetCurrencyIDFromLink, link)
+			end
+			out[#out + 1] = okI and currencyEntry(id, info) or nil
+		end
+	end
+	return out
+end
+```
+
+In `SwagBag/Core/Adapter.lua` (edit 2 of 2), find:
+
+```lua
+	{ path = "C_NewItems.RemoveNewItem", window = "bags", required = false },
+}
+```
+
+and replace it with:
+
+```lua
+	{ path = "C_NewItems.RemoveNewItem", window = "bags", required = false },
+	{ path = "GetMoney", window = "bags", required = false },
+	{ path = "C_CurrencyInfo.GetBackpackCurrencyInfo", window = "bags", required = false },
+	{ path = "C_CurrencyInfo.GetCurrencyInfo", window = "bags", required = false },
+	{ path = "C_CurrencyInfo.GetCurrencyListInfo", window = "bags", required = false },
+}
+```
+
+In `.luacheckrc`, find:
+
+```lua
+	"C_RestrictedActions", "C_PartyInfo", "C_Spell", "C_NewItems",
+}
+```
+
+and replace it with:
+
+```lua
+	"C_RestrictedActions", "C_PartyInfo", "C_Spell", "C_NewItems", "C_CurrencyInfo",
+}
+```
+
+In `SwagBag/Core/Config.lua` (Task 11's line), find:
+
+```lua
+			showIlvl = true, freeTile = true, newAlways = false },
+```
+
+and replace it with:
+
+```lua
+			showIlvl = true, freeTile = true, newAlways = false,
+			-- footer.entries: the bar under the items (UI/Footer.lua, W4-14), left to right; "-" before
+			-- an entry that is off. Unknown ids are dropped; an entry added later joins at the end, on.
+			footer = { entries = "gold,currencies,crests,keystone,free" } },
+```
+
+In `SwagBag/Engine/Crests.lua`, find:
+
+```lua
+SB.Crests = {
+	ids = {},
+	words = { "crest", "valorstone" },
+}
+```
+
+and replace it with:
+
+```lua
+-- currencies: currency IDs of the season's crests, for the bags footer (UI/Footer.lua). Empty until
+-- confirmed in game: the footer then shows every owned currency whose name has one of `words`.
+SB.Crests = {
+	ids = {},
+	words = { "crest", "valorstone" },
+	currencies = {},
+}
+```
+
+In `SwagBag/UI/BagsWindow.lua`, find:
+
+```lua
+local function sizeFrame(width, height, keepTop)
+	local left, top = frame:GetLeft(), frame:GetTop()
+	W.size = { width, height }
+	child:SetSize(width, height)
+	local maxHeight = UIParent:GetHeight() * W.MAX_HEIGHT_FRACTION / frame:GetScale()
+	local viewHeight = math.min(height, maxHeight - W.HEADER - W.FOOTER)
+	frame:SetSize(width + 8, viewHeight + W.HEADER + W.FOOTER)
+	if keepTop and left and top and not W.dragging then
+		frame:ClearAllPoints()
+		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+	end
+	W.ClampScroll()
+end
+```
+
+and replace it with:
+
+```lua
+-- The footer bar (UI/Footer.lua, ruling W4-14) sits under the items: its height (one row or more)
+-- is part of the window and the scroll area ends above it, so it never covers an item.
+local function sizeFrame(width, height, keepTop)
+	local left, top = frame:GetLeft(), frame:GetTop()
+	W.size = { width, height }
+	child:SetSize(width, height)
+	local foot = W.FOOTER + (SB.Footer and SB.Footer.Layout(width + 8) or 0)
+	scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, foot)
+	local maxHeight = UIParent:GetHeight() * W.MAX_HEIGHT_FRACTION / frame:GetScale()
+	local viewHeight = math.min(height, maxHeight - W.HEADER - foot)
+	frame:SetSize(width + 8, viewHeight + W.HEADER + foot)
+	if keepTop and left and top and not W.dragging then
+		frame:ClearAllPoints()
+		frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+	end
+	W.ClampScroll()
+end
+
+-- The footer's height changed: fit the window again, its top-left corner fixed (nothing in the
+-- scroll area moves).
+function W.Resize()
+	if frame:IsShown() then
+		sizeFrame(W.size[1], W.size[2], true)
+	end
+end
+```
+
+In `SwagBag/SwagBag.toc` (Tasks 8 and 9's lines; verify on disk), find:
+
+```text
+UI/SettingsConsumables.lua
+UI/QuickSetup.lua
+```
+
+and replace it with:
+
+```text
+UI/SettingsConsumables.lua
+UI/Footer.lua
+UI/QuickSetup.lua
+```
+
+In `SwagBag/Locale/enUS.lua` (Task 11's block), find:
+
+```lua
+L.SET_NEW_ALWAYS = "Always shown"
+
+-- In-game check V1 (optional)
+```
+
+and replace it with:
+
+```lua
+L.SET_NEW_ALWAYS = "Always shown"
+
+-- The bags footer (ruling W4-14)
+L.HELP_FOOTER = "footer [entry on|off|up|down]: list or change the bar under your bags (gold, currencies, crests, keystone,"
+	.. " free)"
+L.FOOTER_NAME_GOLD = "Gold"
+L.FOOTER_NAME_CURRENCIES = "Backpack currencies"
+L.FOOTER_NAME_CRESTS = "Crests"
+L.FOOTER_NAME_KEYSTONE = "Keystone"
+L.FOOTER_NAME_FREE = "Free slots"
+L.FOOTER_STATE = "Footer, left to right: %s"
+L.FOOTER_ENTRY_STATE = "%s %s"
+L.FOOTER_USAGE = "Use /swagbag footer, or /swagbag footer <gold|currencies|crests|keystone|free> <on|off|up|down>."
+L.FOOTER_SET = "Footer: %s is now %s."
+L.FOOTER_MOVED = "Footer: %s is now number %d."
+L.FOOTER_EDGE = "Footer: %s cannot move further that way."
+L.FOOTER_KEYSTONE = "%s +%d"
+L.FOOTER_KEYSTONE_LEVEL = "+%d"
+L.FOOTER_FREE = "%d free"
+L.FOOTER_FREE_REAGENT = "%d free (+%d reagent)"
+L.FOOTER_FREE_TITLE = "Free bag slots"
+L.FOOTER_FREE_BAGS = "Bags: %d"
+L.FOOTER_FREE_REAGENT_LINE = "Reagent bag: %d"
+L.FOOTER_FREE_OTHER_LINE = "Profession bags: %d"
+L.FOOTER_GOLD = "Gold on this character"
+L.FOOTER_GOLD_PLAIN = "%dg"
+L.SET_PAGE_FOOTER = "Footer"
+L.FOOTER_ROW = "%d. %s"
+L.FOOTER_UP = "Move up"
+L.FOOTER_DOWN = "Move down"
+L.FOOTER_NOTE = "Backpack currencies are the ones you tick \"Show on backpack\" for in Blizzard's Currency tab. Crests show"
+	.. " by themselves once you own any."
+
+-- In-game check V1 (optional)
+```
+
+Create `SwagBag/UI/Footer.lua`:
+
+```lua
+-- SwagBag footer (ruling W4-14): a bar along the bottom of the bags window. Entries, left to right
+-- in the user's order (setting bags.footer.entries; /swagbag footer; Settings > Footer):
+--   gold        the character's gold
+--   currencies  the currencies ticked "Show on backpack" in Blizzard's Currency tab
+--   crests      every crest currency the character owns (none owned: nothing shows)
+--   keystone    the keystone in the bags: dungeon short name and level ("AKCE +12")
+--   free        free bag slots, the number on the free tile ("10 free (+2 reagent)")
+-- A currency shows once, under the first entry that has it. Entries that do not fit the window's
+-- width wrap to another row and never overlap. The bar's height is part of the window (BagsWindow's
+-- sizeFrame asks Footer.Layout), so it never covers an item. Hovering an entry shows the standard
+-- tooltip; nothing is clickable. Plain frames only, so it is built and redrawn in combat too. No
+-- OnUpdate: money, currency, bag and keystone events refresh it, debounced, and only while the bags
+-- window is open (it is re-read when the window next lays out).
+--   Footer.IDS                          entry ids in the default order
+--   Footer.Name(id) -> text             the entry's name
+--   Footer.Entries() -> { { id, on } }  the user's order; unknown ids dropped, missing ones added, on
+--   Footer.SetEntry(id, on) -> ok, why  why: "unknown" | "readonly"
+--   Footer.Move(id, delta) -> ok, why   delta -1 = left, +1 = right; why: "unknown" | "edge" | "readonly"
+--   Footer.Position(id) -> n            the entry's place in the order
+--   Footer.Items() -> { { entry, text, icon, tip } }  what to draw, in order (reads the game)
+--   Footer.Flow(widths, maxWidth) -> places, rows      pure: places[i] = { x, row }
+--   Footer.Layout(width) -> height      place the items for a window this wide (0: nothing to show)
+--   Footer.Refresh()                    re-read, re-place, and resize the window if the height changed
+local _, SB = ...
+
+local L = SB.L
+local Guard = SB.ErrorTrap.Guard
+local F = { IDS = { "gold", "currencies", "crests", "keystone", "free" }, items = {}, widgets = {}, used = 0,
+	height = 0, places = {}, widths = {}, dirty = true,
+	ROW = 16, ROW_GAP = 2, GAP = 12, ICON = 14, PAD = 2, INSET = 4, DELAY = 0.1 }
+SB.Footer = F
+
+local PATH = "bags.footer.entries"
+local NAMES = { gold = L.FOOTER_NAME_GOLD, currencies = L.FOOTER_NAME_CURRENCIES, crests = L.FOOTER_NAME_CRESTS,
+	keystone = L.FOOTER_NAME_KEYSTONE, free = L.FOOTER_NAME_FREE }
+local KNOWN = {}
+for _, id in ipairs(F.IDS) do
+	KNOWN[id] = true
+end
+
+function F.Name(id)
+	return NAMES[id] or id
+end
+
+---------------------------------------------------------------------------
+-- The user's entries (comma-separated text: a per-character override copies a value, D16)
+---------------------------------------------------------------------------
+function F.Entries()
+	local out, seen = {}, {}
+	for part in tostring(SB.Config.Get(PATH) or ""):gmatch("[^,]+") do
+		local off, id = part:match("^%s*(%-?)(%a+)%s*$")
+		if id and KNOWN[id] and not seen[id] then
+			seen[id] = true
+			out[#out + 1] = { id = id, on = off ~= "-" }
+		end
+	end
+	for _, id in ipairs(F.IDS) do
+		if not seen[id] then
+			out[#out + 1] = { id = id, on = true }
+		end
+	end
+	return out
+end
+
+-- False (nothing written) while the settings are read-only.
+local function save(list)
+	local parts = {}
+	for i, e in ipairs(list) do
+		parts[i] = (e.on and "" or "-") .. e.id
+	end
+	return SB.Config.Set(PATH, table.concat(parts, ","))
+end
+
+function F.SetEntry(id, on)
+	if not KNOWN[id] then
+		return false, "unknown"
+	end
+	local list = F.Entries()
+	for _, e in ipairs(list) do
+		if e.id == id then
+			e.on = on
+		end
+	end
+	if not save(list) then
+		return false, "readonly"
+	end
+	F.dirty = true
+	F.Refresh()
+	return true
+end
+
+function F.Move(id, delta)
+	if not KNOWN[id] then
+		return false, "unknown"
+	end
+	local list, i = F.Entries(), nil
+	for n, e in ipairs(list) do
+		if e.id == id then
+			i = n
+		end
+	end
+	local j = i + delta
+	if j < 1 or j > #list then
+		return false, "edge"
+	end
+	list[i], list[j] = list[j], list[i]
+	if not save(list) then
+		return false, "readonly"
+	end
+	F.dirty = true
+	F.Refresh()
+	return true
+end
+
+function F.Position(id)
+	for n, e in ipairs(F.Entries()) do
+		if e.id == id then
+			return n
+		end
+	end
+	return nil
+end
+
+---------------------------------------------------------------------------
+-- What to draw
+---------------------------------------------------------------------------
+local function crestName(name)
+	local lower = type(name) == "string" and name:lower() or ""
+	for _, w in ipairs(SB.Crests.words) do
+		if lower:find(w, 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+-- Crest currencies the character owns: the season's confirmed IDs (Engine/Crests.lua) when there
+-- are any, else every currency in Blizzard's list whose name has a crest word.
+function F.Crests()
+	local A, out = SB.Adapter, {}
+	local ids = SB.Crests.currencies or {}
+	if #ids > 0 then
+		for _, id in ipairs(ids) do
+			local c = A.CurrencyInfo(id)
+			if c and c.quantity > 0 then
+				out[#out + 1] = c
+			end
+		end
+	else
+		for _, c in ipairs(A.CurrencyList()) do
+			if c.quantity > 0 and crestName(c.name) then
+				out[#out + 1] = c
+			end
+		end
+	end
+	return out
+end
+
+-- The keystone in the bags, read like its overlay (OverlayData.For): { link, itemID, level, dungeon }.
+function F.Keystone()
+	for _, _, snap in SB.Inventory.Iterate("bags") do
+		if snap and type(snap.link) == "string" and snap.link:find("|Hkeystone:", 1, true) then
+			local d = SB.OverlayData.For({ isKeystone = true, link = snap.link }, { dungeonName = SB.Adapter.DungeonName })
+			if d.keystone then
+				return { link = snap.link, itemID = snap.itemID, level = d.keystone.level, dungeon = d.keystone.dungeon }
+			end
+		end
+	end
+	return nil
+end
+
+-- Empty bag slots by family, as the free tiles count them: any (the main tile), reagent (the
+-- reagent bag's tile), other (profession bags).
+function F.FreeCounts()
+	local A, n, family = SB.Adapter, { any = 0, reagent = 0, other = 0 }, {}
+	for bag, _, snap in SB.Inventory.Iterate("bags") do
+		if snap == nil then
+			family[bag] = family[bag] or A.BagFamily(bag)
+			local f = family[bag]
+			local k = (f == "any" or f == "reagent") and f or "other"
+			n[k] = n[k] + 1
+		end
+	end
+	return n
+end
+
+function F.Items()
+	local A, out, shown = SB.Adapter, {}, {}
+	local function add(entry, text, icon, tip)
+		out[#out + 1] = { entry = entry, text = text, icon = icon, tip = tip }
+	end
+	local function currencies(entry, list)
+		for _, c in ipairs(list) do
+			if not shown[c.id] then
+				shown[c.id] = true
+				add(entry, tostring(c.quantity), c.icon, { kind = "currency", id = c.id })
+			end
+		end
+	end
+	for _, e in ipairs(F.Entries()) do
+		if e.on and e.id == "gold" then
+			add("gold", A.MoneyText(A.Money()), nil, { kind = "money" })
+		elseif e.on and e.id == "currencies" then
+			currencies("currencies", A.BackpackCurrencies())
+		elseif e.on and e.id == "crests" then
+			currencies("crests", F.Crests())
+		elseif e.on and e.id == "keystone" then
+			local k = F.Keystone()
+			if k then
+				local text = k.dungeon and L.FOOTER_KEYSTONE:format(k.dungeon, k.level) or L.FOOTER_KEYSTONE_LEVEL:format(k.level)
+				add("keystone", text, (A.GetItemInstant(k.itemID) or {}).icon, { kind = "link", link = k.link })
+			end
+		elseif e.on and e.id == "free" then
+			local n = F.FreeCounts()
+			local text = n.reagent > 0 and L.FOOTER_FREE_REAGENT:format(n.any, n.reagent) or L.FOOTER_FREE:format(n.any)
+			add("free", text, nil, { kind = "free", counts = n })
+		end
+	end
+	return out
+end
+
+---------------------------------------------------------------------------
+-- Layout: rows that wrap, never overlap
+---------------------------------------------------------------------------
+-- Left to right; an item that would cross maxWidth starts the next row (an item alone on a row
+-- may be as wide as maxWidth; Layout cuts its text to that).
+function F.Flow(widths, maxWidth)
+	local places, x, row = {}, 0, 1
+	for i, w in ipairs(widths) do
+		if x > 0 and x + w > maxWidth then
+			row, x = row + 1, 0
+		end
+		places[i] = { x = x, row = row }
+		x = x + w + F.GAP
+	end
+	return places, #widths > 0 and row or 0
+end
+
+-- A font string's full text width (GetUnboundedStringWidth ignores a width the region was cut to).
+function F.TextWidth(fs)
+	local w = fs.GetUnboundedStringWidth and fs:GetUnboundedStringWidth() or fs:GetStringWidth()
+	return tonumber(w) or 0
+end
+
+local function barFrame()
+	if not F.bar then
+		local W = SB.BagsWindow
+		local bar = CreateFrame("Frame", nil, W.frame)
+		bar:SetPoint("BOTTOMLEFT", W.frame, "BOTTOMLEFT", F.INSET, W.FOOTER)
+		bar:SetPoint("BOTTOMRIGHT", W.frame, "BOTTOMRIGHT", -F.INSET, W.FOOTER)
+		F.bar = bar
+	end
+	return F.bar
+end
+
+-- Standard tooltips (P2: hovering answers). Plain GameTooltip calls, nothing secure.
+function F.Tooltip(owner, item)
+	local T = GameTooltip
+	if not (T and item) then
+		return
+	end
+	T:SetOwner(owner, "ANCHOR_TOP")
+	local tip = item.tip
+	if tip.kind == "currency" then
+		if not pcall(T.SetCurrencyByID, T, tip.id) then
+			T:SetText(item.text)
+		end
+	elseif tip.kind == "link" then
+		if not pcall(T.SetHyperlink, T, tip.link) then
+			T:SetText(item.text)
+		end
+	elseif tip.kind == "money" then
+		T:SetText(L.FOOTER_GOLD)
+		T:AddLine(item.text, 1, 1, 1)
+	else
+		T:SetText(L.FOOTER_FREE_TITLE)
+		T:AddLine(L.FOOTER_FREE_BAGS:format(tip.counts.any), 1, 1, 1)
+		if tip.counts.reagent > 0 then
+			T:AddLine(L.FOOTER_FREE_REAGENT_LINE:format(tip.counts.reagent), 1, 1, 1)
+		end
+		if tip.counts.other > 0 then
+			T:AddLine(L.FOOTER_FREE_OTHER_LINE:format(tip.counts.other), 1, 1, 1)
+		end
+	end
+	T:Show()
+end
+
+-- Pooled item widgets: a plain Frame with an icon and a text, hover only.
+local function widget(i)
+	local w = F.widgets[i]
+	if not w then
+		w = CreateFrame("Frame", nil, barFrame())
+		w:EnableMouse(true)
+		w.icon = w:CreateTexture(nil, "ARTWORK")
+		w.icon:SetSize(F.ICON, F.ICON)
+		w.icon:SetPoint("LEFT", w, "LEFT", 0, 0)
+		w.text = w:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		w.text:SetJustifyH("LEFT")
+		w.text:SetWordWrap(false)
+		w:SetScript("OnEnter", Guard("footer.tip", function(self)
+			F.Tooltip(self, self.item)
+		end, "bags"))
+		w:SetScript("OnLeave", Guard("footer.tipHide", function()
+			if GameTooltip then
+				GameTooltip:Hide()
+			end
+		end, "bags"))
+		F.widgets[i] = w
+	end
+	w:Show()
+	return w
+end
+
+-- width: the bags window's frame width. Returns the bar's height (0 when nothing shows).
+function F.Layout(width)
+	if F.dirty then
+		F.items, F.dirty = F.Items(), false
+	end
+	local bar = barFrame()
+	local inner = width - 2 * F.INSET
+	local widths = {}
+	for i, item in ipairs(F.items) do
+		local w = widget(i)
+		w.item = item
+		local iconW = item.icon and (F.ICON + F.PAD) or 0
+		if item.icon then
+			w.icon:SetTexture(item.icon)
+			w.icon:Show()
+		else
+			w.icon:Hide()
+		end
+		w.text:SetText(item.text)
+		w.text:ClearAllPoints()
+		w.text:SetPoint("LEFT", w, "LEFT", iconW, 0)
+		widths[i] = math.min(inner, iconW + F.TextWidth(w.text))
+		w.text:SetWidth(math.max(0, widths[i] - iconW)) -- a text wider than the bar is cut at its edge
+	end
+	for i = #F.items + 1, F.used do
+		F.widgets[i]:Hide()
+	end
+	F.used = #F.items
+	local places, rows = F.Flow(widths, inner)
+	for i, p in ipairs(places) do
+		local w = F.widgets[i]
+		w:SetSize(widths[i], F.ROW)
+		w:ClearAllPoints()
+		w:SetPoint("TOPLEFT", bar, "TOPLEFT", p.x, -(p.row - 1) * (F.ROW + F.ROW_GAP))
+	end
+	local h = rows > 0 and (rows * F.ROW + (rows - 1) * F.ROW_GAP + F.PAD) or 0
+	bar:SetHeight(math.max(h, 1))
+	if rows > 0 then
+		bar:Show()
+	else
+		bar:Hide()
+	end
+	F.places, F.widths, F.height = places, widths, h
+	return h
+end
+
+-- Re-read the game and re-place; a new height resizes the window (its top-left corner stays put).
+-- While the bags are closed nothing is read: the next layout of the window reads it.
+function F.Refresh()
+	local W = SB.BagsWindow
+	if not (W and W.IsOpen and W.IsOpen()) then
+		F.dirty = true
+		return
+	end
+	F.items, F.dirty = F.Items(), false
+	local old = F.height
+	F.Layout(W.size[1] + 2 * F.INSET)
+	if F.height ~= old then
+		W.Resize()
+	end
+end
+
+local function soon()
+	SB.Debounce("footer.refresh", F.DELAY, function()
+		F.Refresh()
+	end, "bags")
+end
+
+SB.On("PLAYER_MONEY", soon, "bags")
+SB.On("CURRENCY_DISPLAY_UPDATE", soon, "bags")
+SB.On("CHALLENGE_MODE_COMPLETED", soon, "bags") -- the keystone's level changes after a run
+SB.On("SB_CONFIG_CHANGED", function(_, path)
+	if path == nil or path == PATH then
+		soon()
+	end
+end, "bags")
+SB.Inventory.OnChanged(soon) -- bag changes, a keystone's new link (listeners run in ErrorTrap "bags")
+
+---------------------------------------------------------------------------
+-- /swagbag footer and Settings > Footer
+---------------------------------------------------------------------------
+local function state(on)
+	return on and L.OVERLAY_ON or L.OVERLAY_OFF
+end
+
+-- /swagbag footer                          list the entries, left to right, each on or off
+-- /swagbag footer <entry> on|off|up|down   switch one, or move it left (up) or right (down)
+SB.Slash.Register("footer", L.HELP_FOOTER, function(arg)
+	local id, what = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
+	if id == "" then
+		local parts = {}
+		for i, e in ipairs(F.Entries()) do
+			parts[i] = L.FOOTER_ENTRY_STATE:format(F.Name(e.id), state(e.on))
+		end
+		return L.FOOTER_STATE:format(table.concat(parts, ", "))
+	end
+	if not KNOWN[id] or not (what == "on" or what == "off" or what == "up" or what == "down") then
+		return L.FOOTER_USAGE
+	end
+	local ok, why
+	if what == "on" or what == "off" then
+		ok, why = F.SetEntry(id, what == "on")
+	else
+		ok, why = F.Move(id, what == "up" and -1 or 1)
+	end
+	if why == "readonly" then
+		return L.SETTINGS_READONLY
+	elseif why == "edge" then
+		return L.FOOTER_EDGE:format(F.Name(id))
+	elseif not ok then
+		return L.FOOTER_USAGE
+	end
+	if what == "on" or what == "off" then
+		return L.FOOTER_SET:format(F.Name(id), state(what == "on"))
+	end
+	return L.FOOTER_MOVED:format(F.Name(id), F.Position(id))
+end, "bags")
+
+-- Settings > Footer: one row per entry in the user's order. Show (the default) first, Hide next to
+-- it (P1); Move up / Move down are never highlighted. Every click runs /swagbag footer (D17).
+if SB.SettingsWindow then
+	local function footerRows()
+		local rows = {}
+		for i, e in ipairs(F.Entries()) do
+			local id = e.id
+			rows[#rows + 1] = { kind = "choice", label = L.FOOTER_ROW:format(i, F.Name(id)), width = 90,
+				get = function()
+					for _, x in ipairs(F.Entries()) do
+						if x.id == id then
+							return x.on
+						end
+					end
+				end,
+				choices = { { value = true, text = L.SET_SHOW }, { value = false, text = L.SET_HIDE },
+					{ value = "up", text = L.FOOTER_UP }, { value = "down", text = L.FOOTER_DOWN } },
+				apply = function(v)
+					local word = (v == true and "on") or (v == false and "off") or v
+					local _, feedback = SB.Slash.Run("footer " .. id .. " " .. word)
+					return feedback
+				end }
+		end
+		rows[#rows + 1] = { kind = "note", label = L.FOOTER_NOTE }
+		return rows
+	end
+	SB.SettingsWindow.AddPage({ id = "footer", title = L.SET_PAGE_FOOTER, rows = footerRows })
+end
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `luajit spec/runner.lua spec/footer_spec.lua spec/bagswindow_sections_spec.lua`
+Expected: 0 failed. The passed count is Step 2's passed count plus 13.
+
+- [ ] **Step 5: Run every check**
+
+Run: `bash scripts/check.sh`
+Expected: `TOC OK (53 files)`, `884 passed, 0 failed` in this plan's count (871 + 13), `ALL CHECKS PASSED`. As in Task 11, expect the real count at the end of Task 11 plus 13, and note it in the ledger.
+
+- [ ] **Step 6: Rules grep**
+
+Run: `grep -rnE '(^|[^[:alnum:]_])(C_[A-Z][A-Za-z]*|Enum)\.' SwagBag | grep -v '^SwagBag/Core/Adapter.lua:'; grep -n 'OnUpdate\|SecureActionButton\|"ItemButton"' SwagBag/UI/Footer.lua`
+Expected: no output from either grep.
+
+- [ ] **Step 7: In-game session FT1** (see "In-game sessions"; full restart, because this task adds a file).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add "spec/footer_spec.lua" "spec/mock_adapter.lua" "spec/bagswindow_sections_spec.lua" ".luacheckrc" "SwagBag/Core/Adapter.lua" "SwagBag/Core/Config.lua" "SwagBag/Engine/Crests.lua" "SwagBag/Locale/enUS.lua" "SwagBag/SwagBag.toc" "SwagBag/UI/BagsWindow.lua" "SwagBag/UI/Footer.lua"
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -F - <<'EOF'
+Week 4 Task 12: bags footer (gold, backpack currencies, crests, keystone, free slots; user order, wraps)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx
+EOF
+```
+
+---
 
 ## In-game sessions
 
 **If anything goes wrong at any point,** type `/swagbag report`, press Ctrl+C, and paste the result to Claude. Each session ends with a reply line for Claude. A step marked "(note it)" asks for something the code cannot check on its own: say what you saw.
 
-Session order: FM1 and DR1 (after Task 4), K1 (after Task 5), S1 (after Task 8), Q1 (after Task 9), W1 (after Task 10).
+Session order: FM1 and DR1 (after Task 4), K1 (after Task 5), S1 (after Task 8), Q1 (after Task 9), W1 (after Task 10), O2 (after Task 11), FT1 (after Task 12).
 
 Note on the title: with the item level on (the default), the title is `SwagBag — <mode> — ilvl <number>`. A long title may end in `...`; only its start matters below.
 
@@ -6268,6 +8828,99 @@ Pass: steps 2–6.
 
 Reply to Claude with: W1 done, and the numbers of any steps that didn't match
 
+### Session O2: the O1 fixes: Pawn, bigger overlays, New hidden while empty, no blue glow (after Task 11, about 10 minutes)
+
+This rechecks week 3's session O1, steps 3–5, 10 and 15, plus the two O1 requests: New hidden while it is empty, and the blue glow.
+
+Before you start: Claude installs the branch build into your AddOns folder. The installed copy is still week 3's (the SDD ledger notes it), so this session needs the new one.
+
+You need:
+- some gear, including one piece better than what you wear if you have one;
+- a gray item (a gray weapon or armor piece too, if you have one);
+- a stack of two or more of the same item (potions, food or reagents);
+- at least two free slots in your bags;
+- Pawn, if you use it (optional);
+- a training dummy for step 21 (optional).
+
+1. Quit the game completely and start it again. Log in. Expected: chat shows `SwagBag: v0.4.0 loaded. Type /swagbag help for commands.`
+2. Press **B**. Expected:
+   - the bags open, and the title starts with `SwagBag — ilvl`;
+   - there is **no** `New` header (you have looted nothing since logging in): the first header is another section, for example `- Keystone & Crests (`;
+   - no item has a blue glow.
+3. Look at your gear (O1 step 3). Expected: the item level in the top left and the upgrade track in the bottom left (for example `H3/6`). Both are bigger than last week, with a thick black outline, and stay inside the slot. Say whether they are easy to read now (note it).
+4. Look for a BoE or warbound-until-equipped item (O1 step 4). Expected: `BoE` or `WuE` on its left side, readable, between the item level and the track.
+5. Look for gear that beats what you wear (O1 step 5). Expected: a green arrow in its top right corner, bigger than last week. Say whether it is big enough (note it).
+6. Look at a gray item (O1 step 10). Expected: a gold coin with a dark outline, bigger than last week, in its top left corner. On gray gear the item level is top left and the coin is in the bottom left corner. Say whether the coin stands out enough (note it).
+7. Look at your stack of two or more. Expected: Blizzard's stack count in the bottom right corner is fully visible; nothing covers it.
+8. If you use Pawn (O1 step 15), type `/swagbag overlays pawn on`. Expected: chat shows `SwagBag: Overlay pawn is now on.` and nothing else. Without Pawn, a second line shows: `SwagBag: Pawn is not loaded or not ready yet, so the item-level rule decides the upgrade arrow.` (If you use Pawn and this second line shows, tell Claude.)
+9. Look at your gear. Expected: the arrows follow Pawn. A piece Pawn has no opinion on still shows an arrow when its item level beats what you wear. Say whether the arrows look right to you (note it).
+10. Type `/swagbag overlays pawn off`. Expected: chat shows `SwagBag: Overlay pawn is now off.`
+11. Hold **Shift** and click your stack. In the small box that opens, click **Okay**. Expected: one item from the stack is on your mouse cursor.
+12. Click the slot with the large white number in `Free`, and keep the mouse on it. Expected: the item goes into that slot, and nothing else in the window moves while the mouse stays over the items.
+13. Move the mouse off the bags window. Expected:
+    - within half a second a `- New (1)` header appears at the top, with the item in it;
+    - every section below moved down together with its header.
+14. Move the mouse onto that item in `New`, then off it again. Expected: no blue glow on it, now or after.
+15. Click that item to pick it up, then click the stack it came from. Expected:
+    - the item joins the stack;
+    - once the mouse is off the slot the item came from, `New` still sits at the top, reading `- New (0)`, with its empty rows;
+    - nothing else moves.
+16. Move the mouse off the window, then click `Reflow`. Expected:
+    - the title says `Regrouped` for a moment;
+    - `New` is gone, and the first header is another section again.
+17. Type `/swagbag new always`. Expected:
+    - chat shows `SwagBag: New now keeps its rows at the top even when it is empty.`;
+    - `- New (0)` and two empty rows are back at the top. If the mouse is over the bags, move it off first.
+18. Type `/swagbag new auto`. Expected: chat shows `SwagBag: New now shows only when something new arrives; an empty New hides when you next open the bags or click Reflow.`, and `New` is gone again.
+19. Type `/swagbag`. Expected: the window `SwagBag settings` opens at `Bags`. In the row `The New section when it is empty`, `Hidden` is highlighted and `Always shown` is right next to it. Press **Esc**.
+20. Type `/reload`. Press **B**. Expected: no item has a blue glow (the O1 bug). If any item glows blue, tell Claude which (note it).
+21. (Optional, at a training dummy) Start a fight. While in combat, move the mouse slowly over several items. Expected: no red error and no "blocked" message. Leave combat.
+22. Type `/swagbag report`, press Ctrl+C and paste it to Claude. Expected: no new errors; `Blocked actions: none`.
+
+Pass: steps 2, 7, 8 (or its no-Pawn line), 10–20, and 21 if you tried it. Steps 3, 5, 6 and 9 are your call: say "too small", "fine" or "too big". The sizes are constants in `UI/Overlays.lua` (`FONT_SIZE`, `ARROW_SIZE`, `JUNK_SIZE`, …), and Claude tunes them from your answer.
+
+Reply to Claude with: O2 done, the numbers of any steps that didn't match, and your call on steps 3, 5, 6 and 9
+
+### Session FT1: the footer at the bottom of the bags (after Task 12, about 5 minutes)
+
+You need:
+- your keystone;
+- at least one currency ticked "Show on backpack" in Blizzard's Currency tab (optional);
+- some crests (optional);
+- a vendor nearby, for step 15 (optional).
+
+1. Quit the game completely and start it again (new file). Log in. Press **B**. Expected: a bar along the bottom of the bags window, under `Free`, shows from left to right:
+   - your gold, with coin icons;
+   - your backpack currencies (if you ticked any);
+   - your crests (if you own any);
+   - your keystone as a short dungeon name and its level (for example `AKCE +12`);
+   - a number and `free` (for example `10 free`).
+
+   No item is hidden behind the bar: scroll down to the last row of `Free` if the window scrolls.
+2. Look at the number before `free`. Expected: it is the same as the number on the free slot in `Free`.
+3. Rest the mouse on your gold. Expected: a tooltip `Gold on this character` with the amount.
+4. Rest the mouse on a crest or a currency. Expected: Blizzard's currency tooltip, with its maximum where the currency has one. Say whether the maximum shows (note it).
+5. Rest the mouse on your keystone. Expected: the keystone's tooltip, the same as hovering it in the bags.
+6. Rest the mouse on the `free` entry. Expected: a tooltip `Free bag slots` with a line `Bags:` and a number.
+7. Type `/swagbag footer`. Expected: chat shows `SwagBag: Footer, left to right: Gold on, Backpack currencies on, Crests on, Keystone on, Free slots on`.
+8. Type `/swagbag footer gold off`. Expected: chat shows `SwagBag: Footer: Gold is now off.`, and the gold is gone from the bar.
+9. Type `/swagbag footer gold on`. Expected: chat shows `SwagBag: Footer: Gold is now on.`, and the gold is back on the left.
+10. Type `/swagbag footer free up`. Expected: chat shows `SwagBag: Footer: Free slots is now number 4.`, and `free` is now left of the keystone.
+11. Type `/swagbag`, then click `Footer` on the left. Expected: rows `1. Gold`, `2. Backpack currencies`, `3. Crests`, `4. Free slots` and `5. Keystone`, each with `Show` highlighted, then `Hide`, `Move up` and `Move down`.
+12. In the row `4. Free slots`, click `Move down`. Expected: the bottom line says `Footer: Free slots is now number 5.`, and in the bags `free` is the last entry again.
+13. Click `Bags` on the left, then `10` under `Slots per row`. Move the mouse off the bags. Expected:
+    - the bags window gets narrower;
+    - if the entries no longer fit on one line, the ones that don't fit continue on a second line under the first;
+    - nothing overlaps, and no item is hidden behind the bar.
+14. Click `12` under `Slots per row`, then press **Esc**. Expected: the bags go back to their width, and the bar to one line if it fits.
+15. (Optional) Buy or sell anything at a vendor. Expected: the gold in the bar changes within a moment.
+16. In combat (at a training dummy, optional), press **B** twice and rest the mouse on the bar's entries. Expected: no red error and no "blocked" message.
+17. Type `/swagbag report`, press Ctrl+C and paste it to Claude. Expected: no new errors; `Blocked actions: none`.
+
+Pass: steps 1–14, and 15–16 if you tried them. If a crest you own does not show in step 1, tell Claude its exact name: Claude adds its currency ID to `Engine/Crests.lua`.
+
+Reply to Claude with: FT1 done, and the numbers of any steps that didn't match
+
 ## Daily focus check (from Day 3, about 2 minutes; spec §12.2 week 4: "Modes switch correctly in real play")
 
 At the end of each day's play, answer these and paste the report:
@@ -6286,13 +8939,13 @@ Any "yes" to questions 2 or 4, and any "no" to questions 3, 5 or 6, is a bug rep
 
 The user ticks these in game on Day 7 and pastes the final `/swagbag report` to Claude:
 
-1. [ ] Sessions FM1, K1, S1, Q1 and W1 passed, or every failure was fixed and its step re-run. DR1 passed if you play delves or raids.
+1. [ ] Sessions FM1, K1, S1, Q1, W1, O2 and FT1 passed, or every failure was fixed and its step re-run. DR1 passed if you play delves or raids.
 2. [ ] V5: at least two keys had `SwagBag — M+` in the title from entering the dungeon to leaving it.
 3. [ ] V11: the `Low:` warning showed once when low (on teleport, entry or key start) and stayed quiet when stocked.
 4. [ ] V6 and V8: fishing and gathering switched on within a second, and off within about 2 minutes. A chest never switched Gathering on (or you could not test it: say so).
 5. [ ] V7: a delve showed `Delves` (or you did no delve: say so).
 6. [ ] The daily focus check had no bug answers, or every one was fixed.
-7. [ ] Claude ran `scripts/check.sh` on the branch: `ALL CHECKS PASSED`, with 849 or more passed and 0 failed. The branch is merged (or kept), as the user chooses.
+7. [ ] Claude ran `scripts/check.sh` on the branch: `ALL CHECKS PASSED`, with 884 or more passed (this plan's count; the real suite runs ahead) and 0 failed. The branch is merged (or kept), as the user chooses.
 
 If a line fails, paste the report, and Claude fixes it before week 5 starts. Any slip is reported at the end of the week (spec §12.2).
 
@@ -6325,6 +8978,8 @@ If a line fails, paste the report, and Claude fixes it before week 5 starts. Any
 | §11.3 V5, V6, V7, V8, V11 | 2 (unit), sessions FM1, DR1, K1 |
 | §13.1 report lists last spells before loot | 2 |
 | Week-3 ledger carry-overs | 3, 10 |
+| Ruling W4-15 (session O1's findings): Pawn through `PawnIsReady` / `PawnIsItemDefinitivelyAnUpgrade`, overlay legibility, New hidden while empty (`bags.newAlways`), the blue new-item glow | 11, session O2 |
+| Ruling W4-14: the footer bar (gold, backpack currencies, crests, keystone, free slots; user order; wraps) | 12, session FT1 |
 
 ## How this plan was checked (while writing it)
 
@@ -6341,3 +8996,4 @@ If a line fails, paste the report, and Claude fixes it before week 5 starts. Any
 - **Name check.** Every `SB.*` name a task uses exists on `aa3fea1`, in an earlier task's **Produces** block, or in the same task.
 - **Placeholder scan.** No TBD, TODO or "similar to". Every step that changes code shows the code.
 - **Review Focus.** Each of the five lines names the tests that pin it, in the tasks that own the code.
+- **Tasks 11 and 12 (appended 2026-10-01, rulings W4-15 and W4-14)** were written while Tasks 4–10 were being implemented. They were replayed on a scratch copy of the working tree at `d6f8335` (Tasks 1–6 in). Two anchors from tasks not yet landed were stood in for: Task 9's `L.TOUR_LATER` line and Task 9's `UI/QuickSetup.lua` TOC line. On that copy, the Step 1 blocks gave the stated red runs (18 and 13 failures), Step 3 turned them green, and `scripts/check.sh` printed `ALL CHECKS PASSED` after each task (894 and 907 passed there, so 22 and 13 new tests). Every anchor occurs exactly once at its point: in files Tasks 4–10 do not touch, on the working tree; in Task 11's output, for Task 12. All of Task 12's mutations were run, and all of Task 11's except the `SettingsPages.lua` row deletion; each failed its named test. The plan totals (871, 884) are this plan's arithmetic (849 + 22, 871 + 13); the real suite runs ahead.
