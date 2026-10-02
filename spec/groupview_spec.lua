@@ -464,6 +464,31 @@ describe("GroupView", function()
 		assert.equal("sort", v.stats.lastLayoutReason)
 	end)
 
+	-- Week-3 carry-over. Mutation: drop the v.heldKey re-check in v.RequestLayout (every retry
+	-- reads every slot again).
+	it("a held full layout re-arms without reading the slots again while the same button stays busy", function()
+		v.Layout("open")
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = 1 } })
+		btn(6, 1).mouseOver = true
+		local reads = 0
+		local describe = f.cfg.describe
+		f.cfg.describe = function(...)
+			reads = reads + 1
+			return describe(...)
+		end
+		assert.falsy(v.RequestLayout("sort"))
+		local first = reads
+		assert.truthy(first > 0, "the first request reads the slots once")
+		A.Advance(0.3)
+		A.Advance(0.3)
+		A.Advance(0.3)
+		assert.equal(first, reads, "three retries under the same button: no reads")
+		btn(6, 1).mouseOver = false
+		A.Advance(0.3)
+		assert.equal("sort", v.stats.lastLayoutReason)
+	end)
+
 	it("W3-38: the mouse over the items but over no button that would move does not hold a full layout", function()
 		v.Layout("open")
 		f.scroll.mouseOver = true

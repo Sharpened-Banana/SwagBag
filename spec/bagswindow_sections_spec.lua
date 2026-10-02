@@ -1018,6 +1018,18 @@ describe("BagsWindow category view", function()
 		assert.equal(0, #B.placeholders)
 	end)
 
+	-- Week-3 carry-over (final review M8). Mutation: ignore SB.Config.Set's result in W.SetView.
+	it("the view toggle with read-only settings says so and changes nothing", function()
+		W.Open()
+		local text, reason = W.viewButton.text, W.stats.lastLayoutReason
+		SB.Config.readOnly = true
+		W.viewButton.scripts.OnClick(W.viewButton)
+		assert.equal(SB.L.SETTINGS_READONLY, W.frame.title.text)
+		assert.equal("sections", SB.Config.Get("bags.view"))
+		assert.equal(text, W.viewButton.text)
+		assert.equal(reason, W.stats.lastLayoutReason)
+	end)
+
 	it("a read-only config refuses the drop with its reason and keeps the item on the cursor", function()
 		W.Open()
 		SB.Config.readOnly = true

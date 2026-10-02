@@ -321,21 +321,28 @@ local bankOpen = false
 
 -- The game is closing (or reloading): there is no later, so this writes even in combat. First
 -- what was captured in combat and is still waiting (W3-28), then a visit still open, then bags.
--- store and storeGuild refuse a newer schema themselves.
+-- store and storeGuild refuse a newer schema themselves. Each write has its own trap, so an
+-- error in one (recorded for /swagbag report) never costs the others.
 SB.On("PLAYER_LOGOUT", function()
+	local Run = SB.ErrorTrap.Run
 	for kind, snap in pairs(pending) do
 		pending[kind] = nil
-		store(kind, snap)
+		Run("snapshot.logout." .. kind, "none", store, kind, snap)
 	end
 	for key, ser in pairs(pendingGuild) do
 		pendingGuild[key] = nil
-		storeGuild(key, ser)
+		Run("snapshot.logout.guild", "none", storeGuild, key, ser)
+	end
+	local function capture(kind)
+		Run("snapshot.logout." .. kind, "none", function()
+			store(kind, Snap.Capture(kind))
+		end)
 	end
 	if bankOpen then
-		store("bank", Snap.Capture("bank"))
-		store("warband", Snap.Capture("warband"))
+		capture("bank")
+		capture("warband")
 	end
-	store("bags", Snap.Capture("bags"))
+	capture("bags")
 end, "none")
 
 SB.On("BANKFRAME_OPENED", function()

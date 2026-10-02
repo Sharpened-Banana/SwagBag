@@ -1038,6 +1038,33 @@ describe("GuildBankWindow (check G1)", function()
 		assert.truthy(GW.view.Collapsed("tab1").c_herbs)
 		assert.truthy(header("tab1:c_herbs").text.text:find("+", 1, true), header("tab1:c_herbs").text.text)
 	end)
+
+	-- Week-3 carry-over. Mutation: drop `cfg.onDrop and` from GroupView's owner.onDrop.
+	it("a drag onto a guild section header does not swallow the next click", function()
+		openVault()
+		answerQueries()
+		local h = header("tab1:c_herbs")
+		h.scripts.OnReceiveDrag(h)
+		h.scripts.OnClick(h, "LeftButton")
+		assert.truthy(GW.view.Collapsed("tab1").c_herbs)
+		h = header("tab1:c_herbs")
+		h.scripts.OnReceiveDrag(h)
+		h.scripts.OnClick(h, "RightButton") -- a right-click after a drag is a plain click too
+		assert.falsy(GW.view.Collapsed("tab1").c_herbs)
+	end)
+
+	-- Week-3 carry-over (final review M8). Mutation: ignore SB.Config.Set's result in GW.ToggleView.
+	it("the view toggle with read-only settings says so and changes nothing", function()
+		openVault()
+		answerQueries()
+		local text, reason = GW.viewButton.text, GW.view.stats.lastLayoutReason
+		SB.Config.readOnly = true
+		Fake.Fire(GW.viewButton, "OnClick")
+		assert.equal(SB.L.SETTINGS_READONLY, GW.frame.title.text)
+		assert.equal("sections", SB.Config.Get("guildBank.view"))
+		assert.equal(text, GW.viewButton.text)
+		assert.equal(reason, GW.view.stats.lastLayoutReason)
+	end)
 end)
 
 describe("GuildBankWindow load order", function()

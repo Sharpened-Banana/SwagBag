@@ -264,6 +264,23 @@ describe("Snapshots (spec 8.3 format, 5.7 timing, 8.4 budget)", function()
 		assert.equal("item:" .. Fixtures.HERB, Snap.Deserialize(me().bank.containers[6])[2].link)
 	end)
 
+	-- Week-3 carry-over. Mutation: run every logout write inside one ErrorTrap.Run (the old code).
+	it("an error in one logout write is recorded and the others are still written", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		local ids = A.GetBagIDs
+		A.GetBagIDs = function(kind)
+			if kind == "warband" then
+				error("warband broke")
+			end
+			return ids(kind)
+		end
+		SB.eventFrame:Fire("PLAYER_LOGOUT")
+		assert.equal("item:" .. Fixtures.HERB, Snap.Deserialize(me().bank.containers[6])[2].link)
+		assert.truthy(me().bags, "the bags are still written after the warband failed")
+		assert.equal("snapshot.logout.warband", SB.ErrorTrap.Recent()[1].label)
+	end)
+
 	it("W3-28: a guild save queued in combat is written at logout", function()
 		A.combat = true
 		Snap.SaveGuild("Tidewatch-Argent Dawn", { [1] = { name = "Gear", slots = { [3] = { link = "item:9", count = 2 } } } })

@@ -209,9 +209,11 @@ function GV.New(cfg)
 		end
 	end
 
+	-- A view with no onDrop (the guild bank) takes no drops, so a drag onto its header sets no
+	-- guard: the click that follows is a plain click (it used to be swallowed for 0.3 s).
 	function owner.onDrop(id)
 		local _, sid = parseId(id)
-		if sid and dropGuard ~= id then
+		if sid and cfg.onDrop and dropGuard ~= id then
 			drop(id)
 		end
 	end
@@ -415,17 +417,31 @@ function GV.New(cfg)
 	-- A full layout while open (Reflow, sort, view toggle, a tab's first answer): held back,
 	-- retrying every 300 ms, only while an item is on the cursor or a button that would move
 	-- is under the mouse -- the same guard as a redraw or a re-stack (W3-38, spec 4.2 rule 5).
+	-- While the button that held it is still under the mouse, a retry only re-arms: it does not
+	-- read every slot again (week-3 final review), so a held layout costs nothing while it waits.
+	-- The cursor is checked again on every retry. Accepted cost (preflight c2): a hold may outlast
+	-- its reason by one mouse-leave -- if new data would no longer move that button, the layout
+	-- still waits until the mouse leaves it. The guard is only ever stricter, never weaker (P5).
 	function v.RequestLayout(reason)
 		if not v.pos then
 			return false
 		end
 		local t0 = SB.Adapter.ProfileMs()
-		local held = SB.Adapter.CursorItem() ~= nil
+		local busy, held = busyCheck()
+		if not held and v.heldKey then
+			held = busy(math.floor(v.heldKey / 1000), v.heldKey % 1000)
+		end
 		local b, pos
 		if not held then
 			b = build()
 			pos = positionAll(b.groups, b.records)
-			held = anyBusy(SB.Layout.Moves(v.pos, pos))
+			v.heldKey = nil
+			for _, k in ipairs(SB.Layout.Moves(v.pos, pos)) do
+				if busy(math.floor(k / 1000), k % 1000) then
+					v.heldKey, held = k, true
+					break
+				end
+			end
 		end
 		if held then
 			SB.Debounce(cfg.key .. ".layout", GV.RETRY, function()
@@ -433,6 +449,7 @@ function GV.New(cfg)
 			end, window)
 			return false
 		end
+		v.heldKey = nil
 		commit(b, pos, reason, t0)
 		return true
 	end
@@ -617,7 +634,7 @@ function GV.New(cfg)
 				end
 			end
 		end
-		v.groups, v.byId, v.pos, v.cells, v.redrawPending = {}, {}, nil, {}, false
+		v.groups, v.byId, v.pos, v.cells, v.redrawPending, v.heldKey = {}, {}, nil, {}, false, nil
 		SB.Buttons.ReleasePlaceholders(cfg.child)
 		SB.SectionHeaders.ReleaseAll(cfg.child)
 	end
