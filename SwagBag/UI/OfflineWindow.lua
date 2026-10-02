@@ -11,9 +11,10 @@
 -- window to fall back to).
 -- Items whose data the client has not loaded yet (after a patch the item cache is empty) are
 -- described as pending and wait in New. While the window is open, item data arriving for one of
--- them lays the window out again (debounced, LOADED_DELAY), held while the mouse is over a saved
--- item or an item is on the cursor (P5), so they move into their categories (preflight F22).
--- That layout keeps the data the window opened with.
+-- them lays the window out again (debounced, LOADED_DELAY) through GroupView's RequestLayout, held
+-- like any full layout while a button that would move is under the mouse or an item is on the
+-- cursor (P5), so they move into their categories (preflight F22). That layout keeps the data the
+-- window opened with. Closing forgets what it was waiting on.
 --   OfflineWindow.Open(key) -> bool   key: AltData.Canon("Name-Realm"), default this character
 --   OfflineWindow.Close(), .IsOpen(), .Flash(text), .key
 --   /swagbag alts [name]               open (this character, or the one named)
@@ -138,12 +139,14 @@ function OW.Info(s)
 		quality = data and data.quality or nil }
 end
 
+-- The saved slot's location (the location keywords: backpack, bags, reagentbag, bank, warband,
+-- guild) and its tab.
 local function kindOf(bag)
 	if bag >= OW.GUILD_BASE then
 		return "guild", bag - OW.GUILD_BASE
 	end
 	local kind, tab = SB.Adapter.BagKind(bag)
-	if kind == "bank" or kind == "warband" then
+	if kind == "bank" or kind == "warband" or kind == "backpack" or kind == "reagentbag" then
 		return kind, tab
 	end
 	return "bags", nil
@@ -301,20 +304,19 @@ function OW.IsOpen()
 	return frame:IsShown()
 end
 
--- reason "loaded" (item data arrived, F22) lays out the data already read: the window never
--- follows saves made while it is open. Any other reason reads the character's saved data again.
+-- Reads the character's saved data again (open, another character). Item data arriving (F22)
+-- does not come here: it lays out the data already read, so the window never follows saves made
+-- while it is open.
 function OW.Layout(reason)
-	if reason ~= "loaded" then
-		OW.view.Clear() -- the buttons of what was shown, before the new data replaces it
-		OW.Load(OW.key)
-		frame.title:SetText(restingTitle())
-		-- nothing of the character's own saved (the warband bank is the account's): say how to get it
-		local _, source = SB.AltData.Characters()
-		if OW.info.bags or OW.info.bank or OW.info.guild then
-			frame.source:SetText(L.OFFLINE_SOURCE:format(source == "Own" and L.ALTS_OWN or tostring(source)))
-		else
-			frame.source:SetText(L.OFFLINE_NOTHING:format(OW.name or ""))
-		end
+	OW.view.Clear() -- the buttons of what was shown, before the new data replaces it
+	OW.Load(OW.key)
+	frame.title:SetText(restingTitle())
+	-- nothing of the character's own saved (the warband bank is the account's): say how to get it
+	local _, source = SB.AltData.Characters()
+	if OW.info.bags or OW.info.bank or OW.info.guild then
+		frame.source:SetText(L.OFFLINE_SOURCE:format(source == "Own" and L.ALTS_OWN or tostring(source)))
+	else
+		frame.source:SetText(L.OFFLINE_NOTHING:format(OW.name or ""))
 	end
 	OW.view.Layout(reason)
 	searchBox.Apply()
@@ -340,35 +342,21 @@ frame:SetScript("OnHide", Guard("offline.hide", function(self)
 		return
 	end
 	OW.view.Clear()
+	OW.pending = {} -- item data arriving while closed lays nothing out (onItemLoaded returns at once)
 end, "none"))
 
 ---------------------------------------------------------------------------
 -- Item data arriving (F22): pending items move into their categories
 ---------------------------------------------------------------------------
--- An item is on the cursor or the mouse is over a saved item: a layout now could move it (P5).
-local function busy()
-	if SB.Adapter.CursorItem() ~= nil then
-		return true
-	end
-	for _, slots in pairs(SB.DisplayButtons.buttons) do
-		for _, b in pairs(slots) do
-			if b:IsShown() and b:IsMouseOver() then
-				return true
-			end
-		end
-	end
-	return false
-end
-
+-- The data already read, laid out again: RequestLayout holds it (and retries every 300 ms) while
+-- a button that would move is under the mouse or an item is on the cursor (P5).
 local function relayoutLoaded()
 	if not (OW.IsOpen() and OW.view.IsOpen()) then
 		return
 	end
-	if busy() then
-		SB.Debounce("offline.loaded", OW.LOADED_DELAY, relayoutLoaded, "none")
-		return
+	if OW.view.RequestLayout("loaded") then
+		searchBox.Apply()
 	end
-	OW.Layout("loaded")
 end
 
 local function onItemLoaded(_, itemID, success)
@@ -382,15 +370,28 @@ end
 SB.On("ITEM_DATA_LOAD_RESULT", onItemLoaded, "none")
 SB.On("GET_ITEM_INFO_RECEIVED", onItemLoaded, "none")
 
--- The saved character whose name (or "Name-Realm") is text, or nil and the names there are.
+-- The saved character named text ("Name" or "Name-Realm", compared in AltData.Canon form), or
+-- nil and either the saved names (none matches) or the matching keys (a name on several realms).
 local function find(text)
-	text = text:lower()
-	local names = {}
+	local canon = (SB.AltData.Canon(text) or text):lower()
+	local names, matches = {}, {}
 	for _, c in ipairs(SB.AltData.Characters() or {}) do
 		names[#names + 1] = c.name
-		if c.key:lower() == text or (c.name or ""):lower() == text then
+		if c.key:lower() == canon then
 			return c
 		end
+		if (c.name or ""):lower() == canon then
+			matches[#matches + 1] = c
+		end
+	end
+	if #matches == 1 then
+		return matches[1]
+	elseif #matches > 1 then
+		local keys = {}
+		for _, c in ipairs(matches) do
+			keys[#keys + 1] = c.key
+		end
+		return nil, nil, keys
 	end
 	return nil, names
 end
@@ -402,7 +403,10 @@ SB.Slash.Register("alts", L.HELP_ALTS, function(arg)
 		OW.Open()
 		return L.OFFLINE_OPENED:format(OW.name)
 	end
-	local c, names = find(arg)
+	local c, names, several = find(arg)
+	if several then
+		return L.OFFLINE_SEVERAL:format(arg, table.concat(several, ", "))
+	end
 	if not c then
 		return L.OFFLINE_UNKNOWN:format(arg, #names > 0 and table.concat(names, ", ") or L.REPORT_NONE)
 	end

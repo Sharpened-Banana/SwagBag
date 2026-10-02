@@ -72,7 +72,8 @@ describe("Alt viewer", function()
 		assert.equal("SwagBag — Abby (saved)", OW.frame.title.text)
 		assert.same({ "- Bags (3) - 2 days ago", "- Bank (1) - 1 h ago", "- Warband bank (1) - 10 min ago",
 			"- Guild bank: Tidewatch (1) - 1 min ago" }, groupHeaders())
-		assert.same({ "- Consumables (1)", "- BoE gear (1)", "- Junk (1)", "- Ore (1)", "- Consumables (1)",
+		-- the ring is bind-on-equip, but saved: it may be bound by now (W5-10), so it is plain Gear
+		assert.same({ "- Consumables (1)", "- Gear (1)", "- Junk (1)", "- Ore (1)", "- Consumables (1)",
 			"- Herbs (1)" }, sectionHeaders())
 	end)
 
@@ -87,6 +88,15 @@ describe("Alt viewer", function()
 			end
 		end
 		assert.equal(6, made, "one per saved item, none for empty saved slots")
+		-- nothing can be picked up or dropped (review fix 3). Mutation: in DisplayButtons create,
+		-- add b:RegisterForDrag("LeftButton") or an OnDragStart/OnReceiveDrag script.
+		for _, f in ipairs(Fake.created) do
+			if f.kind == "ItemButton" then
+				assert.is_nil(f.scripts.OnDragStart)
+				assert.is_nil(f.scripts.OnReceiveDrag)
+				assert.is_nil(f.calls.RegisterForDrag)
+			end
+		end
 		local potion = DB.Get(0, 1)
 		assert.truthy(potion.shown)
 		assert.equal(20, potion.count)
@@ -214,13 +224,13 @@ describe("Alt viewer", function()
 		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
 		assert.equal("- New (1)", sectionHeaders()[1], "debounced: not yet")
 		A.Advance(OW.LOADED_DELAY)
-		assert.same({ "- Consumables (1)", "- BoE gear (2)", "- Junk (1)", "- Ore (1)", "- Consumables (1)",
+		assert.same({ "- Consumables (1)", "- Gear (2)", "- Junk (1)", "- Ore (1)", "- Consumables (1)",
 			"- Herbs (1)" }, sectionHeaders())
 		assert.same({}, SB.ErrorTrap.Recent())
 	end)
 
 	-- F22 + P5: a relayout never moves a button under the mouse. Mutation: in OfflineWindow's
-	-- loaded relayout, drop the busy() hold.
+	-- loaded relayout, call OW.view.Layout instead of OW.view.RequestLayout.
 	it("a load that would relayout waits while the mouse is over a saved item, then lays out", function()
 		local bags = SB.Snapshots.DB().chars["Abby-Argent Dawn"].bags.containers[0]
 		bags.s = bags.s .. "9:item:" .. Fixtures.UNLOADED .. ";1\n"
@@ -236,6 +246,33 @@ describe("Alt viewer", function()
 		A.Advance(OW.LOADED_DELAY)
 		assert.falsy(sectionHeaders()[1] == "- New (1)", "laid out once the mouse left")
 		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	-- F22 + P5, the cursor case. Mutation: as above (OW.view.Layout instead of RequestLayout).
+	it("a load that would relayout waits while an item is on the cursor, then lays out", function()
+		local bags = SB.Snapshots.DB().chars["Abby-Argent Dawn"].bags.containers[0]
+		bags.s = bags.s .. "9:item:" .. Fixtures.UNLOADED .. ";1\n"
+		OW.Open("Abby-ArgentDawn")
+		A.cursor = { itemID = 211880, link = "item:211880" }
+		A.items[Fixtures.UNLOADED] = { name = "Chest of Tests", classID = A.ITEM_CLASS.Armor, subclassID = 4,
+			equipLoc = "INVTYPE_CHEST", quality = 3, ilvl = 270, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
+		A.Advance(OW.LOADED_DELAY)
+		A.Advance(SB.GroupView.RETRY)
+		assert.equal("- New (1)", sectionHeaders()[1], "held while an item is on the cursor")
+		A.cursor = nil
+		A.Advance(SB.GroupView.RETRY)
+		assert.equal("- Gear (2)", sectionHeaders()[2], "laid out once the cursor is empty")
+	end)
+
+	-- Review fix 4. Mutation: in the OnHide handler, drop the OW.pending reset.
+	it("closing forgets the items it was waiting on", function()
+		local bags = SB.Snapshots.DB().chars["Abby-Argent Dawn"].bags.containers[0]
+		bags.s = bags.s .. "9:item:" .. Fixtures.UNLOADED .. ";1\n"
+		OW.Open("Abby-ArgentDawn")
+		assert.truthy(OW.pending[Fixtures.UNLOADED])
+		OW.Close()
+		assert.same({}, OW.pending)
 	end)
 
 	it("item data for an item it is not waiting on, or while it is closed, lays nothing out", function()
@@ -265,6 +302,95 @@ describe("Alt viewer", function()
 		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
 		A.Advance(OW.LOADED_DELAY)
 		assert.is_nil(DB.buttons[0][10])
+	end)
+
+	-- Ruling W5-10: a saved bind-on-equip item may have been bound since. Mutation: in
+	-- Items.DescribeLink, drop the bindUnknown branch (the ring is BoE gear with a badge, AH-priced).
+	it("a saved BoE item outside a guild bank has an unknown bind: no badge, no boe match, vendor-priced", function()
+		A.items[Fixtures.BOE_RING].sellPrice = 500
+		SB.Prices.RegisterProvider({ name = "AH", priority = 10, available = function()
+			return true
+		end, value = function()
+			return 990000
+		end })
+		OW.Open("Abby-ArgentDawn")
+		local record = OW.view.Record(0, 2)
+		assert.is_nil(record.bind)
+		assert.truthy(record.bindUnknown)
+		assert.equal("", SB.Overlays.regions[DB.Get(0, 2)].bind.text, "no BoE badge")
+		assert.equal(500, SB.Sort.Value(record), "priced as bound: the vendor's price")
+		OW.searchBox.editBox:SetText("boe")
+		OW.searchBox.Run()
+		assert.equal(0.2, DB.Get(0, 2).alpha, "boe does not match it")
+	end)
+
+	-- Ruling W5-10, the guild case. Mutation: apply the unknown bind to guild records too.
+	it("a BoE item in a saved guild bank stays BoE (never bound there), beside the same ring in the bags", function()
+		local tab = SB.Snapshots.DB().guilds["Tidewatch-Argent Dawn"].snapshot.containers[1]
+		tab.s = tab.s .. "6:item:225001;1\n"
+		OW.Open("Abby-ArgentDawn")
+		local record = OW.view.Record(101, 6)
+		assert.equal("equip", record.bind)
+		assert.equal(false, record.isBound)
+		assert.falsy(record.bindUnknown)
+		assert.equal(SB.L.BADGE_BOE, SB.Overlays.regions[DB.Get(101, 6)].bind.text)
+		assert.same({ "- Consumables (1)", "- Gear (1)", "- Junk (1)", "- Ore (1)", "- Consumables (1)",
+			"- BoE gear (1)", "- Herbs (1)" }, sectionHeaders(), "same link, two bind states: two memo keys")
+	end)
+
+	-- Review fix 5. Mutation: in find, return the first name match.
+	it("a name saved on two realms lists both and opens neither; Name-Realm in any spelling opens one", function()
+		SB.Snapshots.DB().chars["Abby-Silvermoon"] = { class = "MAGE", lastSeen = A.Time(),
+			bags = { v = 1, at = A.Time(), containers = { [0] = { size = 16, s = "1:item:211880;2\n" } } } }
+		SB.Slash.Dispatch("alts abby")
+		assert.same({ "More than one saved character is named \"abby\": Abby-ArgentDawn, Abby-Silvermoon. Type one of these." },
+			A.Lines())
+		assert.falsy(OW.IsOpen())
+		SB.Slash.Dispatch("alts abby-argent dawn")
+		assert.truthy(OW.IsOpen())
+		assert.equal("Abby-ArgentDawn", OW.key)
+	end)
+
+	-- Review fix 6. Mutation: in Overlays.RefreshAll, drop the alt viewer.
+	it("Overlays.RefreshAll redraws the alt viewer's buttons", function()
+		OW.Open("Abby-ArgentDawn")
+		local ring = DB.Get(0, 2)
+		assert.equal("285", SB.Overlays.regions[ring].topLeft.text)
+		SB.Config.Set("overlays.ilvl", false)
+		SB.Overlays.RefreshAll()
+		assert.equal("", SB.Overlays.regions[ring].topLeft.text)
+	end)
+
+	-- Review fix 7. Mutation: in kindOf, map the reagent bag to "bags".
+	it("the saved reagent bag is where the reagentbag keyword looks", function()
+		local c = SB.Snapshots.DB().chars["Abby-Argent Dawn"].bags.containers
+		c[5] = { size = 36, s = "3:item:210796;12\n" }
+		OW.Open("Abby-ArgentDawn")
+		assert.equal("reagentbag", OW.view.Record(5, 3).location)
+		assert.equal("backpack", OW.view.Record(0, 1).location)
+		OW.searchBox.editBox:SetText("reagentbag")
+		OW.searchBox.Run()
+		assert.equal(1, DB.Get(5, 3).alpha)
+		assert.equal(0.2, DB.Get(0, 1).alpha)
+		OW.searchBox.editBox:SetText("bags")
+		OW.searchBox.Run()
+		assert.equal(1, DB.Get(5, 3).alpha, "the reagent bag is one of the bags")
+		assert.equal(0.2, DB.Get(6, 5).alpha)
+	end)
+
+	-- Review fix 8: the pool. Mutation: in DisplayButtons.Get, always create a new button.
+	it("display buttons are kept: reopening and switching characters make none for slots already made", function()
+		SB.Snapshots.Save("bags")
+		OW.Open("Abby-ArgentDawn")
+		local n = DB.count
+		OW.Close()
+		OW.Open("Abby-ArgentDawn")
+		assert.equal(n, DB.count, "reopen")
+		OW.Open("Swagger-ArgentDawn")
+		local m = DB.count
+		OW.Open("Abby-ArgentDawn")
+		OW.Open("Swagger-ArgentDawn")
+		assert.equal(m, DB.count, "switch back and forth")
 	end)
 
 	it("opens in combat; only plain frames are made", function()

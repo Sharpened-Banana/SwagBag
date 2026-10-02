@@ -10,6 +10,8 @@
 --                                      value(link, itemID) -> copper | nil, onUpdate(cb) optional }
 --   Prices.Value(link, itemID, bound) -> copper | nil, providerName   per unit; a bound item
 --                                      is worth its vendor price only (it cannot be sold on the AH)
+--   Prices.Bound(record) -> bool   priced as bound: bound, warbound until equipped, or a saved
+--                                      item whose bind is unknown (record.bindUnknown, ruling W5-10)
 --   Prices.Source() -> "Auctionator" | "Vendor" | ...   the provider that answers first
 --   Prices.SectionTotals(state, recordOf) -> { [sectionId] = copper }   value x count per
 --                                      layout section (Engine/Layout.lua state), placeholders skipped
@@ -84,6 +86,10 @@ local function lookup(link, itemID, bound)
 	return nil, nil
 end
 
+function P.Bound(record)
+	return record.isBound == true or record.isWUE == true or record.bindUnknown == true
+end
+
 function P.Value(link, itemID, bound)
 	local now = SB.Adapter.Now()
 	if P.filledAt and now - P.filledAt > P.MAX_AGE then
@@ -113,7 +119,7 @@ function P.SectionTotals(state, recordOf)
 			if cell and cell.bag and not cell.placeholder then
 				local r = recordOf(cell.bag, cell.slot)
 				if r and not r.pending then
-					local v = P.Value(r.link, r.itemID, r.isBound or r.isWUE)
+					local v = P.Value(r.link, r.itemID, P.Bound(r))
 					if v then
 						sum = sum + v * (r.count or 1)
 					end

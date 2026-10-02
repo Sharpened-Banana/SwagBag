@@ -17,7 +17,7 @@
 -- which re-draws the open windows (spec AC9.3).
 -- /swagbag overlays also switches the item level in the bags window's title (bags.showIlvl).
 --   Overlays.Apply(button, record, bag)   record nil = empty slot
---   Overlays.RefreshAll()                 re-draw every open window's buttons
+--   Overlays.RefreshAll()                 re-draw every open window's buttons (alt viewer too)
 local _, SB = ...
 
 local L = SB.L
@@ -189,6 +189,10 @@ function Ov.RefreshAll()
 	end
 	if guild and guild.IsOpen() then
 		each(guild.view.ForEachSlot)
+	end
+	local offline = SB.OfflineWindow -- the alt viewer (its records are offline: never an arrow)
+	if offline and offline.IsOpen() then
+		each(offline.view.ForEachSlot)
 	end
 end
 
