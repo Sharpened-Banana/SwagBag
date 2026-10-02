@@ -4,9 +4,14 @@
 -- Format (spec 8.3): snapshot = { v = 1, at = epoch, containers = { [bag] = { size, s } } },
 -- one string per container of "slot:link;count\n" lines in slot order, full links verbatim
 -- (caged pets, keystones and bonus IDs round-trip), no derived values.
--- Where they live (spec 8.2): SwagBagDB.chars["Name-Realm"] = { class, level, lastSeen, bags,
--- bank }, SwagBagDB.warband (one for the account), SwagBagDB.guilds["Guild-Realm"] =
--- { lastSeen, tabs = { [tab] = name }, snapshot }.
+-- Where they live (spec 8.2): SwagBagDB.chars["Name-Realm"] = { class, level, lastSeen, guild,
+-- bags, bank }, SwagBagDB.warband (one for the account), SwagBagDB.guilds["Guild-Realm"] =
+-- { lastSeen, tabs = { [tab] = name }, snapshot }. guild: the character's guild key when last seen
+-- (week 5: the alt viewer shows that guild's bank with the character). It is written only when the
+-- guild is known, and cleared only when the Adapter is certain there is none (the client reports no
+-- guild for a few seconds after login). Every write emits SB_SNAPSHOT_SAVED(kind, owner) (owner:
+-- the character key, the guild key, nil for the warband bank; Enforce emits "bank" for each
+-- character it trims), so Engine/AltData.lua rebuilds only that container's counts.
 -- When (spec AC13.1, 5.7): bags on logout and 5 s after the last bag update; the character
 -- bank and warband bank 0.3 s after the bank opens, after each bank update while open (1 s
 -- debounce) and when it closes. Ruling W3-9: a snapshot is CAPTURED the moment it is due, even in
@@ -84,6 +89,12 @@ function Snap.Char()
 	db.chars[key] = c
 	local info = A.CharInfo()
 	c.class, c.level, c.lastSeen = info.class, info.level, A.Time()
+	local guild = A.GuildKey()
+	if guild then
+		c.guild = guild
+	elseif A.IsInGuild() == false then
+		c.guild = nil
+	end
 	return c, key
 end
 
@@ -137,13 +148,16 @@ local function store(kind, snap)
 			end
 		end
 	end
+	local owner
 	if kind == "warband" then
 		Snap.DB().warband = snap
 	else
-		local c = Snap.Char()
+		local c, key = Snap.Char()
 		c[kind] = snap
+		owner = key
 	end
 	Snap.Enforce()
+	SB.Emit("SB_SNAPSHOT_SAVED", kind, owner)
 end
 
 -- Capture now (W3-9), write now or, in combat, as soon as combat ends (no snapshot writes in
@@ -176,6 +190,7 @@ local function storeGuild(guildKey, ser)
 		g.snapshot.containers[tab] = t.container
 	end
 	Snap.Enforce()
+	SB.Emit("SB_SNAPSHOT_SAVED", "guild", guildKey)
 end
 
 -- tabs[tab] = { name, slots = { [slot] = { link, count } } } for the tabs read this visit.
@@ -256,6 +271,9 @@ function Snap.Enforce()
 		end
 		db.chars[e.key].bank = nil
 		dropped[#dropped + 1] = e.key
+	end
+	for _, key in ipairs(dropped) do
+		SB.Emit("SB_SNAPSHOT_SAVED", "bank", key)
 	end
 	if #dropped > 0 and not Snap.trimmedSaid then
 		Snap.trimmedSaid = true

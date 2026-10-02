@@ -205,6 +205,14 @@ function M.New(SB)
 		return m.guild.key
 	end
 
+	-- true / false when certain; m.guild.inGuild = nil derives it from the key (no guild known = not in one)
+	function m.IsInGuild()
+		if m.guild.inGuild ~= nil then
+			return m.guild.inGuild
+		end
+		return m.guild.key ~= nil
+	end
+
 	function m.GuildTooltip(owner, tab, slot)
 		m.tooltip = { owner = owner, tab = tab, slot = slot }
 	end
