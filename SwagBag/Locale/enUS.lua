@@ -317,7 +317,7 @@ L.REPORT_NO = "no"
 
 -- Settings window (spec F15)
 L.SET_TITLE = "SwagBag settings"
-L.SET_SAVED_NOTE = "Changes apply at once and are saved when you log out or type /reload."
+L.SET_SAVED_NOTE = "Changes apply at once and are saved when you log out or type /reload. Type /swagbag help for chat commands."
 L.SETTINGS_FAILED = "That change hit an error. It was recorded; type /swagbag report."
 L.SET_USAGE = "Use /swagbag settings, or /swagbag settings <page> (pages: %s)."
 L.SET_OPENED = "Settings opened."

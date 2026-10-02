@@ -163,11 +163,57 @@ describe("Settings window", function()
 
 	-- Mutation: in SettingsPages' run(), return the command's feedback even when ok is false.
 	it("a command that errors shows SETTINGS_FAILED, recorded under the command's own window", function()
-		SB.Slash.Register("free", "test", function() error("free broke") end, "bags")
+		SB.Slash.Register("bank", "test", function() error("bank broke") end, "bank")
+		SW.Show("bank")
+		click("Shown beside")
+		assert.equal(SB.L.SETTINGS_FAILED, SW.lastStatus)
+		assert.equal("bank", SB.ErrorTrap.Recent()[1].window)
+		assert.truthy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	it("an unknown command shows the unknown-command text, not 'recorded'", function()
+		SB.Slash.commands.free = nil
 		SW.Show("bags")
 		click("Every free slot")
-		assert.equal(SB.L.SETTINGS_FAILED, SW.lastStatus)
-		assert.equal("bags", SB.ErrorTrap.Recent()[1].window)
+		assert.equal(SB.L.UNKNOWN_COMMAND:format("free"), SW.lastStatus)
+	end)
+
+	it("read-only: a command row shows what the command answered", function()
+		SB.Slash.Register("free", "test", function()
+			if SB.Config.readOnly then return SB.L.SETTINGS_READONLY end
+			return "ok"
+		end)
+		SB.Config.readOnly = true
+		SW.Show("bags")
+		click("Every free slot")
+		assert.equal(SB.L.SETTINGS_READONLY, SW.lastStatus)
+	end)
+
+	-- Mutation: remove the SB_CONFIG_CHANGED listener in SettingsWindow.
+	it("rows follow changes made outside the window (Config.Set, a typed command)", function()
+		SW.Show("bags")
+		assert.truthy(SW.selected[button("12")])
+		SB.Config.Set("bags.columns", 16)
+		assert.truthy(SW.selected[button("16")])
+		assert.falsy(SW.selected[button("12")])
+		SB.Slash.Register("free", "test", function(arg)
+			SB.Config.Set("bags.freeTile", arg == "tile")
+			return "x"
+		end)
+		SB.Slash.Dispatch("free all")
+		assert.truthy(SW.selected[button("Every free slot")])
+		SW.frame:Hide()
+		SB.Config.Set("bags.columns", 10) -- closed: no redraw work
+	end)
+
+	it("re-showing the open page keeps its scroll; another page starts at the top", function()
+		SW.Show("bags")
+		SW.scroll:SetVerticalScroll(50)
+		SW.Show("bags")
+		assert.equal(50, SW.scroll:GetVerticalScroll())
+		SW.Show("bank")
+		assert.equal(0, SW.scroll:GetVerticalScroll())
 	end)
 
 	it("opens in combat, and creates only plain frames (never an item or secure button)", function()
