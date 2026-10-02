@@ -943,7 +943,8 @@ end
 ---------------------------------------------------------------------------
 local SYNDICATOR_NEEDS = { "IsReady", "GetAllCharacters", "GetByCharacterFullName", "GetWarband",
 	"GetInventoryInfoByItemID" }
-A.SYNDICATOR_EVENTS = { "BagCacheUpdate", "WarbandBankCacheUpdate", "GuildCacheUpdate", "Ready" }
+A.SYNDICATOR_EVENTS = { "BagCacheUpdate", "WarbandBankCacheUpdate", "GuildCacheUpdate", "Ready", "MailCacheUpdate",
+	"EquippedCacheUpdate", "AuctionsCacheUpdate", "VoidCacheUpdate", "CharacterDeleted", "GuildDeleted" }
 
 -- Syndicator's API table while Syndicator is loaded, has every function above and says it is
 -- ready; nil otherwise (then SwagBag's own snapshots answer). Never errors.
@@ -963,6 +964,26 @@ function A.SyndicatorAPI()
 	local ok, ready = pcall(api.IsReady)
 	if ok and not isSecret(ready) and ready == true then
 		return api
+	end
+	return nil
+end
+
+-- Syndicator's own key for the character playing now ("Name-Realm", or "Name-PvE" with regional
+-- names), or nil. Syndicator.API.GetCurrentCharacter, optional: older builds lack it.
+function A.SyndicatorCurrentKey()
+	local api = A.SyndicatorAPI()
+	if not api then
+		return nil
+	end
+	local okF, fn = pcall(function()
+		return api.GetCurrentCharacter
+	end)
+	if not okF or type(fn) ~= "function" or isSecret(fn) then
+		return nil
+	end
+	local ok, key = pcall(fn)
+	if ok and type(key) == "string" and not isSecret(key) and key ~= "" then
+		return key
 	end
 	return nil
 end

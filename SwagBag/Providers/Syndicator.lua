@@ -51,31 +51,28 @@ end
 
 -- canonical key -> Syndicator's own key, built once and dropped on SB_ALTDATA_CHANGED (invalidate);
 -- a key it does not hold is looked up again once, so a character Syndicator learns later is found.
-local names
+local names, missed
 function P.invalidate()
-	names = nil
+	names, missed = nil, nil
 end
 
 local function fullName(S, key)
-	for pass = 1, 2 do
-		if not names then
-			names = {}
-			for _, full in ipairs(S.GetAllCharacters() or {}) do
-				if str(full) then
-					names[AD.Canon(full)] = full
-				end
-			end
-		elseif pass == 2 then
-			return nil
-		end
-		if names[key] then
-			return names[key]
-		end
-		if pass == 1 then
-			names = nil
+	if names and names[key] then
+		return names[key]
+	end
+	if names and missed[key] then
+		return nil -- rebuilt once and still not there: no rebuild per call for a key Syndicator never has
+	end
+	names, missed = {}, names and missed or {}
+	for _, full in ipairs(S.GetAllCharacters() or {}) do
+		if str(full) then
+			names[AD.Canon(full)] = full
 		end
 	end
-	return nil
+	if not names[key] then
+		missed[key] = true
+	end
+	return names[key]
 end
 
 local function byCurrent(a, b)
@@ -91,12 +88,14 @@ function P.characters()
 		return nil
 	end
 	local me, list = AD.Canon(SB.Adapter.CharKey()), {}
+	local cur = SB.Adapter.SyndicatorCurrentKey() -- a regional key ("Name-PvE") is not Name-Realm (F17)
 	for _, full in ipairs(S.GetAllCharacters() or {}) do
 		local d = str(full) and shown(S.GetByCharacterFullName(full))
 		if d then
 			local key = AD.Canon(full)
 			list[#list + 1] = { key = key, name = str(d.character) or full:match("^[^%-]+"),
-				realm = str(d.realm) or str(d.realmNormalized), class = str(d.className), current = key == me }
+				realm = str(d.realm) or str(d.realmNormalized), class = str(d.className),
+				current = full == cur or key == me }
 		end
 	end
 	table.sort(list, byCurrent)
@@ -164,20 +163,21 @@ end
 
 function P.counts(itemID)
 	local S = api()
-	if not S then
+	if not S or itemID == AD.PET_CAGE then -- v284 does not count caged pets
 		return nil
 	end
 	local info = S.GetInventoryInfoByItemID(itemID, false, false)
 	if type(info) ~= "table" or secret(info) then
 		return nil
 	end
-	local me = AD.Canon(SB.Adapter.CharKey())
+	local me, cur = AD.Canon(SB.Adapter.CharKey()), SB.Adapter.SyndicatorCurrentKey()
+	cur = cur and AD.Canon(cur)
 	local out = { chars = {}, warband = n(type(info.warband) == "table" and info.warband[1]), guilds = {} }
 	local seen = {}
 	for _, c in ipairs(type(info.characters) == "table" and info.characters or {}) do
 		if type(c) == "table" and str(c.character) then
 			local key = AD.Canon(c.character .. "-" .. (str(c.realmNormalized) or ""))
-			local e = { key = key, name = c.character, class = str(c.className), current = key == me, bags = n(c.bags),
+			local e = { key = key, name = c.character, class = str(c.className), current = key == me or key == cur, bags = n(c.bags),
 				bank = n(c.bank), mail = n(c.mail), equipped = n(c.equipped), auctions = n(c.auctions), void = n(c.void) }
 			if e.bags + e.bank + e.mail + e.equipped + e.auctions + e.void > 0 then
 				out.chars[#out.chars + 1] = e
@@ -190,6 +190,11 @@ function P.counts(itemID)
 			seen[key] = true
 			out.guilds[#out.guilds + 1] = { key = key, name = g.guild, count = g.bank }
 		end
+	end
+	-- Once set up, v284 answers an unknown item with { characters = {}, guilds = {}, warband = { 0 } }, never
+	-- nil: nothing counted means Syndicator has nothing, so Own answers with its own data.
+	if #out.chars == 0 and out.warband == 0 and #out.guilds == 0 then
+		return nil
 	end
 	-- Guild banks stay SwagBag's own (D11): add the guilds only SwagBag has seen (F18).
 	for _, g in ipairs(AD.OwnGuildCounts(itemID)) do

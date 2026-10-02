@@ -10,7 +10,7 @@
 --   AltData.Characters() -> list, source   { { key, name, realm, class, level, lastSeen, guild, current } },
 --       the current character first, then by name. key is canonical (AltData.Canon)
 --   AltData.Counts(itemID) -> counts, source   { chars = { { key, name, class, current, bags, bank, mail,
---       equipped, auctions } }, warband = n, guilds = { { key, name, count } } }: only non-zero counts
+--       equipped, auctions, void } }, warband = n, guilds = { { key, name, count } } }: only non-zero counts
 --   AltData.Container(key, kind) -> c, source   kind "bags" | "bank" | "warband" | "guild":
 --       { at = epoch | nil, title = text | nil, containers = { [bag or guild tab] = { size, slots =
 --       { [slot] = { link, count } } } } }, or nil when nothing is saved
