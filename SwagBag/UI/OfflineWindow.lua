@@ -17,13 +17,15 @@
 -- window opened with. Closing forgets what it was waiting on.
 --   OfflineWindow.Open(key) -> bool   key: AltData.Canon("Name-Realm"), default this character
 --   OfflineWindow.Close(), .IsOpen(), .Flash(text), .key
+--   OfflineWindow.ToggleMenu()         the character picker: every saved character, a click shows it
 --   /swagbag alts [name]               open (this character, or the one named)
 local _, SB = ...
 
 local L = SB.L
 local Guard = SB.ErrorTrap.Guard
 local OW = { HEADER = 80, FOOTER = 6, MAX_HEIGHT_FRACTION = 0.75, GUILD_BASE = 100, key = nil, slots = {}, groups = {},
-	info = {}, KINDS = { "bags", "bank", "warband", "guild" }, LOADED_DELAY = 0.3, pending = {} }
+	info = {}, KINDS = { "bags", "bank", "warband", "guild" }, LOADED_DELAY = 0.3, pending = {},
+	menuButtons = {}, MENU_ROW = 20, MENU_MAX = 30 }
 SB.OfflineWindow = OW
 
 local frame = CreateFrame("Frame", "SwagBagOfflineWindow", UIParent, "BackdropTemplate")
@@ -311,6 +313,7 @@ function OW.Layout(reason)
 	OW.view.Clear() -- the buttons of what was shown, before the new data replaces it
 	OW.Load(OW.key)
 	frame.title:SetText(restingTitle())
+	OW.pickButton:SetText(L.OFFLINE_PICK:format(OW.name or ""))
 	-- nothing of the character's own saved (the warband bank is the account's): say how to get it
 	local _, source = SB.AltData.Characters()
 	if OW.info.bags or OW.info.bank or OW.info.guild then
@@ -337,10 +340,99 @@ function OW.Close()
 	frame:Hide()
 end
 
+---------------------------------------------------------------------------
+-- The character picker: a button on the source line (below the search box's error line, F23) and
+-- a list of plain buttons under it
+---------------------------------------------------------------------------
+OW.pickButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+OW.pickButton:SetSize(180, 20)
+OW.pickButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -56)
+OW.pickButton:SetText(L.OFFLINE_PICK:format(""))
+OW.pickButton:SetScript("OnClick", Guard("offline.pick", function()
+	OW.ToggleMenu()
+end, "none"))
+
+local menu = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+menu:SetPoint("TOPRIGHT", OW.pickButton, "BOTTOMRIGHT", 0, -2)
+menu:SetFrameStrata("DIALOG")
+menu:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+menu:SetBackdropColor(0.06, 0.06, 0.08, 0.97)
+menu:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
+menu:Hide()
+OW.menu = menu
+if SB.Theme then
+	SB.Theme.Button(OW.pickButton)
+	SB.Theme.Window(menu, "dialog")
+end
+
+-- "Abby (Argent Dawn) - 2 days ago"; without a stamp (Syndicator) just the name and realm.
+local function menuText(c)
+	local text = c.realm and L.OFFLINE_MENU_REALM:format(c.name, c.realm) or c.name
+	if c.lastSeen then
+		text = L.OFFLINE_MENU_SEEN:format(text, SB.Snapshots.Age(SB.Adapter.Time() - c.lastSeen))
+	end
+	return text
+end
+
+local function classColoured(c, text)
+	local colour = SB.Adapter.ClassColour(c.class)
+	return colour and (colour .. text .. "|r") or text
+end
+
+local function menuButton(i)
+	local b = OW.menuButtons[i]
+	if not b then
+		b = CreateFrame("Button", nil, menu, "UIPanelButtonTemplate")
+		b:SetSize(260, OW.MENU_ROW)
+		b:SetPoint("TOPLEFT", menu, "TOPLEFT", 4, -4 - (i - 1) * (OW.MENU_ROW + 2))
+		b:SetScript("OnClick", Guard("offline.menuPick", function(self)
+			menu:Hide()
+			OW.Open(self.key)
+		end, "none"))
+		if SB.Theme then
+			SB.Theme.Button(b)
+		end
+		OW.menuButtons[i] = b
+	end
+	b:Show()
+	return b
+end
+
+-- Open the list of saved characters (the one shown is highlighted), or close it. Up to MENU_MAX;
+-- /swagbag alts <name> reaches any other.
+function OW.ToggleMenu()
+	if menu:IsShown() then
+		menu:Hide()
+		return false
+	end
+	local list = SB.AltData.Characters() or {}
+	local n = math.min(#list, OW.MENU_MAX)
+	for i = 1, n do
+		local b = menuButton(i)
+		b.key = list[i].key
+		b:SetText(classColoured(list[i], menuText(list[i])))
+		if list[i].key == OW.key then
+			b:LockHighlight()
+		else
+			b:UnlockHighlight()
+		end
+	end
+	for i = n + 1, #OW.menuButtons do
+		OW.menuButtons[i]:Hide()
+	end
+	menu:SetSize(268, 8 + math.max(1, n) * (OW.MENU_ROW + 2))
+	menu:Show()
+	if n == 0 then
+		OW.Flash(L.OFFLINE_NONE_SAVED)
+	end
+	return true
+end
+
 frame:SetScript("OnHide", Guard("offline.hide", function(self)
 	if self:IsShown() then
 		return
 	end
+	menu:Hide()
 	OW.view.Clear()
 	OW.pending = {} -- item data arriving while closed lays nothing out (onItemLoaded returns at once)
 end, "none"))
@@ -354,9 +446,7 @@ local function relayoutLoaded()
 	if not (OW.IsOpen() and OW.view.IsOpen()) then
 		return
 	end
-	if OW.view.RequestLayout("loaded") then
-		searchBox.Apply()
-	end
+	OW.view.RequestLayout("loaded") -- the search is applied by GroupView's onUpdated, whenever it lands
 end
 
 local function onItemLoaded(_, itemID, success)
