@@ -417,11 +417,23 @@ describe("BagsWindow list view", function()
 				b.SetScale = function() end
 			end
 		end
+		local delays, debounce = {}, SB.Debounce
+		SB.Debounce = function(key, delay, ...)
+			if key == "bags.scale" then
+				delays[#delays + 1] = delay
+			end
+			return debounce(key, delay, ...)
+		end
 		W.scroll.mouseOver = true
 		A.SetBagSize(1, 4)
 		bagUpdate(1)
 		A.Advance(0)
 		assert.equal("list", W.drawn, "the fallback waits for the mouse")
+		-- Ruling W5-3. Mutation: the showAt guard's debounce at 0 (a broken fallback would ask every frame).
+		assert.truthy(#delays > 0)
+		for _, d in ipairs(delays) do
+			assert.equal(W.RETRY, d, "the fallback is asked for at most every 300 ms")
+		end
 		for slot = 1, 4 do
 			assert.falsy(B.Get(1, slot).shown, "slot " .. slot .. " is not drawn at full size in a row")
 			local r = W.rows.rows[B.Get(1, slot)]

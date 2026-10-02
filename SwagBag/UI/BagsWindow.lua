@@ -546,7 +546,9 @@ local function showAt(button, c)
 	local shown = c.shown and inBag(c)
 	if shown and isList() and not scaleIs(button, W.LIST_ROW / W.SLOT) then
 		shown = false
-		SB.Debounce("bags.scale", 0, function()
+		-- W.RETRY, never 0 (ruling W5-3): should the fallback ever fail to take, this asks again
+		-- every 300 ms, not every frame.
+		SB.Debounce("bags.scale", W.RETRY, function()
 			W.RequestLayout("scale")
 		end, "bags")
 	end
