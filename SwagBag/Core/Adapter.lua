@@ -746,6 +746,50 @@ function A.HideTooltip()
 	end
 end
 
+-- A bag or bank slot's item tooltip (the list view's rows), with an optional white hint line.
+function A.SlotTooltip(owner, bag, slot, hint)
+	if not GameTooltip then
+		return
+	end
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+	pcall(GameTooltip.SetBagItem, GameTooltip, bag, slot)
+	if hint then
+		GameTooltip:AddLine(hint, 1, 1, 1, true)
+	end
+	GameTooltip:Show()
+end
+
+-- The colour of an item quality (0-8) as r, g, b (0-1), or nil when this client has no such colour.
+-- Feature-detected: ColorManager's item quality data (12.x), else ITEM_QUALITY_COLORS.
+function A.QualityColor(quality)
+	if type(quality) ~= "number" then
+		return nil
+	end
+	local ok, r, g, b = pcall(function()
+		local get = A.Resolve("ColorManager.GetColorDataForItemQuality")
+		local data = get and get(quality)
+		if data and data.color then
+			return data.color:GetRGB()
+		end
+		return nil
+	end)
+	if ok and type(r) == "number" and type(g) == "number" and type(b) == "number" then
+		return r, g, b
+	end
+	ok, r, g, b = pcall(function()
+		local colors = A.Resolve("ITEM_QUALITY_COLORS")
+		local c = colors and colors[quality]
+		if c then
+			return c.r, c.g, c.b
+		end
+		return nil
+	end)
+	if ok and type(r) == "number" and type(g) == "number" and type(b) == "number" then
+		return r, g, b
+	end
+	return nil
+end
+
 -- Shift/Ctrl-click on an item link (chat link, dressing room). True when Blizzard handled it.
 function A.ModifiedClick(link)
 	if not (IsModifiedClick and HandleModifiedItemClick) or not IsModifiedClick() then
