@@ -860,9 +860,30 @@ function W.RefreshModeButton()
 	W.modeButton:SetText(SB.Focus and SB.Focus.IsPaused() and L.BTN_RESUME or L.BTN_PAUSE)
 end
 
-W.modeButton = titleButton(L.BTN_PAUSE, "bags.modeButton", function()
-	W.TogglePause()
+-- Left-click: pause / resume. Right-click: the Focus modes settings page at the active mode's
+-- sections (AC8.5). The settings open under ErrorTrap "none": a settings glitch flashes
+-- L.SETTINGS_FAILED here and never puts the bags into Safe Mode (W4-5). The tooltip says both.
+W.modeButton = titleButton(L.BTN_PAUSE, "bags.modeButton", function(_, mouseButton)
+	if mouseButton == "RightButton" and SB.SettingsFocus then
+		local ok = SB.ErrorTrap.Run("settings.openFromPause", "none", SB.SettingsFocus.Edit, SB.Focus.active[1])
+		if not ok then
+			W.Flash(L.SETTINGS_FAILED)
+		end
+	else
+		W.TogglePause()
+	end
 end, 64)
+W.modeButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+W.modeButton:SetScript("OnEnter", Guard("bags.modeTip", function(self)
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:SetText(L.MODE_TIP_TITLE)
+	GameTooltip:AddLine(L.MODE_TIP_LEFT, 1, 1, 1)
+	GameTooltip:AddLine(L.MODE_TIP_RIGHT, 1, 1, 1)
+	GameTooltip:Show()
+end, "bags"))
+W.modeButton:SetScript("OnLeave", Guard("bags.modeTipHide", function()
+	GameTooltip:Hide()
+end, "bags"))
 W.modeButton:SetPoint("RIGHT", W.reflowButton, "LEFT", -4, 0)
 W.sortButton = titleButton(L.BTN_SORT, "bags.sortButton", function()
 	W.Sort()

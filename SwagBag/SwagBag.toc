@@ -63,6 +63,7 @@ UI/GuildBankWindow.lua
 UI/Overlays.lua
 UI/SettingsWindow.lua
 UI/SettingsPages.lua
+UI/SettingsFocus.lua
 UI/DebugV1.lua
 
 # Start-up (keep last)
