@@ -144,6 +144,19 @@ describe("Settings window", function()
 		assert.equal(1, refreshed)
 	end)
 
+	-- Ruling W4-15. Mutation: delete the New row from bagsRows in SettingsPages.lua.
+	it("the New row runs /swagbag new, hidden first (the default), always shown next to it", function()
+		SB.Slash.Register("new", "test", function(arg)
+			ran[#ran + 1] = "new " .. arg
+			return "ran new " .. arg
+		end)
+		SW.Show("bags")
+		assert.truthy(SW.selected[button("Hidden")])
+		click("Always shown")
+		assert.same({ "new always" }, ran)
+		assert.equal("ran new always", SW.lastStatus)
+	end)
+
 	it("overlays page: each overlay switches through /swagbag overlays", function()
 		SW.Show("overlays")
 		click("Off") -- the first row: item level on gear

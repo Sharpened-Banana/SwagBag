@@ -516,9 +516,10 @@ local function layoutSections(bags)
 			end
 		end
 	end
+	-- New is hidden while empty unless bags.newAlways (ruling W4-15); the bank windows never hide it.
 	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
 		{ columns = columns(), newRows = SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
-			family = SB.Adapter.BagFamily })
+			family = SB.Adapter.BagFamily, hideEmptyNew = not SB.Config.Get("bags.newAlways") })
 	W.view = snapshot(W.state, W.EffectiveCollapsed())
 	W.pos = SB.Layout.Position(W.state, positionOpts(), W.view)
 	return render()
@@ -967,12 +968,18 @@ function W.ApplyChanges(changes)
 	end
 	local newSec = st.sections[SB.Layout.NEW]
 	local overflowBefore = newSec and newSec.overflow or 0
+	local newShownBefore = st.newShown
 	-- The drawn view, never a fresh one: a mode switch or collapse held under the mouse must not
 	-- be drawn by loot or an emptied slot (ruling W4-1). The held Restack retry applies it.
-	local result = SB.Layout.Apply(st, changes, (busyCheck()), W.view)
+	-- The first arrival into a hidden New moves every section below, so it also waits while the
+	-- mouse is anywhere over the items or an item is on the cursor (W4-15, same rule as W4-13).
+	local result = SB.Layout.Apply(st, changes, (busyCheck()), W.view, function()
+		return scroll:IsMouseOver() or SB.Adapter.CursorItem() ~= nil
+	end)
 	newSec = st.sections[SB.Layout.NEW]
-	-- New's "+N more below" can change with no button moving, so the headers redraw then too.
-	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore then
+	-- New's "+N more below" can change with no button moving, so the headers redraw then too; so
+	-- does New becoming shown (W4-15), here while it is held, not by a later unguarded change.
+	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore or st.newShown ~= newShownBefore then
 		result.rendered = true
 		local oldPos = W.pos
 		W.pos = SB.Layout.Position(st, positionOpts(), W.view)
@@ -1112,6 +1119,20 @@ end, "bags")
 -- /swagbag free tile|all (Core/Commands.lua): regroup now, or once the mouse leaves the items.
 SB.On("SB_FREE_TILE_CHANGED", function()
 	W.RequestLayout("free")
+end, "bags")
+
+-- /swagbag new always|auto (ruling W4-15): New keeps its rows when empty (always), or shows only
+-- once something new arrives (auto, the default). Regroups now, or once the mouse leaves the items.
+SB.Slash.Register("new", L.HELP_NEW, function(arg)
+	arg = (arg or ""):lower()
+	if arg ~= "always" and arg ~= "auto" then
+		return L.NEW_USAGE:format(SB.Config.Get("bags.newAlways") and "always" or "auto")
+	end
+	if not SB.Config.Set("bags.newAlways", arg == "always") then
+		return L.SETTINGS_READONLY
+	end
+	W.RequestLayout("new")
+	return arg == "always" and L.NEW_MODE_ALWAYS or L.NEW_MODE_AUTO
 end, "bags")
 
 -- A bag equipped, taken off or swapped (W3-21). A swap for a bag of the same size changes no

@@ -22,9 +22,10 @@ Config.Defaults = {
 		-- reagentSeparate: show the reagent bag as its own "Reagents" section (spec AC1.4);
 		-- showIlvl: the title shows the average equipped item level (plan D18);
 		-- freeTile: Free shows one tile per bag family with the number of free slots, false shows
-		-- every free slot (plan D19; the bank window follows it too).
+		-- every free slot (plan D19; the bank window follows it too). newAlways: New keeps its header
+		-- and rows when empty; false (default) shows New only once something new arrives (W4-15).
 		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
-			showIlvl = true, freeTile = true },
+			showIlvl = true, freeTile = true, newAlways = false },
 		safeMode = { bags = false, bank = false },
 		-- blizzardFrame: "tiny" (Blizzard's bank invisible, its tabs on SwagBag's window) |
 		-- "beside" (Blizzard's bank visible, SwagBag's window next to it; spec 5.4, check V2).

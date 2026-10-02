@@ -67,6 +67,7 @@ describe("BagsWindow", function()
 			"SwagBag/Core/ErrorTrap.lua",
 			"SwagBag/Core/SafeMode.lua",
 			"SwagBag/Core/Config.lua",
+			"SwagBag/Core/Slash.lua",
 			"SwagBag/Engine/GridLayout.lua",
 		})
 		A = SB.Adapter

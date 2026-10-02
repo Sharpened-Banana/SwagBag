@@ -1196,3 +1196,86 @@ describe("Layout free tile (plan D19)", function()
 		assert.truthy(totals.zeroToOneReagent >= 15, "'reagent' from 0 free to 1+ " .. totals.zeroToOneReagent)
 	end)
 end)
+
+-- Ruling W4-15: New is hidden while it is empty (opts.hideEmptyNew). Its first arrival shows it and
+-- moves every section below by the same amount; that shift waits while the area is busy (P5).
+describe("Layout hidden New (ruling W4-15)", function()
+	local SB, L
+	before_each(function()
+		SB = Loader.New({ "SwagBag/Engine/GridLayout.lua", "SwagBag/Engine/Layout.lua" })
+		L = SB.Layout
+	end)
+
+	-- a: (0,1) (0,5)   b: (0,3)   Free: (0,2) (1,1)   nothing new
+	local function build(extra)
+		local opts = { columns = 4, newRows = 2, hideEmptyNew = true }
+		for k, v in pairs(extra or {}) do
+			opts[k] = v
+		end
+		return L.Build({ S(0, 1, "a"), S(0, 2, false), S(0, 3, "b"), S(0, 5, "a"), S(1, 1, false) }, assign,
+			{ "a", "b" }, opts)
+	end
+
+	local function heads(pos)
+		local out = {}
+		for i, h in ipairs(pos.headers) do
+			out[i] = h.id .. "@" .. h.y
+		end
+		return out
+	end
+
+	-- Mutation: in Layout.Build, `st.newShown = not opts.hideEmptyNew or new.size > 0` → `st.newShown = true`.
+	it("an empty New has no header and no reserved rows; a full layout with a new item shows it", function()
+		assert.same({ "a@-1", "b@-19", "free@-37" }, heads(L.Position(build(), OPTS, {})))
+		local st = L.Build({ S(0, 1, "a"), S(0, 4, nil) }, assign, { "a" }, { columns = 4, newRows = 2, hideEmptyNew = true })
+		assert.equal("new@-1", heads(L.Position(st, OPTS, {}))[1])
+	end)
+
+	it("without hideEmptyNew (the bank windows, bags.newAlways) an empty New keeps its header and rows", function()
+		assert.same({ "new@-1", "a@-31", "b@-49", "free@-67" }, heads(L.Position(build({ hideEmptyNew = false }), OPTS, {})))
+	end)
+
+	-- Mutation: in Layout.Apply, delete `st.newShown = true` after applyOne.
+	it("the first arrival shows New, and everything below moves down by the same amount (W10)", function()
+		local st = build()
+		local old = L.Position(st, OPTS, {})
+		local r = L.Apply(st, { { bag = 0, slot = 2, kind = "arrived" } }, nil, {}, function()
+			return false
+		end)
+		assert.same({ L.Key(0, 2) }, r.moved)
+		local new = L.Position(st, OPTS, {})
+		assert.equal("new@-1", heads(new)[1])
+		for _, k in ipairs({ L.Key(0, 1), L.Key(0, 5), L.Key(0, 3), L.Key(1, 1) }) do
+			assert.equal(old.byKey[k].x, new.byKey[k].x)
+			assert.equal(old.byKey[k].y - 30, new.byKey[k].y, "New's header 5 + two rows 22 + gap 3")
+		end
+	end)
+
+	-- Mutation: in Layout.Apply, delete `or (opensNew and areaBusy and areaBusy())` from the hold.
+	it("while the area is busy the first arrival waits; a change that moves nothing else still applies", function()
+		local st = build()
+		local busy = true
+		local function area()
+			return busy
+		end
+		local r = L.Apply(st, { { bag = 0, slot = 2, kind = "arrived" }, { bag = 0, slot = 5, kind = "left", icon = 7 } },
+			nil, {}, area)
+		assert.same({ 1, false }, { r.deferred, st.newShown })
+		assert.same({ L.Key(0, 5) }, r.moved, "the leave applies: a placeholder, its button to Free's end")
+		busy = false
+		r = L.Apply(st, {}, nil, {}, area)
+		assert.same({ 0, true }, { r.deferred, st.newShown })
+	end)
+
+	-- Mutation: in Layout.Position, `visible = st.newShown ~= false` → `visible = st.newShown ~= false
+	-- and sec ~= nil and countButtons(sec) > 0` (New would vanish, and everything jump, while open).
+	-- With the free tile (W3-13) the emptied button leaves New for Free, so New really is empty.
+	it("a New that empties stays shown until the next full layout", function()
+		local st = build({ freeTile = true })
+		L.Apply(st, { { bag = 0, slot = 2, kind = "arrived" } }, nil, {})
+		L.Apply(st, { { bag = 0, slot = 2, kind = "left" } }, nil, {})
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ "new@-1", 0 }, { heads(pos)[1], pos.headers[1].count })
+		assert.falsy(build({ freeTile = true }).newShown, "the next full layout hides it")
+	end)
+end)

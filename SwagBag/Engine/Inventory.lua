@@ -81,6 +81,9 @@ function Inv.ScanBag(bag)
 			mask = Inv.Or(mask, r)
 			if r == Inv.R.ITEM and Inv.scanned then
 				Inv.newSet[key(bag, slot)] = snap ~= nil or nil
+				if snap == nil then -- the item left: the client's own flag for the slot goes too (W4-15)
+					SB.Adapter.ClearNewItem(bag, slot)
+				end
 			end
 		end
 	end

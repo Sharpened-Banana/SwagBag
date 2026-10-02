@@ -4,8 +4,11 @@
 --   left          "BoE" / "WuE" until the item is bound          (overlays.bind)
 --   top right     green upgrade arrow (AC9.3)                     (overlays.upgrade)
 --   top left      junk coin on gray items a vendor pays for       (overlays.junk)
--- The stack count is Blizzard's own (SetItemButtonCount). overlays.usePawn hands the arrow
--- to Pawn's PawnIsContainerItemAnUpgrade for bag and bank items.
+--                 (bottom left on gray gear, under its item level)
+-- The stack count is Blizzard's own (SetItemButtonCount); nothing is drawn bottom right. Sizes
+-- are the constants below (W4-15: larger, thick outline), so a check in game can tune them.
+-- overlays.usePawn hands the arrow to Pawn (Adapter.PawnUpgrade) for bag and bank items; where
+-- Pawn has no opinion the item-level rule decides.
 -- An empty reagent-bag slot gets a faint green tint, so in Free it is clear which empty slots
 -- take reagents only (the week-2 "reagent-bag empties in Free" cue).
 -- Regions are font strings and textures on the button itself (no frames: allowed in combat),
@@ -18,15 +21,24 @@
 local _, SB = ...
 
 local L = SB.L
-local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind" } }
+local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind" },
+	-- Sizes in pixels on a 37 px button (W4-15, O1 steps 3-5 and 10). FONT is the fallback when the
+	-- template font has no file; TEXT_WIDTH clips a text inside the button.
+	FONT = "Fonts\\ARIALN.TTF", FONT_SIZE = 13, BIND_SIZE = 11, FONT_FLAGS = "THICKOUTLINE", TEXT_WIDTH = 33,
+	ARROW_SIZE = 16, JUNK_SIZE = 16, JUNK_OUTLINE = 3, JUNK_TINT = { 1, 0.9, 0.35 } }
 SB.Overlays = Ov
 
 local regions = setmetatable({}, { __mode = "k" }) -- [button] = its overlay regions
 Ov.regions = regions
 
-local function text(button, point, x, y)
+-- Larger than the template, with a thick outline, so it reads on any icon; clipped inside the button.
+local function text(button, point, x, y, size)
 	local fs = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+	fs:SetFont((fs:GetFont()) or Ov.FONT, size, Ov.FONT_FLAGS)
 	fs:SetPoint(point, button, point, x, y)
+	fs:SetWidth(Ov.TEXT_WIDTH)
+	fs:SetJustifyH("LEFT")
+	fs:SetWordWrap(false)
 	return fs
 end
 
@@ -45,17 +57,24 @@ local function regionsFor(button)
 	local r = regions[button]
 	if not r then
 		r = {
-			topLeft = text(button, "TOPLEFT", 2, -2),
-			bottomLeft = text(button, "BOTTOMLEFT", 2, 2),
-			bind = text(button, "LEFT", 2, 0),
+			topLeft = text(button, "TOPLEFT", 2, -2, Ov.FONT_SIZE),
+			bottomLeft = text(button, "BOTTOMLEFT", 2, 2, Ov.FONT_SIZE),
+			bind = text(button, "LEFT", 2, 0, Ov.BIND_SIZE),
 			arrow = texture(button, 7, "bags-greenarrow", 0.2, 1, 0.2, 0.9),
+			junkShadow = texture(button, 6, "bags-junkcoin", 0, 0, 0, 0.9),
 			junk = texture(button, 7, "bags-junkcoin", 1, 0.85, 0.1, 0.9),
 			reagent = button:CreateTexture(nil, "OVERLAY", nil, 6),
 		}
-		r.arrow:SetSize(14, 14)
+		r.arrow:SetSize(Ov.ARROW_SIZE, Ov.ARROW_SIZE)
 		r.arrow:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
-		r.junk:SetSize(12, 12)
-		r.junk:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
+		r.junk:SetSize(Ov.JUNK_SIZE, Ov.JUNK_SIZE)
+		r.junk:SetVertexColor(unpack(Ov.JUNK_TINT))
+		r.junk:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
+		r.junkCorner = "TOPLEFT"
+		-- A black copy of the coin, a little larger, behind it: an outline that reads on any icon.
+		r.junkShadow:SetSize(Ov.JUNK_SIZE + Ov.JUNK_OUTLINE, Ov.JUNK_SIZE + Ov.JUNK_OUTLINE)
+		r.junkShadow:SetVertexColor(0, 0, 0, 0.9)
+		r.junkShadow:SetPoint("CENTER", r.junk, "CENTER", 0, 0)
 		r.reagent:SetColorTexture(0.2, 0.75, 0.35, 0.18) -- a plain tint: no atlas to go missing
 		r.reagent:Hide()
 		r.reagent:SetAllPoints(button)
@@ -138,7 +157,19 @@ function Ov.Apply(button, record, bag)
 	r.bottomLeft:SetText(bottom)
 	r.bind:SetText(on("bind") and d.bind or "")
 	show(r.arrow, on("upgrade") and d.upgrade)
-	show(r.junk, on("junk") and d.junk and top == "")
+	-- The coin goes where no text is: top left, or bottom left under gray gear's item level (gear
+	-- never stacks, so Blizzard's count is never there).
+	local junk = on("junk") and d.junk and (top == "" or bottom == "")
+	if junk then
+		local corner = top == "" and "TOPLEFT" or "BOTTOMLEFT"
+		if r.junkCorner ~= corner then
+			r.junk:ClearAllPoints()
+			r.junk:SetPoint(corner, button, corner, 2, corner == "TOPLEFT" and -2 or 2)
+			r.junkCorner = corner
+		end
+	end
+	show(r.junk, junk)
+	show(r.junkShadow, junk)
 	show(r.reagent, reagentEmpty)
 end
 
