@@ -501,6 +501,19 @@ describe("Focus front style (week 6)", function()
 		assert.equal("collapse", F.Style())
 	end)
 
+	-- P2: every form answers. Mutation: styleCommand returns nil for a word it does not know.
+	it("/swagbag mode style answers every form: the style now, a switch, a wrong word, read-only", function()
+		local L = SB.L
+		SB.Slash.Dispatch("mode style")
+		SB.Slash.Dispatch("mode style Collapse")
+		SB.Slash.Dispatch("mode style sideways")
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("mode style front")
+		assert.same({ L.MODE_STYLE_STATE:format(L.MODE_STYLE_NAME_FRONT), L.MODE_STYLE_COLLAPSE,
+			L.MODE_STYLE_STATE:format(L.MODE_STYLE_NAME_COLLAPSE), L.SETTINGS_READONLY }, SB.Adapter.Lines())
+		assert.equal("collapse", F.Style())
+	end)
+
 	-- M5 (week-4 deferred). Mutation: SetEnabled calls Config.Set directly again.
 	it("a focus writer whose value is already in force emits nothing", function()
 		assert.truthy(F.SetEnabled("mplus", true))

@@ -62,6 +62,23 @@ describe("Settings: focus modes page", function()
 		assert.truthy(selected("Junk", L.SET_SECTION_CLOSED))
 	end)
 
+	-- Week 6, user request 1 (P1, P2). Mutations: the row's apply always answers MODE_STYLE_FRONT; drop
+	-- "focus.style" from SF.Paths (This character would leave the style account-wide).
+	it("the style row: Move to the top by default; Collapse the rest is saved, answers and re-stacks", function()
+		assert.truthy(selected(L.SET_FOCUS_STYLE, L.SET_FOCUS_STYLE_FRONT))
+		click(L.SET_FOCUS_STYLE, L.SET_FOCUS_STYLE_COLLAPSE)
+		assert.equal("collapse", SB.Config.Get("focus.style"))
+		assert.same({ "settings" }, events)
+		assert.equal(L.MODE_STYLE_COLLAPSE, SW.lastStatus)
+		assert.truthy(selected(L.SET_FOCUS_STYLE, L.SET_FOCUS_STYLE_COLLAPSE))
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_CHARACTER)
+		assert.truthy(SB.Config.IsCharOverride("focus.style"), "This character covers the style too")
+		SB.Config.readOnly = true
+		click(L.SET_FOCUS_STYLE, L.SET_FOCUS_STYLE_FRONT)
+		assert.equal(L.SETTINGS_READONLY, SW.lastStatus)
+		assert.equal("collapse", SB.Config.Get("focus.style"))
+	end)
+
 	-- Mutation: write the setting straight into SB.Config.db (bypassing Config.Set), so nothing
 	-- is emitted and Focus never refreshes.
 	it("strict priority is saved and the open bag re-stacks (SB_FOCUS_CHANGED settings)", function()
@@ -148,7 +165,7 @@ describe("Settings: focus modes page", function()
 		assert.truthy(labels[L.SET_THIS_CHARACTER:format(L.SET_MODE_LABEL:format("Raid"))])
 		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_ACCOUNT)
 		assert.truthy(SW.byId.focus.rows()[1].label == L.SET_FOCUS_AUTO)
-		assert.falsy(SW.byId.focus.rows()[6].label:find("this character", 1, true))
+		assert.falsy(SW.byId.focus.rows()[7].label:find("this character", 1, true), "row 7: the first mode")
 	end)
 
 	it("the scope row shows This character when only one focus path is overridden", function()

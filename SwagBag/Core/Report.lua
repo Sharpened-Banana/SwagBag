@@ -127,8 +127,11 @@ function Report.Build()
 		local function yes(v)
 			return v and L.REPORT_YES or L.REPORT_NO
 		end
-		lines[#lines + 1] = L.REPORT_FOCUS:format(F.Label() or L.FOCUS_NONE, tostring(SB.Config.Get("focus.resolve")),
-			tostring(s.instanceType or L.REPORT_NONE), yes(F.Expanded()),
+		-- "(merge, front)": the resolve setting and the style; "collapsing" is yes only while a mode's
+		-- collapse set is in force (the collapse style), never in the front style (week 6).
+		lines[#lines + 1] = L.REPORT_FOCUS:format(F.Label() or L.FOCUS_NONE,
+			tostring(SB.Config.Get("focus.resolve")) .. ", " .. F.Style(),
+			tostring(s.instanceType or L.REPORT_NONE), yes(F.Applies()),
 			yes(s.challengeMode), yes(s.keystone), yes(s.delve), yes(s.fishing), yes(s.gathering))
 		local spells = {}
 		for i, id in ipairs(S.recent) do
