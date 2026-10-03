@@ -105,6 +105,10 @@ function Report.Build()
 	if bags and bags.lastLayoutMs then -- spec 9: first open <= 25 ms, warm open <= 10 ms
 		lines[#lines + 1] = L.REPORT_LAYOUT:format(bags.lastLayoutMs, tostring(bags.lastLayoutReason))
 	end
+	local hooks = SB.SafeModeHooks
+	if hooks and hooks.TraceText then -- week 6 (D16): the last bag functions the game ran, and what SwagBag did
+		lines[#lines + 1] = L.REPORT_BAG_HOOKS:format(hooks.TRACE, hooks.TraceText())
+	end
 	local bank = SB.BankWindow
 	if bank then
 		lines[#lines + 1] = L.REPORT_BANK:format(bank.Mode(), tostring(bank.lastVisit or L.REPORT_NONE),

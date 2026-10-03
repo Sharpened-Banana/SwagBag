@@ -35,6 +35,8 @@ local BW = {
 	MAX_HEIGHT_FRACTION = 0.75,
 	SORT_SETTLE = 0.3,
 	SORT_TIMEOUT = 1.5,
+	FLASH = 1.5, -- seconds a title answer shows
+	VISIT_FLASH = 3, -- the Blizzard bank button's answer: the window may jump beside Blizzard's (D17)
 }
 SB.BankWindow = BW
 
@@ -105,15 +107,16 @@ end
 ---------------------------------------------------------------------------
 local titleToken = 0
 -- A flash cut short by the title's room (W3-26 bounds it) also goes to chat, so a long answer is
--- never lost (P2; the bags window's D27, week 5).
-function BW.Flash(text)
+-- never lost (P2; the bags window's D27, week 5). seconds: how long it shows (default FLASH);
+-- toChat: the line also goes to chat, once, whether or not it was cut short (week 6, D17).
+function BW.Flash(text, seconds, toChat)
 	titleToken = titleToken + 1
 	local token = titleToken
 	frame.title:SetText(text)
-	if frame.title.IsTruncated and frame.title:IsTruncated() then
+	if toChat or (frame.title.IsTruncated and frame.title:IsTruncated()) then
 		SB.Print(text)
 	end
-	SB.Adapter.After(1.5, Guard("bank.flash", function()
+	SB.Adapter.After(seconds or BW.FLASH, Guard("bank.flash", function()
 		if token == titleToken then
 			frame.title:SetText(L.BANK_TITLE)
 		end
@@ -232,7 +235,8 @@ function BW.ApplyMode()
 	BW.RefreshTarget()
 end
 
--- The "Blizzard bank" button: show or hide Blizzard's bank for this visit.
+-- The "Blizzard bank" button: show or hide Blizzard's bank for this visit. The window jumps
+-- beside Blizzard's bank (or back), so the answer shows longer and also goes to chat (D17).
 function BW.ToggleVisit()
 	if SB.Adapter.InCombat() then
 		BW.Flash(L.BANK_NOT_IN_COMBAT)
@@ -240,7 +244,7 @@ function BW.ToggleVisit()
 	end
 	BW.visit = BW.VisitMode() == "tiny" and "beside" or "tiny"
 	BW.ApplyMode()
-	BW.Flash(BW.visit == "beside" and L.BANK_SHOWING_BLIZZARD or L.BANK_HIDING_BLIZZARD)
+	BW.Flash(BW.visit == "beside" and L.BANK_SHOWING_BLIZZARD or L.BANK_HIDING_BLIZZARD, BW.VISIT_FLASH, true)
 	return true
 end
 

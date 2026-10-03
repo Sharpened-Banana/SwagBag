@@ -289,6 +289,22 @@ describe("BankWindow frames (check V2)", function()
 		assert.equal(SB.TinyHost.Parent(), bf.parent)
 	end)
 
+	-- Week 6, D17 (V2 step 6: the flash was never seen). Mutations: ToggleVisit's Flash without
+	-- toChat; ToggleVisit's Flash without BW.VISIT_FLASH (1.5 s).
+	it("the Blizzard bank button's answer stays 3 s in the title and goes to chat once", function()
+		openBank()
+		BW.frame.title.IsTruncated = function() return true end -- cut short too: still one chat line
+		Fake.Fire(BW.blizzardButton, "OnClick")
+		assert.same({ SB.L.BANK_SHOWING_BLIZZARD }, A.Lines())
+		A.Advance(2)
+		assert.equal(SB.L.BANK_SHOWING_BLIZZARD, BW.frame.title.text, "still there after 2 s")
+		A.Advance(1)
+		assert.equal(SB.L.BANK_TITLE, BW.frame.title.text)
+		BW.frame.title.IsTruncated = nil
+		Fake.Fire(BW.blizzardButton, "OnClick")
+		assert.same({ SB.L.BANK_SHOWING_BLIZZARD, SB.L.BANK_HIDING_BLIZZARD }, A.Lines())
+	end)
+
 	it("the Blizzard bank button does nothing in combat and says so", function()
 		openBank()
 		A.combat = true

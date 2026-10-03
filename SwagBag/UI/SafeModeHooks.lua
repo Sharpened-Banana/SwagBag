@@ -11,14 +11,54 @@
 -- inner hook runs BEFORE the outer one. So every hook notes what it did in this frame
 -- (lastAt = GetTime(), lastKind), and a second hook in the same frame only corrects
 -- the bookkeeping instead of toggling again.
+-- Who owns the window (week 6, D16): a window the user opened (B, a bag icon) closes only by the
+-- user's own hand (B, Esc, the X). No CloseAllBags closes it, with a frame or without one, and a
+-- bag toggle that runs inside a frame's CloseAllBags and closes it opens it again. A window the
+-- game opened for a frame (its OpenAllBags named that frame) closes with that frame's CloseAllBags,
+-- or with a CloseAllBags() that names no frame.
+-- Hooks.TraceText() -> text: the last TRACE hook calls (hook, its argument, what SwagBag did, when),
+-- oldest first, for /swagbag report ("Bag hooks (last 5): ...").
 local _, SB = ...
 
 -- autoOpenedBy: set when the game's OpenAllBags (vendor, mailbox, ...) opened our window,
 -- so only the matching CloseAllBags(frame) closes it again; a window the user opened stays.
 -- lastKind: "toggle" (a bag key toggled), "auto" (OpenAllBags opened it), "closed"
 -- (CloseAllBags closed it), "none" (OpenAllBags found it already open).
-local Hooks = { installed = false, lastAt = -1, lastKind = nil, toggleOpened = false, autoOpenedBy = nil }
+-- toggleClosedUsers: the last toggle closed a window the user had opened (D16).
+local Hooks = { installed = false, lastAt = -1, lastKind = nil, toggleOpened = false, toggleClosedUsers = false,
+	autoOpenedBy = nil, trace = {}, TRACE = 5 }
 SB.SafeModeHooks = Hooks
+
+-- The trace (week 6): one entry per hook call, the newest last, at most TRACE of them.
+local function note(kind, arg, did)
+	local t = Hooks.trace
+	t[#t + 1] = { kind = kind, arg = arg, did = did, at = SB.Adapter.Now() }
+	if #t > Hooks.TRACE then
+		table.remove(t, 1)
+	end
+end
+
+local function argName(frame)
+	if frame == nil then
+		return "nil"
+	end
+	local name = frame.GetName and frame:GetName()
+	return type(name) == "string" and name or "?"
+end
+
+local function didText(did)
+	local L = SB.L
+	return ({ opened = L.HOOK_OPENED, closed = L.HOOK_CLOSED, kept = L.HOOK_KEPT, reopened = L.HOOK_REOPENED,
+		game = L.HOOK_GAME, user = L.HOOK_USER, nothing = L.HOOK_NOTHING, inactive = L.HOOK_INACTIVE })[did] or did
+end
+
+function Hooks.TraceText()
+	local L, parts = SB.L, {}
+	for i, e in ipairs(Hooks.trace) do
+		parts[i] = L.REPORT_BAG_HOOK:format(e.kind, e.arg, didText(e.did), e.at)
+	end
+	return #parts > 0 and table.concat(parts, ", ") or L.REPORT_NONE
+end
 
 function Hooks.IsActive()
 	return SB.Buttons.created and not SB.SafeMode.IsOn("bags")
@@ -50,10 +90,11 @@ local function frameName(frame)
 	return (frame and frame.GetName and frame:GetName()) or true
 end
 
--- B / backpack / bag-bar icon.
-local function onBagKey()
+-- B / backpack / bag-bar icon. kind: the hook's name; arg: ToggleBag's bag number or "".
+local function onBagKey(kind, arg)
 	if not Hooks.IsActive() then
 		Hooks.autoOpenedBy = nil
+		note(kind, arg, "inactive")
 		return
 	end
 	local now = SB.Adapter.Now()
@@ -64,22 +105,29 @@ local function onBagKey()
 		if Hooks.lastKind == "auto" then
 			Hooks.autoOpenedBy = nil
 			Hooks.lastKind = "toggle"
+			note(kind, arg, "user")
 			return
 		elseif Hooks.lastKind ~= "none" then
+			note(kind, arg, "nothing")
 			return
 		end
 	end
+	local wasUsers = Hooks.autoOpenedBy == nil
 	Hooks.autoOpenedBy = nil
 	local W = SB.BagsWindow
 	local wasOpen = W.IsOpen()
 	W.Toggle()
 	Hooks.lastAt, Hooks.lastKind = now, "toggle"
 	Hooks.toggleOpened = not wasOpen and W.IsOpen()
+	Hooks.toggleClosedUsers = wasOpen and wasUsers and not W.IsOpen()
+	note(kind, arg, W.IsOpen() and "opened" or "closed")
 end
 
 -- OpenAllBags hook (arg: the frame that wants the bags, e.g. MerchantFrame).
 local function onOpenAll(frame)
+	local arg = argName(frame)
 	if not Hooks.IsActive() then
+		note("OpenAllBags", arg, "inactive")
 		return
 	end
 	local W = SB.BagsWindow
@@ -87,41 +135,66 @@ local function onOpenAll(frame)
 	if now == Hooks.lastAt and Hooks.lastKind ~= "closed" then
 		-- A toggle hook ran inside this OpenAllBags. If it opened the window, the game
 		-- opened it; if it closed a window the user had open, open it again.
+		local did = "nothing"
 		if Hooks.lastKind == "toggle" then
 			if Hooks.toggleOpened then
 				Hooks.autoOpenedBy = frameName(frame)
+				did = "game"
 			elseif not W.IsOpen() then
 				W.Open()
+				did = "reopened"
 			end
 		end
+		note("OpenAllBags", arg, did)
 		return
 	end
 	Hooks.lastAt = now
 	if W.IsOpen() then
 		Hooks.lastKind = "none"
+		note("OpenAllBags", arg, "nothing")
 		return
 	end
 	if W.Open() then
 		Hooks.autoOpenedBy = frameName(frame)
 		Hooks.lastKind = "auto"
+		note("OpenAllBags", arg, "opened")
+	else
+		note("OpenAllBags", arg, "nothing")
 	end
 end
 
--- CloseAllBags(frame): close only a window the game opened for that frame
--- (CloseAllBags() with no frame always closes).
+-- CloseAllBags(frame) (D16): closes only a window the game opened, for that frame (any frame
+-- when its OpenAllBags named none), or with no frame at all. A window the user opened stays,
+-- with or without a frame: the vendor's walk-away close (FM1 step 8) leaves it open, as
+-- Blizzard's own bags stay open after a vendor that did not open them.
 local function onCloseAll(frame)
+	local arg = argName(frame)
 	if not Hooks.IsActive() then
+		note("CloseAllBags", arg, "inactive")
+		return
+	end
+	local W = SB.BagsWindow
+	local now = SB.Adapter.Now()
+	if frame ~= nil and now == Hooks.lastAt and Hooks.lastKind == "toggle" and Hooks.toggleClosedUsers then
+		-- A bag toggle ran inside this frame's CloseAllBags and closed the user's window: open it
+		-- again. Never for CloseAllBags() with no frame: that runs inside the bag key itself.
+		Hooks.toggleClosedUsers = false
+		W.Open()
+		note("CloseAllBags", arg, "reopened")
 		return
 	end
 	local by = Hooks.autoOpenedBy
-	if frame == nil or (by and (by == true or (frame.GetName and frame:GetName() == by))) then
-		local wasOpen = SB.BagsWindow.IsOpen()
-		SB.BagsWindow.Close()
+	if by and (by == true or frame == nil or (frame.GetName and frame:GetName() == by)) then
+		local wasOpen = W.IsOpen()
+		W.Close()
 		Hooks.autoOpenedBy = nil
 		if wasOpen then
-			Hooks.lastAt, Hooks.lastKind = SB.Adapter.Now(), "closed"
+			Hooks.lastAt, Hooks.lastKind = now, "closed"
 		end
+		note("CloseAllBags", arg, wasOpen and "closed" or "nothing")
+		return
 	end
+	note("CloseAllBags", arg, W.IsOpen() and "kept" or "nothing")
 end
 
 function Hooks.Install()
@@ -130,13 +203,17 @@ function Hooks.Install()
 	end
 	Hooks.installed = true
 	local Guard = SB.ErrorTrap.Guard
-	hooksecurefunc("ToggleAllBags", Guard("hook:ToggleAllBags", onBagKey, "bags"))
-	hooksecurefunc("ToggleBackpack", Guard("hook:ToggleBackpack", onBagKey, "bags"))
+	hooksecurefunc("ToggleAllBags", Guard("hook:ToggleAllBags", function()
+		onBagKey("ToggleAllBags", "")
+	end, "bags"))
+	hooksecurefunc("ToggleBackpack", Guard("hook:ToggleBackpack", function()
+		onBagKey("ToggleBackpack", "")
+	end, "bags"))
 	if ToggleBag then
 		-- Only the bag-bar IDs 0-5; never bank tabs, nil or other values.
 		hooksecurefunc("ToggleBag", Guard("hook:ToggleBag", function(id)
 			if type(id) == "number" and id >= 0 and id <= 5 then
-				onBagKey()
+				onBagKey("ToggleBag", tostring(id))
 			end
 		end, "bags"))
 	end
