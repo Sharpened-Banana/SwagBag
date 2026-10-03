@@ -30,7 +30,7 @@ local _, SB = ...
 
 local L = SB.L
 local Pr = { VERSION = 1, HEADER = "SWAGBAG:", MAX_TEXT = 30000, MAX_ENTRIES = 1500, MAX_STRING = 500,
-	MAX_NAME = 24, MAX_CATEGORIES = 100, MAX_LIST = 2000, MAX_WATCH = 50 }
+	MAX_NAME = 24, MAX_ITEM = 10000000, MAX_NUM = 1000, MAX_CATEGORIES = 100, MAX_LIST = 2000, MAX_WATCH = 50 }
 SB.Profiles = Pr
 
 local KEEP = { safeMode = true, setup = true } -- this machine's state: never saved, loaded or shared
@@ -293,7 +293,7 @@ local function encode(v)
 	if t == "boolean" then
 		return v and "b1" or "b0"
 	elseif t == "number" then
-		return "n" .. tostring(v)
+		return "n" .. ("%.17g"):format(v)
 	end
 	return "s" .. esc(v)
 end
@@ -389,7 +389,13 @@ function Pr.Export(withCategories)
 			end
 		end
 		if type(d.categoryOrder) == "table" then
-			entries[#entries + 1] = "co=s" .. esc(table.concat(d.categoryOrder, ","))
+			local ids = {}
+			for _, id in ipairs(d.categoryOrder) do
+				if type(id) == "string" or type(id) == "number" then
+					ids[#ids + 1] = tostring(id)
+				end
+			end
+			entries[#entries + 1] = "co=s" .. esc(table.concat(ids, ","))
 		end
 	end
 	table.sort(entries)
@@ -419,12 +425,26 @@ local function numbers(text)
 	for part in text:gmatch("[^,]+") do
 		count = count + 1
 		local n = tonumber(part)
-		if count > Pr.MAX_LIST or not n or n < 1 or n ~= math.floor(n) or n == math.huge or not part:match("^%d+$") then
+		if count > Pr.MAX_LIST or not n or n < 1 or n > Pr.MAX_ITEM or n ~= math.floor(n) or n == math.huge or not part:match("^%d+$") then
 			return nil
 		end
 		out[n] = true
 	end
 	return out
+end
+
+-- A user category id has the shape SwagBag makes (u_...), which is never a built-in or a section id
+-- (new, free, c_...); an edit may only name a built-in category.
+local function idOk(prefix, id)
+	if prefix == "cu" then
+		return id:match("^u_[%w_]+$") ~= nil
+	end
+	for _, def in ipairs(SB.CategoryDefaults or {}) do
+		if def.id == id then
+			return true
+		end
+	end
+	return false
 end
 
 local function parseWatch(text)
@@ -466,6 +486,8 @@ function Pr.Parse(text)
 	end
 	local version, body = text:match("^SWAGBAG:(%d+):(.*)$")
 	if not version then
+		return nil, "notours"
+	elseif tonumber(version) < 1 then
 		return nil, "notours"
 	elseif tonumber(version) > Pr.VERSION then
 		return nil, "newer"
@@ -519,6 +541,9 @@ function Pr.Parse(text)
 				data.order[#data.order + 1] = oid
 			end
 		elseif prefix and FIELD_TYPES[field] and #id <= 40 then
+			if not idOk(prefix, id) then
+				return nil, "type", key
+			end
 			local into = prefix == "cu" and data.users or data.edits
 			if not into[id] then
 				cats[#cats + 1] = id
@@ -537,11 +562,23 @@ function Pr.Parse(text)
 				into[id].itemList[field == "inc" and "include" or "exclude"] = ids
 			elseif type(value) ~= kind then
 				return nil, "type", key
+			elseif kind == "string" and (#value > Pr.MAX_STRING or value:find("%c")
+				or (field == "name" and value:find("|", 1, true)) or (field == "query" and value:find("|[cCrRtTnNhHkKaA]"))) then
+				return nil, "type", key
+			elseif kind == "number" and math.abs(value) > Pr.MAX_NUM then
+				return nil, "type", key
+			elseif field == "query" and not SB.Query.Compile(value).fn then
+				return nil, "type", key
 			else
 				into[id][field] = value
 			end
 		else
 			data.skipped[#data.skipped + 1] = key
+		end
+	end
+	for id, def in pairs(data.users) do
+		if def.name == nil and def.query == nil then
+			return nil, "type", id
 		end
 	end
 	table.sort(data.skipped)

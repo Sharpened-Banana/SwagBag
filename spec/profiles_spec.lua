@@ -212,6 +212,46 @@ describe("Profiles (week 7)", function()
 		assert.same({ true, true }, { SB.Config.db.categories.u_new == nil, SB.Config.db.categoryOrder == nil })
 	end)
 
+	-- Security fix round 1. Mutations: drop the Query.Compile check; drop idOk(); drop the length / "|" check;
+	-- drop the version < 1 check; drop `n > Pr.MAX_ITEM or`, the MAX_NUM check, the name-or-query check;
+	-- encode with tostring; export categoryOrder with table.concat unfiltered.
+	it("refuses hostile or malformed categories whole", function()
+		local function refused(s, detail)
+			local data, err, d = Pr.Parse("SWAGBAG:1:" .. s)
+			assert.is_nil(data, s)
+			assert.equal("type", err, s)
+			if detail then
+				assert.equal(detail, d)
+			end
+		end
+		refused("cu.u_x.name=sX;cu.u_x.query=s%28%28%28")
+		assert.is_nil(Pr.Parse("SWAGBAG:1:cu.new.name=sX;cu.new.query=sherb"))
+		assert.is_nil(Pr.Parse("SWAGBAG:1:cu.free.name=sX"))
+		assert.is_nil(Pr.Parse("SWAGBAG:1:cu.c_junk.name=sX"))
+		assert.is_nil(Pr.Parse("SWAGBAG:1:ce.c_nothing.name=sX"))
+		assert.truthy(Pr.Parse("SWAGBAG:1:ce.c_junk.name=sX"))
+		refused("cu.u_x.name=s" .. ("a"):rep(20000), nil)
+		refused("cu.u_x.name=sa%7Cb")
+		refused("cu.u_x.query=sherb%7Cc")
+		refused("cu.u_x.name=sOK;cu.u_x.priority=n99999")
+		refused("cu.u_x.name=sOK;cu.u_x.inc=s" .. ("9"):rep(300))
+		refused("cu.u_x.priority=n5", "u_x")
+		refused("cu.u_x.name=sa%0Ab")
+		refused("cu.u_x.name=sOK;cu.u_x.inc=s99999999")
+		assert.same({ nil, "notours" }, { Pr.Parse("SWAGBAG:0:s.bags.columns=n14") })
+	end)
+
+	it("a scale built from small steps is no change against your own string; a damaged order exports", function()
+		local v = 0.5
+		for _ = 1, 3 do
+			v = v + 0.05
+		end
+		C.Set("bags.scale", v)
+		assert.same({ SB.L.PROFILE_PREVIEW_NOTHING }, Pr.Preview(assert(Pr.Parse(Pr.Export(false)))))
+		SB.Config.db.categoryOrder = { "c_junk", {}, 5, false }
+		assert.truthy(Pr.Export(true):find("co=sc_junk%2C5", 1, true))
+	end)
+
 	-- P2. Mutation: /swagbag profile load ignores Load's answer (always says loaded).
 	it("/swagbag profile answers every form", function()
 		SB.Slash.Dispatch("profile save Raid")
