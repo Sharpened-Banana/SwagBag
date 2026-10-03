@@ -613,6 +613,46 @@ function M.AddContainers(m)
 		return m.collected.decor[itemID]
 	end
 
+	-- Selling and moving (week 7): every call is recorded in m.used = { { bag, slot, kind } } (kind "sell",
+	-- "bank" or "warband"). m.onUse(bag, slot, kind) decides what happens; by default the slot empties at
+	-- once (the item was sold or moved). m.useFails = true: the call throws (the client refused it).
+	m.used = {}
+	m.onUse = function(bag, slot)
+		m.Clear(bag, slot)
+	end
+	local function use(bag, slot, kind)
+		m.used[#m.used + 1] = { bag = bag, slot = slot, kind = kind }
+		if m.useFails then
+			return false, "refused"
+		end
+		m.onUse(bag, slot, kind)
+		return true
+	end
+
+	function m.SellItem(bag, slot)
+		return use(bag, slot, "sell")
+	end
+
+	function m.MoveToBank(bag, slot, kind)
+		return use(bag, slot, kind)
+	end
+
+	-- Repairs: m.repairCost (nil: this vendor does not repair), m.guildRepair (nil: the guild does not pay;
+	-- -1: no limit), m.repairs = { "own" | "guild" }.
+	m.repairCost, m.guildRepair, m.repairs = nil, nil, {}
+	function m.RepairCost()
+		return m.repairCost
+	end
+
+	function m.Repair(guild)
+		m.repairs[#m.repairs + 1] = guild and "guild" or "own"
+		return true
+	end
+
+	function m.GuildRepairMoney()
+		return m.guildRepair
+	end
+
 	function m.IsQuestItem(bag, slot)
 		local s = slotOf(bag, slot)
 		return s ~= nil and s.quest == true
