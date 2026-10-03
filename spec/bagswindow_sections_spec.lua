@@ -1366,6 +1366,7 @@ describe("BagsWindow focus modes (spec 6)", function()
 		SB.Config.Init(nil, nil)
 		Fixtures.SmallBags(A) -- potion, flask, BoE ring, soulbound helm, keystone, junk
 		SB.Config.Set("bags.newAlways", true) -- New's reserved rows, as these tests were written
+		SB.Config.Set("focus.style", "collapse") -- these tests pin the collapse style (week 4); see "front" below
 		CreateFrame = function(kind) return newFake(kind) end
 		UIParent = newFake("Frame")
 		UIParent.h = 2000

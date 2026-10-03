@@ -266,8 +266,9 @@ describe("BagsWindow list view", function()
 		assert.truthy(junk.y > y, "applied once the mouse left the row")
 	end)
 
-	-- AC8.2 in the list view: same sections, same mode sets.
+	-- AC8.2 in the list view: same sections, same mode sets (the collapse style, week 4).
 	it("a focus mode collapses the same sections as in the category view", function()
+		SB.Config.Set("focus.style", "collapse")
 		W.Open()
 		SB.Focus.SetSignal("challengeMode", true)
 		assert.equal("+ Junk (1)", header("c_junk").text.text)
@@ -772,6 +773,7 @@ describe("BagsWindow week-4 carry-overs (title flash, drop, default place)", fun
 		SB = Loader.New(FILES)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.style", "collapse") -- the grow tests need a mode that collapses (week 4)
 		Fixtures.SmallBags(A)
 		CreateFrame = function(kind) return newFake(kind) end
 		UIParent = newFake("Frame")

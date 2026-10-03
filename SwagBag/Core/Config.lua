@@ -53,8 +53,10 @@ Config.Defaults = {
 		-- AC8.4); peek: a click on a collapsed header opens it until the bag closes ("peek") or
 		-- until the mode changes ("keep", AC8.3); announce: one chat line per mode change (spec
 		-- 6.4, default off); on.<mode>: each built-in mode (all on); sections.<mode>: the sections
-		-- the mode opens, comma-separated category ids (New is always open).
-		focus = { auto = true, resolve = "merge", peek = "peek", announce = false,
+		-- the mode opens, comma-separated category ids (New is always open). style: "front" (default:
+		-- a mode moves its sections to the top, right after New, and collapses nothing) | "collapse"
+		-- (a mode collapses every section it does not open; week 4's behaviour). Week 6, user request.
+		focus = { auto = true, resolve = "merge", peek = "peek", announce = false, style = "front",
 			on = { mplus = true, raid = true, delves = true, gathering = true, fishing = true, market = true },
 			sections = {
 				mplus = "c_consumables,c_keystone,c_gear",
