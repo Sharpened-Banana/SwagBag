@@ -144,10 +144,40 @@ describe("Overlays (spec F9)", function()
 		local _, flask = draw(0, 2)
 		local _, potion = draw(0, 1)
 		assert.same({ true, false }, { flask.lock.shown, potion.lock.shown })
-		assert.same({ "TOP", 14 }, { flask.lock.points[1][1], flask.lock.w })
+		assert.same({ "LEFT", 10 }, { flask.lock.points[1][1], flask.lock.w })
 		SB.Slash.Dispatch("overlays lock off")
 		local _, off = draw(0, 2)
 		assert.falsy(off.lock.shown)
+	end)
+
+	-- Fix round 1. Mutation: in Overlays.Apply's region setup, put the lock back at ("TOP", button, "TOP", 0, -1)
+	-- with size 14 (it then covers the item level and the upgrade arrow).
+	it("the lock sits where no other corner overlay is (37 px button, rects in pixels from its top left)", function()
+		SB.Locks = { Has = function() return true end }
+		local _, r = draw(0, 3)
+		local W = 37
+		-- A rect {x1, y1, x2, y2} (y down) for a region anchored at one of the button's points.
+		local function rect(region, w, h)
+			local pt, _, _, x, y = unpack(region.points[1])
+			local x1 = ({ LEFT = 0, TOPLEFT = 0, BOTTOMLEFT = 0, TOPRIGHT = W - w, BOTTOMRIGHT = W - w })[pt] + x
+			local y1 = ({ LEFT = (W - h) / 2, TOPLEFT = 0, TOPRIGHT = 0, BOTTOMLEFT = W - h, BOTTOMRIGHT = W - h })[pt] - y
+			return { x1, y1, x1 + w, y1 + h }
+		end
+		local function hit(a, b)
+			return a[1] < b[3] and b[1] < a[3] and a[2] < b[4] and b[2] < a[4]
+		end
+		local lock = rect(r.lock, r.lock.w, r.lock.h)
+		-- Text boxes: 3 digits of the 13 px font is ~22 px wide, ~11 px of glyph high (the line's spare room is empty).
+		local others = {
+			ilvl = rect(r.topLeft, 22, 11), track = rect(r.bottomLeft, 22, 11), arrow = rect(r.arrow, r.arrow.w, r.arrow.h),
+			-- Blizzard's own stack count: bottom right, two digits.
+			count = { W - 2 - 14, W - 2 - 11, W - 2, W - 2 },
+			-- The junk coin never shows on a locked item (ruling R11), so it is not in this list.
+		}
+		for name, o in pairs(others) do
+			assert.falsy(hit(lock, o), "the lock overlaps the " .. name)
+		end
+		assert.truthy(lock[1] >= 0 and lock[3] <= W and lock[2] >= 0 and lock[4] <= W, "inside the button")
 	end)
 
 	it("a gear change re-draws the arrows of the open windows, once after the last slot event", function()
