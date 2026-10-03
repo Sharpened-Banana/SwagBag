@@ -157,6 +157,37 @@ function M.New(SB)
 		return m.activeBankType
 	end
 
+	-- Deposit all warbound items (week 6): m.warband.usable / .reason (WarbandDepositState),
+	-- .refundable (true | false | nil), .reagents (Blizzard's "Include reagents"); deposits are counted.
+	m.warband = { usable = true, reason = nil, refundable = false, reagents = false }
+	m.warbandDeposits = 0
+	m.refundChecks = {}
+	function m.WarbandDepositState()
+		if m.warband.usable then
+			return true
+		end
+		return false, m.warband.reason or "unavailable"
+	end
+
+	function m.RefundableForWarband(bags)
+		m.refundChecks[#m.refundChecks + 1] = bags
+		return m.warband.refundable
+	end
+
+	function m.DepositWarband()
+		m.warbandDeposits = m.warbandDeposits + 1
+		return true
+	end
+
+	function m.DepositReagents()
+		return m.warband.reagents
+	end
+
+	function m.SetDepositReagents(on)
+		m.warband.reagents = on and true or false
+		return true
+	end
+
 	-- Guild bank: m.guild.tabs = { { tab, name, viewable, canDeposit, withdrawals } },
 	-- m.guild.slots[tab][slot] = { itemID, count, link?, isLocked? }; calls are recorded.
 	m.guild = { tabs = {}, slots = {}, current = 1, key = "Tidewatch-Argent Dawn", queried = {}, withdrawn = {},

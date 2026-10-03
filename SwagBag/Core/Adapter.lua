@@ -699,6 +699,116 @@ function A.ActiveBankType()
 end
 
 ---------------------------------------------------------------------------
+-- Deposit all warbound items (week 6, user request 3). C_Bank.AutoDepositItemsIntoBank is the call
+-- Blizzard's own "Deposit All Warbound Items" button (BankPanel.AutoDepositFrame.DepositButton) makes;
+-- here it is given the warband bank type explicitly, so Blizzard's selected bank type is never read
+-- for it nor set. It is a C function: it writes no Lua field of Blizzard's frames, so it cannot taint
+-- them the way calling the bank frame's own tab method did in the week-1 spike (that Lua method wrote
+-- the frame's own state, which Blizzard's secure item click then read). Not protected: Baganator 833, TradeSkillMaster,
+-- ElvUI, EllesmereUI and EnhanceQoL call it from addon code on Interface 120100 (names read only).
+-- Blizzard's button asks before a deposit would end an item's refund; SwagBag checks first and
+-- leaves those cases to Blizzard's button (RefundableForWarband).
+---------------------------------------------------------------------------
+local function warbandType()
+	local BT = Enum and Enum.BankType
+	return BT and BT.Account
+end
+
+-- true when the warband bank takes items now; otherwise false and why: "locked" (another
+-- character of the account has it open) or "unavailable" (no API, no tab, not at a banker).
+function A.WarbandDepositState()
+	local account = warbandType()
+	if account == nil or not (C_Bank and C_Bank.AutoDepositItemsIntoBank) then
+		return false, "unavailable"
+	end
+	if C_Bank.FetchBankLockedReason then
+		local ok, reason = pcall(C_Bank.FetchBankLockedReason, account)
+		if not ok or isSecret(reason) then
+			return false, "unavailable"
+		elseif reason ~= nil then
+			return false, "locked"
+		end
+	end
+	if C_Bank.CanUseBank then
+		local ok, can = pcall(C_Bank.CanUseBank, account)
+		if not ok or isSecret(can) or can ~= true then
+			return false, "unavailable"
+		end
+	end
+	return true
+end
+
+-- true when an item in bags = { { bag, size } } that the warband bank would take can still be
+-- refunded (the deposit would end that refund); false when none; nil when it cannot be told.
+function A.RefundableForWarband(bags)
+	local account = warbandType()
+	if account == nil or not (C_Item and C_Item.CanBeRefunded and C_Item.DoesItemExist and C_Bank
+		and C_Bank.IsItemAllowedInBankType) then
+		return nil
+	end
+	local ok, found = pcall(function()
+		for _, b in ipairs(bags) do
+			for slot = 1, b.size do
+				local loc = location(b.bag, slot)
+				local exists = C_Item.DoesItemExist(loc)
+				if isSecret(exists) then
+					error("secret")
+				end
+				if exists then
+					local allowed, refund = C_Bank.IsItemAllowedInBankType(account, loc), C_Item.CanBeRefunded(loc)
+					if isSecret(allowed) or isSecret(refund) then
+						error("secret")
+					end
+					if allowed and refund then
+						return true
+					end
+				end
+			end
+		end
+		return false
+	end)
+	if not ok then
+		return nil
+	end
+	return found
+end
+
+-- Deposit every item the warband bank takes; reagents too when Blizzard's "Include reagents" box is
+-- ticked (the game reads it). Returns true, or false and the error (nil when the API is missing).
+function A.DepositWarband()
+	local account = warbandType()
+	if account == nil or not (C_Bank and C_Bank.AutoDepositItemsIntoBank) then
+		return false
+	end
+	return pcall(C_Bank.AutoDepositItemsIntoBank, account)
+end
+
+-- Blizzard's "Include reagents" choice for that deposit: the bankAutoDepositReagents setting its own
+-- check box reads and writes. true | false | nil (unknown).
+function A.DepositReagents()
+	if not (C_CVar and C_CVar.GetCVarBool) then
+		return nil
+	end
+	local ok, on = pcall(C_CVar.GetCVarBool, "bankAutoDepositReagents")
+	if not ok or isSecret(on) or type(on) ~= "boolean" then
+		return nil
+	end
+	return on
+end
+
+-- Set that choice, as Blizzard's own check box does. Returns true when it took.
+function A.SetDepositReagents(on)
+	if not (C_CVar and C_CVar.SetCVar) then
+		return false
+	end
+	local want = on and true or false
+	if not pcall(C_CVar.SetCVar, "bankAutoDepositReagents", want and "1" or "0") then
+		return false
+	end
+	return A.DepositReagents() == want
+end
+
+---------------------------------------------------------------------------
 -- Guild bank (week 3, spec F16). Blizzard's guild bank functions are plain globals; the
 -- guild bank UI (GuildBankFrame) is load-on-demand, so nothing here may assume it exists.
 -- SwagBag never selects a guild bank tab: Blizzard's own tab buttons do (spec AC16.7).
@@ -1260,6 +1370,14 @@ A.CHECKS = {
 	{ path = "BankFrame", window = "bank", required = true },
 	{ path = "BankFrame.GetActiveBankType", window = "bank", required = true },
 	{ path = "BankFrame.TabSystem", window = "bank", required = true },
+	{ path = "C_Bank.AutoDepositItemsIntoBank", window = "bank", required = false },
+	{ path = "C_Bank.FetchBankLockedReason", window = "bank", required = false },
+	{ path = "C_Bank.CanUseBank", window = "bank", required = false },
+	{ path = "C_Bank.IsItemAllowedInBankType", window = "bank", required = false },
+	{ path = "C_Item.CanBeRefunded", window = "bank", required = false },
+	{ path = "C_Item.DoesItemExist", window = "bank", required = false },
+	{ path = "C_CVar.GetCVarBool", window = "bank", required = false },
+	{ path = "C_CVar.SetCVar", window = "bank", required = false },
 	{ path = "Enum.ItemClass", window = "bags", required = false },
 	{ path = "Enum.ItemBind", window = "bags", required = false },
 	{ path = "Enum.AddOnRestrictionType", window = "bags", required = false },
