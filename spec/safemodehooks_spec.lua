@@ -127,10 +127,24 @@ describe("SafeModeHooks", function()
 		assert.truthy(windowOpen)
 	end)
 
-	it("CloseAllBags() with no frame always closes", function()
-		windowOpen = true
+	-- Week 6, D16 (FM1 step 8: walking away from a vendor closed bags opened with B). Mutation: in
+	-- onCloseAll, close when `frame == nil` whoever opened the window (the week-1 rule).
+	it("CloseAllBags() with no frame leaves a window the user opened open", function()
+		windowOpen = true -- opened with B before talking to the vendor
+		hooks.OpenAllBags(named("MerchantFrame"))
+		A.Advance(1)
+		hooks.CloseAllBags() -- the walk-away close, if it names no frame
+		assert.truthy(windowOpen)
+		assert.equal(0, closes)
+	end)
+
+	-- Mutation: in onCloseAll, drop `frame == nil or` from the game-opened test.
+	it("CloseAllBags() with no frame still closes a window the game opened", function()
+		hooks.OpenAllBags(named("MerchantFrame"))
+		A.Advance(1)
 		hooks.CloseAllBags()
 		assert.falsy(windowOpen)
+		assert.is_nil(SB.SafeModeHooks.autoOpenedBy)
 	end)
 
 	it("pressing the bag key forgets that the game opened the window", function()
@@ -214,14 +228,62 @@ describe("SafeModeHooks", function()
 		assert.equal(1, toggles)
 	end)
 
-	it("a bag key whose ToggleAllBags closes through CloseAllBags() does not reopen", function()
+	-- D16: the inner CloseAllBags() leaves the user's window alone; the key itself closes it, once.
+	it("a bag key whose ToggleAllBags runs CloseAllBags() inside closes the window once", function()
 		realToggle()
 		windowOpen = true
 		A.Advance(1)
 		hooks.CloseAllBags() -- inner call, same frame
 		hooks.ToggleAllBags()
 		assert.falsy(windowOpen)
-		assert.equal(0, toggles)
+		assert.equal(1, toggles)
+		assert.equal(0, closes)
+	end)
+
+	-- D16, the other way the walk-away could close it. Mutation: delete the reopen branch in onCloseAll.
+	it("a bag toggle inside a vendor's CloseAllBags that closed the user's window opens it again", function()
+		realToggle()
+		windowOpen = true -- opened with B
+		hooks.OpenAllBags(named("MerchantFrame")) -- found it open: still the user's
+		A.Advance(1)
+		hooks.ToggleBackpack() -- inner call of the vendor's close, same frame
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.truthy(windowOpen)
+		assert.is_nil(SB.SafeModeHooks.autoOpenedBy)
+	end)
+
+	-- Mutation: in onBagKey, toggleClosedUsers = wasOpen and not W.IsOpen() (forgets who owned it).
+	it("a bag toggle inside a vendor's CloseAllBags that closed the game's window leaves it closed", function()
+		realToggle()
+		hooks.OpenAllBags(named("MerchantFrame")) -- the game opened it for the vendor
+		A.Advance(1)
+		hooks.ToggleBackpack() -- inner call, same frame
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.falsy(windowOpen)
+	end)
+
+	-- Week 6: /swagbag report shows the last five. Mutation: drop the table.remove in note (keeps all).
+	it("keeps the last five hook calls, oldest first, with what SwagBag did and when", function()
+		realToggle()
+		hooks.ToggleAllBags()
+		A.Advance(0.5)
+		hooks.OpenAllBags(named("MerchantFrame"))
+		A.Advance(10)
+		hooks.CloseAllBags()
+		A.Advance(1)
+		hooks.ToggleBag(2)
+		A.Advance(1)
+		hooks.ToggleBag(2)
+		A.Advance(1)
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.equal(5, #SB.SafeModeHooks.trace)
+		assert.equal("OpenAllBags(MerchantFrame) nothing at 0.5, CloseAllBags(nil) kept open at 10.5, "
+			.. "ToggleBag(2) closed at 11.5, ToggleBag(2) opened at 12.5, CloseAllBags(MerchantFrame) kept open at 13.5",
+			SB.SafeModeHooks.TraceText())
+		SB.SafeMode.Enable("bags", "manual")
+		hooks.ToggleAllBags()
+		assert.same({ kind = "ToggleAllBags", arg = "", did = "inactive", at = 13.5 }, SB.SafeModeHooks.trace[5],
+			"Safe Mode: noted, nothing done")
 	end)
 
 	it("a vendor closing and a mailbox opening in the same frame leaves the window open for the mailbox", function()

@@ -68,6 +68,13 @@ describe("Report", function()
 		assert.truthy(SB.Report.Build():find("\nLast bags layout: 12.3 ms (open)", 1, true))
 	end)
 
+	-- Week 6, D16 (FM1 step 8). Mutation: drop the REPORT_BAG_HOOKS line in Report.Build.
+	it("shows the last bag hook calls, for the vendor walk-away check", function()
+		SB.Checks.last = {}
+		SB.SafeModeHooks = { TRACE = 5, TraceText = function() return "CloseAllBags(nil) kept open at 10.5" end }
+		assert.truthy(SB.Report.Build():find("\nBag hooks (last 5): CloseAllBags(nil) kept open at 10.5", 1, true))
+	end)
+
 	it("shows the bank setting, the last visit and the deposit target (check V2)", function()
 		SB.Checks.last = {}
 		SB.BankWindow = { Mode = function() return "tiny" end, lastVisit = "beside", target = "warband",
