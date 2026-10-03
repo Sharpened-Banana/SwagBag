@@ -30,7 +30,7 @@
 
 - No auction-house or mailbox scanning of our own. Prices come from Auctionator, else vendor price.
 - No TSM integration in v1.x.
-- No guild bank *money* management UI (deposit/withdraw gold stays in Blizzard's frame) and no guild bank tab purchase/permission editing.
+- No guild bank *money* management UI (deposit/withdraw gold stays in Blizzard's frame) and no guild bank tab purchase/permission editing. One accepted exception (week 7, ruling R22): the optional "Guild bank first" repair (F17) spends guild money through Blizzard's own repair call; it is not a money UI, it is off by default (the default is your own gold), only the user chooses it, and it is never exported or imported in a share string.
 - No "send to alt" feature (scrapped in the grilling).
 - No sandboxed Lua rule language. The visual rule builder plus the query grammar is the ceiling.
 - No importers for other addons' SavedVariables in v1.0. Paste-string import of Syndicator/Baganator-syntax category strings is sufficient because the grammar is compatible.
@@ -44,7 +44,7 @@
 | # | Principle | What it means in practice |
 |---|---|---|
 | P1 | **Opinionated default + easy-to-find alternative** | Every setting ships with a chosen default. The alternative is one click away in the same place, never buried. Options are phrased as choices ("Peek / Keep open"), not as abstract toggles. |
-| P2 | **Every command and button gives feedback** | Every slash command and every button prints or shows a confirmation or an explanation of why it did nothing. Silence is a bug. |
+| P2 | **Every command and button gives feedback** | Every slash command and every button prints or shows a confirmation or an explanation of why it did nothing. Silence is a bug. It answers exactly once: a run that takes time (a sale, a send) answers when it ends; an automatic action with nothing to do says nothing. |
 | P3 | **Ease of setup over power** | When power and simplicity conflict, simplicity wins in v1.x. Power features go behind an "Advanced" disclosure or into a later tier. |
 | P4 | **No hard dependencies** | Syndicator (alt data) and Auctionator (prices) are detected at load and used through internal provider interfaces. Absence degrades a feature, never errors. |
 | P5 | **Layout never moves under the cursor** | Placeholders hold spots; new items go to a "New" section; reflow happens on close. |
@@ -135,12 +135,14 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 #### F9. Core overlays
 - AC9.1 ilvl, upgrade track and an **upgrade arrow** on gear; keystone level and dungeon on the keystone; stack count; junk coin; BoE / Warbound badge. All from `C_Item` / `C_Container` APIs; no tooltip parsing.
 - AC9.2 Each overlay has an on/off switch; the wizard's playstyle sets the defaults.
+- AC9.4 (week 7) Three more marks, each with its switch: a soft green glow on an item to open or learn (`overlays.learn`: caches, toys, mounts, pets, decor not yet owned, profession knowledge items); a small padlock on an item the user locked (`overlays.lock`); a purple `*` on gear whose look the account has not collected, and on a toy, mount or pet while the green glow is not drawn (`overlays.uncollected`). The `*` sits at the right edge between the upgrade arrow and the stack count, and the padlock at the left edge between the item-level and track texts: no mark covers another. The junk coin is never drawn on an item SwagBag will not sell (locked, in an equipment set, to open or learn, an uncollected or unknown look, worth more at auction).
 - AC9.3 Upgrade arrow: shown on equippable gear the character can use whose item level (`C_Item.GetCurrentItemLevel`) is higher than the lowest-ilvl item currently equipped in the matching slot(s) (both rings/trinkets compared; two-hand vs main+off-hand compared by summed ilvl). If Pawn is installed, an optional "Use Pawn" setting replaces the ilvl rule with `PawnIsContainerItemAnUpgrade`. Re-evaluated on `PLAYER_EQUIPMENT_CHANGED`.
 
 #### F10. Auctionator integration (prices + per-category totals)
 - AC10.1 With Auctionator loaded, each section header shows the category's total AH value ("Trade Goods — 1,240g"); items show AH value on hover and optionally as an overlay.
 - AC10.2 Without Auctionator, totals use vendor price and the header says "vendor".
 - AC10.3 Price lookups are cached per link for the session, invalidated on Auctionator's price-update callbacks or every 10 min.
+- AC10.4 (week 7) At the bank, an item whose stack is worth money glows gold: 100 g a stack by default, a gold amount, or your top 10% (`prices.worth`, `prices.worthGold`, `prices.worthTop`; `/swagbag worth`). A missing or secret price never glows.
 
 #### F11. Low-consumables warning
 - AC11.1 On `CHALLENGE_MODE_START` (and on entering an M+ instance) and on using an M+ teleport spell, SwagBag compares configured consumables against thresholds and prints one on-screen line ("Low: Flask (0), Healing Potion (2/5)"). Nothing prints when all thresholds are met.
@@ -173,12 +175,28 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC16.6 First in-dev check **G1** (§11.3) verifies withdraw, deposit, tab switching and Hearthstone use afterwards, with no blocked actions. If any of these fail, the fallback is **view + search**: SwagBag's window shows contents/search/totals read-only, and Blizzard's guild bank frame stays visible beside it for moving items. This fallback is a setting switch (`guildBank.mode = "full" | "view"`), not a redesign.
 - AC16.7 SwagBag never writes Blizzard's guild bank frame state; tab switching uses `SetCurrentGuildBankTab` only if G1 proves it untainted, otherwise via Blizzard's own tab buttons re-hosted on our window (the bank approach, §5.2).
 
+#### F17. Auto-sell junk and auto-repair (week 7)
+- AC17.1 At a vendor, SwagBag sells gray items a vendor pays for, one at a time, never more than 12 per vendor visit (Blizzard's Buyback tab keeps 12; the auto-sell, `/swagbag sell junk` and Sell all share the count); selling past 12 needs a second, explicit yes that says the earlier sales leave the Buyback tab. Default on (`vendor.autoSell`); one chat line says what was sold.
+- AC17.2 Never sold: a locked item, a piece of an equipment set, an item to open or learn, a gray BoE worth more than twice its vendor price at auction, gray gear whose look the account has not collected, and gray gear whose look the client cannot tell (no appearance source, no data yet, a secret answer: asked again at every sale, never remembered). Gear the account can never collect (the client says so) is ordinary junk and sells. Nothing is sold or repaired in combat.
+- AC17.3 Repair (`vendor.repair`: `own` default, `guild`, `off`) runs after the sale, out of combat; `guild` pays from the guild bank only when its limit and balance cover the cost, else falls back to own gold and says so. The setting never travels in a share string (F20).
+
+#### F18. Item locks (week 7)
+- AC18.1 Dropping an item on the small Lock button (or Settings > Vendor) locks every copy of that item ID, account-wide; again unlocks it. A locked item shows a padlock, says so on its tooltip, is found by `locked`, and is never sold by SwagBag. Selling it by hand still works; one chat line then names it and the Buyback tab.
+- AC18.2 Unlocking everything asks first: the first press of Unlock all (or `/swagbag lock clear`) says how many locks it removes and waits for the same press again within 10 seconds; only the second clears. The cleared set is kept one step: `/swagbag lock undo` puts it back.
+
+#### F19. Section actions (week 7)
+- AC19.1 Shift+right-click a section header opens a small menu: at a bank, "Send all to bank" and "Send all to warband bank"; at a vendor, "Sell all" after a confirmation (same protections and 12-a-visit limit as F17). Nothing moves in combat or under the mouse.
+
+#### F20. Profiles and share strings (week 7)
+- AC20.1 Named profiles save and load the account settings, with one step of undo (`/swagbag profile undo`) and a Defaults button. Share strings (`SWAGBAG:1:...`, text only) export settings, optionally with categories; import is Preview first, then Import; a string that is not ours, from a newer version, damaged, too long, or holding a value outside its setting's range or words is refused whole with the reason. Nothing in a string is ever run.
+- AC20.2 Never in a share string, either way: `guildBank.withdrawAnyTab` and `vendor.repair` (the preview names them as never imported). An imported category must compile, may not carry a chat escape (`|T |H |A |K`, `|c` plus eight hex digits, `|cn`), and may not have priority 90 or more, so it cannot outrank Junk, Equipment sets, Keystone & Crests or Reagents.
+
 ### 2.2 v1.1 – v1.3 (roughly monthly)
 
 | Version | Contents |
 |---|---|
-| **v1.1** | Remaining focus modes batch 1: PvP, Vendor and AH split into separate modes, Crafting, Cooking, Questing, Leveling, Travel. Worth-money highlight on bank open (fixed threshold default 100 g, or top-X %). Remaining overlays batch 1: AH value overlay, uncollected transmog. |
-| **v1.2** | Syndicator provider for alt data (replaces own store when present). Focus modes batch 2: Disenchanting/Salvage, Gear upgrade/Catalyst, Transmog farming, Pet battles, Profession knowledge, Housing. Overlays batch 2: uncollected pet/toy/decor. |
+| **v1.1** | Remaining focus modes batch 1: PvP, Vendor and AH split into separate modes, Crafting, Cooking, Questing, Leveling, Travel. Worth-money highlight on bank open (fixed threshold default 100 g, or top-X %; delivered week 7, AC10.4). Remaining overlays batch 1: AH value overlay, uncollected transmog (delivered week 7, AC9.4). |
+| **v1.2** | Syndicator provider for alt data (replaces own store when present). Focus modes batch 2: Disenchanting/Salvage, Gear upgrade/Catalyst, Transmog farming, Pet battles, Profession knowledge, Housing. Overlays batch 2: uncollected pet/toy/decor (pet and toy delivered week 7; decor has the green glow only). |
 | **v1.3** | List view (Sorted-style rows with name, count, ilvl, AH value column, sortable). Themes: modern flat; ElvUI-matching (auto-detect ElvUI, use its media). |
 
 ### 2.3 Later (demand-driven)
@@ -289,7 +307,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 2. **Section truth:** every slot button drawn inside a category section shows the item that section was built for, or it is not in that section. (The spike asserted this after every incremental update with zero violations.)
 3. **Placeholder honesty:** a placeholder never responds to item interaction. Its click shows a tooltip "This item moved or was used — items regroup when you close the bag" and does nothing else. (Spike check `placeholderClickIsHarmless` is the first in-dev verification; see §11.3.)
 4. **Free is real:** empty slots are drawn as their real buttons in the "Free" section, so dropping an item onto Free is a real drop into that slot.
-5. **No motion under the cursor:** a button is never moved while `IsMouseOver()`, while `GetCursorInfo()` holds an item, or while a modifier key relevant to the button is down. Deferred moves retry 300 ms later.
+5. **No motion under the cursor:** a button is never moved while `IsMouseOver()`, while `GetCursorInfo()` holds an item, or while a modifier key relevant to the button is down. Deferred moves retry 300 ms later. SwagBag's own item moves (the mover, week 7) follow it too: an item on the cursor holds every step while the vendor or bank is open; an item whose button is under the mouse holds up to 20 retries, then stays; a moved item leaves a placeholder (§4.3).
 
 ### 4.3 State transitions while a window is open
 
@@ -335,6 +353,8 @@ On `BANKFRAME_OPENED`, out of combat:
 Deposit target: SwagBag never chooses it. Right-click on a bag item runs Blizzard's handler, which uses `BankFrame:GetActiveBankType()`. SwagBag reads the same value (read-only) to highlight the receiving group and to label the header ("Deposits go to Warband bank - switch with the tabs below"; the re-hosted tabs sit under the title row). Verified in the spike: deposit followed the active tab in normal mode with zero writes.
 
 Deposit warbound (AC2.8): the button runs the game's deposit for the warband bank type on the user's own click, so the selected bank type (`BankFrame:GetActiveBankType()`) is neither read nor written for it. Right-click deposits still follow the active tab as above.
+
+Send all to bank / warband bank (week 7, F19): the bank type is chosen on the user's click and passed to the game's own item-use call as its argument; SwagBag neither reads nor writes Blizzard's selected type for it.
 
 ### 5.3 Taint rules (enforced by CI grep + luacheck)
 
@@ -397,9 +417,9 @@ All handlers are `O(1)` table writes plus one `Focus.Recompute()` that touches a
 
 | Mode | Class | Trigger | Default expanded sections |
 |---|---|---|---|
-| **M+** | activity | `challengeMode` or (`instanceType == "party"` and a keystone is in bags and difficulty is Mythic) | Consumables, Keystone & Crests, Gear (with ilvl/track), New |
-| **Raid** | activity | `instanceType == "raid"` | Consumables, Gear, New |
-| **Delves** | activity | `delve` | Consumables, Gear, Delve items (keys/curios via query), New |
+| **M+** | activity | `challengeMode` or (`instanceType == "party"` and a keystone is in bags and difficulty is Mythic) | Consumables, Keystone & Crests, Gear (with ilvl/track), Equipment sets, New |
+| **Raid** | activity | `instanceType == "raid"` | Consumables, Gear, Equipment sets, New |
+| **Delves** | activity | `delve` | Consumables, Gear, Equipment sets, Delve items (keys/curios via query), New |
 | **Gathering** | activity | `gathering` | the profession's materials sections for owned gathering professions (Herbs / Ore / Leather / Cloth), Tools, New |
 | **Fishing** | activity | `fishing` | Fish & Lures, Cooking materials, New |
 | **AH/Vendor/Bank** | location | `auctionOpen` or `merchantOpen` or `bankOpen` | Junk, Trade Goods, BoE gear, Warbound until equipped, Sellables (worth-money rule), New; at the bank: everything expands by default (bank mode is about highlighting, not collapsing) |
@@ -409,7 +429,7 @@ All handlers are `O(1)` table writes plus one `Focus.Recompute()` that touches a
 | Questing, Leveling, Travel (v1.1) | activity | quest log / level < max / taxi or mount channel | Quest items, Gear upgrades, Travel items |
 | Disenchanting/Salvage, Gear upgrade/Catalyst, Transmog farming, Pet battles, Housing (v1.2) | activity/location | enchanting window / upgrade NPC / instance with `PLAYER_TARGET` in legacy raid / pet battle events / housing zone | per mode |
 
-`c_wue` (Warbound until equipped, §7.6) joins every mode set that contains `c_boe` (today only AH/Vendor/Bank).
+`c_wue` (Warbound until equipped, §7.6) joins every mode set that contains `c_boe` (today only AH/Vendor/Bank). `c_sets` (Equipment sets, §7.6) joins every mode set that contains Gear. A mode whose sections the user edited before week 7 keeps their choice (only explicit values are stored): add Equipment sets in the mode editor.
 
 Every built-in mode's section set is editable; "Reset to default" is next to it (P1). Users create custom modes with the same editor: name, trigger (choose from the signal list, or "manual only"), sections.
 
@@ -488,10 +508,10 @@ Unknown-keyword policy: a bare word that is not a registered keyword is a text m
 | Quality | `poor`, `common`, `uncommon`, `rare`, `epic`, `legendary`, `artifact`, `heirloom` | instance | link quality |
 | Binding | `boe`, `bop`, `boa`, `warbound`, `wue` (warbound until equipped), `bound`, `soulbound`, `tradeable` | instance | `C_Item.IsBound`, `C_Item.IsBoundToAccountUntilEquip`, bind type from `C_Item.GetItemInfo` |
 | Numeric | `ilvl` (`ilvl>250`), `lvl`/`level` (required level), `gear` with op (`gear<210` = equippable gear under ilvl), `count`, `stack`, `expansion` (`expansion=current` resolved from `C_Item.GetItemInfo` expansion ID vs. `GetExpansionLevel()`), `gold`/`value` (price per unit from `Prices`, in gold: `value>50`) | ilvl/gear/level/expansion: instance; count/stack: **volatile**; value: volatile (session cache) | APIs listed |
-| State | `new` (session-new set), `locked`, `cooldown`, `usable`, `equipped` (in an equipment set), `upgrade` (upgrade track present), `partial` (count < stack) | **volatile** | container info, `C_Container`, `C_Item.GetItemUpgradeInfo`-family (feature-detected) |
+| State | `new` (session-new set), `locked` (locked by the user, week 7; the client's own lock is `inuse`; a one-time login note names saved queries that use the word), `cooldown`, `usable`, `equipped` (in an equipment set), `upgrade` (upgrade track present), `partial` (count < stack) | **volatile** | container info, `C_Container`, `C_Item.GetItemUpgradeInfo`-family (feature-detected) |
 | Location | `bags`, `backpack`, `reagentbag`, `bank`, `warband`, `tab=N` | volatile (slot-bound) | bag ID |
 | Crafting (Midnight) | `crafting reagent`, `quality1`..`quality5` (crafting quality tier) | instance | `C_TradeSkillUI.GetItemReagentQualityByItemInfo` (feature-detected) |
-| Collection (v1.1+) | `uncollected`, `transmog`, `collected` | instance; tooltip-derived where no API, `issecretvalue()`-guarded → `nil` | `C_TransmogCollection`, `C_PetJournal`, `C_ToyBox`, `C_Housing*` (feature-detected) |
+| Collection (v1.1+) | `uncollected`, `transmog`, `collected` | instance; `uncollected` (week 7: appearances, toys, mounts, pets) is registered **volatile**, since its answer changes when the account learns something, not with the item's link; tooltip-derived where no API, `issecretvalue()`-guarded → `nil` | `C_TransmogCollection`, `C_PetJournal`, `C_ToyBox`, `C_Housing*` (feature-detected) |
 | Currency-like | `crest`, `upgrade currency` | static | item ID allowlist in data file (per season; updated with patches) |
 
 Keywords are registered English-only in v1.0 through `Query.RegisterKeyword{name, aliases, class, eval}`. The registry is the single place localization will plug in later (register localized aliases alongside English; `#` exact remains English). Matching never lowercases non-ASCII; the enUS implementation ASCII-folds and lowercases; a UTF-8-aware fold is a documented i18n task.
@@ -525,7 +545,7 @@ Verified against Syndicator v284 by desk spike F (`docs/research/2026-10-syndica
 
 ### 7.6 Default category set (first run, display order)
 
-New · Keystone & Crests · Consumables · Gear · BoE gear · Warbound until equipped (`c_wue`, `gear & wue`, priority 74, just below BoE gear) · Trade Goods · Herbs · Ore · Leather & Cloth · Enchanting · Cooking · Fish & Lures · Quest · Housing · Pets & Mounts & Toys · Teleports & Tools · Reagents (only when "reagent bag separate" is on) · Junk · Other · Free.
+New · Keystone & Crests · Consumables · Gear · Equipment sets (`c_sets`, `equipped`, priority 92, right after Gear) · BoE gear · Warbound until equipped (`c_wue`, `gear & wue`, priority 74, just below BoE gear) · Trade Goods · Herbs · Ore · Leather & Cloth · Enchanting · Cooking · Fish & Lures · Quest · Housing · Pets & Mounts & Toys · Teleports & Tools · Reagents (only when "reagent bag separate" is on) · Junk · Other · Free.
 
 The wizard's playstyle hides or reorders these (e.g. "Gold" promotes Trade Goods and BoE gear; "Collector" adds Transmog/Collectibles sections when overlays arrive in v1.1).
 
@@ -537,6 +557,8 @@ category = { id = "c_gear", name = L["Gear"], query = "gear", compiled = <runtim
              displayOrder = 30, enabled = true, builtin = true, color = nil, icon = nil,
              source = "builtin" | "user" | "import" }
 ```
+
+A category made by importing a share string (F20) is stored with `source = "import"`.
 
 Assignment for one slot record:
 1. Manual **exclude** lists are consulted first (an excluded item cannot land in that category).
@@ -594,6 +616,11 @@ SwagBagDB = {
   warband = snapshot,                      -- one for the account
   errors = { ring of last 10 {time, build, version, message, stack} },
 }
+-- Week 7 (schema stays 2; every one read defensively, a damaged value reads as empty):
+--   locks = { [itemID] = true }, profiles = { [name] = { settings, saved } }, profile = "name" (shown only),
+--   backups = { profile = one step of undo, locks = the set the last Unlock all removed }, notes = { lockedKeyword = true }
+-- and the settings vendor.autoSell, vendor.repair, prices.worth, prices.worthGold, prices.worthTop,
+-- overlays.learn, overlays.lock, overlays.uncollected.
 SwagBagCharDB = { schemaVersion = 1, overrides = { ["modes.enabled.mplus"] = false, ... },
                   ui = { positions = {}, collapsed = {}, wizardDone = true } }
 ```
@@ -697,13 +724,14 @@ Errors (last 10):
  21:01:12 Views.Bank.Refresh: attempt to index nil 'TabSystem' <stack 6 lines>
 Bag-related addons: Auctionator 12.1.3, Syndicator (not loaded), ElvUI 14.02 (bags off)
 Settings hash: 7f3a…  Categories: 21 (3 user)  Modes: 6 on
+Season data: crest currencies ...; season items in bags ...   (week 7: confirms the season's IDs; a failure reading it prints "unavailable" and never blanks the report)
 ```
 
 This is what the user pastes into Claude Code. BugGrabber/BugSack compatibility: if present, we do not install our own `seterrorhandler`; we read errors through our own `Guard` wrappers only.
 
 ### 10.5 Slash commands (all with feedback, P2)
 
-`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count).
+`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo]` (clear asks first), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added).
 
 ---
 
@@ -721,7 +749,7 @@ This is what the user pastes into Claude Code. BugGrabber/BugSack compatibility:
 
 ### 11.2 Static checks
 
-luacheck with a WoW globals `std` (read-only list of API globals) and `globals = {"SwagBagDB", "SwagBagCharDB"}`; custom CI grep failing on the forbidden tokens from §5.3; `luac -p` on every file; a TOC/file-list consistency check.
+luacheck with a WoW globals `std` (read-only list of API globals) and `globals = {"SwagBagDB", "SwagBagCharDB"}`; custom CI grep failing on the forbidden tokens from §5.3 (and, from week 7, on a bare `C_*` name outside `SwagBag/Core/Adapter.lua`, the only file that may name a `C_*` namespace, `Enum` or another addon's globals); `luac -p` on every file; a TOC/file-list consistency check.
 
 ### 11.3 In-game verification checklist (first in-dev checks, in this order)
 
@@ -813,7 +841,7 @@ M7 rule builder + full wizard + tour (≈2 weeks) · M8 offline alt view + toolt
 1. ~~Desk spike F: exact Syndicator semantics of `#`, `gear<N`, and whether adjacent words are phrase or AND; update §7.5 (M2).~~ Resolved 2026-10-01: see §7.2, §7.5 and `docs/research/2026-10-syndicator-grammar-diff.md`.
 2. Delve detection API (`C_DelvesUI` / difficulty IDs) — V7 (M5).
 3. M+ teleport spell ID list source (data file; Blizzard dungeon teleports by season) (M5).
-4. Crest/upgrade-currency item IDs per season (data file) (M6).
+4. Crest/upgrade-currency item IDs per season (data file) (M6). Week 7 adds season items (Ascendant Venomstone 280562, to be confirmed in session SN1) and profession knowledge items to the same data file.
 5. Whether reparenting `BankFrame` back to `UIParent` is legal in combat; until tested, restoration is deferred to out of combat (M4).
 6. Exact `BANK_TAB_SETTINGS_UPDATED` event name/signature on tab purchase (feature-detected registration) (M4).
 7. CurseForge project slug and icon (M9).
