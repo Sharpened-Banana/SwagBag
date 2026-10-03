@@ -6,7 +6,7 @@
 1. **Equipment set section.** Items in any equipment set get their own built-in category, used by the M+, Raid and Delves modes, never shown as junk or sellable.
 2. **Ascendant Venomstones and the Oct 20 patch.** Venomstones in the footer next to the crests; season data (crests, currencies, Venomstones) in one data file; the upgrade-track overlay checked on Venomstone-boosted items.
 3. **"Use / open / learn" glow.** A soft glow on items to click: caches and other containers, unlearned profession knowledge, toys, mounts, pets and decor not collected yet. Its own switch in Settings > Overlays, on by default.
-4. **Auto-sell junk and auto-repair.** On by default; gray junk only, never locked items or equipment-set items, at most 12 per visit (Blizzard's buyback keeps 12), one chat line; repair with your own gold (guild funds an option, off). Nothing in combat. A setting and a command for each.
+4. **Auto-sell junk and auto-repair.** On by default; gray junk only, never locked items, equipment-set items, items to open or learn, gear whose look is uncollected, or gray BoE items worth more at auction; at most 12 per vendor visit, shared with Sell all and `/swagbag sell junk` (Blizzard's buyback keeps 12; more needs a second, explicit yes), one chat line; repair with your own gold (guild funds an option, off). Nothing in combat. A setting and a command for each.
 5. **Item lock.** Lock or unlock an item, account-wide, per item ID; a small lock mark; never auto-sold or "sold all"; a warning in chat if one is sold by hand; search keyword `locked`.
 6. **Section actions.** Shift+right-click a section header: at a bank "Send all to bank" / "Send all to warband bank", at a vendor "Sell all" (asks first). Small steps, out of combat, never under the mouse.
 7. **Worth-money glow at the bank.** Items worth 100 g or more (a stack; Auctionator, else vendor) glow gold while the bank is open, in the bags and the bank; "your top X %" as the alternative. A Settings row and a command.
@@ -15,11 +15,13 @@
 
 (The numbers are the research's; picks 8, 10 and 11 were not chosen.)
 
+**Amended after the preflight** (`.superpowers/sdd/2026-10-06-swagbag-week7-research-picks/preflight.md`, 22 findings): the controller's rulings R1–R22 are carried into the tasks below (Self-review item 7 says where each landed). Tests go from 1281 to **1376** (was 1356 before the amendment).
+
 **Architecture:**
 - (1) A built-in category `c_sets` "Equipment sets" (`equipped`, priority 92, after Gear) and three focus-mode default sets that include it; the junk coin skips set pieces.
 - (2) `Engine/Crests.lua` becomes the season data file: crest IDs and words, currency words, the season's bag items (the Venomstone, item 280562) and knowledge items. The footer's crests entry adds the season items it finds in the bags; `/swagbag report` gains a `Season data` line so the user confirms the IDs in game.
 - (3) and (9) A new pure-ish engine `Engine/Collections.lua` answers "open / learn" and "uncollected" from the client's collection APIs through new Adapter calls, cached per item until something is learned. `UI/Overlays.lua` draws a whole-button glow (green: open or learn) and a star.
-- (4) A generic **mover** (`Engine/Mover.lua`) moves a list of bag items one at a time, 0.2 s apart, out of combat, never while an item is on the cursor or the item's button is under the mouse, and stops when the vendor or bank closes or the target refuses. `Engine/Vendor.lua` uses it to sell junk on `MERCHANT_SHOW`, then repairs; `UI/SettingsVendor.lua` is a new Vendor page.
+- (4) A generic **mover** (`Engine/Mover.lua`) moves a list of bag items one at a time, 0.2 s apart, out of combat, never while an item is on the cursor or the item's button is under the mouse, looks at each slot once more right before the move (`job.ready`), and stops when the vendor or bank closes or the target refuses. `Engine/Vendor.lua` uses it to sell junk on `MERCHANT_SHOW` (12 per vendor visit, `Vendor.Room`), then repairs; `UI/SettingsVendor.lua` is a new Vendor page.
 - (5) `Engine/Locks.lua` keeps `SwagBagDB.locks`; a plain **Lock** button at the right end of the bags window's search row takes a dropped item (the header-drop pattern of AC4.3; no click hook on any item button). The vendor never sells a locked item and warns when one is sold by hand.
 - (6) `UI/SectionActions.lua`: Shift+right-click on a bags-window section header opens a small plain menu; actions go through the mover (`Adapter.MoveToBank` passes the bank type to the call, so Blizzard's selected tab is never touched).
 - (7) The same overlay glow turns gold at the bank for items whose stack value reaches a threshold worked out once per visit (`Prices.WorthThreshold`); `/swagbag worth` and a Bank page row set it.
@@ -62,22 +64,22 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 - License: `## X-License: All Rights Reserved`. Clean-room: no code is copied from any other addon. To confirm Blizzard's API names, installed addons were read for **names and call shapes only** (Baganator, Syndicator, EnhanceQoL, EnhanceQoLVendor, TitanRepair, WeeklyKnowledge); see "What the week relies on". No code of theirs is used.
 - TOC metadata: `## SavedVariables: SwagBagDB`, `## SavedVariablesPerCharacter: SwagBagCharDB`, `## OptionalDeps: Auctionator, Syndicator, ElvUI`.
 - All addon code is Lua 5.1: no `goto`, no `//`, no bitwise operators. `string.format("%s", v)` gets a string or a number, never a boolean or nil. Every spec runs under `spec/helpers/format51.lua`, which makes the tests as strict as WoW.
-- `SwagBag/Core/Adapter.lua` is the only file that may name a `C_*` namespace, `Enum` or another addon's globals, **comments included**. It is grep-enforced for `C_X.`/`Enum.` and review-enforced for bare names. Every other file calls `SB.Adapter.*`. This week adds Adapter calls for `C_Container.UseContainerItem`, `C_Bank.IsItemAllowedInBankType`, `C_MountJournal`, `C_PetJournal`, `C_HousingCatalog`, `C_TransmogCollection`, and the globals `PlayerHasToy`, `CanMerchantRepair`, `GetRepairAllCost`, `RepairAllItems`, `CanGuildBankRepair`, `GetGuildBankWithdrawMoney`, `GetNumBuybackItems`, `GetBuybackItemLink`, `IsShiftKeyDown`. Files under `spec/` may name them as test data.
+- `SwagBag/Core/Adapter.lua` is the only file that may name a `C_*` namespace, `Enum` or another addon's globals, **comments included**. It is grep-enforced for `C_X.`/`Enum.` and, from Task 8, for a bare `C_X` name too (ruling R5); other bare names (another addon's globals) stay review-enforced. Every other file calls `SB.Adapter.*`. This week adds Adapter calls for `C_Container.UseContainerItem`, `C_Bank.IsItemAllowedInBankType`, `C_MountJournal`, `C_PetJournal`, `C_HousingCatalog`, `C_TransmogCollection`, and the globals `PlayerHasToy`, `CanMerchantRepair`, `GetRepairAllCost`, `RepairAllItems`, `CanGuildBankRepair`, `GetGuildBankWithdrawMoney`, `GetNumBuybackItems`, `GetBuybackItemLink`, `IsShiftKeyDown`. Files under `spec/` may name them as test data.
 - Forbidden anywhere in `SwagBag/`, comments included (spec §5.3, `scripts/check.sh`): `BankFrame:SetTab`, `BankFrame.SetTab`, `.bankType =`, `C_Bank.CloseBankFrame`, `CloseBankFrame(`, `OpenAllBags(`, `PurchaseBankTab`, assignments to global `_`, `PreClick`, `PostClick`. `SetCurrentGuildBankTab` is never called. (Task 5's comment on the item buttons says "no click script or click hook of any kind" rather than naming the forbidden scripts; check.sh caught the first draft.)
 - **Secure item buttons** (`ContainerFrameItemButtonTemplate`) are never reparented, never created in combat, never re-`SetID`'d, and get **no** click script or click hook of any kind. This week's gestures avoid them: an item is locked by dropping it on SwagBag's own Lock button (Task 5), and section actions open from a section header (Task 6). The only hook on an item button stays week 4's `OnEnter` post-hook (the new-item glow). Overlays add regions (textures, font strings) on the button, as since week 3.
-- **Moving items** (sell, bank) happens only through `Engine/Mover.lua`: out of combat only (combat stops a run; nothing is queued), one item at a time `Mover.DELAY` (0.2 s) apart, never while an item is on the cursor or the item's own button is under the mouse (spec §4.2 rule 5, P5), and only while the vendor or bank is still open. An item that leaves the bags leaves a placeholder (spec §4.3), so no other button moves.
+- **Moving items** (sell, bank) happens only through `Engine/Mover.lua`: out of combat only (combat stops a run; nothing is queued), one item at a time `Mover.DELAY` (0.2 s) apart, never while an item is on the cursor or the item's own button is under the mouse (spec §4.2 rule 5, P5), and only while the vendor or bank is still open: the job's `ready` looks again right before each `UseContainerItem` (the window still open; for a sale, the item still not protected: rulings R2, R20). An item that leaves the bags leaves a placeholder (spec §4.3), so no other button moves. SwagBag sells at most 12 items per vendor visit across the auto-sell, `/swagbag sell junk` and Sell all; past that only after a second, explicit yes that says the earlier sales leave the Buyback tab (ruling R1).
 - P1: every setting ships with a chosen default, and its alternative sits next to it in the same place. Options are phrased as choices, never as abstract toggles.
 - P2: every command, button and settings choice answers **exactly once**, with a chat line, a title flash or the settings window's status line. A run that takes time (a sale, a send) answers once, when it ends; `/swagbag sell junk` therefore returns an empty list (nothing printed at once) and the sale's own line is its answer. Automatic actions (the auto-sell, the repair) print one line each when they did something, and nothing when there was nothing to do.
 - P5 / spec §4.2 rule 5: nothing moves under the mouse or while an item is on the cursor. Held moves retry 300 ms later through `SB.Debounce` or `SB.Adapter.After`, never `OnUpdate`.
 - **P6.** Every WoW entry point runs inside `SB.ErrorTrap.Run` or `Guard`. The window labels this week:
   - `"bags"`: the Lock button's scripts (`bags.lockButton`, `bags.lockDrop`, `bags.lockTip`), the section menu and its confirmation (`sections.menu`, `sections.sellAll`), the header hint (`header.enter`/`header.leave`, owner window);
-  - `"none"` (recorded, never Safe Mode): the vendor's events and the mover's steps (`mover.step`, `mover.done`, `mover.act`), the collections' events, the worth glow's events, the tooltip line (`tooltip.lock`), the share box (`share.*`), and every settings page;
+  - `"none"` (recorded, never Safe Mode): the vendor's events and the mover's steps (`mover.step`, `mover.done`, `mover.act`), the collections' events, the worth glow's events, the tooltip line (`tooltip.lock`), the Lock button's guard timer (`lock.dropGuard`), the share box (`share.*`), and every settings page. The two bag listeners (`collections.inventory`, `vendor.inventory`) run inside `Inventory.Notify`'s `"bags"` trap, so each wraps its body in its own `"none"` `Guard` (ruling R15): a failure there is recorded and never reaches the outer trap;
   - a command run from the settings window traps under that command's own window and label (W4-7).
 - P8: every user-visible string lives in `SwagBag/Locale/enUS.lua`. `spec/locale_spec.lua` fails on an undefined `L.KEY`.
 - **Plain frames only, may be created in combat:** the Lock button (`UIPanelButtonTemplate`), the section menu (`"BackdropTemplate"` frame with `UIPanelButtonTemplate` buttons, in `UISpecialFrames`), the share box (`"BackdropTemplate"`, a `UIPanelScrollFrameTemplate` scroll frame and a plain multi-line `EditBox`, like the report box), and `StaticPopupDialogs.SWAGBAG_SELL_ALL` (SwagBag's own dialog, like week 1's reset). Themes restyle them through `SB.Theme.Button/Window/Text`.
 - **Settings and saved data (schema stays 2):**
   - every new settings key has a default in `Config.Defaults`: `overlays.learn` (true), `overlays.lock` (true), `overlays.uncollected` (true), `vendor.autoSell` (true), `vendor.repair` (`"own"`), `prices.worth` (`"fixed"`), `prices.worthGold` (100), `prices.worthTop` (10). Changed defaults: `focus.sections.mplus/raid/delves` gain `c_sets`. Only values somebody wrote are stored, so no migration;
-  - new top-level saved data, read defensively (a damaged value reads as empty, never an error), needs no bump: `SwagBagDB.locks = { [itemID] = true }`, `SwagBagDB.profiles = { [name] = { settings, saved } }`, `SwagBagDB.profile` (a name, shown only), `SwagBagDB.backups.profile` (one step of undo). `/swagbag reset` keeps a backup of them with everything else (week-1 rule);
+  - new top-level saved data, read defensively (a damaged value reads as empty, never an error), needs no bump: `SwagBagDB.locks = { [itemID] = true }`, `SwagBagDB.profiles = { [name] = { settings, saved } }`, `SwagBagDB.profile` (a name, shown only), `SwagBagDB.backups.profile` (one step of undo: `{ settings }`, plus `categories`, `userEdits`, `categoryOrder` after an import with categories, ruling R6), `SwagBagDB.notes.lockedKeyword` (the one-time `locked` note was checked, ruling R21). `/swagbag reset` keeps a backup of them with everything else (week-1 rule);
   - every new writer refuses while `Config.readOnly` and says `L.SETTINGS_READONLY`.
 - No file calls `Config` at load time (the load-order tests stay green). Every `OnHide` handler starts with `if self:IsShown() then return end`.
 - No `OnUpdate` anywhere. Idle CPU with every window closed is 0: collection answers are cached and dropped only on events; the worth line is worked out once per bank visit.
@@ -104,15 +106,17 @@ These are the failure modes most likely to bite the user that the spec implies b
    - Task 4: "waits while an item is on the cursor or the item's button is under the mouse, then moves it";
    - Task 4: "an item the mouse never leaves stays where it is; the run goes on with the next";
    - Task 6: "SectionSlots lists the items drawn in a section, never a placeholder" (a ghost is never sold).
-2. **More junk than the buyback tab holds.** Blizzard keeps only the last 12 sold items. Expected: at most 12 per run, every one of them can still be bought back during the visit, and the line says how many wait and how to sell them. Pinned by Task 4: "sells at most 12 per run (the buyback tab keeps 12) and says how to sell the rest".
-3. **A locked or equipment-set item inside "Sell all" or the auto-sell.** Expected: never sold by SwagBag; sold by hand it gets one warning naming it and the Buyback tab. Pinned by:
+2. **More junk than the buyback tab holds.** Blizzard keeps only the last 12 sold items. Expected: at most 12 per **vendor visit**, counted across the auto-sell, `/swagbag sell junk` and Sell all, so every one of them can still be bought back during the visit; the line says how many wait; selling more needs a second, explicit yes that says the earlier ones leave the Buyback tab (ruling R1). Pinned by Task 4: "sells at most 12 per vendor visit (the buyback tab keeps 12); more needs a second, explicit yes" and Task 6: "Sell all sells what still fits in the Buyback tab this visit; past that its question says so".
+3. **A locked, equipment-set or otherwise protected item inside "Sell all" or the auto-sell** (also one locked or put in a set while the run waits, and the gold-maker's items: something to open or learn, an uncollected look, a gray BoE worth more at auction). Expected: never sold by SwagBag; sold by hand a locked one gets one warning naming it and the Buyback tab. Pinned by:
    - Task 4: "sells gray junk a vendor pays for; never a set piece, an item the client holds, or one worth nothing";
-   - Task 5: "a locked junk item is never sold, by auto-sell or by /swagbag sell junk";
+   - Task 4: "an item that becomes protected during the run (here: put in an equipment set) is skipped, never sold" and "never sells an item to open or learn, or a gray BoE worth more than twice its vendor price at auction";
+   - Task 5: "a locked junk item is never sold, by auto-sell or by /swagbag sell junk" and "an item locked during the run (dropped on Lock while it waits its turn) is never sold";
+   - Task 8: "never sells gray gear whose look the account has not collected";
    - Task 5: "a locked item sold by hand (it left the bags and is in the buyback tab) gets one warning";
    - Task 6: "at a vendor Sell all asks first, then sells what a vendor pays for, never locked or set items".
 4. **A bank tab that is full (or will not take the item) during "Send all".** Expected: the run stops at the first item that stays, says how many moved and how many stayed, and never loops. Pinned by Task 4: "waits while the client holds a sent item; an item still there and free means refused: the run stops" and Task 6: "a bank that stops taking items (full) ends the run and says how many stayed".
-5. **The vendor or bank closing, or combat starting, mid-run.** Expected: the run stops at once (nothing queued), the line counts what moved and what stayed, and a vendor opened in combat sells only once combat ends and only if it is still open. Pinned by Task 4: "combat stops the run (nothing queued); a vendor or bank that closes stops it too", "a vendor closed mid-run: the line says how many sold and how many stayed", "a vendor opened in combat sells and repairs once combat ends, only if it is still open".
-6. **A malformed, hostile or newer import string.** Expected: refused whole with the reason; nothing in it is ever run; unknown settings are skipped and named; nothing changes before Preview and Import. Pinned by Task 9: "refuses a string that is not ours, from a newer SwagBag, damaged, too long or with a wrong value", "never runs what it reads; settings this version does not know are skipped and named", "import: Preview first; a typed change needs a new preview; Import applies and answers in chat", "a refused string says why in the box and can never be imported".
+5. **The vendor or bank closing, or combat starting, mid-run.** Expected: the run stops at once (nothing queued), the line counts what moved and what stayed (never "0 stayed", never an item used by hand), the window is checked again right before each move, and a vendor opened in combat sells only once combat ends and only if it is still open (and says so only when there is something to do). Pinned by Task 4: "combat stops the run (nothing queued); a vendor or bank that closes stops it too", "a run whose last item moved ends as done, even if the window closes right after", "right before each move the job checks again: closed stops the run, an item it refuses is skipped", "a vendor closed mid-run: the line says how many sold and how many stayed", "the line never says 0 stayed, and an item used by hand during the run does not count as stayed", "a vendor opened in combat sells and repairs once combat ends, only if it is still open", "a vendor opened in combat with nothing to sell or repair says nothing".
+6. **A malformed, hostile or newer import string.** Expected: refused whole with the reason (a wrong type, or a value outside the setting's range or words); nothing in it is ever run (neither `load` nor `loadstring`, both intercepted); unknown settings are skipped and named; the guild bank's `withdrawAnyTab` never travels; nothing changes before Preview and Import, and Undo brings back everything an import changed. Pinned by Task 9: "refuses a string that is not ours, from a newer SwagBag, damaged, too long or with a wrong value", "refuses a value outside its range or words, whole; never carries withdrawAnyTab; caps item lists", "never runs what it reads; settings this version does not know are skipped and named", "undo after an import with categories brings back your categories, built-in edits and order too", "import: Preview first; a typed change needs a new preview; Import applies and answers in chat", "a refused string says why in the box and can never be imported".
 7. **Secret or missing values** (prices, collection answers, appearance answers in M+ or a raid). Expected: a secret is no answer: no gold glow, no green glow, no star, never an error. Pinned by:
    - Task 3: "toys and mounts: true, false, or nil without the API, for a non-mount item, or a secret";
    - Task 3: "open: a container with loot; learn: ... else nothing" (a silent client gives no glow);
@@ -126,34 +130,35 @@ These are the failure modes most likely to bite the user that the spec implies b
 |---|---|---|---|---|
 | D1 | Pick 1: "decide its placement/priority vs Gear/BoE/WuE" | Built-in `c_sets`, name `Equipment sets`, query `equipped` (the existing keyword: `Items.inEquipmentSet`), **priority 92**: above Junk (90), Quest (85), Tools (80), BoE gear (75), WuE (74) and Gear (70); below Keystone & Crests (95) and Reagents (100). Display order 35, **right after Gear**, with `after = "c_gear"` so it also joins a saved category order (quick setup writes the whole list) next to Gear (week-6 D9 mechanism). | A user moves or renames it like any built-in (a `userEdits` diff, spec 8.5). | A piece in a set is "mine, in use": filing it under Junk or BoE gear (both "to sell") would invite a sale. Gear stays for gear not in a set. |
 | D2 | Pick 1: "which focus modes use it" | `c_sets` joins the default section sets of **M+, Raid and Delves** (each already opens Gear). AH/Vendor/Bank, Gathering and Fishing do not. Users who saved their own set keep it (only written values are stored). | Settings > Focus modes adds or removes it per mode. | The modes that open Gear are the ones that swap gear; the vendor mode shows what can be sold, which set pieces never are. |
-| D3 | Pick 1: "never shows as sellable/junk" | The junk coin skips a gray piece in a set; the auto-sell, Sell all and the AH/Vendor/Bank mode never include set pieces (`Vendor.Protected`). | — | The same rule everywhere an item can look "for sale". |
+| D3 | Pick 1: "never shows as sellable/junk" | The junk coin skips a gray piece in a set (and, from Task 5, a gray item the user locked: ruling R11); the auto-sell and Sell all never include set pieces (`Vendor.Protected`, which also keeps the items of D31). | — | The same rule everywhere an item can look "for sale". |
 | D4 | Test fixtures for pick 1 | The `SmallBags` fixture's helm is **no longer in an equipment set** (it was only to test the `equipped` keyword). The two tests that read the flag put it on their own slot. | Leave the fixture: 31 window tests would change their section lists for no behaviour of theirs. | Keeps every existing window test about what it was written for; the new section has its own tests. |
 | D5 | Pick 2: the Venomstone | **Item 280562**, "Ascendant Venomstone" (12.1.5 PTR, Wowhead and warcraft.wiki.gg: a bag item, stacks to 100, binds when picked up; 10 per upgrade). It files under **Keystone & Crests** by ID (`SB.Crests.ids`) and shows in the footer's crests entry with how many the bags hold. If the live game makes it a currency instead, the currency word `venomstone` finds it in the Currency tab (the existing name probe), with no code change. `/swagbag report` gets a `Season data` line that names both, so the user confirms in game (session SN1). | Raid and Delves do not open Keystone & Crests (unchanged); Settings > Focus modes can add it. | One data file to edit per season (`Engine/Crests.lua`); the probe means a wrong guess costs a data edit, never a broken footer. |
 | D6 | Pick 2: "make season data data-driven where it is hard-coded, if cheap" | `Engine/Crests.lua` is the season data file: crest IDs and words, currency words, season bag items, knowledge items. The M+ dungeons were already data-driven (dungeon names come from the client, teleports by the `"path of "` prefix, Engine/FocusData.lua) and the consumables watch list is keyword-based, so nothing else moves. | — | Nothing else was hard-coded per season. |
 | D7 | Pick 2: "check the upgrade-track overlay on Venomstone-boosted items" | No code change. The overlay reads the client's track (`C_Item.GetItemUpgradeInfo`) and the client's item level, never a table of levels, so a boosted Myth 6/6 necklace reads `M6/6` with its new item level. A level past the maximum draws as it is (`M7/6`), never an error. A test pins both. | — | Reasonable expectation only; the in-game check is session SN1 step 9 (the user has a boosted item from 2026-10-20). |
 | D8 | Pick 3: what glows, and how | A **green** glow (Blizzard's `bags-glow-white` atlas tinted green, a flat translucent fill if the atlas is missing) on: a container the client says holds loot (`hasLoot`: caches, bags of goods, **lockboxes too**), a toy / mount / pet item the account has not collected (`PlayerHasToy`, `C_MountJournal`, `C_PetJournal`; a caged pet by its species), decor the account owns none of (`C_HousingCatalog`), and profession knowledge items (`SB.Crests.knowledge`: confirmed IDs, else the name word `treatise`, never on gear). Setting `overlays.learn`, **on**. | Off in Settings > Overlays or `/swagbag overlays learn off`. | Real APIs only (P7), no tooltip reading. A client that cannot say gives no glow, never a wrong one. Knowledge items have no API flag, so they are data; `/swagbag report` is not needed for them: the user names a missed one in session LN1. |
-| D9 | One button, several signals | **One glow per button**: gold (worth money, at the bank) wins over green (open or learn). The uncollected star (D23) shows on a toy, mount or pet only while the green glow is off. | — | The week-6 request was "too cluttered": every item gets at most one glow and one star. |
-| D10 | Pick 4: auto-sell default | **On**: gray (quality 0) items a vendor pays for, loaded, not held by the client, not locked, not in a set; **at most 12 per vendor visit** (one run), one item each 0.2 s; one chat line `Sold N junk items for Xg Ys Zc.`; when more wait, the same line says how many and to type `/swagbag sell junk`. | Settings > Vendor `Off`, or `/swagbag sell off`; `/swagbag sell junk` sells now. | "Sell at most what is safe": every item sold in a run can still be bought back during that visit. Gray junk rarely exceeds 12; the rest is one command away. |
-| D11 | Pick 4: auto-repair default | **"Your gold"**: everything is repaired when a vendor that repairs opens, after the sale (so the junk's gold helps). Not enough gold: one line, no repair. | `Guild bank first` (the guild pays when it allows that much or has no limit, else your gold) and `Off`, in the same Settings row; `/swagbag repair own|guild|off`. | The user's words; the guild option is off by default because guild money is not the player's. |
-| D12 | Pick 4: combat, and where it lives | Selling and repairing run from `MERCHANT_SHOW` through the Adapter (`C_Container.UseContainerItem` at a vendor sells; `RepairAllItems`). **Never in combat**: a vendor opened in combat waits until combat ends (`SB.OutOfCombat`) and then runs only if the vendor is still open (one line says so); combat during a run stops it (the line says how many stayed). | — | Item moves in combat help nobody and `UseContainerItem` is a protected use in combat. Nothing is queued past the visit. |
+| D9 | One button, several signals | **One glow per button**: gold (worth money, at the bank) wins over green (open or learn). The uncollected star (D23) has its own corner (right middle) and shows on a toy, mount or pet whenever the green glow is not drawn: switched off, or replaced by gold at the bank (ruling R10). | — | The week-6 request was "too cluttered": every item gets at most one glow and one star, and each signal the user asked for stays visible. |
+| D10 | Pick 4: auto-sell default | **On**: gray (quality 0) items a vendor pays for, loaded, not held by the client, not protected (D31); **at most 12 per vendor visit**, counted across the auto-sell, `/swagbag sell junk` and Sell all (ruling R1; the count starts again at `MERCHANT_SHOW`), one item each 0.2 s; one chat line `Sold N junk items for Xg Ys Zc.`; when more wait, the same line says how many and to type `/swagbag sell junk`. With the visit's 12 used, `/swagbag sell junk` first says that selling more pushes the earlier sales out of the Buyback tab, and sells up to 12 more only when typed again. | Settings > Vendor `Off`, or `/swagbag sell off`; `/swagbag sell junk` sells now. | "Sell at most what is safe": every item SwagBag sells during a visit can still be bought back during it; going past that is the user's explicit choice, told what it costs (one more prompt). |
+| D11 | Pick 4: auto-repair default | **"Your gold"**: everything is repaired when a vendor that repairs opens, after the sale (so the junk's gold helps). Not enough gold: one line, no repair. | `Guild bank first` (the guild pays when it allows that much or has no limit, else your gold) and `Off`, in the same Settings row; `/swagbag repair own|guild|off`; `/swagbag repair` names the choice as the page does (`Your gold`, ruling R18). | The user's words; the guild option is off by default because guild money is not the player's. |
+| D12 | Pick 4: combat, and where it lives | Selling and repairing run from `MERCHANT_SHOW` through the Adapter (`C_Container.UseContainerItem` at a vendor sells; `RepairAllItems`). **Never in combat**: a vendor opened in combat waits until combat ends (`SB.OutOfCombat`) and then runs only if the vendor is still open (one line says so, only when there is junk to sell or something to repair: ruling R9); combat during a run stops it (the line says how many stayed). | — | Item moves in combat help nobody and `UseContainerItem` is a protected use in combat. Nothing is queued past the visit. |
 | D13 | Pick 4: the vendor focus mode and P5 | Unchanged: the AH/Vendor/Bank mode moves Junk to the top; the auto-sell then empties it item by item. A sold item leaves a placeholder in its cell (spec 4.3), the button goes to Free, and the mover waits while an item's button is under the mouse or an item is on the cursor. The window regroups on its next open, as always. | — | P5 holds with no new rule: the mover asks the bags window's own `ButtonBusy`. |
 | D14 | Pick 5: what a lock is keyed by | **The item ID, account-wide** (`SwagBagDB.locks`): every stack and copy of that item, on every character. | Per link (one exact copy) was considered: an upgraded or enchanted copy changes its link and would silently lose its lock. | "Never sell my X" is about the item, and the lock must survive upgrades. |
 | D15 | Pick 5: the gesture | **Drag the item onto a small `Lock` button** at the right end of the bags window's search row (or click Lock while holding the item); the item goes back where it came from. Again unlocks. A click with an empty cursor says how and how many are locked. The same drop target is on Settings > Vendor. The item tooltip says `Locked in SwagBag: never sold by SwagBag`. | `/swagbag lock list` and `lock clear`. | Alt+right-click needs a click hook on Blizzard's secure item button (spec 5.3 forbids click scripts on slot buttons) and, at a vendor, the right-click would still **sell** the item being locked. A drop is the proven header-drop pattern (AC4.3), uses SwagBag's own plain button only, and works in combat. |
 | D16 | Pick 5: selling a locked item by hand | **No confirmation** (not feasible without taint: it would mean intercepting Blizzard's secure right-click or `UseContainerItem`). Instead, while a vendor is open, a locked item that leaves the bags **and** shows up in the vendor's buyback tab gets one chat line: `You sold <item>, which you locked. Buy it back from the vendor's Buyback tab if that was a mistake.` | — | Said plainly, as asked: warn in chat. The buyback check keeps a moved (not sold) item quiet. |
-| D17 | Pick 5: the `locked` keyword | `locked` now means **locked by you**. The client's momentary lock on an item being moved, traded or sold (spec 7.3's old `locked`) is renamed `inuse`. | — | The user asked for `locked`; the old meaning had no use in a search or a category, and no built-in used it. Recorded for the spec update. |
+| D17 | Pick 5: the `locked` keyword | `locked` now means **locked by you**. The client's momentary lock on an item being moved, traded or sold (spec 7.3's old `locked`) is renamed `inuse`. The first login with 0.7.0 prints one note if a saved category or watch-list query uses the word, and a search re-applies whenever a lock changes, so a live `locked` search follows at once (ruling R21). | — | The user asked for `locked`; the old meaning had no use in a search or a category, and no built-in used it, but a user's own query might: the note says what changed. Recorded for the spec update. |
 | D18 | Pick 6: the gesture | **Shift+right-click** a section header in the bags window opens a small menu beside it. A header's tooltip names the gesture whenever an action is available (at a vendor or a bank). | — | Left-click collapses (AC3.2); right-click pins in the collapse style (AC8.3) and collapses in the front style (week-6 D3), so both are taken. A "..." button on every header would add a frame to each header and crowd the section totals. |
 | D19 | Pick 6: routing at the bank | "Send all to bank" and "Send all to warband bank" pass the bank type to `C_Container.UseContainerItem(bag, slot, nil, bankType, false)` (the `bankType` argument exists since 11.0.0, warcraft.wiki.gg; EnhanceQoL's warband bank uses it). Blizzard's selected tab and bank type are **neither read nor written** for it, exactly like week 6's Deposit warbound (spec 5.2). Items the warband bank does not take (`C_Bank.IsItemAllowedInBankType`) are left out of its entry; a full tab stops the run. Right-click deposits still follow Blizzard's selected tab (spec 5.2, unchanged). | — | The user's choice is in the menu, so routing follows the menu, not the tab. If the argument does not route as documented, session BK1 shows it at once (the line names the bank) and the fallback is to show one entry, "Send all (deposits go to <selected>)". |
-| D20 | Pick 6: confirmations | **Sell all asks first** (a SwagBag `StaticPopup`: count, section, about how much; locked and set items stay), capped at 12 like the auto-sell. Send all does not ask: nothing is lost, and a moved item is one right-click away. | — | The research's top fear for gold-makers is one wrong vendor click. |
+| D20 | Pick 6: confirmations | **Sell all asks first** (a SwagBag `StaticPopup`: count, section, about how much, the Auction House value when Auctionator's is higher (ruling R19), and what is never sold, D31), within the visit's 12 shared with the auto-sell (R1). With the 12 used, the question also says that the earlier sales leave the Buyback tab: that Yes is the explicit second confirmation. Send all does not ask: nothing is lost, and a moved item is one right-click away. | — | The research's top fear for gold-makers is one wrong vendor click. |
 | D21 | Pick 6: "Mail all" | **Left out.** | — | Attaching items to a letter needs the mail frame's own attachment slots and a send; it is not one safe call. |
 | D22 | Pick 7: the worth line | **Fixed: 100 g or more for the stack** (value per unit × count; Auctionator's price, else the vendor's; a bound item at its vendor value, `Prices.Bound`). Shown while a bank visit is open, in the bags window and the bank window, as a **gold** glow. | `Your top 10%` (the most valuable tenth of the stacks in the bags and both banks), 500 g, 1000 g or Off in Settings > Bank & guild; `/swagbag worth <gold>`, `worth top <percent>`, `worth off`. | The spec's own default (F10, v1.1: "fixed threshold default 100 g, or top-X %"). Per stack, because 200 herbs at 1 g each are a reason to look at the stack. |
-| D23 | Pick 9: the marker | A small **purple `*`** at the right middle of the button (a font string: no texture can go missing): gear whose appearance the account has not collected (`C_TransmogCollection.GetItemInfo` → `AccountCanCollectSource` → `PlayerHasTransmogItemModifiedAppearance`), and toys, mounts and pets not collected (only while the green glow is off, D9). Decor is the green glow's only. Setting `overlays.uncollected`, **on**. Search keyword `uncollected` (spec 7.3). | Off in Settings > Overlays or `/swagbag overlays uncollected off`. | No armor-type rule of SwagBag's own (12.2.5 lifts those restrictions); an appearance the account cannot collect, or a client that cannot say, gets no star. Cached per link; dropped on `TRANSMOG_COLLECTION_UPDATED`. |
-| D24 | Pick 12: what a profile is | A **copy of the account settings the user set** (`SwagBagDB.settings`: only written values), saved under a name (1–24 characters). **Load replaces** the account settings with the copy; Safe Mode and the quick-setup flag are this machine's state and never travel; character overrides stay as they are. One step of **undo** (`/swagbag profile undo`) brings back the settings before the last load, import or "back to defaults". | Delete, Back to defaults (Settings > Profiles; `/swagbag profile delete <name>`, `reset`). | Simple and safe: switching never loses anything (undo), and nothing outside settings (categories, locks, snapshots) changes on a load. |
+| D23 | Pick 9: the marker | A small **purple `*`** at the right middle of the button (a font string: no texture can go missing): gear whose appearance the account has not collected (`C_TransmogCollection.GetItemInfo` → `AccountCanCollectSource` → `PlayerHasTransmogItemModifiedAppearance`), and toys, mounts and pets not collected (whenever the green glow is not drawn, D9). Decor is the green glow's only. Setting `overlays.uncollected`, **on**. Search keyword `uncollected` (spec 7.3). | Off in Settings > Overlays or `/swagbag overlays uncollected off`. | No armor-type rule of SwagBag's own (12.2.5 lifts those restrictions); an appearance the account cannot collect, or a client that cannot say, gets no star. Cached per link; dropped on `TRANSMOG_COLLECTION_UPDATED`. |
+| D24 | Pick 12: what a profile is | A **copy of the account settings the user set** (`SwagBagDB.settings`: only written values), saved under a name (1–24 characters). **Load replaces** the account settings with the copy; Safe Mode and the quick-setup flag are this machine's state and never travel; character overrides stay as they are. One step of **undo** (`/swagbag profile undo`) brings back the settings before the last load, import or "back to defaults", and after an import with categories the categories, built-in edits and order too (ruling R6). | Delete, Back to defaults (Settings > Profiles; `/swagbag profile delete <name>`, `reset`). | Simple and safe: switching never loses anything (undo), and nothing outside settings (categories, locks, snapshots) changes on a load. |
 | D25 | Pick 12: the share string | **`SWAGBAG:1:` + `key=value` entries joined by `;`**: `s.<path>=` for each setting the user set (`b1`/`b0`, `n<number>`, `s<text>`), `w=` for the consumables watch list, and with categories `cu.<id>.<field>`, `ce.<id>.<field>`, `co=` for the user's categories, built-in edits and the order. Text is percent-escaped (only letters, digits, `.`, `_`, `-` stay), so the string has no spaces, no `|` (an edit box code) and survives line breaks a paste adds. | `Copy with categories` / `profile export categories`. | Versioned, compact, readable enough to diff in a report, and parsed with patterns only: nothing in a string is ever run (no `load`, no `loadstring`). |
-| D26 | Pick 12: validation | Refused **whole**, with the reason: not ours, from a newer version (`SWAGBAG:2:`), longer than 30,000 characters or 1,500 entries, a bad escape or value, a known setting with the wrong type, a damaged watch list or category list. **Skipped and named**: settings this version does not know (a newer minor version). Category queries are compiled as usual on import (a broken one is saved disabled, spec 7.10). | — | Malformed or hostile input changes nothing; forward-compatible strings still import what they can. |
-| D27 | Pick 12: import flow | Paste → **Preview** (every change as `path: old -> new`, the watch list, categories, skipped settings) → **Import**. Import refuses until the current text was previewed; editing the text needs a new preview. Import keeps the old settings for undo and answers once in chat: `Imported N changes. ...`. | — | Nothing changes before the user saw what changes. |
+| D26 | Pick 12: validation | Refused **whole**, with the reason: not ours, from a newer version (`SWAGBAG:2:`), longer than 30,000 characters or 1,500 entries, a bad escape or value, a known setting with the wrong type **or outside what it may hold** (a per-path table in `Engine/Profiles.lua`: slots per row 4–40, window size 0.5–2, New rows 0–10, the worth amounts 1–10,000,000 g and 1–50 %, the allowed words of every choice, ids only in a mode's sections; ruling R3), an item list longer than 2,000 IDs (`MAX_LIST`, R13), a damaged watch list or category list. **Skipped and named**: settings this version does not know (a newer minor version). **Never exported or imported**: `guildBank.withdrawAnyTab` (the W3-10 safety switch), named in the preview. Category queries are compiled as usual on import (a broken one is saved disabled, spec 7.10). | — | Malformed or hostile input changes nothing (`Config.Set` has no validators: the string's own checks are the guard); forward-compatible strings still import what they can. |
+| D27 | Pick 12: import flow | Paste → **Preview** (every change as `<setting>: old -> new`, each setting by its name in the settings window, never a dotted path (ruling R18); the watch list, counted only when it differs from yours (R7); categories; skipped and never-imported settings) → **Import**. Import refuses until the current text was previewed; editing the text needs a new preview. Import keeps the old settings for undo and answers once in chat: `Imported N changes. ...`. | — | Nothing changes before the user saw what changes. |
 | D28 | Where the settings live | New page **Vendor** (auto-sell, repair, the lock drop target, list and unlock-all), new page **Profiles**; the worth row on **Bank & guild**; the learn, lock and uncollected rows on **Overlays**. Every row runs its chat command (P2: same answer). | — | Each setting next to its kin; P1 default first. |
-| D29 | P2 for long runs | A run answers **once, when it ends** (one line counts what moved and what stayed and why). `/swagbag sell junk` prints nothing at once. | — | P2 "exactly once". |
+| D29 | P2 for long runs | A run answers **once, when it ends** (one line counts what moved and what stayed and why; a run whose last item went is done, and the line names a count that stayed only when some did, never an item used by hand meanwhile: ruling R8). `/swagbag sell junk` prints nothing at once. | — | P2 "exactly once". |
 | D30 | Saved data | Schema **stays 2**: new top-level tables read defensively, new settings only through `Config.Defaults`. | — | Nothing existing is converted. |
+| D31 | Ruling R19 (gold-maker safety): what SwagBag never sells | `Vendor.Protected`, used by the auto-sell, `/swagbag sell junk` and Sell all, and asked again right before each sale (R2): locked items (Task 5), items in an equipment set, items to open or learn (the green glow's answer whatever its switch: caches, unlearned toys, mounts, pets, decor, knowledge), gear whose look the account has not collected (Task 8), and gray BoE items Auctionator prices above twice the vendor price. Every line that says what is never sold quotes one string, `L.VENDOR_KEEPS`. | Sell them by hand (a right-click). | A few grays stay in the bags; a gold-maker never loses a transmog, a collectible or an auction item to an automatic sale. |
 
 
 ## What the week relies on (APIs and IDs, with where each was found)
@@ -197,6 +202,7 @@ Each item names the session step that checks it. None blocks the build; a wrong 
 | G11 | `TRANSMOG_COLLECTION_UPDATED` / `NEW_TOY_ADDED` fire when expected and not every frame | Event frequency is not documented | LN1 step 6 (and no stutter while looting) |
 | G12 | Shift+right-click on a header reaches SwagBag (no other addon binds Shift+right-click there) | Keybinding addons could | BK1 steps 9 and 15 |
 | G13 | A lockbox showing the green glow is acceptable | Product taste | LN1 step 12 |
+| G14 | Blizzard's Buyback tab and SwagBag's count per vendor visit agree (ruling R1): the 12 SwagBag sold this visit are all in the tab, and the second `/swagbag sell junk` pushes the oldest out as the warning says | The tab's life across vendor visits is not documented; SwagBag counts only its own sales and starts again at each `MERCHANT_SHOW` | VN1 steps 8–9 |
 
 
 ## Week-6 carry-overs
@@ -215,24 +221,26 @@ New and changed files only. Everything else is as on `a1f7f86`.
 SwagBag/Engine/CategoryDefaults.lua    MOD  (T1) c_sets
 SwagBag/Core/Config.lua                MOD  (T1) focus sections gain c_sets; (T3) overlays.learn; (T4) vendor.*; (T5) overlays.lock;
                                             (T7) prices.worth*; (T8) overlays.uncollected
-SwagBag/Engine/OverlayData.lua         MOD  (T1) junk skips set pieces; (T3) learn; (T5) locked; (T8) uncollected
+SwagBag/Engine/OverlayData.lua         MOD  (T1) junk skips set pieces; (T3) learn; (T5) locked (and no junk coin); (T8) uncollected
 SwagBag/Engine/Crests.lua              MOD  (T2) season data: currencyWords, items (Venomstone); (T3) knowledge
 SwagBag/UI/Footer.lua                  MOD  (T2) SeasonItems, SeasonText, the crests entry, item tooltip, season count refresh
 SwagBag/Core/Report.lua                MOD  (T2) Season data line
-SwagBag/Engine/Collections.lua         NEW  (T3) Learn, cache, events; (T8) Uncollected, teaches, TRANSMOG_COLLECTION_UPDATED
+SwagBag/Engine/Collections.lua         NEW  (T3) Learn, cache, events, the bag listener's "none" trap; (T8) Uncollected, teaches,
+                                            TRANSMOG_COLLECTION_UPDATED
 SwagBag/Core/Adapter.lua               MOD  (T3) hasLoot, Toy/Mount/Pet/DecorKnown; (T4) SellItem, MoveToBank, RepairCost, Repair,
                                             GuildRepairMoney; (T5) BuybackLinks; (T6) AllowedInBank, ShiftDown; (T8) AppearanceKnown;
                                             optional CHECKS for each
 SwagBag/Engine/Items.lua               MOD  (T3) hasLoot
 SwagBag/UI/Overlays.lua                MOD  (T3) glow (green); (T5) padlock; (T7) gold glow at the bank, /swagbag worth; (T8) star
 SwagBag/UI/SettingsPages.lua           MOD  (T3, T5, T8) overlay rows; (T7) the worth row on Bank & guild
-SwagBag/Engine/Mover.lua               NEW  (T4) one item at a time, out of combat, never under the mouse
-SwagBag/Engine/Vendor.lua              NEW  (T4) auto-sell, auto-repair, /swagbag sell, /swagbag repair; (T5) locked-item warning
-SwagBag/UI/SettingsVendor.lua          NEW  (T4) Settings > Vendor; (T5) lock rows
-SwagBag/Engine/Locks.lua               NEW  (T5) locks, /swagbag lock, tooltip line
+SwagBag/Engine/Mover.lua               NEW  (T4) one item at a time, out of combat, never under the mouse, a last look (ready)
+SwagBag/Engine/Vendor.lua              NEW  (T4) auto-sell (12 per visit, Protected), auto-repair, /swagbag sell, /swagbag repair;
+                                            (T5) locked-item warning; (T8) uncollected looks protected
+SwagBag/UI/SettingsVendor.lua          NEW  (T4) Settings > Vendor; (T5) lock rows, the count follows SB_LOCKS_CHANGED
+SwagBag/Engine/Locks.lua               NEW  (T5) locks, /swagbag lock, tooltip line, the one-time `locked` note
 SwagBag/UI/LockButton.lua              NEW  (T5) the Lock button, the tooltip hook
 SwagBag/Engine/Keywords.lua            MOD  (T5) locked (user), inuse; (T8) uncollected
-SwagBag/UI/SearchBox.lua               MOD  (T5) rightInset
+SwagBag/UI/SearchBox.lua               MOD  (T5) rightInset; re-apply on SB_LOCKS_CHANGED
 SwagBag/UI/SectionActions.lua          NEW  (T6) the menu, Sell all, Send all, hints
 SwagBag/UI/SectionHeaders.lua          MOD  (T6) onClick passes the header; onEnter/onLeave
 SwagBag/UI/BagsWindow.lua              MOD  (T6) Shift+right-click, header hint, W.SectionSlots
@@ -241,12 +249,15 @@ SwagBag/Engine/Profiles.lua            NEW  (T9) profiles, share string, parse, 
 SwagBag/UI/ShareBox.lua                NEW  (T9) the copy / paste box
 SwagBag/UI/SettingsProfiles.lua        NEW  (T9) Settings > Profiles
 SwagBag/Locale/enUS.lua                MOD  (T1–T9)
-SwagBag/SwagBag.toc, SwagBag/Core/Init.lua   MOD  (T1) 0.7.0; (T3–T6, T9) new files
+SwagBag/SwagBag.toc                    MOD  (T1) 0.7.0; (T3–T6, T9) new files
+SwagBag/Core/Init.lua                  MOD  (T1) 0.7.0; (T6) SB.AtBank; (T9) SB.FollowSettings
+SwagBag/UI/QuickSetup.lua              MOD  (T9) refresh() is SB.FollowSettings("setup")
+scripts/check.sh                       MOD  (T8) a bare C_* name outside the Adapter fails too
 .luacheckrc                            MOD  (T3) C_MountJournal, C_PetJournal, C_HousingCatalog; (T8) C_TransmogCollection
-spec/collections_spec.lua (T3, T8), mover_spec.lua, vendor_spec.lua (T4, T5), locks_spec.lua (T5), sectionactions_spec.lua (T6),
+spec/collections_spec.lua (T3, T8), mover_spec.lua, vendor_spec.lua (T4, T5, T8), locks_spec.lua (T5), sectionactions_spec.lua (T6),
 spec/profiles_spec.lua (T9)                                                                                          NEW
 spec/fixtures/items.lua, items_spec.lua, keywords_spec.lua (T1, T5), categories_spec.lua, categorizer_spec.lua (T1, T2),
-spec/focus_spec.lua, settings_focus_spec.lua, bagswindow_sections_spec.lua (T1, T6), overlaydata_spec.lua (T1, T2),
+spec/focus_spec.lua, settings_focus_spec.lua, bagswindow_sections_spec.lua (T1, T6), overlaydata_spec.lua (T1, T2, T5),
 spec/footer_spec.lua, report_spec.lua (T2), adapter_spec.lua (T3, T8), overlays_spec.lua (T3, T5, T7, T8),
 spec/mock_adapter.lua (T3–T6, T8), searchbox_spec.lua (T5), prices_spec.lua, settings_spec.lua (T7)                  MOD
 ```
@@ -269,13 +280,13 @@ In the user's order, so the earlier picks ship first if time runs out. The user 
 Cumulative `scripts/check.sh` test totals (from 1281 on `a1f7f86`). Each was produced by replaying this file's blocks in order on a fresh clone of `a1f7f86`:
 - T1 1285 passed, 0 failed (+4)
 - T2 1292 passed, 0 failed (+7)
-- T3 1298 passed, 0 failed (+6)
-- T4 1314 passed, 0 failed (+16)
-- T5 1325 passed, 0 failed (+11)
-- T6 1334 passed, 0 failed (+9)
-- T7 1339 passed, 0 failed (+5)
-- T8 1343 passed, 0 failed (+4)
-- T9 1356 passed, 0 failed (+13)
+- T3 1299 passed, 0 failed (+7)
+- T4 1321 passed, 0 failed (+22)
+- T5 1338 passed, 0 failed (+17)
+- T6 1349 passed, 0 failed (+11)
+- T7 1354 passed, 0 failed (+5)
+- T8 1359 passed, 0 failed (+5)
+- T9 1376 passed, 0 failed (+17)
 
 ## How to read the code steps
 
@@ -1405,7 +1416,7 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 3: The green glow on items to open or learn (Engine/Collections.lua)
 
-User pick 3. The Adapter learns to ask the client's collections (`ToyKnown`, `MountKnown`, `PetKnown`, `DecorKnown`; true, false, or nil when it cannot say or the answer is secret) and passes on `hasLoot` from the slot. `Engine/Collections.lua` turns them into `Learn(record)`: `"open"` for a container with loot, `"learn"` for a toy, mount, pet or decor item not collected yet or a profession knowledge item (`SB.Crests.knowledge`), else nil (D8). Answers are cached per item and dropped when something is learned (`NEW_TOY_ADDED`, `NEW_MOUNT_ADDED`, `NEW_PET_ADDED`, then one re-draw) or an item leaves the bags. `UI/Overlays.lua` draws one whole-button glow region, tinted green; its switch is `overlays.learn` (on), on the Overlays page and in `/swagbag overlays`.
+User pick 3. The Adapter learns to ask the client's collections (`ToyKnown`, `MountKnown`, `PetKnown`, `DecorKnown`; true, false, or nil when it cannot say or the answer is secret) and passes on `hasLoot` from the slot. `Engine/Collections.lua` turns them into `Learn(record)`: `"open"` for a container with loot, `"learn"` for a toy, mount, pet or decor item not collected yet or a profession knowledge item (`SB.Crests.knowledge`), else nil (D8). Answers are cached per item and dropped when something is learned (`NEW_TOY_ADDED`, `NEW_MOUNT_ADDED`, `NEW_PET_ADDED`, then one re-draw) or an item leaves the bags (the bag listener has its own `"none"` trap, ruling R15). `UI/Overlays.lua` draws one whole-button glow region, tinted green; its switch is `overlays.learn` (on), on the Overlays page and in `/swagbag overlays`.
 
 **Files:**
 - Create: `SwagBag/Engine/Collections.lua` (TOC, after `Engine/OverlayData.lua`: 63 files)
@@ -1593,6 +1604,20 @@ describe("Collections (week 7)", function()
 		learn(12)
 		assert.equal(3, A.collectionCalls)
 	end)
+
+	-- P6 (ruling R15): the bag listener runs inside Inventory.Notify's "bags" trap; its own "none" trap keeps a
+	-- failure in it from switching the bags to Safe Mode. Mutation: the listener's trap window "none" -> "bags".
+	it("a failure in the collections' bag listener is recorded under none, never Safe Mode", function()
+		local real = Coll.Invalidate
+		Coll.Invalidate = function()
+			error("boom")
+		end
+		SB.Inventory.Notify(SB.Inventory.R.ITEM, { { bag = 0, slot = 12, reasons = SB.Inventory.R.ITEM } })
+		Coll.Invalidate = real
+		local e = SB.ErrorTrap.Recent()[1]
+		assert.same({ "collections.inventory", "none" }, { e.label, e.window })
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
 end)
 ```
 
@@ -1693,13 +1718,14 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1291 passed, 7 failed`. The failures, exactly:
+Expected: `1291 passed, 8 failed`. The failures, exactly:
 
 - `spec/adapter_spec.lua :: Adapter collections (week 7) > toys and mounts: true, false, or nil without the API, for a non-mount item, or a secret`
 - `spec/adapter_spec.lua :: Adapter collections (week 7) > pets: a caged pet's species comes from its link, a pet item's from the journal; decor from the catalog`
 - `spec/collections_spec.lua :: Collections (week 7) > open: a container with loot; learn: a toy, mount, pet or decor not collected yet; else nothing`
 - `spec/collections_spec.lua :: Collections (week 7) > knowledge items: by confirmed ID or the name word, never gear; an alt's saved item never glows`
 - `spec/collections_spec.lua :: Collections (week 7) > answers are cached per item; a toy learned or an item leaving asks again, and the windows re-draw`
+- `spec/collections_spec.lua :: Collections (week 7) > a failure in the collections' bag listener is recorded under none, never Safe Mode`
 - `spec/overlays_spec.lua :: Overlays (spec F9) > each overlay has its own switch; /swagbag overlays lists and switches them`
 - `spec/overlays_spec.lua :: Overlays (spec F9) > a green glow on an item to open or learn; overlays learn off hides it; an empty slot never glows`
 
@@ -1712,6 +1738,7 @@ Critical tests and the mutation that must make each fail (each was applied to th
 - "knowledge items: by confirmed ID or the name word, never gear; an alt's saved item never glows": in `SwagBag/Engine/Collections.lua`, `if r.name == nil or isGear(r) then` → `if r.name == nil then`.
 - "answers are cached per item; a toy learned or an item leaving asks again, and the windows re-draw": in `SwagBag/Engine/Collections.lua`, `if SB.Inventory.Has(mask, SB.Inventory.R.ITEM) then ⏎ Coll.Invalidate()` → `if false then ⏎ Coll.Invalidate()`.
 - "answers are cached per item; a toy learned or an item leaving asks again, and the windows re-draw": in `SwagBag/Engine/Collections.lua`, `for _, event in ipairs({ "NEW_TOY_ADDED", "NEW_MOUNT_ADDED", "NEW_PET_ADDED" }) do` → `for _, event in ipairs({ "NEW_MOUNT_ADDED", "NEW_PET_ADDED" }) do`.
+- "a failure in the collections' bag listener is recorded under none, never Safe Mode": in `SwagBag/Engine/Collections.lua`, `end, "none"))` → `end, "bags"))`.
 - "a green glow on an item to open or learn; overlays learn off hides it; an empty slot never glows": in `SwagBag/UI/Overlays.lua`, `local glow = on("learn") and d.learn ~= nil` → `local glow = d.learn ~= nil`.
 - "a green glow on an item to open or learn; overlays learn off hides it; an empty slot never glows": in `SwagBag/UI/Overlays.lua`, `learn = SB.Collections and SB.Collections.Learn }` → `learn = nil }`.
 - "toys and mounts: true, false, or nil without the API, for a non-mount item, or a secret": in `SwagBag/Core/Adapter.lua`, `return known(pcall(fn, itemID))` → `local ok, v = pcall(fn, itemID) ⏎ return ok and v`.
@@ -1984,11 +2011,13 @@ for _, event in ipairs({ "NEW_TOY_ADDED", "NEW_MOUNT_ADDED", "NEW_PET_ADDED" }) 
 	SB.On(event, learned, "none")
 end
 
-SB.Inventory.OnChanged(function(mask)
+-- P6: Inventory.Notify runs its listeners inside a "bags" trap; this one has its own "none" trap, so a
+-- failure here is recorded and never switches the bags to Safe Mode (it only drops cached answers).
+SB.Inventory.OnChanged(SB.ErrorTrap.Guard("collections.inventory", function(mask)
 	if SB.Inventory.Has(mask, SB.Inventory.R.ITEM) then
 		Coll.Invalidate()
 	end
-end)
+end, "none"))
 ```
 
 In `SwagBag/Engine/Crests.lua` (edit 1 of 2), find:
@@ -2250,7 +2279,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1298 passed, 0 failed`.
+Expected: `1299 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -2258,7 +2287,7 @@ Expected: `1298 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (63 files)`, `1298 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (63 files)`, `1299 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -2288,7 +2317,7 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 4: The mover, auto-sell junk and auto-repair (Engine/Mover.lua, Engine/Vendor.lua, Settings > Vendor)
 
-User pick 4. `Engine/Mover.lua` is the one way SwagBag moves items (Global Constraints, "Moving items"): one at a time, `DELAY` (0.2 s) apart, out of combat, never while an item is on the cursor (it waits for as long as the vendor or bank stays open) or while the item's button is under the mouse (it waits up to `MAX_WAITS` retries, then leaves that item), only while the vendor or bank is open; after each move it checks the item really left (a locked, unanswered item is waited for; one that stays means the target refused it, and the run stops). `Engine/Vendor.lua` sells junk on `MERCHANT_SHOW` (D10–D13): gray, valued, loaded, not held by the client, not protected (in a set; Task 5 adds locks), at most 12 per run; then repairs (`own` by default, `guild` first, or `off`). A vendor opened in combat waits for combat's end. One line answers each run. `/swagbag sell [on|off|junk]` and `/swagbag repair [own|guild|off]`; Settings > Vendor (a new page, `UI/SettingsVendor.lua`).
+User pick 4. `Engine/Mover.lua` is the one way SwagBag moves items (Global Constraints, "Moving items"): one at a time, `DELAY` (0.2 s) apart, out of combat, never while an item is on the cursor (it waits for as long as the vendor or bank stays open) or while the item's button is under the mouse (it waits up to `MAX_WAITS` retries, then leaves that item), only while the vendor or bank is open; right before each move the job's `ready` looks at the slot once more (rulings R2, R20: a closed window stops the run, an item that may no longer move is skipped); after each move it checks the item really left (a locked, unanswered item is waited for; one that stays means the target refused it, and the run stops); once the last item has gone the run is done, whatever happens next (R8). `Engine/Vendor.lua` sells junk on `MERCHANT_SHOW` (D10–D13, D31): gray, valued, loaded, not held by the client, not protected (in a set, an item to open or learn, a gray BoE worth more than twice its vendor price at auction; Task 5 adds locks, Task 8 uncollected looks), at most 12 per **vendor visit**, shared by the auto-sell, `/swagbag sell junk` and Task 6's Sell all; past that, a second `/swagbag sell junk` is the explicit yes (R1); then repairs (`own` by default, `guild` first, or `off`). A vendor opened in combat waits for combat's end, and says so only when there is something to do (R9). One line answers each run; it names how many stayed only when some did (R8). `/swagbag sell [on|off|junk]` and `/swagbag repair [own|guild|off]`; Settings > Vendor (a new page, `UI/SettingsVendor.lua`).
 
 **Files:**
 - Create: `SwagBag/Engine/Mover.lua`, `SwagBag/Engine/Vendor.lua` (TOC, after `Engine/Consumables.lua`), `SwagBag/UI/SettingsVendor.lua` (TOC, after `UI/SettingsConsumables.lua`): 66 files
@@ -2296,12 +2325,13 @@ User pick 4. `Engine/Mover.lua` is the one way SwagBag moves items (Global Const
 - Test: `spec/mover_spec.lua` (new), `spec/vendor_spec.lua` (new), `spec/mock_adapter.lua` (`m.used`, `m.onUse`, `m.useFails`, `SellItem`, `MoveToBank`, `m.repairCost`, `m.guildRepair`, `m.repairs`)
 
 **Interfaces:**
-- Consumes: `W.ButtonBusy(bag, slot)` and `W.IsOpen` (P5, through `SB.BagsWindow` when it exists), `Adapter.CursorItem/GetSlot/InCombat/After/Money/GetItemInfo`, `SB.OutOfCombat`, `SB.Inventory.Iterate`, `SB.Items.Describe`, `SB.SettingsWindow.RunCommand`.
+- Consumes: `W.ButtonBusy(bag, slot)` and `W.IsOpen` (P5, through `SB.BagsWindow` when it exists), `Adapter.CursorItem/GetSlot/InCombat/After/Money/GetItemInfo`, `SB.OutOfCombat`, `SB.Inventory.Iterate`, `SB.Items.Describe`, `SB.SettingsWindow.RunCommand`, `SB.Collections.Learn` (Task 3), `SB.Prices.Value` (Auctionator's price, else the vendor's).
 - Produces (Tasks 5 and 6 rely on these):
   - `SB.Mover.Start(job) -> true | false, "busy" | "combat" | "empty"` with `job = { items = { { bag, slot, itemID, link, count, price? } }, act = fn(bag, slot) -> ok, err, still = fn() -> bool, done = fn(result) }` and `result = { moved = { item }, left, skipped, kept, why = nil | "combat" | "closed" | "stuck" | "error" }`; `Mover.Busy()`, `Mover.IsBusy(bag, slot)`, `Mover.Stop(why)`, `Mover.DELAY`, `Mover.RETRY`, `Mover.MAX_WAITS`;
-  - `SB.Vendor.open`, `Vendor.Protected(record)`, `Vendor.Junk()`, `Vendor.Sell(list, kind, after) -> ok, why` (kind `"junk"` | `"section"`), `Vendor.Repair()`, `Vendor.Money(copper)`, `Vendor.BUYBACK` (12);
+  - `job.ready = fn(item) -> true | "skip" | "closed"` (optional, asked right before each `act`), `result.skipped`;
+  - `SB.Vendor.open`, `Vendor.Protected(record)`, `Vendor.Junk()`, `Vendor.Room()`, `Vendor.soldThisVisit`, `Vendor.Sell(list, kind, after, past) -> ok, why` (kind `"junk"` | `"section"`; `past`: the user said yes to selling past the visit's room; why `"full"` when there is no room), `Vendor.Repair()`, `Vendor.Money(copper)`, `Vendor.BUYBACK` (12);
   - `A.SellItem(bag, slot)`, `A.MoveToBank(bag, slot, kind)` (Task 6), `A.RepairCost()`, `A.Repair(guild)`, `A.GuildRepairMoney()`;
-  - `L.MOVER_BUSY`, `L.VENDOR_*` (Task 6 reuses `VENDOR_NOT_OPEN`, `VENDOR_STOP_COMBAT`, `VENDOR_KEPT_MOUSE`, `VENDOR_MORE`), `L.SET_PAGE_VENDOR`.
+  - `L.MOVER_BUSY`, `L.VENDOR_*` (Task 6 reuses `VENDOR_NOT_OPEN`, `VENDOR_STOP_COMBAT`, `VENDOR_KEPT_MOUSE`, `VENDOR_MORE`, `VENDOR_KEEPS`; Task 8 adds to `VENDOR_KEEPS`), `L.SET_PAGE_VENDOR`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2506,6 +2536,31 @@ describe("Mover (week 7)", function()
 		Mover.Stop()
 		assert.same({ false, "empty" }, { start({}) })
 	end)
+
+	-- Ruling R8: once the last item has gone the run is done, even if the vendor closes (or combat starts) in
+	-- the 0.2 s before the step that sees it. Mutation: in step, `if not item then` -> `if not item and
+	-- run.job.still() then` (the closing would be reported, with 0 stayed).
+	it("a run whose last item moved ends as done, even if the window closes right after", function()
+		start(items(1))
+		open = false
+		A.Advance(Mover.DELAY)
+		assert.same({ true, 1, 0 }, { result.why == nil, #result.moved, result.left })
+	end)
+
+	-- Rulings R2 and R20: right before each move the job looks at the slot once more (job.ready): a window
+	-- that closed stops the run, an item that may no longer move (locked or put in a set since the list was
+	-- made) is skipped. Mutations: in step, `if verdict == "closed" then` -> `if false then`; or
+	-- `elseif verdict ~= true then` -> `elseif false then`.
+	it("right before each move the job checks again: closed stops the run, an item it refuses is skipped", function()
+		local verdicts = { [1] = "skip", [2] = true, [6] = "closed" }
+		Mover.Start({ items = items(1, 2, 6), act = A.SellItem, still = function() return true end,
+			ready = function(item) return verdicts[item.slot] end, done = function(r)
+				result = r
+			end })
+		A.Advance(Mover.DELAY * 3)
+		assert.same({ 2 }, usedSlots())
+		assert.same({ "closed", 1, 1, 1 }, { result.why, #result.moved, result.skipped, result.left })
+	end)
 end)
 ```
 
@@ -2513,20 +2568,22 @@ Create `spec/vendor_spec.lua`:
 
 ```lua
 -- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip
--- Week 7 (user pick 4): at a vendor SwagBag sells gray junk (12 at most per run: Blizzard's buyback
--- keeps 12), never items in an equipment set or held by the client, then repairs with the player's gold
--- (or the guild's, when chosen); nothing in combat; one chat line says what was sold.
+-- Week 7 (user pick 4): at a vendor SwagBag sells gray junk (12 at most per vendor visit: Blizzard's buyback
+-- keeps 12), never items in an equipment set, items to open or learn, gray BoE items worth more at auction
+-- or items held by the client, then repairs with the player's gold (or the guild's, when chosen); nothing in
+-- combat; one chat line says what was sold.
 local Loader = dofile("spec/helpers/loader.lua")
 local Fake = dofile("spec/helpers/fakeframe.lua")
 local Env = dofile("spec/helpers/uienv.lua")
 local Fixtures = dofile("spec/fixtures/items.lua")
 
-local GRAY = 400200
+local GRAY, GRAY_BOE = 400200, 400201
 
 describe("Vendor (week 7)", function()
 	local SB, A, Mover
 	before_each(function()
 		local files = { unpack(Env.ENGINE) }
+		files[#files + 1] = "SwagBag/Engine/Collections.lua"
 		files[#files + 1] = "SwagBag/Engine/Mover.lua"
 		files[#files + 1] = "SwagBag/Engine/Vendor.lua"
 		SB = Loader.New(files)
@@ -2562,25 +2619,44 @@ describe("Vendor (week 7)", function()
 		A.Put(0, 9, GRAY, 1, { hasNoValue = true })
 		A.Put(0, 10, GRAY, 1)
 		SB.Inventory.ScanAll()
+		assert.equal(2, #SB.Vendor.Junk(), "the set piece, the held robe and the worthless one are not listed")
 		visit()
 		assert.same({ 6, 10 }, sold())
 		assert.same({ "Sold 2 junk items for 37s 52c." }, A.Lines(), "3 x 12s 34c + 50c, one chat line")
 	end)
 
-	-- Mutation: in Vendor.Sell, `math.min(#list, V.BUYBACK)` -> `#list`.
-	it("sells at most 12 per run (the buyback tab keeps 12) and says how to sell the rest", function()
+	-- Ruling R1: the 12 are per vendor visit, shared by the auto-sell, /swagbag sell junk and Sell all; past them
+	-- a second /swagbag sell junk is the explicit yes. Mutations: in Vendor.Sell, `math.min(#list, room)` ->
+	-- `#list`; or `local room = past and V.BUYBACK or V.Room()` -> `local room = V.BUYBACK` (a second sale in
+	-- the visit would push the first out of the Buyback tab without asking); or the MERCHANT_SHOW handler
+	-- keeps the count of the last visit.
+	it("sells at most 12 per vendor visit (the buyback tab keeps 12); more needs a second, explicit yes", function()
 		A.SetBagSize(1, 20)
-		for slot = 1, 15 do
+		for slot = 1, 9 do
 			A.Put(1, slot, GRAY, 1)
 		end
 		SB.Inventory.ScanAll()
 		visit()
-		assert.equal(12, #sold())
-		assert.same({ "Sold 12 junk items for 42s 52c. 4 more junk items wait (Blizzard's buyback keeps only the last 12):"
-			.. " type /swagbag sell junk." }, A.Lines())
+		assert.equal(10, #sold(), "the auto-sell: the Broken Tooth and 9 robes")
+		for slot = 10, 15 do
+			A.Put(1, slot, GRAY, 1)
+		end
+		SB.Inventory.ScanAll()
 		SB.Slash.Dispatch("sell junk")
 		A.Advance(Mover.DELAY * 10)
-		assert.equal(16, #sold(), "the command sells the rest")
+		assert.equal(12, #sold(), "2 more fit in the visit's 12")
+		SB.Slash.Dispatch("sell junk")
+		A.Advance(Mover.DELAY * 10)
+		assert.equal(12, #sold(), "the visit's 12 are used: it asks first")
+		SB.Slash.Dispatch("sell junk")
+		A.Advance(Mover.DELAY * 10)
+		assert.equal(16, #sold(), "the second yes sells the rest")
+		assert.same({ "Sold 10 junk items for 41s 52c.", "Sold 2 junk items for 1s 0c. 4 more junk items wait: Blizzard's"
+			.. " Buyback tab keeps only the last 12. Type /swagbag sell junk to sell them.", SB.L.VENDOR_PAST_JUNK:format(4),
+			"Sold 4 junk items for 2s 0c." }, A.Lines())
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		assert.equal(12, SB.Vendor.Room(), "a new visit: 12 again")
 	end)
 
 	-- P2: the command answers once, with the sale's line. Mutation: in Vendor.Visit, drop the vendor.autoSell check.
@@ -2655,7 +2731,20 @@ describe("Vendor (week 7)", function()
 		assert.same({ 6 }, sold(), "the vendor closed during combat: nothing more")
 	end)
 
-	-- Mutation: in soldLine, drop the `result.why == "closed"` branch.
+	-- Ruling R9 (P2: an automatic action with nothing to do says nothing). Mutation: in Vendor.Visit, drop the
+	-- `if work() then` around the combat line.
+	it("a vendor opened in combat with nothing to sell or repair says nothing", function()
+		A.Clear(0, 6)
+		SB.Inventory.ScanAll()
+		A.combat = true
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		A.Advance(Mover.DELAY * 3)
+		assert.same({}, A.Lines())
+	end)
+
+	-- Mutation: in Vendor.lua, drop `closed = "VENDOR_STOP_CLOSED", ` from STOP_LINES.
 	it("a vendor closed mid-run: the line says how many sold and how many stayed", function()
 		for slot = 7, 9 do
 			A.Put(0, slot, GRAY, 1)
@@ -2668,7 +2757,58 @@ describe("Vendor (week 7)", function()
 		assert.same({ "Sold 1 junk item for 37s 2c. The vendor closed, so 3 stayed in your bags." }, A.Lines())
 	end)
 
-	-- P2. Mutation: /swagbag repair accepts any word.
+	-- Ruling R8: the line counts what really stayed. Mutation: in soldLine, `L[stop]:format(result.left)` ->
+	-- `L[stop]:format(result.left + result.skipped)` (an item used by hand would count as stayed).
+	it("the line never says 0 stayed, and an item used by hand during the run does not count as stayed", function()
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- the Broken Tooth sells at once
+		SB.eventFrame:Fire("MERCHANT_CLOSED") -- in the same 0.2 s: it was the last one
+		A.Advance(Mover.DELAY * 3)
+		for slot = 7, 9 do
+			A.Put(0, slot, GRAY, 1)
+		end
+		A.Put(0, 6, Fixtures.JUNK, 1)
+		SB.Inventory.ScanAll()
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- slot 6 sells at once
+		A.Clear(0, 7) -- the first robe is used up by hand
+		A.Advance(Mover.DELAY) -- the robe in slot 8 sells
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.Advance(Mover.DELAY * 3)
+		assert.same({ "Sold 1 junk item for 37s 2c.",
+			"Sold 2 junk items for 12s 84c. The vendor closed, so 1 stayed in your bags." }, A.Lines())
+	end)
+
+	-- Ruling R2: right before each sale the slot is checked again. Mutation: in sellable(), drop
+	-- `or V.Protected(r)` (an item put in a set during the run would still be sold).
+	it("an item that becomes protected during the run (here: put in an equipment set) is skipped, never sold", function()
+		A.Put(0, 7, GRAY, 1)
+		A.Put(0, 8, GRAY, 1)
+		SB.Inventory.ScanAll()
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- slot 6 sells at once; the robes wait their turn
+		A.slots[0][7].inSet = true
+		A.Advance(Mover.DELAY * 10)
+		assert.same({ 6, 8 }, sold())
+		assert.same({ "Sold 2 junk items for 37s 52c." }, A.Lines())
+	end)
+
+	-- Ruling R19 (gold-maker safety). Mutations: Vendor.Protected ignores Collections.Learn; or in
+	-- worthMoreAtAuction `ah > 2 *` -> `ah > 1 *` (a gray BoE worth a little more at auction would stay).
+	it("never sells an item to open or learn, or a gray BoE worth more than twice its vendor price at auction", function()
+		A.AddItem(GRAY_BOE, { name = "Rusted Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
+		A.AddItem(GRAY_BOE + 1, { name = "Bent Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
+		A.Put(0, 7, GRAY, 1, { hasLoot = true }) -- something to open
+		A.Put(0, 8, GRAY_BOE, 1) -- 5s at auction, 1s at a vendor
+		A.Put(0, 9, GRAY_BOE + 1, 1) -- 1s 50c at auction: not worth the trip
+		A.auctionator = { prices = { ["item:" .. GRAY_BOE] = 500, ["item:" .. (GRAY_BOE + 1)] = 150 } }
+		SB.Inventory.ScanAll()
+		visit()
+		assert.same({ 6, 9 }, sold())
+	end)
+
+	-- P2, ruling R18 (the state names the choice as the settings window does). Mutations: /swagbag repair accepts
+	-- any word; or the state line prints the stored word (`L[REPAIR_NAMES[mode] or REPAIR_NAMES.own]` ->
+	-- `tostring(mode)`).
 	it("/swagbag sell and /swagbag repair answer every form; read-only settings refuse", function()
 		SB.Slash.Dispatch("sell")
 		SB.Slash.Dispatch("sell maybe")
@@ -2678,7 +2818,7 @@ describe("Vendor (week 7)", function()
 		SB.Slash.Dispatch("repair off")
 		SB.Slash.Dispatch("sell off")
 		local L = SB.L
-		assert.same({ L.VENDOR_SELL_STATE:format("on"), L.VENDOR_SELL_USAGE, L.VENDOR_REPAIR_STATE:format("own"),
+		assert.same({ L.VENDOR_SELL_STATE:format("on"), L.VENDOR_SELL_USAGE, L.VENDOR_REPAIR_STATE:format("Your gold"),
 			L.VENDOR_REPAIR_USAGE, L.SETTINGS_READONLY, L.SETTINGS_READONLY }, A.Lines())
 		assert.equal("own", SB.Config.Get("vendor.repair"))
 	end)
@@ -2731,7 +2871,7 @@ end)
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1298 passed, 16 failed`. The failures, exactly:
+Expected: `1299 passed, 22 failed`. The failures, exactly:
 
 - `spec/mover_spec.lua :: Mover (week 7) > moves one item per DELAY, in order, then reports what moved`
 - `spec/mover_spec.lua :: Mover (week 7) > waits while an item is on the cursor or the item's button is under the mouse, then moves it`
@@ -2740,13 +2880,19 @@ Expected: `1298 passed, 16 failed`. The failures, exactly:
 - `spec/mover_spec.lua :: Mover (week 7) > a slot that no longer holds the item is skipped, never acted on`
 - `spec/mover_spec.lua :: Mover (week 7) > waits while the client holds a sent item; an item still there and free means refused: the run stops`
 - `spec/mover_spec.lua :: Mover (week 7) > one run at a time; an empty list starts nothing`
+- `spec/mover_spec.lua :: Mover (week 7) > a run whose last item moved ends as done, even if the window closes right after`
+- `spec/mover_spec.lua :: Mover (week 7) > right before each move the job checks again: closed stops the run, an item it refuses is skipped`
 - `spec/vendor_spec.lua :: Vendor (week 7) > sells gray junk a vendor pays for; never a set piece, an item the client holds, or one worth nothing`
-- `spec/vendor_spec.lua :: Vendor (week 7) > sells at most 12 per run (the buyback tab keeps 12) and says how to sell the rest`
+- `spec/vendor_spec.lua :: Vendor (week 7) > sells at most 12 per vendor visit (the buyback tab keeps 12); more needs a second, explicit yes`
 - `spec/vendor_spec.lua :: Vendor (week 7) > auto-sell off: nothing is sold by itself; /swagbag sell junk sells at a vendor and refuses elsewhere`
 - `spec/vendor_spec.lua :: Vendor (week 7) > repairs with your gold after the sale; says when gold is short; Off repairs nothing`
 - `spec/vendor_spec.lua :: Vendor (week 7) > Guild bank first: the guild pays when it allows enough (or has no limit), else your gold`
 - `spec/vendor_spec.lua :: Vendor (week 7) > a vendor opened in combat sells and repairs once combat ends, only if it is still open`
+- `spec/vendor_spec.lua :: Vendor (week 7) > a vendor opened in combat with nothing to sell or repair says nothing`
 - `spec/vendor_spec.lua :: Vendor (week 7) > a vendor closed mid-run: the line says how many sold and how many stayed`
+- `spec/vendor_spec.lua :: Vendor (week 7) > the line never says 0 stayed, and an item used by hand during the run does not count as stayed`
+- `spec/vendor_spec.lua :: Vendor (week 7) > an item that becomes protected during the run (here: put in an equipment set) is skipped, never sold`
+- `spec/vendor_spec.lua :: Vendor (week 7) > never sells an item to open or learn, or a gray BoE worth more than twice its vendor price at auction`
 - `spec/vendor_spec.lua :: Vendor (week 7) > /swagbag sell and /swagbag repair answer every form; read-only settings refuse`
 - `spec/vendor_spec.lua :: Settings: vendor page (week 7) > defaults first (On; Your gold), each click runs the command and answers in the status line`
 
@@ -2762,15 +2908,26 @@ Critical tests and the mutation that must make each fail (each was applied to th
 - "a slot that no longer holds the item is skipped, never acted on": in `SwagBag/Engine/Mover.lua`, `if not same(item) then` → `if false then`.
 - "waits while the client holds a sent item; an item still there and free means refused: the run stops": in `SwagBag/Engine/Mover.lua`, `elseif there then ⏎ run.index` → `elseif false then ⏎ run.index`.
 - "one run at a time; an empty list starts nothing": in `SwagBag/Engine/Mover.lua`, `if Mover.run then ⏎ return false, "busy" ⏎ end` → `∅`.
+- "a run whose last item moved ends as done, even if the window closes right after": in `SwagBag/Engine/Mover.lua`, `if not item then` → `if not item and run.job.still() then`.
+- "right before each move the job checks again: closed stops the run, an item it refuses is skipped": in `SwagBag/Engine/Mover.lua`, `if verdict == "closed" then` → `if false then`.
+- "right before each move the job checks again: closed stops the run, an item it refuses is skipped": in `SwagBag/Engine/Mover.lua`, `elseif verdict ~= true then` → `elseif false then`.
 - "sells gray junk a vendor pays for; never a set piece, an item the client holds, or one worth nothing": in `SwagBag/Engine/Vendor.lua`, `return r.inEquipmentSet == true or` → `return`.
 - "sells gray junk a vendor pays for; never a set piece, an item the client holds, or one worth nothing": in `SwagBag/Engine/Vendor.lua`, `not r.hasNoValue and not r.isLocked and` → `not r.hasNoValue and`.
-- "sells at most 12 per run (the buyback tab keeps 12) and says how to sell the rest": in `SwagBag/Engine/Vendor.lua`, `for i = 1, math.min(#list, V.BUYBACK) do` → `for i = 1, #list do`.
+- "sells at most 12 per vendor visit (the buyback tab keeps 12); more needs a second, explicit yes": in `SwagBag/Engine/Vendor.lua`, `for i = 1, math.min(#list, room) do` → `for i = 1, #list do`.
+- "sells at most 12 per vendor visit (the buyback tab keeps 12); more needs a second, explicit yes": in `SwagBag/Engine/Vendor.lua`, `local room = past and V.BUYBACK or V.Room()` → `local room = V.BUYBACK`.
+- "sells at most 12 per vendor visit (the buyback tab keeps 12); more needs a second, explicit yes": in `SwagBag/Engine/Vendor.lua`, `V.soldThisVisit, V.pastAsked = 0, false -- a new visit` → `V.pastAsked = false -- a new visit`.
 - "auto-sell off: nothing is sold by itself; /swagbag sell junk sells at a vendor and refuses elsewhere": in `SwagBag/Engine/Vendor.lua`, `if SB.Config.Get("vendor.autoSell") and not SB.Mover.Busy() then` → `if not SB.Mover.Busy() then`.
 - "repairs with your gold after the sale; says when gold is short; Off repairs nothing": in `SwagBag/Engine/Vendor.lua`, `if money and money < cost then` → `if false then`.
 - "Guild bank first: the guild pays when it allows enough (or has no limit), else your gold": in `SwagBag/Engine/Vendor.lua`, `if mode == "guild" then` → `if false then`.
-- "a vendor opened in combat sells and repairs once combat ends, only if it is still open": in `SwagBag/Engine/Vendor.lua`, `if SB.Adapter.InCombat() then ⏎ SB.Print(L.VENDOR_COMBAT)` → `if false then ⏎ SB.Print(L.VENDOR_COMBAT)`.
-- "a vendor closed mid-run: the line says how many sold and how many stayed": in `SwagBag/Engine/Vendor.lua`, `if result.why == "closed" then` → `if false then`.
+- "a vendor opened in combat sells and repairs once combat ends, only if it is still open": in `SwagBag/Engine/Vendor.lua`, `if SB.Adapter.InCombat() then ⏎ if work() then` → `if false then ⏎ if work() then`.
+- "a vendor opened in combat with nothing to sell or repair says nothing": in `SwagBag/Engine/Vendor.lua`, `if work() then -- P2: say it waits only when there is something to wait for (ruling R9) ⏎ SB.Print(L.VENDOR_COMBAT) ⏎ end` → `SB.Print(L.VENDOR_COMBAT)`.
+- "a vendor closed mid-run: the line says how many sold and how many stayed": in `SwagBag/Engine/Vendor.lua`, `closed = "VENDOR_STOP_CLOSED", ` → `∅`.
+- "the line never says 0 stayed, and an item used by hand during the run does not count as stayed": in `SwagBag/Engine/Vendor.lua`, `L[stop]:format(result.left)` → `L[stop]:format(result.left + result.skipped)`.
+- "an item that becomes protected during the run (here: put in an equipment set) is skipped, never sold": in `SwagBag/Engine/Vendor.lua`, `if not r or r.isLocked or V.Protected(r) then` → `if not r or r.isLocked then`.
+- "never sells an item to open or learn, or a gray BoE worth more than twice its vendor price at auction": in `SwagBag/Engine/Vendor.lua`, `or (SB.Collections ~= nil and SB.Collections.Learn(r) ~= nil) or` → `or`.
+- "never sells an item to open or learn, or a gray BoE worth more than twice its vendor price at auction": in `SwagBag/Engine/Vendor.lua`, `ah > 2 *` → `ah > 1 *`.
 - "/swagbag sell and /swagbag repair answer every form; read-only settings refuse": in `SwagBag/Engine/Vendor.lua`, `elseif not REPAIR_LINES[arg] then ⏎ return L.VENDOR_REPAIR_USAGE` → `elseif false then ⏎ return L.VENDOR_REPAIR_USAGE`.
+- "/swagbag sell and /swagbag repair answer every form; read-only settings refuse": in `SwagBag/Engine/Vendor.lua`, `L.VENDOR_REPAIR_STATE:format(L[REPAIR_NAMES[mode] or REPAIR_NAMES.own])` → `L.VENDOR_REPAIR_STATE:format(tostring(mode))`.
 - "defaults first (On; Your gold), each click runs the command and answers in the status line": in `SwagBag/UI/SettingsVendor.lua`, `return run("repair " .. v)` → `return run("repair own")`.
 - "an item the mouse never leaves stays where it is; the run goes on with the next": in `SwagBag/Engine/Mover.lua`, `if A.CursorItem() ~= nil then ⏎ return later(run, Mover.RETRY)` → `if false then ⏎ return later(run, Mover.RETRY)`.
 
@@ -2812,22 +2969,28 @@ function A.MoveToBank(bag, slot, kind)
 	return pcall(C_Container.UseContainerItem, bag, slot, nil, bankType, false)
 end
 
--- What repairing everything costs at this vendor, in copper (0: nothing to repair); nil when this
--- vendor does not repair or the client cannot say.
-function A.RepairCost()
-	local can, cost = _G.CanMerchantRepair, _G.GetRepairAllCost
-	if type(can) ~= "function" or type(cost) ~= "function" then
+-- A copper amount the client gives only when a yes/no question allows it (the repair cost, the guild's
+-- repair money): nil without the API, on a "no", or on a secret.
+local function copperIf(canName, amountName)
+	local can, amount = _G[canName], _G[amountName]
+	if type(can) ~= "function" or type(amount) ~= "function" then
 		return nil
 	end
 	local okC, yes = pcall(can)
 	if not okC or isSecret(yes) or not yes then
 		return nil
 	end
-	local ok, copper = pcall(cost)
+	local ok, copper = pcall(amount)
 	if not ok or type(copper) ~= "number" or isSecret(copper) then
 		return nil
 	end
 	return copper
+end
+
+-- What repairing everything costs at this vendor, in copper (0: nothing to repair); nil when this
+-- vendor does not repair or the client cannot say.
+function A.RepairCost()
+	return copperIf("CanMerchantRepair", "GetRepairAllCost")
 end
 
 -- Repair everything; guild = true pays from the guild bank. true when the call went through.
@@ -2841,19 +3004,7 @@ end
 
 -- Copper the guild lets this character spend on repairs today (-1: no limit), or nil when it may not.
 function A.GuildRepairMoney()
-	local can, money = _G.CanGuildBankRepair, _G.GetGuildBankWithdrawMoney
-	if type(can) ~= "function" or type(money) ~= "function" then
-		return nil
-	end
-	local okC, yes = pcall(can)
-	if not okC or isSecret(yes) or not yes then
-		return nil
-	end
-	local ok, copper = pcall(money)
-	if not ok or type(copper) ~= "number" or isSecret(copper) then
-		return nil
-	end
-	return copper
+	return copperIf("CanGuildBankRepair", "GetGuildBankWithdrawMoney")
 ```
 
 In `SwagBag/Core/Adapter.lua` (edit 2 of 2), find:
@@ -2897,9 +3048,11 @@ Create `SwagBag/Engine/Mover.lua`:
 --   Mover.Start(job) -> true | false, why   why: "busy" (a run is going) | "combat" | "empty"
 --     job = { items = { { bag, slot, itemID, link, count } },
 --             act = fn(bag, slot) -> ok, err    the move itself (an Adapter call)
+--             ready = fn(item) -> true | "skip" | "closed"   optional, asked right before each act: the
+--                                              job's last look at the slot (rulings R2, R20)
 --             still = fn() -> bool             false once the vendor or bank closed: the run stops
---             done = fn(result) }              result = { moved = { item... }, left = n, why = nil |
---                                              "combat" | "closed" | "stuck" | "error" }
+--             done = fn(result) }              result = { moved = { item... }, left = n, skipped = n,
+--                                              kept = n, why = nil | "combat" | "closed" | "stuck" | "error" }
 --   Mover.Busy() -> bool
 --   Mover.IsBusy(bag, slot) -> bool   spec 4.2 rule 5: an item is on the cursor, or that slot's button is
 --                                     under the mouse in the open bags window
@@ -2907,10 +3060,14 @@ Create `SwagBag/Engine/Mover.lua`:
 -- says yes. The slot must still hold the same item (item ID and link), else it is skipped: it was used
 -- or moved by hand. P5: while an item is on the cursor every step waits RETRY and tries again (for as long
 -- as the vendor or bank stays open); while the item's own button is under the mouse it waits the same way
--- MAX_WAITS times, then that item is left where it is. After a move the next step first checks the item really left:
+-- MAX_WAITS times, then that item is left where it is. Right before the move the job's ready() looks at the
+-- slot once more: "closed" stops the run, "skip" leaves that item (locked or put in a set since the list was
+-- made). After a move the next step first checks the item really left:
 -- while the client holds it locked (the server has not answered) the run waits; an item still there
 -- and unlocked means the target refused it (a full bank, a vendor that will not buy it): the run stops
--- ("stuck"). No OnUpdate: every wait is an Adapter.After timer.
+-- ("stuck"). Once the last item has gone the run is done, whatever happens next (ruling R8). left counts
+-- the items not reached and the ones kept under the mouse; skipped ones are not counted as left.
+-- No OnUpdate: every wait is an Adapter.After timer.
 local _, SB = ...
 
 local Mover = { DELAY = 0.2, RETRY = 0.3, MAX_WAITS = 20, MAX_PENDING = 10, run = nil }
@@ -2953,6 +3110,12 @@ local function later(run, seconds)
 	end, "none"))
 end
 
+local function skip(run)
+	run.index, run.waits = run.index + 1, 0
+	run.result.skipped = run.result.skipped + 1
+	return step(run)
+end
+
 step = function(run)
 	if Mover.run ~= run then
 		return
@@ -2973,20 +3136,18 @@ step = function(run)
 		run.result.moved[#run.result.moved + 1] = last
 		run.sent, run.pending = nil, 0
 	end
+	local item = run.items[run.index]
+	if not item then
+		return finish(run, nil) -- the last item has gone: done, even if the window closes now (R8)
+	end
 	if run.job.still and not run.job.still() then
 		return finish(run, "closed")
 	end
 	if A.InCombat() then
 		return finish(run, "combat")
 	end
-	local item = run.items[run.index]
-	if not item then
-		return finish(run, nil)
-	end
 	if not same(item) then
-		run.index, run.waits = run.index + 1, 0 -- used or moved by hand: nothing to do
-		run.result.skipped = run.result.skipped + 1
-		return step(run)
+		return skip(run) -- used or moved by hand: nothing to do
 	end
 	if A.CursorItem() ~= nil then
 		return later(run, Mover.RETRY) -- the user is moving an item by hand: wait, however long it takes
@@ -2999,6 +3160,16 @@ step = function(run)
 		run.index, run.waits = run.index + 1, 0 -- the mouse never left it: it stays
 		run.result.kept = run.result.kept + 1
 		return step(run)
+	end
+	-- The job's last look, right before the call (R2, R20): still open? may this item still move?
+	local verdict = true
+	if run.job.ready then
+		verdict = run.job.ready(item)
+	end
+	if verdict == "closed" then
+		return finish(run, "closed")
+	elseif verdict ~= true then
+		return skip(run) -- locked, put in a set, or otherwise no longer to move since the list was made
 	end
 	local ok, err = run.job.act(item.bag, item.slot)
 	run.index, run.waits = run.index + 1, 0
@@ -3043,28 +3214,36 @@ Create `SwagBag/Engine/Vendor.lua`:
 
 ```lua
 -- SwagBag at a vendor (week 7, user pick 4): sell gray junk and repair, by themselves, on MERCHANT_SHOW.
---   Vendor.Protected(record) -> bool   never sold by SwagBag: in an equipment set, or locked by the user
---                                      (Engine/Locks.lua, Task 5)
+--   Vendor.Protected(record) -> bool   never sold by SwagBag (ruling R19): in an equipment set, locked by the
+--                                      user (Engine/Locks.lua, Task 5), an item to open or learn
+--                                      (Collections.Learn: caches, unlearned toys, mounts, pets, decor,
+--                                      knowledge), or a gray BoE item Auctionator prices above twice the vendor
 --   Vendor.Junk() -> { item }          gray items a vendor pays for, not protected, not held by the client
 --                                      (being moved or traded), loaded; bags order. item = { bag, slot,
 --                                      itemID, link, count, price } (price: copper per unit)
---   Vendor.Sell(list, kind) -> ok, why sell up to BUYBACK of `list` through the mover (Engine/Mover.lua);
---                                      kind "junk" (auto or /swagbag sell junk) or "section" (UI/SectionActions.lua)
+--   Vendor.Room() -> n                 how many more SwagBag may sell this visit with every one still in the
+--                                      Buyback tab (BUYBACK minus soldThisVisit)
+--   Vendor.Sell(list, kind, after, past) -> ok, why   sell up to Room() of `list` through the mover
+--                                      (Engine/Mover.lua); kind "junk" (auto or /swagbag sell junk) or
+--                                      "section" (UI/SectionActions.lua); past = true: the user said yes to
+--                                      selling past the room (up to BUYBACK more); why "full": no room left
 --   Vendor.Repair() -> line | nil      repair as vendor.repair says; the chat line, or nil (nothing to repair)
 --   Vendor.Money(copper) -> "1g 23s 4c"
 -- Settings: vendor.autoSell (default on) and vendor.repair: "own" (default, your gold) | "guild" (the guild
 -- bank first when the guild allows it, else your gold) | "off". Commands: /swagbag sell [on|off|junk],
 -- /swagbag repair [own|guild|off]; Settings > Vendor (UI/SettingsVendor.lua).
--- Safety: at most BUYBACK (12) items per run, because Blizzard's buyback tab keeps only the last 12 sold:
--- every item SwagBag sells can still be bought back during that visit. Nothing runs in combat: a vendor
+-- Safety: at most BUYBACK (12) items per vendor visit (ruling R1), because Blizzard's buyback tab keeps only
+-- the last 12 sold: the auto-sell, /swagbag sell junk and Sell all share the count, and selling past it needs
+-- a second, explicit yes that says the earlier ones leave the Buyback tab. Nothing runs in combat: a vendor
 -- opened in combat sells and repairs once combat ends, if it is still open. Each sale goes through the
--- mover, so nothing is sold while an item is on the cursor or its button is under the mouse (P5); a sold
--- item leaves a placeholder in the open bags (spec 4.3), so nothing else moves. One chat line per visit
--- says what was sold and for how much; the repair says its own.
+-- mover, so nothing is sold while an item is on the cursor or its button is under the mouse (P5); right
+-- before each sale the slot is looked at again (rulings R2, R20: the vendor still open, the item still not
+-- protected). A sold item leaves a placeholder in the open bags (spec 4.3), so nothing else moves. One chat
+-- line per run says what was sold and for how much; the repair says its own.
 local _, SB = ...
 
 local L = SB.L
-local V = { open = false, BUYBACK = 12 }
+local V = { open = false, BUYBACK = 12, soldThisVisit = 0, pastAsked = false }
 SB.Vendor = V
 
 function V.Money(copper)
@@ -3078,8 +3257,20 @@ function V.Money(copper)
 	return L.VENDOR_MONEY_C:format(c)
 end
 
+-- A gray item that binds when equipped and that Auctionator prices above twice what a vendor pays (R19: a
+-- gold-maker sells those at the Auction House, not to a vendor). No Auctionator price: no such protection.
+local function worthMoreAtAuction(r)
+	if r.quality ~= 0 or r.bind ~= "equip" or r.isBound or not SB.Prices then
+		return false
+	end
+	local ah, source = SB.Prices.Value(r.link, r.itemID, false)
+	local info = SB.Adapter.GetItemInfo(r.itemID)
+	return source ~= nil and source ~= "Vendor" and type(ah) == "number" and ah > 2 * (info and info.sellPrice or 0)
+end
+
 function V.Protected(r)
 	return r.inEquipmentSet == true or (SB.Locks ~= nil and SB.Locks.Has(r.itemID))
+		or (SB.Collections ~= nil and SB.Collections.Learn(r) ~= nil) or worthMoreAtAuction(r)
 end
 
 function V.Junk()
@@ -3098,9 +3289,18 @@ function V.Junk()
 	return out
 end
 
+function V.Room()
+	return math.max(0, V.BUYBACK - V.soldThisVisit)
+end
+
+-- Why a run stopped, as the rest of its line ("... so N stayed in your bags.").
+local STOP_LINES = { closed = "VENDOR_STOP_CLOSED", combat = "VENDOR_STOP_COMBAT", stuck = "VENDOR_STOP_REFUSED",
+	error = "VENDOR_STOP_REFUSED" }
+
 -- A chat line for a finished sale. kind "junk": "Sold 3 junk items for 1g 2s 3c."; "section": "Sold 3
--- items for ...". waiting: items past the buyback limit that were not offered this run.
-local function soldLine(result, kind, total, waiting)
+-- items for ...". waiting: items past the room that were not offered this run. A stop names how many
+-- stayed (result.left: never 0, never an item used by hand meanwhile; ruling R8).
+local function soldLine(result, kind, waiting)
 	local n, copper = #result.moved, 0
 	for _, it in ipairs(result.moved) do
 		copper = copper + (it.price or 0) * (it.count or 1)
@@ -3112,12 +3312,9 @@ local function soldLine(result, kind, total, waiting)
 	else
 		line = (junk and L.VENDOR_SOLD_JUNK or L.VENDOR_SOLD):format(n, V.Money(copper))
 	end
-	if result.why == "closed" then
-		line = line .. " " .. L.VENDOR_STOP_CLOSED:format(total - n)
-	elseif result.why == "combat" then
-		line = line .. " " .. L.VENDOR_STOP_COMBAT:format(total - n)
-	elseif result.why == "stuck" or result.why == "error" then
-		line = line .. " " .. L.VENDOR_STOP_REFUSED:format(total - n)
+	local stop = STOP_LINES[result.why or ""]
+	if stop and result.left > 0 then
+		line = line .. " " .. L[stop]:format(result.left)
 	elseif result.kept > 0 then
 		line = line .. " " .. L.VENDOR_KEPT_MOUSE:format(result.kept)
 	end
@@ -3127,20 +3324,38 @@ local function soldLine(result, kind, total, waiting)
 	return line
 end
 
--- after(result): runs once the sale is over (the auto-sell repairs then).
-function V.Sell(list, kind, after)
+-- Right before each sale (R2, R20): the vendor is still open, and the slot's item may still be sold (a lock,
+-- an equipment set or another protection added since the list was made skips it).
+local function sellable(item)
+	if not V.open then
+		return "closed"
+	end
+	local r = SB.Items.Describe(item.bag, item.slot)
+	if not r or r.isLocked or V.Protected(r) then
+		return "skip"
+	end
+	return true
+end
+
+-- after(result): runs once the sale is over (the auto-sell repairs then). past: see the header.
+function V.Sell(list, kind, after, past)
 	if not V.open then
 		return false, "closed"
 	end
+	local room = past and V.BUYBACK or V.Room()
+	if room == 0 then
+		return false, "full"
+	end
 	local batch = {}
-	for i = 1, math.min(#list, V.BUYBACK) do
+	for i = 1, math.min(#list, room) do
 		batch[i] = list[i]
 	end
 	local waiting = #list - #batch
-	return SB.Mover.Start({ items = batch, act = SB.Adapter.SellItem, still = function()
+	return SB.Mover.Start({ items = batch, act = SB.Adapter.SellItem, ready = sellable, still = function()
 		return V.open
 	end, done = function(result)
-		SB.Print(soldLine(result, kind, #batch, waiting))
+		V.soldThisVisit = V.soldThisVisit + #result.moved
+		SB.Print(soldLine(result, kind, waiting))
 		if after then
 			after(result)
 		end
@@ -3180,6 +3395,15 @@ local function repairNow()
 	end
 end
 
+-- Is there anything for the visit to do: junk to sell, or gear to repair?
+local function work()
+	if SB.Config.Get("vendor.autoSell") and #V.Junk() > 0 then
+		return true
+	end
+	local cost = SB.Config.Get("vendor.repair") ~= "off" and SB.Adapter.RepairCost()
+	return type(cost) == "number" and cost > 0
+end
+
 -- The vendor opened (or combat ended while it stayed open): sell junk, then repair, so the junk's gold
 -- helps pay for the repair.
 function V.Visit()
@@ -3187,7 +3411,9 @@ function V.Visit()
 		return
 	end
 	if SB.Adapter.InCombat() then
-		SB.Print(L.VENDOR_COMBAT)
+		if work() then -- P2: say it waits only when there is something to wait for (ruling R9)
+			SB.Print(L.VENDOR_COMBAT)
+		end
 		SB.OutOfCombat(V.Visit, "vendor.visit", "none")
 		return
 	end
@@ -3202,11 +3428,13 @@ end
 
 SB.On("MERCHANT_SHOW", function()
 	V.open = true
+	V.soldThisVisit, V.pastAsked = 0, false -- a new visit: the Buyback tab has room for 12 of SwagBag's again
 	V.Visit()
 end, "none")
 
 SB.On("MERCHANT_CLOSED", function()
 	V.open = false
+	V.pastAsked = false
 end, "none")
 
 ---------------------------------------------------------------------------
@@ -3224,10 +3452,16 @@ local function startJunk()
 	if #junk == 0 then
 		return L.VENDOR_NO_JUNK
 	end
-	local ok, why = V.Sell(junk, "junk")
+	local past = V.Room() == 0
+	if past and not V.pastAsked then
+		V.pastAsked = true -- R1: the same command again is the explicit yes
+		return L.VENDOR_PAST_JUNK:format(math.min(#junk, V.BUYBACK))
+	end
+	local ok, why = V.Sell(junk, "junk", nil, past)
 	if not ok then
 		return why == "combat" and L.VENDOR_COMBAT_NOW or L.MOVER_BUSY
 	end
+	V.pastAsked = false
 	return {} -- P2: the sale's own line, when it ends, is the one answer
 end
 
@@ -3247,11 +3481,14 @@ SB.Slash.Register("sell", L.HELP_SELL, function(arg)
 end)
 
 local REPAIR_LINES = { own = "VENDOR_REPAIR_OWN", guild = "VENDOR_REPAIR_GUILD", off = "VENDOR_REPAIR_OFF" }
+-- The choice's name as Settings > Vendor shows it (ruling R18: never the stored word).
+local REPAIR_NAMES = { own = "SET_VENDOR_REPAIR_OWN", guild = "SET_VENDOR_REPAIR_GUILD", off = "SET_OFF" }
 
 SB.Slash.Register("repair", L.HELP_REPAIR, function(arg)
 	arg = (arg or ""):lower()
 	if arg == "" then
-		return L.VENDOR_REPAIR_STATE:format(tostring(SB.Config.Get("vendor.repair")))
+		local mode = SB.Config.Get("vendor.repair")
+		return L.VENDOR_REPAIR_STATE:format(L[REPAIR_NAMES[mode] or REPAIR_NAMES.own])
 	elseif not REPAIR_LINES[arg] then
 		return L.VENDOR_REPAIR_USAGE
 	end
@@ -3273,7 +3510,10 @@ and replace it with:
 ```lua
 L.V1_COMBAT = "Open the V1 strip out of combat; it can only be filled then."
 
--- At a vendor (week 7, user pick 4): auto-sell junk, auto-repair (Engine/Vendor.lua), and the mover
+-- At a vendor (week 7, user pick 4): auto-sell junk, auto-repair (Engine/Vendor.lua), and the mover.
+-- VENDOR_KEEPS: what SwagBag never sells (Vendor.Protected, ruling R19), in every line that says so.
+L.VENDOR_KEEPS = "locked items, equipment-set items, items to open or learn, and gray BoE items worth more at"
+	.. " auction"
 L.HELP_SELL = "sell [on|off|junk]: sell gray junk by itself at every vendor (on), never (off), or now (junk)"
 L.HELP_REPAIR = "repair [own|guild|off]: repair at vendors with your gold, the guild bank first, or not at all"
 L.VENDOR_MONEY_G = "%dg %ds %dc"
@@ -3287,8 +3527,12 @@ L.VENDOR_STOP_CLOSED = "The vendor closed, so %d stayed in your bags."
 L.VENDOR_STOP_COMBAT = "Combat started, so %d stayed in your bags."
 L.VENDOR_STOP_REFUSED = "The vendor would not take the next one, so %d stayed in your bags."
 L.VENDOR_KEPT_MOUSE = "%d stayed because the mouse rested on it."
-L.VENDOR_MORE_JUNK = "%d more junk items wait (Blizzard's buyback keeps only the last 12): type /swagbag sell junk."
-L.VENDOR_MORE = "%d more wait (Blizzard's buyback keeps only the last 12): use Sell all again."
+L.VENDOR_MORE_JUNK = "%d more junk items wait: Blizzard's Buyback tab keeps only the last 12. Type /swagbag sell junk"
+	.. " to sell them."
+L.VENDOR_MORE = "%d more wait: Blizzard's Buyback tab keeps only the last 12. Use Sell all again to sell them."
+L.VENDOR_PAST_JUNK = "SwagBag already sold 12 items at this vendor, and Blizzard's Buyback tab keeps only the last 12:"
+	.. " selling %d more pushes the earlier ones out of it, so they can no longer be bought back. Type /swagbag sell"
+	.. " junk again to sell them anyway."
 L.VENDOR_REPAIRED = "Repaired everything for %s."
 L.VENDOR_REPAIRED_GUILD = "Repaired everything for %s from the guild bank."
 L.VENDOR_REPAIR_POOR = "Repairs cost %s, more than you carry, so nothing was repaired."
@@ -3296,11 +3540,11 @@ L.VENDOR_REPAIR_FAILED = "The vendor did not repair: nothing was paid."
 L.VENDOR_COMBAT = "In combat: selling junk and repairing wait until combat ends, if the vendor is still open."
 L.VENDOR_COMBAT_NOW = "In combat: nothing was sold. Try again once combat ends."
 L.VENDOR_NOT_OPEN = "Open a vendor first: SwagBag sells only while a vendor is open."
-L.VENDOR_NO_JUNK = "No junk to sell: no gray items a vendor pays for (locked and equipment-set items are never sold)."
+L.VENDOR_NO_JUNK = "No junk to sell: no gray items a vendor pays for (never sold: " .. L.VENDOR_KEEPS .. ")."
 L.MOVER_BUSY = "SwagBag is still moving items: wait a moment and try again."
 L.VENDOR_SELL_STATE = "Auto-sell junk at vendors: %s. Type /swagbag sell on, sell off, or sell junk (at a vendor)."
 L.VENDOR_SELL_USAGE = "Use /swagbag sell, sell on, sell off, or sell junk."
-L.VENDOR_SELL_ON = "Gray junk is now sold by itself at every vendor (never locked or equipment-set items)."
+L.VENDOR_SELL_ON = "Gray junk is now sold by itself at every vendor (never sold: " .. L.VENDOR_KEEPS .. ")."
 L.VENDOR_SELL_OFF = "Gray junk is no longer sold by itself. Type /swagbag sell junk at a vendor to sell it."
 L.VENDOR_REPAIR_STATE = "Repair at vendors: %s. Type /swagbag repair own, repair guild, or repair off."
 L.VENDOR_REPAIR_USAGE = "Use /swagbag repair, repair own, repair guild, or repair off."
@@ -3309,9 +3553,9 @@ L.VENDOR_REPAIR_GUILD = "Vendors now repair from the guild bank when your guild 
 L.VENDOR_REPAIR_OFF = "Vendors no longer repair by themselves."
 L.SET_PAGE_VENDOR = "Vendor"
 L.SET_VENDOR_SELL = "Sell gray junk by itself at every vendor"
-L.SET_VENDOR_SELL_TIP = "On: gray items a vendor pays for are sold when you open a vendor, 12 at most each time, so"
-	.. " Blizzard's buyback tab still has every one of them. Locked items and items in an equipment set are never"
-	.. " sold. Off: nothing is sold by itself; /swagbag sell junk sells now."
+L.SET_VENDOR_SELL_TIP = "On: gray items a vendor pays for are sold when you open a vendor, 12 at most each visit, so"
+	.. " Blizzard's Buyback tab still has every one of them. Never sold: " .. L.VENDOR_KEEPS .. ". Off: nothing is"
+	.. " sold by itself; /swagbag sell junk sells now."
 L.SET_VENDOR_REPAIR = "Repair at vendors"
 L.SET_VENDOR_REPAIR_TIP = "Your gold: everything is repaired when you open a vendor that repairs. Guild bank first:"
 	.. " the guild pays when it allows you to, else your gold. Off: you repair yourself."
@@ -3387,7 +3631,7 @@ SB.SettingsWindow.AddPage({ id = "vendor", title = L.SET_PAGE_VENDOR, rows = row
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1314 passed, 0 failed`.
+Expected: `1321 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -3395,7 +3639,7 @@ Expected: `1314 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (66 files)`, `1314 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (66 files)`, `1321 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -3410,7 +3654,7 @@ git add SwagBag/Core/Adapter.lua \
 	spec/mock_adapter.lua \
 	spec/mover_spec.lua \
 	spec/vendor_spec.lua
-git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 7 Task 4: the mover, auto-sell junk (12 at most, never set items) and auto-repair; Settings > Vendor
+git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 7 Task 4: the mover, auto-sell junk (12 per vendor visit, never protected items) and auto-repair; Settings > Vendor
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
@@ -3420,16 +3664,16 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 5: Item locks: the Lock button, the lock mark, never sold, and a warning when sold by hand
 
-User pick 5. `Engine/Locks.lua` keeps `SwagBagDB.locks` per item ID (D14), with `/swagbag lock [list|clear]`. `UI/LockButton.lua` puts a plain `Lock` button at the right end of the bags window's search row: drop an item on it (or click it holding one) to lock or unlock, and the item goes back; a click on an empty cursor says how (D15); the item tooltip gets a "Locked" line. The search box's error line keeps clear of the button (`rightInset`). `Vendor.Protected` already asks `SB.Locks`, so the auto-sell skips locked items; the vendor also watches locked items while it is open and warns once if one is sold by hand (D16). The keyword `locked` now means locked by the user, and the client's lock is `inuse` (D17). A padlock mark (`overlays.lock`, on). Settings > Vendor gets a drop row and List / Unlock all.
+User pick 5. `Engine/Locks.lua` keeps `SwagBagDB.locks` per item ID (D14), with `/swagbag lock [list|clear]`. `UI/LockButton.lua` puts a plain `Lock` button at the right end of the bags window's search row: drop an item on it (or click it holding one) to lock or unlock, and the item goes back; a click on an empty cursor says how (D15); the item tooltip gets a "Locked" line. The search box's error line keeps clear of the button (`rightInset`). `Vendor.Protected` already asks `SB.Locks`, so the auto-sell skips locked items; the vendor also watches locked items while it is open and warns once if one is sold by hand (D16). The keyword `locked` now means locked by the user, and the client's lock is `inuse` (D17); the first login with 0.7.0 prints one note if a saved category or watch-list query uses the word, and a search re-applies when a lock changes (ruling R21). A lock set while the auto-sell runs stops that item's sale (Task 4's last look, R2). A padlock mark (`overlays.lock`, on); a locked gray item gets no junk coin (R11). Settings > Vendor gets a drop row and List / Unlock all, and its count follows a lock made anywhere (R17). The vendor's bag listener and the Lock button's timer trap under `"none"` (R15); an item Lock cannot take has its own words (R16).
 
 **Files:**
 - Create: `SwagBag/Engine/Locks.lua` (TOC, before `Engine/Mover.lua`), `SwagBag/UI/LockButton.lua` (TOC, after `UI/SearchBox.lua`): 68 files
-- Modify: `SwagBag/Engine/Keywords.lua` (`locked`, `inuse`), `SwagBag/Engine/Vendor.lua` (`WatchLocked`, the warning), `SwagBag/Core/Adapter.lua` (`BuybackLinks`; two optional checks), `SwagBag/Engine/OverlayData.lua` (`locked`), `SwagBag/UI/Overlays.lua` (the padlock), `SwagBag/UI/SearchBox.lua` (`rightInset`), `SwagBag/UI/SettingsPages.lua` (the row), `SwagBag/UI/SettingsVendor.lua` (the lock rows), `SwagBag/Core/Config.lua` (`overlays.lock`), `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`
-- Test: `spec/locks_spec.lua` (new), `spec/vendor_spec.lua`, `spec/keywords_spec.lua`, `spec/overlays_spec.lua`, `spec/searchbox_spec.lua`, `spec/mock_adapter.lua` (`m.buyback`, `BuybackLinks`)
+- Modify: `SwagBag/Engine/Keywords.lua` (`locked`, `inuse`), `SwagBag/Engine/Vendor.lua` (`WatchLocked`, the warning, its `"none"` trap), `SwagBag/Core/Adapter.lua` (`BuybackLinks`; two optional checks), `SwagBag/Engine/OverlayData.lua` (`locked`; no junk coin when locked), `SwagBag/UI/Overlays.lua` (the padlock), `SwagBag/UI/SearchBox.lua` (`rightInset`; re-apply on `SB_LOCKS_CHANGED`), `SwagBag/UI/SettingsPages.lua` (the row), `SwagBag/UI/SettingsVendor.lua` (the lock rows; re-draw on `SB_LOCKS_CHANGED`), `SwagBag/Core/Config.lua` (`overlays.lock`), `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`
+- Test: `spec/locks_spec.lua` (new), `spec/vendor_spec.lua`, `spec/keywords_spec.lua`, `spec/overlaydata_spec.lua`, `spec/overlays_spec.lua`, `spec/searchbox_spec.lua`, `spec/mock_adapter.lua` (`m.buyback`, `BuybackLinks`)
 
 **Interfaces:**
 - Consumes: `Vendor.Protected` (Task 4), `Adapter.CursorItem/ClearCursor/HookItemTooltip/TooltipLine`, `SB.BagsWindow.frame`, the settings `drop` row.
-- Produces: `SB.Locks.Has(itemID)`, `Toggle(itemID) -> true, locked | false, "readonly" | "invalid"`, `List()`, `Clear()`, `Name(itemID)`, `TooltipLine(tooltip, itemID)`; the event `SB_LOCKS_CHANGED`; `SB.LockButton.Drop()`, `LockButton.button`, `LockButton.DROP_GUARD`; `Vendor.WatchLocked()`, `Vendor.lockedAt`; `A.BuybackLinks()`; `OverlayData.For(...).locked` with `ctx.locked`; the overlay region `lock`; `L.LOCK_*`, `L.SET_LOCK_*`.
+- Produces: `SB.Locks.Has(itemID)`, `Toggle(itemID) -> true, locked | false, "readonly" | "invalid"`, `List()`, `Clear()`, `Name(itemID)`, `TooltipLine(tooltip, itemID)`, `KeywordNote()`; the saved `SwagBagDB.notes.lockedKeyword`; the event `SB_LOCKS_CHANGED`; `SB.LockButton.Drop()`, `LockButton.button`, `LockButton.DROP_GUARD`; `Vendor.WatchLocked()`, `Vendor.lockedAt`; `A.BuybackLinks()`; `OverlayData.For(...).locked` with `ctx.locked`; the overlay region `lock`; `L.LOCK_*`, `L.SET_LOCK_*`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3535,6 +3779,20 @@ describe("Locks (week 7)", function()
 		Locks.TooltipLine(tip, Fixtures.FLASK)
 		assert.equal(SB.L.LOCK_TOOLTIP, tip.calls.AddLine[1])
 	end)
+
+	-- Ruling R21. Mutations: in Locks.KeywordNote, drop the `if d.notes.lockedKeyword then` check (the note
+	-- would come at every login); or `usesLocked(def.query)` -> `true` (a note with no saved `locked`).
+	it("first login with this version: one note if a saved query uses the word locked, never again", function()
+		SB.Config.db.categories.u_x = { name = "X", query = "junk & locked", priority = 58, displayOrder = 55 }
+		SB.Emit("SB_LOGIN")
+		SB.Emit("SB_LOGIN")
+		assert.same({ SB.L.LOCK_KEYWORD_NOTE }, A.Lines())
+		assert.truthy(SB.Config.db.notes.lockedKeyword)
+		SB.Config.db.notes = nil
+		SB.Config.db.categories.u_x.query = "junk"
+		SB.Emit("SB_LOGIN")
+		assert.equal(1, #A.Lines(), "no saved query uses it: no note")
+	end)
 end)
 
 describe("Lock button (week 7)", function()
@@ -3572,7 +3830,8 @@ describe("Lock button (week 7)", function()
 			"Unlocked: Flask of Alchemical Chaos." }, A.Lines())
 	end)
 
-	-- Mutation: in press(), drop the `elseif not guarded` branch (an empty click says nothing).
+	-- Mutations: in press(), drop the `elseif not guarded` branch (an empty click says nothing); or in LB.Drop,
+	-- `L.LOCK_INVALID` -> `L.DROP_INVALID` (a category's words).
 	it("a click with nothing on the cursor says how; read-only keeps the item on the cursor and says why", function()
 		A.Advance(1)
 		Fake.Fire(button, "OnClick", "LeftButton")
@@ -3580,7 +3839,11 @@ describe("Lock button (week 7)", function()
 		A.cursor = { itemID = Fixtures.FLASK, link = "item:212283" }
 		Fake.Fire(button, "OnClick", "LeftButton")
 		assert.truthy(A.cursor, "refused: still on the cursor")
-		assert.same({ SB.L.LOCK_STATE:format(0), SB.L.SETTINGS_READONLY }, A.Lines())
+		SB.Config.readOnly = false
+		A.cursor = { itemID = -1, link = "x" } -- not an item SwagBag can lock (ruling R16: its own words)
+		Fake.Fire(button, "OnClick", "LeftButton")
+		assert.truthy(A.cursor, "refused: still on the cursor")
+		assert.same({ SB.L.LOCK_STATE:format(0), SB.L.SETTINGS_READONLY, SB.L.LOCK_INVALID }, A.Lines())
 		assert.same({ "TOPRIGHT", SB.BagsWindow.frame, "TOPRIGHT", -8, -31 }, button.points[1], "right of the search box")
 	end)
 end)
@@ -3610,6 +3873,29 @@ and replace it with:
 	end
 
 	function m.IsQuestItem(bag, slot)
+```
+
+In `spec/overlaydata_spec.lua`, find:
+
+```lua
+		assert.equal(false, O.For(SB.Items.Describe(0, 8)).junk)
+```
+
+and replace it with:
+
+```lua
+		assert.equal(false, O.For(SB.Items.Describe(0, 8)).junk)
+	end)
+
+	-- Week 7 (ruling R11): a locked gray item is never sold, so it gets no "sell me" coin. Mutation: in
+	-- OverlayData.For, drop `out.junk = out.junk and not out.locked`.
+	it("no junk coin on a gray item the user locked", function()
+		A.AddItem(400100, { name = "Frayed Robe", classID = A.ITEM_CLASS.Armor, subclassID = 1, equipLoc = "INVTYPE_CHEST",
+			quality = 0, ilvl = 5, maxStack = 1, bind = "none", sellPrice = 12 })
+		A.Put(0, 7, 400100, 1)
+		local robe = SB.Items.Describe(0, 7)
+		assert.same({ true, false }, { O.For(robe, { locked = function() return false end }).junk,
+			O.For(robe, { locked = function() return true end }).junk })
 ```
 
 In `spec/overlays_spec.lua` (edit 1 of 2), find:
@@ -3648,7 +3934,32 @@ and replace it with:
 		assert.falsy(off.lock.shown)
 ```
 
-In `spec/searchbox_spec.lua`, find:
+In `spec/searchbox_spec.lua` (edit 1 of 2), find:
+
+```lua
+		SB.Emit("SB_BAGS_UPDATED")
+		assert.truthy(dimCount() > 0)
+```
+
+and replace it with:
+
+```lua
+		SB.Emit("SB_BAGS_UPDATED")
+		assert.truthy(dimCount() > 0)
+	end)
+
+	-- Week 7 (ruling R21): a `locked` search follows a lock or unlock at once. Mutation: SearchBox listens to
+	-- `SB_LOCKS_CHANGED_X` instead of `SB_LOCKS_CHANGED`.
+	it("re-applies when a lock changes (a locked search follows the lock at once)", function()
+		open()
+		Box.editBox:SetText("potion")
+		SB.Adapter.Advance(0.2)
+		dimmed = {}
+		SB.Emit("SB_LOCKS_CHANGED")
+		assert.truthy(dimCount() > 0)
+```
+
+In `spec/searchbox_spec.lua` (edit 2 of 2), find:
 
 ```lua
 		assert.same({ "TOPRIGHT", window.frame, "TOPRIGHT", -8, -26 }, errorLine.points[2])
@@ -3678,7 +3989,7 @@ In `spec/vendor_spec.lua` (edit 2 of 6), find:
 ```lua
 	end)
 
-	-- P2. Mutation: /swagbag repair accepts any word.
+	-- P2, ruling R18 (the state names the choice as the settings window does). Mutations: /swagbag repair accepts
 ```
 
 and replace it with:
@@ -3715,7 +4026,33 @@ and replace it with:
 			.. " was a mistake." }, A.Lines())
 	end)
 
-	-- P2. Mutation: /swagbag repair accepts any word.
+	-- Ruling R2: a lock set while the item waits its turn stops its sale. Mutation: Vendor.Protected ignores
+	-- SB.Locks.
+	it("an item locked during the run (dropped on Lock while it waits its turn) is never sold", function()
+		A.Put(0, 7, GRAY, 1)
+		SB.Inventory.ScanAll()
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- slot 6 sells at once; the robe waits its turn
+		SB.Locks.Toggle(GRAY)
+		A.Advance(Mover.DELAY * 10)
+		assert.same({ 6 }, sold())
+		assert.same({ "Sold 1 junk item for 37s 2c." }, A.Lines())
+	end)
+
+	-- P6 (ruling R15). Mutation: the locked-item listener's trap window `end, "none"))` -> `end, "bags"))`.
+	it("a failure in the locked-item watch is recorded under none, never Safe Mode", function()
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		local real = SB.Vendor.WatchLocked
+		SB.Vendor.WatchLocked = function()
+			error("boom")
+		end
+		SB.Inventory.Notify(SB.Inventory.R.ITEM, {})
+		SB.Vendor.WatchLocked = real
+		local e = SB.ErrorTrap.Recent()[1]
+		assert.same({ "vendor.inventory", "none" }, { e.label, e.window })
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	-- P2, ruling R18 (the state names the choice as the settings window does). Mutations: /swagbag repair accepts
 ```
 
 In `spec/vendor_spec.lua` (edit 3 of 6), find:
@@ -3790,6 +4127,22 @@ and replace it with:
 		Fake.Fire(drop, "OnClick")
 		assert.equal(SB.L.SET_WATCH_DROP_EMPTY, SW.lastStatus)
 	end)
+
+	-- Ruling R17. Mutation: the page's SB_LOCKS_CHANGED listener never re-draws (`if SW.IsOpen() then` ->
+	-- `if false then`).
+	it("Locked items: N follows a lock made anywhere while the page is open", function()
+		local function count()
+			for i = 1, SW.used.labels do
+				local n = (SW.labels[i].text or ""):match("^Locked items: (%d+)$")
+				if n then
+					return tonumber(n)
+				end
+			end
+		end
+		assert.equal(0, count())
+		SB.Locks.Toggle(Fixtures.FLASK)
+		assert.equal(1, count())
+	end)
 end)
 ```
 
@@ -3800,7 +4153,7 @@ end)
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1302 passed, 23 failed`. The failures, exactly:
+Expected: `1305 passed, 33 failed`. The failures, exactly:
 
 - `spec/keywords_spec.lua :: Keywords (v1.0, week-1 families) > state keywords`
 - `spec/locks_spec.lua :: Locks (week 7) > a lock is per item ID, stored account-wide; a second toggle removes it; every change is announced`
@@ -3808,25 +4161,35 @@ Expected: `1302 passed, 23 failed`. The failures, exactly:
 - `spec/locks_spec.lua :: Locks (week 7) > the search keyword `locked` finds the user's locked items; `inuse` is the client's lock`
 - `spec/locks_spec.lua :: Locks (week 7) > /swagbag lock says how, lists, unlocks all, and answers every form`
 - `spec/locks_spec.lua :: Locks (week 7) > a locked item's tooltip says it is locked; others get nothing`
+- `spec/locks_spec.lua :: Locks (week 7) > first login with this version: one note if a saved query uses the word locked, never again`
 - `spec/locks_spec.lua :: Lock button (week 7) > an item dropped on Lock is locked and goes back; again unlocks it; each answers once in chat`
 - `spec/locks_spec.lua :: Lock button (week 7) > a click with nothing on the cursor says how; read-only keeps the item on the cursor and says why`
+- `spec/overlaydata_spec.lua :: OverlayData (spec F9) > no junk coin on a gray item the user locked`
 - `spec/overlays_spec.lua :: Overlays (spec F9) > each overlay has its own switch; /swagbag overlays lists and switches them`
 - `spec/overlays_spec.lua :: Overlays (spec F9) > a small lock on an item the user locked; overlays lock off hides it`
+- `spec/searchbox_spec.lua :: SearchBox > re-applies when a lock changes (a locked search follows the lock at once)`
 - `spec/searchbox_spec.lua :: SearchBox > the error line is top-aligned right of the box and never stretches over the items`
 - `spec/vendor_spec.lua :: Vendor (week 7) > sells gray junk a vendor pays for; never a set piece, an item the client holds, or one worth nothing`
-- `spec/vendor_spec.lua :: Vendor (week 7) > sells at most 12 per run (the buyback tab keeps 12) and says how to sell the rest`
+- `spec/vendor_spec.lua :: Vendor (week 7) > sells at most 12 per vendor visit (the buyback tab keeps 12); more needs a second, explicit yes`
 - `spec/vendor_spec.lua :: Vendor (week 7) > auto-sell off: nothing is sold by itself; /swagbag sell junk sells at a vendor and refuses elsewhere`
 - `spec/vendor_spec.lua :: Vendor (week 7) > repairs with your gold after the sale; says when gold is short; Off repairs nothing`
 - `spec/vendor_spec.lua :: Vendor (week 7) > Guild bank first: the guild pays when it allows enough (or has no limit), else your gold`
 - `spec/vendor_spec.lua :: Vendor (week 7) > a vendor opened in combat sells and repairs once combat ends, only if it is still open`
+- `spec/vendor_spec.lua :: Vendor (week 7) > a vendor opened in combat with nothing to sell or repair says nothing`
 - `spec/vendor_spec.lua :: Vendor (week 7) > a vendor closed mid-run: the line says how many sold and how many stayed`
+- `spec/vendor_spec.lua :: Vendor (week 7) > the line never says 0 stayed, and an item used by hand during the run does not count as stayed`
+- `spec/vendor_spec.lua :: Vendor (week 7) > an item that becomes protected during the run (here: put in an equipment set) is skipped, never sold`
+- `spec/vendor_spec.lua :: Vendor (week 7) > never sells an item to open or learn, or a gray BoE worth more than twice its vendor price at auction`
 - `spec/vendor_spec.lua :: Vendor (week 7) > a locked junk item is never sold, by auto-sell or by /swagbag sell junk`
 - `spec/vendor_spec.lua :: Vendor (week 7) > a locked item sold by hand (it left the bags and is in the buyback tab) gets one warning`
+- `spec/vendor_spec.lua :: Vendor (week 7) > an item locked during the run (dropped on Lock while it waits its turn) is never sold`
+- `spec/vendor_spec.lua :: Vendor (week 7) > a failure in the locked-item watch is recorded under none, never Safe Mode`
 - `spec/vendor_spec.lua :: Vendor (week 7) > /swagbag sell and /swagbag repair answer every form; read-only settings refuse`
 - `spec/vendor_spec.lua :: Settings: vendor page (week 7) > defaults first (On; Your gold), each click runs the command and answers in the status line`
 - `spec/vendor_spec.lua :: Settings: vendor page (week 7) > the lock drop row locks the item on the cursor; the click half of the same press keeps the answer`
+- `spec/vendor_spec.lua :: Settings: vendor page (week 7) > Locked items: N follows a lock made anywhere while the page is open`
 
-`spec/locks_spec.lua` and every test in `spec/vendor_spec.lua` fail because `Engine/Locks.lua` does not exist yet (the vendor specs now load it). `Keywords > state keywords` fails on `inuse`; `SearchBox > the error line ...` on the new inset; `Overlays > each overlay has its own switch` on the new `lock` name.
+`spec/locks_spec.lua` and every test in `spec/vendor_spec.lua` fail because `Engine/Locks.lua` does not exist yet (the vendor specs now load it). `Keywords > state keywords` fails on `inuse`; `SearchBox > the error line ...` on the new inset and `SearchBox > re-applies when a lock changes` on the missing listener; `OverlayData > no junk coin on a gray item the user locked` on the missing rule; `Overlays > each overlay has its own switch` on the new `lock` name.
 
 Critical tests and the mutation that must make each fail (each was applied to this task's finished code; the named test failed):
 
@@ -3835,31 +4198,35 @@ Critical tests and the mutation that must make each fail (each was applied to th
 - "the search keyword `locked` finds the user's locked items; `inuse` is the client's lock": in `SwagBag/Engine/Keywords.lua`, `kw("locked", "volatile", function(r) ⏎ return SB.Locks ~= nil and SB.Locks.Has(r.itemID) ⏎ end)` → `kw("locked", "volatile", flag("isLocked"))`.
 - "/swagbag lock says how, lists, unlocks all, and answers every form": in `SwagBag/Engine/Locks.lua`, `function Locks.Clear() ⏎ if SB.Config.readOnly then ⏎ return false, "readonly" ⏎ end` → `function Locks.Clear()`.
 - "a locked item's tooltip says it is locked; others get nothing": in `SwagBag/Engine/Locks.lua`, `if Locks.Has(itemID) then ⏎ SB.Adapter.TooltipLine` → `if true then ⏎ SB.Adapter.TooltipLine`.
+- "first login with this version: one note if a saved query uses the word locked, never again": in `SwagBag/Engine/Locks.lua`, `if d.notes.lockedKeyword then ⏎ return false ⏎ end` → `∅`.
+- "first login with this version: one note if a saved query uses the word locked, never again": in `SwagBag/Engine/Locks.lua`, `usesLocked(def.query)` → `true`.
 - "an item dropped on Lock is locked and goes back; again unlocks it; each answers once in chat": in `SwagBag/UI/LockButton.lua`, `A.ClearCursor() ⏎ return (locked` → `return (locked`.
 - "a click with nothing on the cursor says how; read-only keeps the item on the cursor and says why": in `SwagBag/UI/LockButton.lua`, `elseif not guarded then ⏎ SB.Print(L.LOCK_STATE:format(#SB.Locks.List()))` → `∅`.
+- "a click with nothing on the cursor says how; read-only keeps the item on the cursor and says why": in `SwagBag/UI/LockButton.lua`, `or L.LOCK_INVALID` → `or L.DROP_INVALID`.
+- "no junk coin on a gray item the user locked": in `SwagBag/Engine/OverlayData.lua`, `out.junk = out.junk and not out.locked` → `∅`.
+- "re-applies when a lock changes (a locked search follows the lock at once)": in `SwagBag/UI/SearchBox.lua`, `SB.On("SB_LOCKS_CHANGED", function()` → `SB.On("SB_LOCKS_CHANGED_X", function()`.
 - "a locked junk item is never sold, by auto-sell or by /swagbag sell junk": in `SwagBag/Engine/Vendor.lua`, `or (SB.Locks ~= nil and SB.Locks.Has(r.itemID))` → `∅`.
+- "an item locked during the run (dropped on Lock while it waits its turn) is never sold": in `SwagBag/Engine/Vendor.lua`, `or (SB.Locks ~= nil and SB.Locks.Has(r.itemID))` → `∅`.
 - "a locked item sold by hand (it left the bags and is in the buyback tab) gets one warning": in `SwagBag/Engine/Vendor.lua`, `and inBuyback(was.link) then` → `then`.
 - "a locked item sold by hand (it left the bags and is in the buyback tab) gets one warning": in `SwagBag/Engine/Vendor.lua`, `V.open = true ⏎ V.WatchLocked()` → `V.open = true`.
+- "a failure in the locked-item watch is recorded under none, never Safe Mode": in `SwagBag/Engine/Vendor.lua`, `end, "none"))` → `end, "bags"))`.
 - "a small lock on an item the user locked; overlays lock off hides it": in `SwagBag/UI/Overlays.lua`, `show(r.lock, on("lock") and d.locked)` → `show(r.lock, d.locked)`.
 - "the lock drop row locks the item on the cursor; the click half of the same press keeps the answer": in `SwagBag/UI/SettingsVendor.lua`, `if not A.CursorItem() and lastDrop and A.Now() - lastDrop < DROP_ECHO then` → `if false then`.
+- "Locked items: N follows a lock made anywhere while the page is open": in `SwagBag/UI/SettingsVendor.lua`, `if SW.IsOpen() then ⏎ SW.Render()` → `if false then ⏎ SW.Render()`.
 
 - [ ] **Step 3: Write the code**
 
 In `SwagBag/Core/Adapter.lua` (edit 1 of 2), find:
 
 ```lua
-	end
-	return copper
+	return copperIf("CanMerchantRepair", "GetRepairAllCost")
 end
-
--- Repair everything; guild = true pays from the guild bank. true when the call went through.
 ```
 
 and replace it with:
 
 ```lua
-	end
-	return copper
+	return copperIf("CanMerchantRepair", "GetRepairAllCost")
 end
 
 -- The links in the vendor's buyback tab (the last 12 items sold), oldest first; empty without the API.
@@ -3880,8 +4247,6 @@ function A.BuybackLinks()
 	end
 	return out
 end
-
--- Repair everything; guild = true pays from the guild bank. true when the call went through.
 ```
 
 In `SwagBag/Core/Adapter.lua` (edit 2 of 2), find:
@@ -3945,7 +4310,9 @@ Create `SwagBag/Engine/Locks.lua`:
 --   Locks.Clear() -> n | false, "readonly"
 --   Locks.Name(itemID) -> the item's name (or "item 123" while it loads)
 --   Locks.TooltipLine(tooltip, itemID)   the item tooltip's "Locked" line (UI/LockButton.lua hooks it)
--- Every change emits SB_LOCKS_CHANGED; the open windows re-draw their lock marks.
+--   Locks.KeywordNote() -> bool   the one-time note about the `locked` keyword's new meaning (ruling R21)
+-- Every change emits SB_LOCKS_CHANGED; the open windows re-draw their lock marks, a search re-applies (a
+-- `locked` search follows at once) and Settings > Vendor's count follows.
 local _, SB = ...
 
 local L = SB.L
@@ -4022,6 +4389,43 @@ function Locks.TooltipLine(tooltip, itemID)
 	end
 end
 
+-- Ruling R21: `locked` changed meaning in 0.7.0 (the user's lock; the client's lock is now `inuse`). At the
+-- first login with this version, a saved category or consumables-watch query that uses the word gets one chat
+-- note. SwagBagDB.notes.lockedKeyword (read defensively; schema stays 2) remembers that the check was made.
+local function usesLocked(query)
+	return type(query) == "string" and query:lower():find("%f[%w_]locked%f[^%w_]") ~= nil
+end
+
+function Locks.KeywordNote()
+	local d = SB.Config.db
+	if not d or SB.Config.readOnly then
+		return false
+	end
+	if type(d.notes) ~= "table" then
+		d.notes = {}
+	end
+	if d.notes.lockedKeyword then
+		return false
+	end
+	d.notes.lockedKeyword = true
+	local found = false
+	for _, key in ipairs({ "categories", "userEdits" }) do
+		for _, def in pairs(type(d[key]) == "table" and d[key] or {}) do
+			found = found or (type(def) == "table" and usesLocked(def.query))
+		end
+	end
+	local watch = SB.Config.Get("consumables.watch")
+	for _, e in ipairs(type(watch) == "table" and watch or {}) do
+		found = found or (type(e) == "table" and usesLocked(e.query))
+	end
+	if found then
+		SB.Print(L.LOCK_KEYWORD_NOTE)
+	end
+	return found
+end
+
+SB.On("SB_LOGIN", Locks.KeywordNote, "none")
+
 -- /swagbag lock [list|clear]: how to lock, the locked items, or unlock them all (P2).
 SB.Slash.Register("lock", L.HELP_LOCK, function(arg)
 	arg = (arg or ""):lower()
@@ -4061,7 +4465,7 @@ and replace it with:
 
 ```lua
 --     learn     "open" | "learn" | nil   an item to click: open it, or learn it (ctx.learn, week 7)
---     locked    boolean         the user locked it (ctx.locked, week 7) }
+--     locked    boolean         the user locked it (ctx.locked, week 7; then no junk coin) }
 --   ctx = { equipped = { [invSlot] = { ilvl, equipLoc } }, canUse = fn(itemID) -> bool,
 --           dungeonName = fn(mapID) -> name | nil, pawn = fn(record) -> true | false | nil,
 --           learn = fn(record) -> "open" | "learn" | nil (Engine/Collections.lua),
@@ -4093,6 +4497,7 @@ and replace it with:
 	end
 	if ctx.locked then
 		out.locked = ctx.locked(record.itemID) == true
+		out.junk = out.junk and not out.locked -- a locked item is never sold: no "sell me" coin (ruling R11)
 	end
 	-- Pawn replaces only the item-level rule: eligibility (loading, unusable, not worn gear) comes first.
 ```
@@ -4100,13 +4505,13 @@ and replace it with:
 In `SwagBag/Engine/Vendor.lua` (edit 1 of 3), find:
 
 ```lua
--- says what was sold and for how much; the repair says its own.
+-- line per run says what was sold and for how much; the repair says its own.
 ```
 
 and replace it with:
 
 ```lua
--- says what was sold and for how much; the repair says its own.
+-- line per run says what was sold and for how much; the repair says its own.
 -- A locked item sold by hand (Blizzard's own right-click, which SwagBag does not hook) cannot be stopped:
 -- while a vendor is open, a locked item that leaves the bags and shows up in the buyback tab gets one chat
 -- line naming it and where to buy it back (Vendor.WatchLocked).
@@ -4145,7 +4550,9 @@ local function inBuyback(link)
 	return false
 end
 
-SB.Inventory.OnChanged(function(mask, changes)
+-- P6: Inventory.Notify runs its listeners inside a "bags" trap; this one has its own "none" trap (ruling
+-- R15), so a failure in the warning is recorded and never switches the bags to Safe Mode.
+SB.Inventory.OnChanged(SB.ErrorTrap.Guard("vendor.inventory", function(mask, changes)
 	if not (V.open and SB.Inventory.Has(mask, SB.Inventory.R.ITEM)) then
 		return
 	end
@@ -4157,7 +4564,7 @@ SB.Inventory.OnChanged(function(mask, changes)
 		end
 	end
 	V.WatchLocked()
-end)
+end, "none"))
 
 SB.On("MERCHANT_SHOW", function()
 	V.open = true
@@ -4168,6 +4575,7 @@ In `SwagBag/Engine/Vendor.lua` (edit 3 of 3), find:
 
 ```lua
 	V.open = false
+	V.pastAsked = false
 end, "none")
 ```
 
@@ -4175,6 +4583,7 @@ and replace it with:
 
 ```lua
 	V.open = false
+	V.pastAsked = false
 	V.lockedAt = {}
 end, "none")
 
@@ -4233,6 +4642,9 @@ L.LOCK_LIST = "Locked: %s."
 L.LOCK_CLEARED = "Unlocked all items (%d)."
 L.LOCK_USAGE = "Use /swagbag lock, lock list, or lock clear."
 L.LOCK_TOOLTIP = "Locked in SwagBag: never sold by SwagBag"
+L.LOCK_INVALID = "That can't be locked: drop an item from your bags on Lock."
+L.LOCK_KEYWORD_NOTE = "Search note: the word locked now finds the items you locked in SwagBag. One of your saved"
+	.. " categories or watch-list searches uses it; for items the game holds while they move or trade, use inuse."
 L.LOCK_SOLD = "You sold %s, which you locked. Buy it back from the vendor's Buyback tab if that was a mistake."
 L.SET_OV_LOCK = "Lock mark on locked items"
 L.SET_LOCK_DROP_LABEL = "Lock or unlock an item (never sold by SwagBag)"
@@ -4296,7 +4708,7 @@ function LB.Drop()
 	end
 	local ok, locked = Locks.Toggle(itemID)
 	if not ok then
-		return locked == "readonly" and L.SETTINGS_READONLY or L.DROP_INVALID
+		return locked == "readonly" and L.SETTINGS_READONLY or L.LOCK_INVALID
 	end
 	A.ClearCursor()
 	return (locked and L.LOCK_ADDED or L.LOCK_REMOVED):format(Locks.Name(itemID))
@@ -4309,17 +4721,17 @@ local function press()
 		guardToken = guardToken + 1
 		local token = guardToken
 		guarded = true
+		-- A cosmetic timer: its trap is "none" (ruling R15), so it can never put the bags in Safe Mode.
 		SB.Adapter.After(LB.DROP_GUARD, Guard("lock.dropGuard", function()
 			if token == guardToken then
 				guarded = false
 			end
-		end, "bags"))
+		end, "none"))
 		SB.Print(line)
 	elseif not guarded then
 		SB.Print(L.LOCK_STATE:format(#SB.Locks.List()))
 	end
 end
-LB.Press = press
 
 local W = SB.BagsWindow
 if W and W.frame then
@@ -4439,7 +4851,7 @@ and replace it with:
 	show(r.lock, on("lock") and d.locked)
 ```
 
-In `SwagBag/UI/SearchBox.lua` (edit 1 of 3), find:
+In `SwagBag/UI/SearchBox.lua` (edit 1 of 4), find:
 
 ```lua
 --     debounceKey, isOpen = fn() -> bool, forEachSlot = fn(fn), setDimmed = fn(button, dimmed) }
@@ -4452,7 +4864,7 @@ and replace it with:
 --     rightInset (optional: room kept free at the row's right end; the bags window's Lock button, week 7) }
 ```
 
-In `SwagBag/UI/SearchBox.lua` (edit 2 of 3), find:
+In `SwagBag/UI/SearchBox.lua` (edit 2 of 4), find:
 
 ```lua
 	errorLine:SetPoint("TOPRIGHT", o.parent, "TOPRIGHT", -8, -26)
@@ -4464,7 +4876,7 @@ and replace it with:
 	errorLine:SetPoint("TOPRIGHT", o.parent, "TOPRIGHT", -(o.rightInset or 8), -26)
 ```
 
-In `SwagBag/UI/SearchBox.lua` (edit 3 of 3), find:
+In `SwagBag/UI/SearchBox.lua` (edit 3 of 4), find:
 
 ```lua
 	debounceKey = "search.bags",
@@ -4475,6 +4887,27 @@ and replace it with:
 ```lua
 	debounceKey = "search.bags",
 	rightInset = 62, -- the Lock button (UI/LockButton.lua) sits there
+```
+
+In `SwagBag/UI/SearchBox.lua` (edit 4 of 4), find:
+
+```lua
+SB.On("SB_BAGS_UPDATED", function()
+	Box.Apply()
+end, "bags")
+```
+
+and replace it with:
+
+```lua
+SB.On("SB_BAGS_UPDATED", function()
+	Box.Apply()
+end, "bags")
+
+-- Week 7 (ruling R21): a lock or unlock re-applies the search, so a `locked` search follows it at once.
+SB.On("SB_LOCKS_CHANGED", function()
+	Box.Apply()
+end, "bags")
 ```
 
 In `SwagBag/UI/SettingsPages.lua`, find:
@@ -4489,7 +4922,7 @@ and replace it with:
 	{ "learn", "overlays.learn", L.SET_OV_LEARN }, { "lock", "overlays.lock", L.SET_OV_LOCK },
 ```
 
-In `SwagBag/UI/SettingsVendor.lua` (edit 1 of 3), find:
+In `SwagBag/UI/SettingsVendor.lua` (edit 1 of 4), find:
 
 ```lua
 -- window and the command never disagree (P2: the status line answers).
@@ -4502,7 +4935,7 @@ and replace it with:
 -- target that locks or unlocks the item on the cursor (as the bags' Lock button), and Unlock all.
 ```
 
-In `SwagBag/UI/SettingsVendor.lua` (edit 2 of 3), find:
+In `SwagBag/UI/SettingsVendor.lua` (edit 2 of 4), find:
 
 ```lua
 local L = SB.L
@@ -4530,7 +4963,7 @@ local function lockDrop()
 end
 ```
 
-In `SwagBag/UI/SettingsVendor.lua` (edit 3 of 3), find:
+In `SwagBag/UI/SettingsVendor.lua` (edit 3 of 4), find:
 
 ```lua
 		{ kind = "note", label = L.SET_VENDOR_NOTE },
@@ -4551,6 +4984,27 @@ and replace it with:
 		} },
 ```
 
+In `SwagBag/UI/SettingsVendor.lua` (edit 4 of 4), find:
+
+```lua
+SB.SettingsWindow.AddPage({ id = "vendor", title = L.SET_PAGE_VENDOR, rows = rows })
+```
+
+and replace it with:
+
+```lua
+SB.SettingsWindow.AddPage({ id = "vendor", title = L.SET_PAGE_VENDOR, rows = rows })
+
+-- "Locked items: N" follows a lock or unlock made anywhere (the bags' Lock button, a command) while the
+-- window is open (ruling R17); a click on the page re-draws it anyway.
+SB.On("SB_LOCKS_CHANGED", function()
+	local SW = SB.SettingsWindow
+	if SW.IsOpen() then
+		SW.Render()
+	end
+end, "none")
+```
+
 
 - [ ] **Step 4: Run the tests and see them pass**
 
@@ -4558,7 +5012,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1325 passed, 0 failed`.
+Expected: `1338 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -4566,7 +5020,7 @@ Expected: `1325 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (68 files)`, `1325 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (68 files)`, `1338 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -4587,6 +5041,7 @@ git add SwagBag/Core/Adapter.lua \
 	spec/keywords_spec.lua \
 	spec/locks_spec.lua \
 	spec/mock_adapter.lua \
+	spec/overlaydata_spec.lua \
 	spec/overlays_spec.lua \
 	spec/searchbox_spec.lua \
 	spec/vendor_spec.lua
@@ -4600,16 +5055,16 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 6: Section actions: Shift+right-click a header to Send all to a bank or Sell all at a vendor
 
-User pick 6. `UI/SectionActions.lua` (D18–D21): a Shift+right-click on a bags-window section header opens a small menu beside it. At a bank: `Send all to bank (N)` and `Send all to warband bank (N)` (the warband entry leaves out what the warband bank does not take), through the mover with `Adapter.MoveToBank`, which passes the bank type to the call. At a vendor: `Sell all (N)`, after a confirmation, through `Vendor.Sell` (never locked, set, held or worthless items; 12 at most). In combat a click refuses before any question. Elsewhere one line says where actions work. The header tooltip names the gesture while an action is available. `SectionHeaders` passes the header to `onClick` and gains optional `onEnter`/`onLeave`; the bags window adds `W.SectionSlots(id)` (the items drawn in a section, never a placeholder).
+User pick 6. `UI/SectionActions.lua` (D18–D21): a Shift+right-click on a bags-window section header opens a small menu beside it. At a bank: `Send all to bank (N)` and `Send all to warband bank (N)` (the warband entry leaves out what the warband bank does not take), through the mover with `Adapter.MoveToBank`, which passes the bank type to the call. At a vendor: `Sell all (N)`, after a confirmation, through `Vendor.Sell` (never protected, held or worthless items; within the visit's 12, shared with the auto-sell, ruling R1; the question names the Auction House value when it is higher, R19, and past the 12 it says the earlier sales leave the Buyback tab). Right before each move the bank or vendor is checked again (R2, R20). In combat a click refuses before any question. The menu is themed like every SwagBag window (R14). `SB.AtBank()` (Core/Init.lua) is the one "a bank visit is open" check, used here and by Task 7 (R12). Elsewhere one line says where actions work. The header tooltip names the gesture while an action is available. `SectionHeaders` passes the header to `onClick` and gains optional `onEnter`/`onLeave`; the bags window adds `W.SectionSlots(id)` (the items drawn in a section, never a placeholder).
 
 **Files:**
 - Create: `SwagBag/UI/SectionActions.lua` (TOC, after `UI/BagsWindow.lua`): 69 files
-- Modify: `SwagBag/UI/BagsWindow.lua` (Shift+right-click, the hint, `W.SectionSlots`), `SwagBag/UI/SectionHeaders.lua` (`onClick(id, button, header)`, `onEnter`, `onLeave`), `SwagBag/Core/Adapter.lua` (`AllowedInBank`, `ShiftDown`; one optional check), `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`
+- Modify: `SwagBag/UI/BagsWindow.lua` (Shift+right-click, the hint, `W.SectionSlots`), `SwagBag/UI/SectionHeaders.lua` (`onClick(id, button, header)`, `onEnter`, `onLeave`), `SwagBag/Core/Adapter.lua` (`AllowedInBank`, `ShiftDown`; one optional check), `SwagBag/Core/Init.lua` (`SB.AtBank`), `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`
 - Test: `spec/sectionactions_spec.lua` (new), `spec/bagswindow_sections_spec.lua`, `spec/mock_adapter.lua` (`m.shift`, `m.notAllowed`, `ShiftDown`, `AllowedInBank`)
 
 **Interfaces:**
-- Consumes: `SB.Mover.Start` (Task 4), `SB.Vendor.open/Sell/Protected/Money/BUYBACK` (Tasks 4–5), `A.MoveToBank` (Task 4), `SB.BankWindow.interaction`, `W.state`, `W.records`, `SB.Categories.Name/FREE`, `StaticPopupDialogs`, `StaticPopup_Show`.
-- Produces: `SB.SectionActions.Entries(id) -> { { text, run } }`, `Open(id, header)`, `Hint(id, header)`, `Available()`, `Sellable(id)`, `Bankable(id, kind)`, `ConfirmSell(id, list)`, `SellConfirmed()`, `SA.menu`; `StaticPopupDialogs.SWAGBAG_SELL_ALL`; `W.SectionSlots(id) -> { { bag, slot, record } }`; `A.AllowedInBank(bag, slot, kind)`, `A.ShiftDown()`; `L.SECTION_*`.
+- Consumes: `SB.Mover.Start` and `job.ready` (Task 4), `SB.Vendor.open/Sell/Protected/Money/Room/BUYBACK` (Tasks 4–5), `SB.Prices.Value/Bound`, `A.MoveToBank` (Task 4), `SB.BankWindow.interaction`, `W.state`, `W.records`, `SB.Categories.Name/FREE`, `StaticPopupDialogs`, `StaticPopup_Show`.
+- Produces: `SB.AtBank()`; `SB.SectionActions.Entries(id) -> { { text, run } }`, `Open(id, header)`, `Hint(id, header)`, `Available()`, `Sellable(id)`, `Bankable(id, kind)`, `ConfirmSell(id, list)`, `SellConfirmed()`, `SA.menu`; `StaticPopupDialogs.SWAGBAG_SELL_ALL`; `W.SectionSlots(id) -> { { bag, slot, record } }`; `A.AllowedInBank(bag, slot, kind)`, `A.ShiftDown()`; `L.SECTION_*`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4776,13 +5231,44 @@ describe("Section actions (week 7)", function()
 		assert.same({ "Sell all (3)" }, texts())
 		SA.Entries("c_tradegoods")[1].run()
 		assert.equal("SWAGBAG_SELL_ALL", shown)
-		assert.equal("Sell 3 items from Trade Goods for about 6s 0c? Locked items and items in an equipment set stay.",
+		assert.equal("Sell 3 items from Trade Goods for about 6s 0c? " .. SB.L.SECTION_SELL_KEEPS,
 			StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
 		assert.same({}, used("sell"), "nothing before the answer")
 		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept()
 		A.Advance(Mover.DELAY * 5)
 		assert.same({ 1, 4, 5 }, used("sell"))
 		assert.same({ "Sold 3 items for 6s 0c." }, A.Lines())
+	end)
+
+	-- Ruling R1: Sell all shares the visit's 12 with the auto-sell and /swagbag sell junk. Mutations: in
+	-- SA.ConfirmSell, `math.min(#list, past and V.BUYBACK or V.Room())` -> `math.min(#list, V.BUYBACK)`; or
+	-- `if past then` -> `if false then` (no word about the Buyback tab); or SA.SellConfirmed drops `p.past`.
+	it("Sell all sells what still fits in the Buyback tab this visit; past that its question says so", function()
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SB.Vendor.soldThisVisit = 10 -- the auto-sell sold 10 at this vendor
+		SA.Entries("c_tradegoods")[1].run()
+		assert.equal("Sell 2 items from Trade Goods for about 4s 0c? " .. SB.L.SECTION_SELL_KEEPS,
+			StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
+		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept()
+		A.Advance(Mover.DELAY * 5)
+		assert.same({ 1, 2 }, used("sell"))
+		SA.Entries("c_tradegoods")[1].run()
+		assert.equal("Sell 3 items from Trade Goods for about 6s 0c? " .. SB.L.SECTION_SELL_PAST .. " "
+			.. SB.L.SECTION_SELL_KEEPS, StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
+		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept()
+		A.Advance(Mover.DELAY * 5)
+		assert.same({ 1, 2, 3, 4, 5 }, used("sell"))
+		assert.same({ "Sold 2 items for 4s 0c. " .. SB.L.VENDOR_MORE:format(3), "Sold 3 items for 6s 0c." }, A.Lines())
+	end)
+
+	-- Ruling R19: a gold-maker sees what the stack would fetch at auction before saying yes. Mutation: in
+	-- SA.ConfirmSell, `if worth > copper then` -> `if false then`.
+	it("Sell all's question names the Auction House value when it is higher than the vendor's", function()
+		A.auctionator = { prices = { ["item:" .. Fixtures.HERB] = 1000 } } -- 10s each at auction, 10c at a vendor
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SA.Entries("c_tradegoods")[1].run()
+		assert.equal("Sell 5 items from Trade Goods for about 10s 0c? At the Auction House they are worth about 10g 0s"
+			.. " 0c. " .. SB.L.SECTION_SELL_KEEPS, StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
 	end)
 
 	-- Mutation: SA.SellConfirmed skips the atVendor() check.
@@ -4838,21 +5324,25 @@ describe("Section actions (week 7)", function()
 		SA.Open("free")
 		A.combat = true
 		SA.Entries("c_tradegoods")[1].run()
-		SB.eventFrame:Fire("MERCHANT_SHOW") -- in combat: the auto-sell says it waits for combat's end
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- in combat, with nothing for the auto-sell or the repair to do
 		SA.Entries("c_tradegoods")[1].run() -- Sell all
 		assert.is_nil(shown, "no question in combat")
 		assert.same({}, used("bank"))
 		local L = SB.L
-		assert.same({ L.SECTION_WHERE, L.SECTION_NOTHING:format("Free"), L.SECTION_COMBAT, L.VENDOR_COMBAT, L.SECTION_COMBAT },
-			A.Lines())
+		assert.same({ L.SECTION_WHERE, L.SECTION_NOTHING:format("Free"), L.SECTION_COMBAT, L.SECTION_COMBAT }, A.Lines(),
+			"auto-sell off and nothing to repair: the vendor itself says nothing (ruling R9)")
 	end)
 
-	-- Mutation: the menu button's OnClick runs without hiding the menu first.
+	-- Mutations: the menu button's OnClick runs without hiding the menu first; or the menu frame is never themed
+	-- (ruling R14: drop `SB.Theme.Window(f, "dialog")`).
 	it("the menu: a button per action and Cancel, beside the header; a click runs it and closes the menu", function()
 		SB.BankWindow.interaction = true
+		local themed
+		SB.Theme = { Window = function(f, kind) themed = { f, kind } end, Button = function() end }
 		local header = Fake.New("Button", UIParent)
 		assert.truthy(SA.Open("c_tradegoods", header))
 		local m = SA.menu
+		assert.same({ m, "dialog" }, themed, "themes restyle the menu like every SwagBag window")
 		assert.same({ "Send all to bank (5)", "Send all to warband bank (5)", "Cancel" },
 			{ m.buttons[1].text, m.buttons[2].text, m.buttons[3].text })
 		assert.same({ "TOPLEFT", header, "BOTTOMLEFT", 24, 0 }, m.points[1])
@@ -4887,11 +5377,13 @@ end)
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1325 passed, 9 failed`. The failures, exactly:
+Expected: `1338 passed, 11 failed`. The failures, exactly:
 
 - `spec/bagswindow_sections_spec.lua :: BagsWindow focus front style (week 6) > Shift+right-click on a header opens its section actions; a plain right-click still collapses`
 - `spec/bagswindow_sections_spec.lua :: BagsWindow focus front style (week 6) > SectionSlots lists the items drawn in a section, never a placeholder`
 - `spec/sectionactions_spec.lua :: Section actions (week 7) > at a vendor Sell all asks first, then sells what a vendor pays for, never locked or set items`
+- `spec/sectionactions_spec.lua :: Section actions (week 7) > Sell all sells what still fits in the Buyback tab this visit; past that its question says so`
+- `spec/sectionactions_spec.lua :: Section actions (week 7) > Sell all's question names the Auction House value when it is higher than the vendor's`
 - `spec/sectionactions_spec.lua :: Section actions (week 7) > No sells nothing; a vendor closed before Yes sells nothing and says so`
 - `spec/sectionactions_spec.lua :: Section actions (week 7) > at a bank: Send all to the bank or the warband bank, leaving out what the warband bank refuses`
 - `spec/sectionactions_spec.lua :: Section actions (week 7) > a bank that stops taking items (full) ends the run and says how many stayed`
@@ -4904,12 +5396,17 @@ Expected: `1325 passed, 9 failed`. The failures, exactly:
 Critical tests and the mutation that must make each fail (each was applied to this task's finished code; the named test failed):
 
 - "at a vendor Sell all asks first, then sells what a vendor pays for, never locked or set items": in `SwagBag/UI/SectionActions.lua`, `and it.price > 0 and not SB.Vendor.Protected(r) then` → `and it.price > 0 then`.
+- "Sell all sells what still fits in the Buyback tab this visit; past that its question says so": in `SwagBag/UI/SectionActions.lua`, `math.min(#list, past and V.BUYBACK or V.Room())` → `math.min(#list, V.BUYBACK)`.
+- "Sell all sells what still fits in the Buyback tab this visit; past that its question says so": in `SwagBag/UI/SectionActions.lua`, `if past then ⏎ text = text .. " " .. L.SECTION_SELL_PAST` → `if false then ⏎ text = text .. " " .. L.SECTION_SELL_PAST`.
+- "Sell all sells what still fits in the Buyback tab this visit; past that its question says so": in `SwagBag/UI/SectionActions.lua`, `SB.Vendor.Sell(p.list, "section", nil, p.past)` → `SB.Vendor.Sell(p.list, "section")`.
+- "Sell all's question names the Auction House value when it is higher than the vendor's": in `SwagBag/UI/SectionActions.lua`, `if worth > copper then` → `if false then`.
 - "No sells nothing; a vendor closed before Yes sells nothing and says so": in `SwagBag/UI/SectionActions.lua`, `if not atVendor() then ⏎ SB.Print(L.VENDOR_NOT_OPEN) ⏎ return ⏎ end ⏎ local ok, why = SB.Vendor.Sell` → `local ok, why = SB.Vendor.Sell`.
 - "at a bank: Send all to the bank or the warband bank, leaving out what the warband bank refuses": in `SwagBag/UI/SectionActions.lua`, `and A.AllowedInBank(c.bag, c.slot, kind) ~= false then` → `then`.
 - "at a bank: Send all to the bank or the warband bank, leaving out what the warband bank refuses": in `SwagBag/UI/SectionActions.lua`, `return SB.Adapter.MoveToBank(bag, slot, kind)` → `return SB.Adapter.MoveToBank(bag, slot, "bank")`.
-- "a bank that stops taking items (full) ends the run and says how many stayed": in `SwagBag/UI/SectionActions.lua`, `if result.why == "stuck" or result.why == "error" then ⏎ line = line .. " " .. L.SECTION_FULL:format(L[KIND_NAME[kind]], total - n) ⏎ elseif` → `if`.
+- "a bank that stops taking items (full) ends the run and says how many stayed": in `SwagBag/UI/SectionActions.lua`, `if result.why == "stuck" or result.why == "error" then ⏎ line = line .. " " .. L.SECTION_FULL:format(where, result.left) ⏎ elseif` → `if`.
 - "nowhere to act: one line says where actions work; Free has none; in combat nothing moves": in `SwagBag/UI/SectionActions.lua`, `SB.Print(SA.Available() and L.SECTION_NOTHING:format(SB.Categories.Name(id)) or L.SECTION_WHERE) ⏎ return false` → `return false`.
 - "the menu: a button per action and Cancel, beside the header; a click runs it and closes the menu": in `SwagBag/UI/SectionActions.lua`, `f:Hide() ⏎ if self.run then` → `if self.run then`.
+- "the menu: a button per action and Cancel, beside the header; a click runs it and closes the menu": in `SwagBag/UI/SectionActions.lua`, `SB.Theme.Window(f, "dialog") -- themes` → `-- themes`.
 - "a header's tooltip names Shift+right-click only while a vendor or bank is open": in `SwagBag/UI/SectionActions.lua`, `if not (GameTooltip and SA.Available()) or id == SB.Categories.FREE then` → `if not GameTooltip or id == SB.Categories.FREE then`.
 - "Shift+right-click on a header opens its section actions; a plain right-click still collapses": in `SwagBag/UI/BagsWindow.lua`, `elseif mouseButton == "RightButton" and SB.SectionActions and SB.Adapter.ShiftDown() then ⏎ SB.SectionActions.Open(id, header)` → `∅`.
 - "SectionSlots lists the items drawn in a section, never a placeholder": in `SwagBag/UI/BagsWindow.lua`, `local r = c and c.bag and not c.placeholder and W.records[c.bag]` → `local r = c and c.bag and W.records[c.bag]`.
@@ -4968,6 +5465,28 @@ and replace it with:
 	{ path = "IsShiftKeyDown", window = "bags", required = false },
 ```
 
+In `SwagBag/Core/Init.lua`, find:
+
+```lua
+function SB.Print(msg)
+	SB.Adapter.ChatPrint(SB.CHAT_PREFIX .. tostring(msg))
+end
+```
+
+and replace it with:
+
+```lua
+function SB.Print(msg)
+	SB.Adapter.ChatPrint(SB.CHAT_PREFIX .. tostring(msg))
+end
+
+-- Week 7: is a bank visit open right now (UI/BankWindow.lua's `interaction`, between BANKFRAME_OPENED and
+-- _CLOSED)? The section actions and the gold glow at the bank both ask here (ruling R12: one definition).
+function SB.AtBank()
+	return SB.BankWindow ~= nil and SB.BankWindow.interaction == true
+end
+```
+
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -4985,7 +5504,11 @@ L.SECTION_WARBAND = "warband bank"
 L.SECTION_SELL_ALL = "Sell all (%d)"
 L.SECTION_SEND_ALL = "Send all to %s (%d)"
 L.SECTION_CANCEL = "Cancel"
-L.SECTION_SELL_CONFIRM = "Sell %d items from %s for about %s? Locked items and items in an equipment set stay."
+L.SECTION_SELL_CONFIRM = "Sell %d items from %s for about %s?"
+L.SECTION_SELL_AH = "At the Auction House they are worth about %s."
+L.SECTION_SELL_PAST = "SwagBag already sold 12 items at this vendor: selling these pushes the earlier ones out of"
+	.. " Blizzard's Buyback tab, so they can no longer be bought back."
+L.SECTION_SELL_KEEPS = "Never sold: " .. L.VENDOR_KEEPS .. "."
 L.SECTION_SENT = "Sent %d items from %s to the %s."
 L.SECTION_SENT_ONE = "Sent 1 item from %s to the %s."
 L.SECTION_FULL = "The %s did not take the next one (full, or a tab that does not take it), so %d stayed."
@@ -4994,7 +5517,7 @@ L.SECTION_COMBAT = "In combat: nothing was moved. Try again once combat ends."
 L.SECTION_NOTHING = "Nothing in %s can be sold or sent here."
 L.SECTION_WHERE = "Section actions work at a vendor (Sell all) or a bank (Send all). Open one, then Shift+right-click a"
 	.. " section's header."
-L.SECTION_HINT_VENDOR = "Shift+right-click: Sell all (asks first; locked and equipment-set items stay)"
+L.SECTION_HINT_VENDOR = "Shift+right-click: Sell all (asks first; locked, equipment-set and other protected items stay)"
 L.SECTION_HINT_BANK = "Shift+right-click: Send all to the bank or the warband bank"
 ```
 
@@ -5088,13 +5611,17 @@ Create `SwagBag/UI/SectionActions.lua`:
 --   at a bank     "Send all to bank (N)" and "Send all to warband bank (N)": each item goes into that bank
 --                 (Adapter.MoveToBank gives the bank type to the call, so Blizzard's selected tab is
 --                 never changed); items the warband bank does not take are left out
---   at a vendor   "Sell all (N)", after a confirmation: items a vendor pays for, never locked, in an
---                 equipment set, or held by the client; 12 at most per run (Blizzard's buyback keeps 12)
+--   at a vendor   "Sell all (N)", after a confirmation: items a vendor pays for, never what SwagBag protects
+--                 (Vendor.Protected: locked, in an equipment set, to open or learn, worth more at auction) or
+--                 what the client holds; within the visit's 12 (Blizzard's buyback keeps 12; the auto-sell and
+--                 /swagbag sell junk share them, ruling R1). The question names the Auction House value when
+--                 it is higher (R19), and past the 12 it says the earlier sales leave the Buyback tab.
 -- Nowhere else (and in Free) there is nothing to do, and one chat line says where it works. Mail is left
 -- out: attaching items to a letter is not a single safe call. Moves go through the mover
 -- (Engine/Mover.lua): one item each 0.2 s, out of combat only, never while an item is on the cursor or the
--- item's button is under the mouse (P5). A moved item leaves a placeholder (spec 4.3), so nothing else in
--- the bags moves. Each action answers once (P2): one chat line when it ends.
+-- item's button is under the mouse (P5); right before each move the vendor or bank is checked again
+-- (rulings R2, R20). A moved item leaves a placeholder (spec 4.3), so nothing else in the bags moves. Each
+-- action answers once (P2): one chat line when it ends.
 -- Why Shift+right-click: a left-click collapses (AC3.2), a right-click pins in the collapse style (AC8.3)
 -- and collapses in the front style (week 6), so both are taken; Shift+right-click is free, needs no new
 -- frame on every header, and a header's tooltip names it whenever an action is available.
@@ -5106,16 +5633,12 @@ local Guard = SB.ErrorTrap.Guard
 local SA = { WIDTH = 210, ROW = 22 }
 SB.SectionActions = SA
 
-local function atBank()
-	return SB.BankWindow ~= nil and SB.BankWindow.interaction == true
-end
-
 local function atVendor()
 	return SB.Vendor ~= nil and SB.Vendor.open == true
 end
 
 function SA.Available()
-	return atBank() or atVendor()
+	return SB.AtBank() or atVendor()
 end
 
 local function item(bag, slot, r)
@@ -5124,13 +5647,15 @@ local function item(bag, slot, r)
 		price = info and info.sellPrice or 0 }
 end
 
--- The section's items a vendor pays for and SwagBag may sell.
+-- The section's items a vendor pays for and SwagBag may sell. value: what one is worth to SwagBag
+-- (Auctionator's price, else the vendor's; Engine/Prices.lua), for the question's Auction House sentence.
 function SA.Sellable(id)
-	local out = {}
+	local P, out = SB.Prices, {}
 	for _, c in ipairs(SB.BagsWindow.SectionSlots(id)) do
 		local r = c.record
 		local it = item(c.bag, c.slot, r)
 		if not r.pending and not r.hasNoValue and not r.isLocked and it.price > 0 and not SB.Vendor.Protected(r) then
+			it.value = P and P.Value(r.link, r.itemID, P.Bound(r)) or it.price
 			out[#out + 1] = it
 		end
 	end
@@ -5150,20 +5675,25 @@ end
 
 local KIND_NAME = { bank = "SECTION_BANK", warband = "SECTION_WARBAND" }
 
+-- Right before each move (R20): the bank is still open. A lock never stops banking (it is about selling).
+local function bankReady()
+	return SB.AtBank() or "closed"
+end
+
 local function send(id, kind, list)
-	local name = SB.Categories.Name(id)
+	local name, where = SB.Categories.Name(id), L[KIND_NAME[kind]]
 	local ok, why = SB.Mover.Start({ items = list, act = function(bag, slot)
 		return SB.Adapter.MoveToBank(bag, slot, kind)
-	end, still = atBank, done = function(result)
-		local n, total = #result.moved, #list
-		local line = n == 1 and L.SECTION_SENT_ONE:format(name, L[KIND_NAME[kind]])
-			or L.SECTION_SENT:format(n, name, L[KIND_NAME[kind]])
+	end, ready = bankReady, still = SB.AtBank, done = function(result)
+		local n = #result.moved
+		local line = n == 1 and L.SECTION_SENT_ONE:format(name, where) or L.SECTION_SENT:format(n, name, where)
+		-- result.left: what stayed (never 0 on a stop, never an item used by hand meanwhile; ruling R8)
 		if result.why == "stuck" or result.why == "error" then
-			line = line .. " " .. L.SECTION_FULL:format(L[KIND_NAME[kind]], total - n)
+			line = line .. " " .. L.SECTION_FULL:format(where, result.left)
 		elseif result.why == "closed" then
-			line = line .. " " .. L.SECTION_CLOSED:format(total - n)
+			line = line .. " " .. L.SECTION_CLOSED:format(result.left)
 		elseif result.why == "combat" then
-			line = line .. " " .. L.VENDOR_STOP_COMBAT:format(total - n)
+			line = line .. " " .. L.VENDOR_STOP_COMBAT:format(result.left)
 		elseif result.kept > 0 then
 			line = line .. " " .. L.VENDOR_KEPT_MOUSE:format(result.kept)
 		end
@@ -5174,21 +5704,33 @@ local function send(id, kind, list)
 	end
 end
 
--- Sell all asks first (StaticPopup), naming how many, from where, and roughly for how much.
+-- Sell all asks first (StaticPopup), naming how many, from where, and roughly for how much; the Auction
+-- House value too when it is higher (R19). Within the visit's room it sells what fits; with no room left
+-- (R1) it sells up to 12 more only after this question, which then says the earlier sales leave the
+-- Buyback tab: that Yes is the explicit second confirmation.
 SA.pending = nil
 function SA.ConfirmSell(id, list)
 	if SB.Adapter.InCombat() then -- nothing would sell: say so now rather than after a question
 		SB.Print(L.SECTION_COMBAT)
 		return
 	end
-	local copper, n = 0, math.min(#list, SB.Vendor.BUYBACK)
+	local V = SB.Vendor
+	local past = V.Room() == 0
+	local copper, worth, n = 0, 0, math.min(#list, past and V.BUYBACK or V.Room())
 	for i = 1, n do
 		copper = copper + list[i].price * list[i].count
+		worth = worth + (list[i].value or list[i].price) * list[i].count
 	end
-	SA.pending = { id = id, list = list }
+	SA.pending = { id = id, list = list, past = past }
+	local text = L.SECTION_SELL_CONFIRM:format(n, SB.Categories.Name(id), V.Money(copper))
+	if worth > copper then
+		text = text .. " " .. L.SECTION_SELL_AH:format(V.Money(worth))
+	end
+	if past then
+		text = text .. " " .. L.SECTION_SELL_PAST
+	end
 	if StaticPopupDialogs and StaticPopup_Show then
-		StaticPopupDialogs.SWAGBAG_SELL_ALL.text = L.SECTION_SELL_CONFIRM:format(n, SB.Categories.Name(id),
-			SB.Vendor.Money(copper))
+		StaticPopupDialogs.SWAGBAG_SELL_ALL.text = text .. " " .. L.SECTION_SELL_KEEPS
 		StaticPopup_Show("SWAGBAG_SELL_ALL")
 	end
 end
@@ -5203,7 +5745,7 @@ function SA.SellConfirmed()
 		SB.Print(L.VENDOR_NOT_OPEN)
 		return
 	end
-	local ok, why = SB.Vendor.Sell(p.list, "section")
+	local ok, why = SB.Vendor.Sell(p.list, "section", nil, p.past)
 	if not ok then
 		SB.Print(why == "combat" and L.SECTION_COMBAT or L.MOVER_BUSY)
 	end
@@ -5237,7 +5779,7 @@ function SA.Entries(id)
 			end }
 		end
 	end
-	if atBank() then
+	if SB.AtBank() then
 		for _, kind in ipairs({ "bank", "warband" }) do
 			local list = SA.Bankable(id, kind)
 			if #list > 0 then
@@ -5262,6 +5804,9 @@ local function menuFrame()
 	f:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
 	f:Hide()
 	f.buttons = {}
+	if SB.Theme then
+		SB.Theme.Window(f, "dialog") -- themes restyle it like every SwagBag window (ruling R14)
+	end
 	table.insert(UISpecialFrames, "SwagBagSectionMenu")
 	SA.menu = f
 	return f
@@ -5391,7 +5936,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1334 passed, 0 failed`.
+Expected: `1349 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -5399,12 +5944,13 @@ Expected: `1334 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (69 files)`, `1334 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (69 files)`, `1349 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add SwagBag/Core/Adapter.lua \
+	SwagBag/Core/Init.lua \
 	SwagBag/Locale/enUS.lua \
 	SwagBag/SwagBag.toc \
 	SwagBag/UI/BagsWindow.lua \
@@ -5423,15 +5969,15 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 7: The gold glow at the bank on items worth money
 
-User pick 7. `Prices.WorthThreshold(values, mode, gold, percent)` (pure) gives the stack value from which an item glows: `fixed` gold × 10000, or the value of the last stack in the top percent; nil for off or nothing valued (D22). `UI/Overlays.lua` works the line out once per bank visit (`BANKFRAME_OPENED`, debounced; again on a price change, a setting change or a bags layout during the visit), over the bags and both banks, and tints the same glow region **gold**, which wins over green (D9). `BANKFRAME_CLOSED` ends it. `/swagbag worth [<gold>|top <percent>|off]` and a row on Settings > Bank & guild (100g first, 500g, 1000g, Your top N%, Off).
+User pick 7. `Prices.WorthThreshold(values, mode, gold, percent)` (pure) gives the stack value from which an item glows: `fixed` gold × 10000, or the value of the last stack in the top percent; nil for off or nothing valued (D22). `UI/Overlays.lua` works the line out once per bank visit (`BANKFRAME_OPENED`, debounced; again on a price change, a `/swagbag worth` change (the Settings row runs it) or a bags layout during the visit), over the bags and both banks, asking `SB.AtBank()` (Task 6, ruling R12), and tints the same glow region **gold**, which wins over green (D9). `BANKFRAME_CLOSED` ends it. `/swagbag worth [<gold>|top <percent>|off]` and a row on Settings > Bank & guild (100g first, 500g, 1000g, Your top N%, Off).
 
 **Files:**
 - Modify: `SwagBag/Engine/Prices.lua` (`WorthThreshold`), `SwagBag/UI/Overlays.lua` (`IsWorth`, `RefreshWorth`, the events, `/swagbag worth`), `SwagBag/UI/SettingsPages.lua` (the row), `SwagBag/Core/Config.lua` (`prices.worth`, `worthGold`, `worthTop`), `SwagBag/Locale/enUS.lua`
 - Test: `spec/prices_spec.lua`, `spec/overlays_spec.lua`, `spec/settings_spec.lua`
 
 **Interfaces:**
-- Consumes: `Prices.Value/Bound` (secret and missing prices are nil there), `SB.BankWindow.interaction/IsOpen/view.ForEachSlot`, `SB.BagsWindow.IsOpen/ForEachSlot`, the glow region (Task 3).
-- Produces: `SB.Prices.WorthThreshold`; `Ov.worthMin`, `Ov.IsWorth(record)`, `Ov.RefreshWorth()`, `Ov.WorthState()`, `Ov.WORTH_TINT`, `Ov.WORTH_DELAY`; `L.WORTH_*`, `L.SET_WORTH*`.
+- Consumes: `Prices.Value/Bound` (secret and missing prices are nil there), `SB.AtBank()` (Task 6), `SB.BankWindow.IsOpen/view.ForEachSlot`, `SB.BagsWindow.IsOpen/ForEachSlot`, the glow region (Task 3).
+- Produces: `SB.Prices.WorthThreshold`; `Ov.worthMin`, `Ov.IsWorth(record)`, `Ov.RefreshWorth()`, `Ov.WORTH_TINT`, `Ov.WORTH_DELAY`; `L.WORTH_*`, `L.SET_WORTH*`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -5563,7 +6109,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1334 passed, 5 failed`. The failures, exactly:
+Expected: `1349 passed, 5 failed`. The failures, exactly:
 
 - `spec/overlays_spec.lua :: Overlays (spec F9) > at the bank items worth 100g or more glow gold (their stack value); closing the bank ends it`
 - `spec/overlays_spec.lua :: Overlays (spec F9) > gold at the bank wins over green; a price the game will not give (secret, missing) never glows`
@@ -5758,14 +6304,11 @@ function Ov.IsWorth(record)
 	return Ov.worthMin ~= nil and stackValue(record) >= Ov.worthMin and stackValue(record) > 0
 end
 
-local function atBank()
-	return SB.BankWindow ~= nil and SB.BankWindow.interaction == true
-end
-
--- Work the threshold out over the bags and both banks, then re-draw.
+-- Work the threshold out over the bags and both banks, then re-draw. SB.AtBank: Core/Init.lua (one
+-- definition for the section actions and this glow, ruling R12).
 function Ov.RefreshWorth()
 	Ov.worthMin = nil
-	if atBank() and SB.Prices then
+	if SB.AtBank() and SB.Prices then
 		local values = {}
 		local function collect(forEach)
 			forEach(function(_, record)
@@ -5795,12 +6338,12 @@ SB.On("BANKFRAME_CLOSED", function()
 	Ov.RefreshAll()
 end, "none")
 SB.On("SB_PRICES_CHANGED", function()
-	if atBank() then
+	if SB.AtBank() then
 		worthSoon()
 	end
 end, "none")
 SB.On("SB_BAGS_LAYOUT", function()
-	if atBank() then
+	if SB.AtBank() then
 		worthSoon()
 	end
 end, "none")
@@ -5835,7 +6378,6 @@ local function worthState()
 	end
 	return L.WORTH_OFF
 end
-Ov.WorthState = worthState
 
 SB.Slash.Register("worth", L.HELP_WORTH, function(arg)
 	local a, b = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
@@ -5858,7 +6400,7 @@ SB.Slash.Register("worth", L.HELP_WORTH, function(arg)
 	if not ok then
 		return L.SETTINGS_READONLY
 	end
-	if atBank() then
+	if SB.AtBank() then
 		Ov.RefreshWorth()
 	end
 	return L.WORTH_SET:format(worthState())
@@ -5903,7 +6445,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1339 passed, 0 failed`.
+Expected: `1354 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -5911,7 +6453,7 @@ Expected: `1339 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (69 files)`, `1339 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (69 files)`, `1354 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -5934,14 +6476,14 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 8: The uncollected star: appearances, and toys, mounts and pets not learned
 
-User pick 9. `A.AppearanceKnown(link)` asks `C_TransmogCollection` (true / false; nil with no appearance, one the account cannot collect, or a secret). `Collections.Uncollected(record)` returns `"appearance"` for gear whose look is missing (cached per link) and `"toy"`, `"mount"`, `"pet"` from the Task 3 answers (shared through one `teaches` helper; decor stays with the green glow). `TRANSMOG_COLLECTION_UPDATED` drops the answers and re-draws. A purple `*` at the right middle of the button (a font string, D23), shown on gear always, and on toys, mounts and pets only while the green glow is off (D9). The keyword `uncollected`. Switch `overlays.uncollected`, on.
+User pick 9. `A.AppearanceKnown(link)` asks `C_TransmogCollection` (true / false; nil with no appearance, one the account cannot collect, or a secret). `Collections.Uncollected(record)` returns `"appearance"` for gear whose look is missing (cached per link) and `"toy"`, `"mount"`, `"pet"` from the Task 3 answers (shared through one `teaches` helper; decor stays with the green glow). `TRANSMOG_COLLECTION_UPDATED` drops the answers and re-draws. A purple `*` at the right middle of the button (a font string, D23), shown on gear always, and on toys, mounts and pets whenever the green glow is not drawn: switched off, or replaced by the gold glow at the bank (D9, ruling R10). The keyword `uncollected`. Switch `overlays.uncollected`, on. `Vendor.Protected` also keeps gear whose look is uncollected (ruling R19). `Engine/Collections.lua`'s comment names `Adapter.AppearanceKnown`, never the namespace, and `scripts/check.sh` now catches a bare `C_*` name outside the Adapter (ruling R5; the old comment fails it).
 
 **Files:**
-- Modify: `SwagBag/Core/Adapter.lua` (`AppearanceKnown`; three optional checks), `.luacheckrc` (`C_TransmogCollection`), `SwagBag/Engine/Collections.lua` (`teaches`, `Uncollected`, the event), `SwagBag/Engine/Keywords.lua` (`uncollected`), `SwagBag/Engine/OverlayData.lua` (`uncollected`), `SwagBag/UI/Overlays.lua` (the star), `SwagBag/UI/SettingsPages.lua` (the row), `SwagBag/Core/Config.lua` (`overlays.uncollected`), `SwagBag/Locale/enUS.lua`
-- Test: `spec/collections_spec.lua`, `spec/adapter_spec.lua`, `spec/overlays_spec.lua`, `spec/mock_adapter.lua` (`m.collected.looks`, `AppearanceKnown`)
+- Modify: `SwagBag/Core/Adapter.lua` (`AppearanceKnown`; three optional checks), `.luacheckrc` (`C_TransmogCollection`), `SwagBag/Engine/Collections.lua` (`teaches`, `Uncollected`, the event), `SwagBag/Engine/Keywords.lua` (`uncollected`), `SwagBag/Engine/OverlayData.lua` (`uncollected`), `SwagBag/Engine/Vendor.lua` (`Protected` keeps uncollected looks), `SwagBag/UI/Overlays.lua` (the star), `SwagBag/UI/SettingsPages.lua` (the row), `SwagBag/Core/Config.lua` (`overlays.uncollected`), `SwagBag/Locale/enUS.lua` (`VENDOR_KEEPS` too), `scripts/check.sh` (bare `C_*` names)
+- Test: `spec/collections_spec.lua`, `spec/adapter_spec.lua`, `spec/overlays_spec.lua`, `spec/vendor_spec.lua`, `spec/mock_adapter.lua` (`m.collected.looks`, `AppearanceKnown`)
 
 **Interfaces:**
-- Consumes: Task 3's cache and Adapter answers, `isGear`, the glow and `on("learn")`.
+- Consumes: Task 3's cache and Adapter answers, `isGear`, the glow, `on("learn")` and Task 7's `worth`; `Vendor.Protected` (Tasks 4–5).
 - Produces: `A.AppearanceKnown(link)`; `SB.Collections.Uncollected(record) -> "appearance" | "toy" | "mount" | "pet" | nil`; `OverlayData.For(...).uncollected` with `ctx.uncollected`; the overlay region `star`, `Ov.STAR`, `Ov.STAR_SIZE`, `Ov.STAR_COLOR`; `L.SET_OV_UNCOLLECTED`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -6052,6 +6594,36 @@ and replace it with:
 	-- Mutations: drop the Inventory listener's Invalidate; or register no NEW_TOY_ADDED handler.
 ```
 
+In `spec/vendor_spec.lua`, find:
+
+```lua
+		A.auctionator = { prices = { ["item:" .. GRAY_BOE] = 500, ["item:" .. (GRAY_BOE + 1)] = 150 } }
+		SB.Inventory.ScanAll()
+		visit()
+		assert.same({ 6, 9 }, sold())
+```
+
+and replace it with:
+
+```lua
+		A.auctionator = { prices = { ["item:" .. GRAY_BOE] = 500, ["item:" .. (GRAY_BOE + 1)] = 150 } }
+		SB.Inventory.ScanAll()
+		visit()
+		assert.same({ 6, 9 }, sold())
+	end)
+
+	-- Ruling R19: a gray piece whose look the account lacks is a transmog, not junk. Mutation: Vendor.Protected
+	-- drops `or SB.Collections.Uncollected(r) ~= nil`.
+	it("never sells gray gear whose look the account has not collected", function()
+		A.Put(0, 7, GRAY, 1, { link = "item:400200::look" })
+		A.Put(0, 8, GRAY, 1)
+		A.collected.looks["item:400200::look"] = false
+		A.collected.looks["item:400200"] = true
+		SB.Inventory.ScanAll()
+		visit()
+		assert.same({ 6, 8 }, sold())
+```
+
 In `spec/mock_adapter.lua`, find:
 
 ```lua
@@ -6100,9 +6672,11 @@ and replace it with:
 			SB.Config.Get("prices.worthTop") })
 	end)
 
-	-- Week 7 (user pick 9). Mutations: in Overlays.Apply, drop `not (on("learn") and d.learn ~= nil)` (a toy
-	-- would show the star and the glow); or `show(r.star, on("uncollected") and star)` -> `show(r.star, star)`.
-	it("a star on gear whose look is not collected; on a toy, mount or pet only while the learn glow is off", function()
+	-- Week 7 (user pick 9). Mutations: in Overlays.Apply, `or (d.uncollected ~= nil and not green)` ->
+	-- `or d.uncollected ~= nil` (a toy would show the star and the glow); or `show(r.star, on("uncollected") and
+	-- star)` -> `show(r.star, star)`; or (ruling R10) `local green = glow and not worth` -> `local green =
+	-- on("learn") and d.learn ~= nil` (under the gold glow at the bank the toy would show no star).
+	it("a star on gear whose look is not collected; on a toy, mount or pet only while the green glow is not drawn", function()
 		SB.Collections = { Learn = function(r)
 			return r.slot == 2 and "learn" or nil
 		end, Uncollected = function(r)
@@ -6113,6 +6687,13 @@ and replace it with:
 		local _, potion = draw(0, 1)
 		assert.same({ true, false, false }, { ring.star.shown, toy.star.shown, potion.star.shown })
 		assert.same({ "RIGHT", "*" }, { ring.star.points[1][1], ring.star.text })
+		Loader.LoadFile(SB, "SwagBag/Engine/Prices.lua")
+		A.items[Fixtures.FLASK].sellPrice = 100
+		Ov.worthMin = 1 -- at the bank the toy's stack is worth money: it glows gold, not green, so the star shows too
+		local _, toyAtBank = draw(0, 2)
+		assert.same({ true, { 1, 0.82, 0 }, true },
+			{ toyAtBank.glow.shown, toyAtBank.glow.calls.SetVertexColor, toyAtBank.star.shown })
+		Ov.worthMin = nil
 		SB.Slash.Dispatch("overlays learn off")
 		local _, toyNoGlow = draw(0, 2)
 		assert.truthy(toyNoGlow.star.shown, "the glow is off: the star says it instead")
@@ -6128,13 +6709,14 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1338 passed, 5 failed`. The failures, exactly:
+Expected: `1353 passed, 6 failed`. The failures, exactly:
 
 - `spec/adapter_spec.lua :: Adapter collections (week 7) > appearances: collected or not; nil with no source, one the account cannot collect, or a secret`
 - `spec/collections_spec.lua :: Collections (week 7) > Uncollected: gear whose look is missing, toys, mounts and pets not yet collected; cached per link`
 - `spec/collections_spec.lua :: Collections (week 7) > the search keyword `uncollected` finds the same items`
 - `spec/overlays_spec.lua :: Overlays (spec F9) > each overlay has its own switch; /swagbag overlays lists and switches them`
-- `spec/overlays_spec.lua :: Overlays (spec F9) > a star on gear whose look is not collected; on a toy, mount or pet only while the learn glow is off`
+- `spec/overlays_spec.lua :: Overlays (spec F9) > a star on gear whose look is not collected; on a toy, mount or pet only while the green glow is not drawn`
+- `spec/vendor_spec.lua :: Vendor (week 7) > never sells gray gear whose look the account has not collected`
 
 `Overlays > each overlay has its own switch` fails only because its list now names `uncollected`.
 
@@ -6143,8 +6725,10 @@ Critical tests and the mutation that must make each fail (each was applied to th
 - "Uncollected: gear whose look is missing, toys, mounts and pets not yet collected; cached per link": in `SwagBag/Engine/Collections.lua`, `return SB.Adapter.AppearanceKnown(link) ⏎ end) == false then` → `return SB.Adapter.AppearanceKnown(link) ⏎ end) ~= true then`.
 - "Uncollected: gear whose look is missing, toys, mounts and pets not yet collected; cached per link": in `SwagBag/Engine/Collections.lua`, `, "TRANSMOG_COLLECTION_UPDATED" }) do` → `}) do`.
 - "the search keyword `uncollected` finds the same items": in `SwagBag/Engine/Keywords.lua`, `return SB.Collections ~= nil and SB.Collections.Uncollected(r) ~= nil` → `return false`.
-- "a star on gear whose look is not collected; on a toy, mount or pet only while the learn glow is off": in `SwagBag/UI/Overlays.lua`, `or (d.uncollected ~= nil and not (on("learn") and d.learn ~= nil))` → `or d.uncollected ~= nil`.
-- "a star on gear whose look is not collected; on a toy, mount or pet only while the learn glow is off": in `SwagBag/UI/Overlays.lua`, `show(r.star, on("uncollected") and star)` → `show(r.star, star)`.
+- "a star on gear whose look is not collected; on a toy, mount or pet only while the green glow is not drawn": in `SwagBag/UI/Overlays.lua`, `or (d.uncollected ~= nil and not green)` → `or d.uncollected ~= nil`.
+- "a star on gear whose look is not collected; on a toy, mount or pet only while the green glow is not drawn": in `SwagBag/UI/Overlays.lua`, `show(r.star, on("uncollected") and star)` → `show(r.star, star)`.
+- "a star on gear whose look is not collected; on a toy, mount or pet only while the green glow is not drawn": in `SwagBag/UI/Overlays.lua`, `local green = glow and not worth` → `local green = on("learn") and d.learn ~= nil`.
+- "never sells gray gear whose look the account has not collected": in `SwagBag/Engine/Vendor.lua`, `or SB.Collections.Uncollected(r) ~= nil` → `∅`.
 - "appearances: collected or not; nil with no source, one the account cannot collect, or a secret": in `SwagBag/Core/Adapter.lua`, `if not okC or isSecret(canCollect) or canCollect ~= true then ⏎ return nil ⏎ end` → `∅`.
 
 - [ ] **Step 3: Write the code**
@@ -6235,7 +6819,7 @@ and replace it with:
 ```lua
 --             knowledge item (Engine/Crests.lua `knowledge`)
 --   Collections.Uncollected(record) -> "appearance" | "toy" | "mount" | "pet" | nil   (user pick 9)
---     appearance  gear whose look the account has not collected (C_TransmogCollection)
+--     appearance  gear whose look the account has not collected (Adapter.AppearanceKnown)
 --     toy / mount / pet   an item that teaches one the account does not have yet
 ```
 
@@ -6365,13 +6949,13 @@ and replace it with:
 In `SwagBag/Engine/OverlayData.lua` (edit 1 of 3), find:
 
 ```lua
---     locked    boolean         the user locked it (ctx.locked, week 7) }
+--     locked    boolean         the user locked it (ctx.locked, week 7; then no junk coin) }
 ```
 
 and replace it with:
 
 ```lua
---     locked    boolean         the user locked it (ctx.locked, week 7)
+--     locked    boolean         the user locked it (ctx.locked, week 7; then no junk coin)
 --     uncollected "appearance" | "toy" | "mount" | "pet" | nil   (ctx.uncollected, week 7) }
 ```
 
@@ -6405,7 +6989,34 @@ and replace it with:
 	-- Pawn replaces only the item-level rule: eligibility (loading, unusable, not worn gear) comes first.
 ```
 
-In `SwagBag/Locale/enUS.lua` (edit 1 of 3), find:
+In `SwagBag/Engine/Vendor.lua` (edit 1 of 2), find:
+
+```lua
+--                                      knowledge), or a gray BoE item Auctionator prices above twice the vendor
+```
+
+and replace it with:
+
+```lua
+--                                      knowledge), gear whose look the account has not collected
+--                                      (Collections.Uncollected, Task 8), or a gray BoE item Auctionator prices
+--                                      above twice the vendor
+```
+
+In `SwagBag/Engine/Vendor.lua` (edit 2 of 2), find:
+
+```lua
+		or (SB.Collections ~= nil and SB.Collections.Learn(r) ~= nil) or worthMoreAtAuction(r)
+```
+
+and replace it with:
+
+```lua
+		or (SB.Collections ~= nil and (SB.Collections.Learn(r) ~= nil or SB.Collections.Uncollected(r) ~= nil))
+		or worthMoreAtAuction(r)
+```
+
+In `SwagBag/Locale/enUS.lua` (edit 1 of 4), find:
 
 ```lua
 	.. " lock, pawn)"
@@ -6417,7 +7028,7 @@ and replace it with:
 	.. " lock, uncollected, pawn)"
 ```
 
-In `SwagBag/Locale/enUS.lua` (edit 2 of 3), find:
+In `SwagBag/Locale/enUS.lua` (edit 2 of 4), find:
 
 ```lua
 	.. " <ilvl|track|upgrade|keystone|junk|bind|learn|lock|pawn|title> <on|off>."
@@ -6429,7 +7040,21 @@ and replace it with:
 	.. " <ilvl|track|upgrade|keystone|junk|bind|learn|lock|uncollected|pawn|title> <on|off>."
 ```
 
-In `SwagBag/Locale/enUS.lua` (edit 3 of 3), find:
+In `SwagBag/Locale/enUS.lua` (edit 3 of 4), find:
+
+```lua
+L.VENDOR_KEEPS = "locked items, equipment-set items, items to open or learn, and gray BoE items worth more at"
+	.. " auction"
+```
+
+and replace it with:
+
+```lua
+L.VENDOR_KEEPS = "locked items, equipment-set items, gear whose look you have not collected, items to open or learn,"
+	.. " and gray BoE items worth more at auction"
+```
+
+In `SwagBag/Locale/enUS.lua` (edit 4 of 4), find:
 
 ```lua
 	.. " store. /swagbag worth sets any amount or percent."
@@ -6455,7 +7080,7 @@ and replace it with:
 ```lua
 --   top middle    a small padlock on an item the user locked      (overlays.lock, week 7)
 --   right middle  a purple star on gear whose look the account lacks, and on a toy, mount or pet not
---                 collected yet while the green glow is off (one signal per item)  (overlays.uncollected)
+--                 collected yet while the green glow is not drawn (off, or gold at the bank)  (overlays.uncollected)
 ```
 
 In `SwagBag/UI/Overlays.lua` (edit 2 of 6), find:
@@ -6526,8 +7151,11 @@ and replace it with:
 
 ```lua
 	show(r.lock, on("lock") and d.locked)
-	-- A toy, mount or pet already glows green while the learn glow is on: the star is for the rest.
-	local star = d.uncollected == "appearance" or (d.uncollected ~= nil and not (on("learn") and d.learn ~= nil))
+	-- One signal per item (D9): a toy, mount or pet the green glow already marks gets no star; gear's look,
+	-- and a toy, mount or pet under the gold glow at the bank (green not drawn), get the star in their own
+	-- corner (ruling R10).
+	local green = glow and not worth
+	local star = d.uncollected == "appearance" or (d.uncollected ~= nil and not green)
 	show(r.star, on("uncollected") and star)
 ```
 
@@ -6544,6 +7172,24 @@ and replace it with:
 	{ "uncollected", "overlays.uncollected", L.SET_OV_UNCOLLECTED },
 ```
 
+In `scripts/check.sh`, find:
+
+```bash
+if grep -rnE '(^|[^[:alnum:]_])(C_[A-Z][A-Za-z]*|Enum)\.' SwagBag | grep -v '^SwagBag/Core/Adapter.lua:'; then
+	fail "C_* or Enum used outside SwagBag/Core/Adapter.lua"
+fi
+```
+
+and replace it with:
+
+```bash
+# A C_* namespace is named only in the Adapter, comments included: a bare name with no dot after it counts too
+# (week 7, ruling R5: a comment once named one). Enum is matched where it is used (Enum.).
+if grep -rnE '(^|[^[:alnum:]_])(C_[A-Z][A-Za-z]*|Enum\.)' SwagBag | grep -v '^SwagBag/Core/Adapter.lua:'; then
+	fail "C_* or Enum named outside SwagBag/Core/Adapter.lua (comments included)"
+fi
+```
+
 
 - [ ] **Step 4: Run the tests and see them pass**
 
@@ -6551,7 +7197,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1343 passed, 0 failed`.
+Expected: `1359 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -6559,7 +7205,7 @@ Expected: `1343 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (69 files)`, `1343 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (69 files)`, `1359 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -6570,13 +7216,16 @@ git add .luacheckrc \
 	SwagBag/Engine/Collections.lua \
 	SwagBag/Engine/Keywords.lua \
 	SwagBag/Engine/OverlayData.lua \
+	SwagBag/Engine/Vendor.lua \
 	SwagBag/Locale/enUS.lua \
 	SwagBag/UI/Overlays.lua \
 	SwagBag/UI/SettingsPages.lua \
+	scripts/check.sh \
 	spec/adapter_spec.lua \
 	spec/collections_spec.lua \
 	spec/mock_adapter.lua \
-	spec/overlays_spec.lua
+	spec/overlays_spec.lua \
+	spec/vendor_spec.lua
 git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 7 Task 8: uncollected star (appearances; toys, mounts and pets while the green glow is off), 'uncollected' keyword
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -6587,16 +7236,16 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 9: Settings profiles and share strings (Engine/Profiles.lua, the share box, Settings > Profiles)
 
-User pick 12. `Engine/Profiles.lua`: named profiles (copies of the account settings the user set, without Safe Mode and the quick-setup flag; D24), load with one step of undo, back to defaults, delete; the share string (D25: `SWAGBAG:1:` + percent-escaped `key=value` entries, optionally with the categories), its parser (patterns only, D26), a preview of every change and the import (D27). After a load, an import or a reset the open windows follow at once (`Profiles.Follow`, as quick setup does). `UI/ShareBox.lua` is the copy / paste box (Preview, then Import). `UI/SettingsProfiles.lua` is the new page. `/swagbag profile [save|load|delete <name>|reset|undo|export [categories]|import]`.
+User pick 12. `Engine/Profiles.lua`: named profiles (copies of the account settings the user set, without Safe Mode and the quick-setup flag; D24), load with one step of undo, back to defaults, delete; the share string (D25: `SWAGBAG:1:` + percent-escaped `key=value` entries, optionally with the categories), its parser (patterns only; every setting checked against its range or allowed words, and `guildBank.withdrawAnyTab` never carried: D26, ruling R3), a preview of every change that names each setting as the settings window does (R18) and counts a watch list equal to yours as no change (R7), and the import (D27). Undo after an import with categories also brings back the categories, built-in edits and order (R6). After a load, an import or a reset the open windows follow at once (`Profiles.Follow`, through `SB.FollowSettings` in `Core/Init.lua`, which quick setup now uses too: R12). `UI/ShareBox.lua` is the copy / paste box (Preview, then Import). `UI/SettingsProfiles.lua` is the new page. `/swagbag profile [save|load|delete <name>|reset|undo|export [categories]|import]`.
 
 **Files:**
 - Create: `SwagBag/Engine/Profiles.lua` (TOC, after `Engine/Vendor.lua`), `SwagBag/UI/SettingsProfiles.lua`, `SwagBag/UI/ShareBox.lua` (TOC, after `UI/SettingsVendor.lua`): 72 files
-- Modify: `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`
+- Modify: `SwagBag/Core/Init.lua` (`SB.FollowSettings`), `SwagBag/UI/QuickSetup.lua` (its `refresh` calls it), `SwagBag/Locale/enUS.lua`, `SwagBag/SwagBag.toc`
 - Test: `spec/profiles_spec.lua` (new)
 
 **Interfaces:**
 - Consumes: `Config.db/Copy/Defaults/Get/readOnly`, `SB.Emit("SB_CONFIG_CHANGED", nil)`, `Categories.Load/Name/Get/SectionOrder`, `Overlays.context/RefreshAll`, `W.RequestLayout/RefreshTitle`, `Theme.Apply(id, false)`, `Adapter.Time`.
-- Produces: `SB.Profiles.List/Save/Load/Delete/Reset/Undo/Export/Parse/Preview/Import/Follow/KnownPaths`, `Profiles.VERSION`, `Profiles.HEADER`, the limits `MAX_TEXT`, `MAX_ENTRIES`, `MAX_STRING`, `MAX_NAME`, `MAX_CATEGORIES`, `MAX_LIST`, `MAX_WATCH`; `SB.ShareBox.ShowExport/ShowImport/Preview/Import`, `ShareBox.frame/data/mode`; the saved `SwagBagDB.profiles`, `.profile`, `.backups.profile`; `L.PROFILE_*`, `L.SHARE_*`, `L.SET_PROFILE*`.
+- Produces: `SB.FollowSettings(reason)`; `SB.Profiles.List/Save/Load/Delete/Reset/Undo/Export/Parse/Preview/Import/Follow/KnownPaths/Label`, `data.ignored`, `Profiles.VERSION`, `Profiles.HEADER`, the limits `MAX_TEXT`, `MAX_ENTRIES`, `MAX_STRING`, `MAX_NAME`, `MAX_CATEGORIES`, `MAX_LIST`, `MAX_WATCH`; `SB.ShareBox.ShowExport/ShowImport/Preview/Import`, `ShareBox.frame/data/mode`; the saved `SwagBagDB.profiles`, `.profile`, `.backups.profile`; `L.PROFILE_*`, `L.SHARE_*`, `L.SET_PROFILE*`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -6611,7 +7260,9 @@ local Loader = dofile("spec/helpers/loader.lua")
 local Fake = dofile("spec/helpers/fakeframe.lua")
 local Env = dofile("spec/helpers/uienv.lua")
 
-local function load(withUI)
+-- Named loadSB, never `load`: a local `load` would hide the global one the "never runs" test intercepts
+-- (ruling R4).
+local function loadSB(withUI)
 	local files = { unpack(Env.ENGINE) }
 	files[#files + 1] = "SwagBag/Engine/Profiles.lua"
 	local SB = Loader.New(files)
@@ -6630,7 +7281,7 @@ end
 describe("Profiles (week 7)", function()
 	local SB, A, Pr, C, changed
 	before_each(function()
-		SB = load(false)
+		SB = loadSB(false)
 		A, Pr, C = SB.Adapter, SB.Profiles, SB.Config
 		changed = 0
 		SB.On("SB_CONFIG_CHANGED", function(_, path)
@@ -6689,10 +7340,10 @@ describe("Profiles (week 7)", function()
 
 	-- Mutation: in esc(), let "%" through unescaped (a value with % would come back wrong).
 	it("a share string round-trips the settings you set: text with ; = % |, booleans, numbers, the watch list", function()
-		C.Set("bags.footer.entries", "gold;=%|,-free")
+		C.Set("bags.footer.entries", "gold,-free")
 		C.Set("overlays.junk", false)
 		C.Set("bags.scale", 1.25)
-		C.Set("consumables.watch", { { query = "flask & lvl>=80", threshold = 2, name = "WATCH_FLASK" },
+		C.Set("consumables.watch", { { query = "flask & lvl>=80;=%|", threshold = 2, name = "WATCH_FLASK" },
 			{ itemID = 211880, threshold = 5 } })
 		C.Set("safeMode.bank", true)
 		local text = Pr.Export(false)
@@ -6700,10 +7351,10 @@ describe("Profiles (week 7)", function()
 		assert.falsy(text:find("safeMode", 1, true))
 		assert.falsy(text:find("|", 1, true), "no pipe: chat and edit boxes would read it as a code")
 		local data = assert(Pr.Parse(text))
-		assert.same({ ["bags.footer.entries"] = "gold;=%|,-free", ["overlays.junk"] = false, ["bags.scale"] = 1.25 },
+		assert.same({ ["bags.footer.entries"] = "gold,-free", ["overlays.junk"] = false, ["bags.scale"] = 1.25 },
 			data.settings)
-		assert.same({ { query = "flask & lvl>=80", threshold = 2, name = "WATCH_FLASK" }, { itemID = 211880, threshold = 5 } },
-			data.watch)
+		assert.same({ { query = "flask & lvl>=80;=%|", threshold = 2, name = "WATCH_FLASK" },
+			{ itemID = 211880, threshold = 5 } }, data.watch)
 	end)
 
 	-- Mutation: in Pr.Parse, `elseif tonumber(version) > Pr.VERSION` -> `elseif false` (a newer string read anyway).
@@ -6718,14 +7369,34 @@ describe("Profiles (week 7)", function()
 		assert.same({ nil, "empty" }, { Pr.Parse("  ") })
 	end)
 
-	-- Mutation: in Pr.Parse, an unknown setting path is stored in data.settings (then imported as junk).
+	-- Ruling R3 (and R13: MAX_LIST is enforced). Mutations: in Pr.Parse, `elseif not valid(path, value) then` ->
+	-- `elseif false then`; or `if NEVER[path] then` -> `if false then` (the guild bank's safety switch would
+	-- travel); or in numbers(), drop `count > Pr.MAX_LIST or `.
+	it("refuses a value outside its range or words, whole; never carries withdrawAnyTab; caps item lists", function()
+		assert.same({ nil, "type", "bags.columns" }, { Pr.Parse("SWAGBAG:1:s.bags.columns=n0") })
+		assert.same({ nil, "type", "bags.columns" }, { Pr.Parse("SWAGBAG:1:s.bags.columns=n12.5") })
+		assert.same({ nil, "type", "bags.scale" }, { Pr.Parse("SWAGBAG:1:s.overlays.junk=b0;s.bags.scale=n-3") })
+		assert.same({ nil, "type", "prices.worthTop" }, { Pr.Parse("SWAGBAG:1:s.prices.worthTop=n0") })
+		assert.same({ nil, "type", "theme.name" }, { Pr.Parse("SWAGBAG:1:s.theme.name=sbogus") })
+		assert.same({ nil, "type", "focus.sections.raid" }, { Pr.Parse("SWAGBAG:1:s.focus.sections.raid=sc_gear%3Bx") })
+		local data = assert(Pr.Parse("SWAGBAG:1:s.bags.columns=n14;s.guildBank.withdrawAnyTab=b1"))
+		assert.same({ { ["bags.columns"] = 14 }, { "guildBank.withdrawAnyTab" } }, { data.settings, data.ignored })
+		C.Set("guildBank.withdrawAnyTab", true)
+		assert.falsy(Pr.Export(false):find("withdrawAnyTab", 1, true), "never exported either")
+		assert.same({ nil, "type", "cu.u_x.inc" },
+			{ Pr.Parse("SWAGBAG:1:cu.u_x.inc=s" .. ("1%2C"):rep(Pr.MAX_LIST) .. "1") })
+	end)
+
+	-- Mutations: in Pr.Parse, an unknown setting path is stored in data.settings (then imported as junk); or
+	-- (ruling R4: the global `load` is the one intercepted) `local known = knownPaths()` -> `local known =
+	-- load("return 1") and knownPaths()`.
 	it("never runs what it reads; settings this version does not know are skipped and named", function()
 		local loads = 0
-		local realLoad, realLoadstring = load, loadstring
-		load = function(...) loads = loads + 1 return realLoad(...) end
-		loadstring = function(...) loads = loads + 1 return realLoadstring(...) end
+		local realLoad, realLoadstring = _G.load, _G.loadstring
+		_G.load = function(...) loads = loads + 1 return realLoad(...) end
+		_G.loadstring = function(...) loads = loads + 1 return realLoadstring(...) end
 		local data = Pr.Parse("SWAGBAG:1:s.bags.columns=n14;s.bags.sparkles=b1;s.os.execute=sx;zz=b1")
-		load, loadstring = realLoad, realLoadstring
+		_G.load, _G.loadstring = realLoad, realLoadstring
 		assert.equal(0, loads)
 		assert.same({ ["bags.columns"] = 14 }, data.settings)
 		assert.same({ "bags.sparkles", "os.execute", "zz" }, data.skipped)
@@ -6735,12 +7406,35 @@ describe("Profiles (week 7)", function()
 	it("the preview names each change (old -> new), the watch list, categories and skipped settings", function()
 		C.Set("bags.columns", 14)
 		local data = Pr.Parse("SWAGBAG:1:s.bags.columns=n14;s.bags.view=slist;s.bags.sparkles=b1;w=s")
-		assert.same({ "bags.view: sections -> list", "Consumables watch list: 0 entries",
+		assert.same({ "Bag view: sections -> list", "Consumables watch list: 0 entries",
 			"Not known by this version (skipped): bags.sparkles" }, Pr.Preview(data))
 		assert.same({ SB.L.PROFILE_PREVIEW_NOTHING }, Pr.Preview(Pr.Parse("SWAGBAG:1:s.bags.columns=n14")))
 	end)
 
-	-- Mutation: Pr.Import skips data.edits.
+	-- Ruling R18. Mutation: in Pr.Label, `local key = LABELS[path]` -> `local key = nil` (dotted paths).
+	it("the preview names every setting as the settings window does, and a mode's sections by their names", function()
+		for path in pairs(Pr.KnownPaths()) do
+			local label = Pr.Label(path)
+			assert.truthy(label ~= path and not label:match("^[%u_]+$"), path)
+		end
+		C.Set("focus.sections.raid", "c_gear")
+		assert.same({ "Focus mode Raid opens: Gear -> Consumables, Gear",
+			"Never imported (a safety setting stays as you set it here): " .. SB.L.PROFILE_LABEL_ANYTAB },
+			Pr.Preview(assert(Pr.Parse("SWAGBAG:1:s.focus.sections.raid=sc_consumables%2Cc_gear;"
+				.. "s.guildBank.withdrawAnyTab=b1"))))
+	end)
+
+	-- Ruling R7. Mutations: in Pr.Preview, `if watchChanged(data) then` -> `if data.watch then` (your own list
+	-- would show as a change); or `#data.watch == 1 and L.PROFILE_PREVIEW_WATCH_ONE or` -> `` (1 entries).
+	it("a watch list equal to yours is no change; one entry says entry", function()
+		C.Set("consumables.watch", { { itemID = 211880, threshold = 5 } })
+		local own = assert(Pr.Parse(Pr.Export(false)))
+		assert.same({ SB.L.PROFILE_PREVIEW_NOTHING }, Pr.Preview(own))
+		assert.same({ true, 0 }, { Pr.Import(own) })
+		assert.same({ "Consumables watch list: 1 entry" }, Pr.Preview(assert(Pr.Parse("SWAGBAG:1:w=si211880%252A3"))))
+	end)
+
+	-- Mutations: Pr.Import skips data.edits; or (ruling R22) drops `def.source = "import"`.
 	it("with categories: your categories, built-in edits and the order travel; import loads them, undo keeps settings", function()
 		SB.Config.db.categories.u_mats = { name = "Mats", query = "herb | ore", priority = 58, displayOrder = 55,
 			itemList = { include = { [211880] = true } } }
@@ -6754,6 +7448,22 @@ describe("Profiles (week 7)", function()
 		assert.same({ "Mats", "Trash" }, { SB.Categories.Name("u_mats"), SB.Categories.Name("c_junk") })
 		assert.same({ "new", "c_junk", "u_mats" }, { unpack(SB.Categories.SectionOrder(), 1, 3) })
 		assert.truthy(SB.Categories.Get("u_mats").itemList.include[211880])
+		assert.equal("import", SB.Categories.Get("u_mats").source, "spec 7.7: it came from a share string")
+	end)
+
+	-- Ruling R6. Mutation: in Pr.Undo, `if back.withCategories then` -> `if false then` (the import's categories
+	-- would stay after undo).
+	it("undo after an import with categories brings back your categories, built-in edits and order too", function()
+		SB.Config.db.categories.u_old = { name = "Old", query = "herb", priority = 58, displayOrder = 55 }
+		SB.Config.db.userEdits.c_junk = { name = "Trash" }
+		SB.Categories.Load()
+		local data = assert(Pr.Parse("SWAGBAG:1:cu.u_new.name=sNew;cu.u_new.query=sore;cu.u_new.priority=n57;"
+			.. "cu.u_new.displayOrder=n56;ce.c_junk.name=sJunk2;co=sc_junk%2Cu_new"))
+		assert.truthy(Pr.Import(data))
+		assert.same({ "New", "Junk2" }, { SB.Categories.Name("u_new"), SB.Categories.Name("c_junk") })
+		assert.truthy(Pr.Undo())
+		assert.same({ "Old", "Trash" }, { SB.Categories.Name("u_old"), SB.Categories.Name("c_junk") })
+		assert.same({ true, true }, { SB.Config.db.categories.u_new == nil, SB.Config.db.categoryOrder == nil })
 	end)
 
 	-- P2. Mutation: /swagbag profile load ignores Load's answer (always says loaded).
@@ -6774,7 +7484,7 @@ end)
 describe("Share box and Profiles page (week 7)", function()
 	local SB, A, SX, SW
 	before_each(function()
-		SB = load(true)
+		SB = loadSB(true)
 		A, SX, SW = SB.Adapter, SB.ShareBox, SB.SettingsWindow
 		ChatFontNormal = {}
 	end)
@@ -6792,7 +7502,7 @@ describe("Share box and Profiles page (week 7)", function()
 		assert.falsy(SX.Import())
 		assert.equal(SB.L.SHARE_PREVIEW_FIRST, f.status.text)
 		assert.truthy(SX.Preview())
-		assert.equal("Import would change:\nbags.columns: 12 -> 16", f.status.text)
+		assert.equal("Import would change:\nSlots per row: 12 -> 16", f.status.text)
 		Fake.Fire(f.edit, "OnTextChanged", true)
 		assert.falsy(SX.Import(), "changed since the preview")
 		SX.Preview()
@@ -6802,7 +7512,8 @@ describe("Share box and Profiles page (week 7)", function()
 		assert.same({ SB.L.PROFILE_IMPORT_OPENED, SB.L.PROFILE_IMPORTED:format(1) }, A.Lines())
 	end)
 
-	-- Mutation: SX.Preview keeps SX.data from an earlier good string when the new one is refused.
+	-- Mutations: SX.Preview keeps SX.data from an earlier good string when the new one is refused; or (ruling
+	-- R18) drop `detail = SB.Profiles.Label(detail)` (the reason would name a dotted path).
 	it("a refused string says why in the box and can never be imported", function()
 		SX.ShowImport()
 		SX.frame.edit:SetText("SWAGBAG:1:s.bags.columns=n16")
@@ -6812,6 +7523,9 @@ describe("Share box and Profiles page (week 7)", function()
 		assert.equal(SB.L.SHARE_ERR_NEWER, SX.frame.status.text)
 		assert.falsy(SX.Import())
 		assert.equal(12, SB.Config.Get("bags.columns"))
+		SX.frame.edit:SetText("SWAGBAG:1:s.bags.columns=n0")
+		assert.falsy(SX.Preview())
+		assert.equal("That string has a wrong value for Slots per row; nothing was read.", SX.frame.status.text)
 	end)
 
 	-- Mutation: ShowExport skips HighlightText.
@@ -6860,16 +7574,20 @@ end)
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1343 passed, 13 failed`. The failures, exactly:
+Expected: `1359 passed, 17 failed`. The failures, exactly:
 
 - `spec/profiles_spec.lua :: Profiles (week 7) > save, change, load: the profile's settings come back; Safe Mode and quick setup stay this machine's`
 - `spec/profiles_spec.lua :: Profiles (week 7) > undo brings back the settings before a load or a reset, once`
 - `spec/profiles_spec.lua :: Profiles (week 7) > bad names, unknown profiles and read-only settings change nothing and say why`
 - `spec/profiles_spec.lua :: Profiles (week 7) > a share string round-trips the settings you set: text with ; = % |, booleans, numbers, the watch list`
 - `spec/profiles_spec.lua :: Profiles (week 7) > refuses a string that is not ours, from a newer SwagBag, damaged, too long or with a wrong value`
+- `spec/profiles_spec.lua :: Profiles (week 7) > refuses a value outside its range or words, whole; never carries withdrawAnyTab; caps item lists`
 - `spec/profiles_spec.lua :: Profiles (week 7) > never runs what it reads; settings this version does not know are skipped and named`
 - `spec/profiles_spec.lua :: Profiles (week 7) > the preview names each change (old -> new), the watch list, categories and skipped settings`
+- `spec/profiles_spec.lua :: Profiles (week 7) > the preview names every setting as the settings window does, and a mode's sections by their names`
+- `spec/profiles_spec.lua :: Profiles (week 7) > a watch list equal to yours is no change; one entry says entry`
 - `spec/profiles_spec.lua :: Profiles (week 7) > with categories: your categories, built-in edits and the order travel; import loads them, undo keeps settings`
+- `spec/profiles_spec.lua :: Profiles (week 7) > undo after an import with categories brings back your categories, built-in edits and order too`
 - `spec/profiles_spec.lua :: Profiles (week 7) > /swagbag profile answers every form`
 - `spec/profiles_spec.lua :: Share box and Profiles page (week 7) > import: Preview first; a typed change needs a new preview; Import applies and answers in chat`
 - `spec/profiles_spec.lua :: Share box and Profiles page (week 7) > a refused string says why in the box and can never be imported`
@@ -6880,17 +7598,27 @@ Expected: `1343 passed, 13 failed`. The failures, exactly:
 
 Critical tests and the mutation that must make each fail (each was applied to this task's finished code; the named test failed):
 
-- "save, change, load: the profile's settings come back; Safe Mode and quick setup stay this machine's": in `SwagBag/Engine/Profiles.lua`, `for k in pairs(KEEP) do ⏎ new[k] = SB.Config.Copy(old[k]) ⏎ end` → `∅`.
-- "undo brings back the settings before a load or a reset, once": in `SwagBag/Engine/Profiles.lua`, `local back = d.backups.profile ⏎ replace(back) ⏎ d.backups.profile = nil` → `d.backups.profile = nil`.
+- "save, change, load: the profile's settings come back; Safe Mode and quick setup stay this machine's": in `SwagBag/Engine/Profiles.lua`, `for k in pairs(KEEP) do ⏎ new[k] = SB.Config.Copy(old[k]) ⏎ end` → ∅.
+- "undo brings back the settings before a load or a reset, once": in `SwagBag/Engine/Profiles.lua`, `replace(back.settings) -- Follow() loads the categories again` → ∅.
 - "bad names, unknown profiles and read-only settings change nothing and say why": in `SwagBag/Engine/Profiles.lua`, `or #name > Pr.MAX_NAME or` → `or`.
 - "a share string round-trips the settings you set: text with ; = % |, booleans, numbers, the watch list": in `SwagBag/Engine/Profiles.lua`, `gsub("[^%w%._%-]", function(c)` → `gsub("[^%w%._%-%%]", function(c)`.
 - "refuses a string that is not ours, from a newer SwagBag, damaged, too long or with a wrong value": in `SwagBag/Engine/Profiles.lua`, `elseif tonumber(version) > Pr.VERSION then` → `elseif false then`.
+- "refuses a value outside its range or words, whole; never carries withdrawAnyTab; caps item lists": in `SwagBag/Engine/Profiles.lua`, `elseif not valid(path, value) then` → `elseif false then`.
+- "refuses a value outside its range or words, whole; never carries withdrawAnyTab; caps item lists": in `SwagBag/Engine/Profiles.lua`, `if NEVER[path] then` → `if false then`.
+- "refuses a value outside its range or words, whole; never carries withdrawAnyTab; caps item lists": in `SwagBag/Engine/Profiles.lua`, `count > Pr.MAX_LIST or ` → ∅.
 - "never runs what it reads; settings this version does not know are skipped and named": in `SwagBag/Engine/Profiles.lua`, `if known[path] == nil then ⏎ data.skipped[#data.skipped + 1] = path` → `if known[path] == nil then ⏎ data.settings[path] = value`.
+- "never runs what it reads; settings this version does not know are skipped and named": in `SwagBag/Engine/Profiles.lua`, `local known = knownPaths()` → `local known = load("return 1") and knownPaths()`.
 - "the preview names each change (old -> new), the watch list, categories and skipped settings": in `SwagBag/Engine/Profiles.lua`, `if now ~= new then ⏎ lines[#lines + 1]` → `if true then ⏎ lines[#lines + 1]`.
+- "the preview names every setting as the settings window does, and a mode's sections by their names": in `SwagBag/Engine/Profiles.lua`, `local key = LABELS[path]` → `local key = nil`.
+- "a watch list equal to yours is no change; one entry says entry": in `SwagBag/Engine/Profiles.lua`, `if watchChanged(data) then ⏎ lines[#lines + 1]` → `if data.watch then ⏎ lines[#lines + 1]`.
+- "a watch list equal to yours is no change; one entry says entry": in `SwagBag/Engine/Profiles.lua`, `#data.watch == 1 and L.PROFILE_PREVIEW_WATCH_ONE or ` → ∅.
 - "with categories: your categories, built-in edits and the order travel; import loads them, undo keeps settings": in `SwagBag/Engine/Profiles.lua`, `for id, def in pairs(data.edits) do ⏎ d.userEdits` → `for id, def in pairs({}) do ⏎ d.userEdits`.
+- "with categories: your categories, built-in edits and the order travel; import loads them, undo keeps settings": in `SwagBag/Engine/Profiles.lua`, `def.source = "import" -- spec 7.7` → `-- spec 7.7`.
+- "undo after an import with categories brings back your categories, built-in edits and order too": in `SwagBag/Engine/Profiles.lua`, `if back.withCategories then` → `if false then`.
 - "/swagbag profile answers every form": in `SwagBag/Engine/Profiles.lua`, `local ok, r = Pr.Load(rest) ⏎ return ok and L.PROFILE_LOADED:format(rest) or why(r, rest)` → `Pr.Load(rest) ⏎ return L.PROFILE_LOADED:format(rest)`.
 - "import: Preview first; a typed change needs a new preview; Import applies and answers in chat": in `SwagBag/UI/ShareBox.lua`, `if not SX.data then ⏎ f.status:SetText(L.SHARE_PREVIEW_FIRST) ⏎ return false ⏎ end` → `SX.data = SX.data or SB.Profiles.Parse(f.edit:GetText())`.
-- "a refused string says why in the box and can never be imported": in `SwagBag/UI/ShareBox.lua`, `if not data then ⏎ SX.data = nil ⏎ f.status` → `if not data then ⏎ f.status`.
+- "a refused string says why in the box and can never be imported": in `SwagBag/UI/ShareBox.lua`, `SX.data = nil ⏎ f.status` → `f.status`.
+- "a refused string says why in the box and can never be imported": in `SwagBag/UI/ShareBox.lua`, `detail = SB.Profiles.Label(detail) -- a setting` → `-- a setting`.
 - "export shows the string selected, read-only, without import buttons": in `SwagBag/UI/ShareBox.lua`, `f:Show() ⏎ f.edit:SetFocus() ⏎ f.edit:HighlightText()` → `f:Show() ⏎ f.edit:SetFocus()`.
 - "the Profiles page saves under a free name, loads and deletes through /swagbag profile": in `SwagBag/UI/SettingsProfiles.lua`, `return run("profile save " .. nextName())` → `return run("profile save Profile 1")`.
 
@@ -6901,8 +7629,9 @@ Create `SwagBag/Engine/Profiles.lua`:
 ```lua
 -- SwagBag profiles and share strings (week 7, user pick 12). Account-wide, in SwagBagDB (read
 -- defensively; the schema stays 2): profiles = { [name] = { settings = <copy>, saved = epoch } },
--- profile = the name last saved or loaded (shown only), backups.profile = the settings before the last
--- load, import or reset (one step of undo). A profile is a copy of the account settings the user set
+-- profile = the name last saved or loaded (shown only), backups.profile = { settings, and after an import
+-- with categories also categories, userEdits, categoryOrder } as they were before the last load, import or
+-- reset (one step of undo, ruling R6). A profile is a copy of the account settings the user set
 -- (SwagBagDB.settings: only values somebody chose, Config.Get falls back to the defaults); Safe Mode and
 -- the quick-setup flag are this machine's state and never travel. Character overrides stay as they are.
 --   Profiles.List() -> { name }              Profiles.Save(name) / Load(name) / Delete(name) -> ok, why
@@ -6910,7 +7639,8 @@ Create `SwagBag/Engine/Profiles.lua`:
 --   Profiles.Export(withCategories) -> text  "SWAGBAG:1:" then key=value entries joined by ";"
 --   Profiles.Parse(text) -> data | nil, error, detail   never runs anything it reads (no load, no
 --                                            loadstring): patterns only; every value is checked
---   Profiles.Preview(data) -> { line }        what an import would change
+--   Profiles.Preview(data) -> { line }        what an import would change, each setting by its name in the
+--                                            settings window (Profiles.Label(path), ruling R18)
 --   Profiles.Import(data) -> n               apply (current settings kept for Undo); n changes
 -- Share string, version 1. Values: b1 / b0 (boolean), n<number>, s<text> with every character other
 -- than letters, digits, "." "_" "-" written %XX (so spaces and line breaks a paste adds are dropped). Keys:
@@ -6921,8 +7651,10 @@ Create `SwagBag/Engine/Profiles.lua`:
 --                               name (s), query (s), priority (n), displayOrder (n), enabled (b), inc / exc (s:
 --                               item IDs joined by ",")
 --   co                          the category order (s: ids joined by ",")
--- A string from a newer SwagBag, a damaged one, or one with a known setting of the wrong type is refused
--- whole; settings this version does not know are skipped and named in the preview.
+-- A string from a newer SwagBag, a damaged one, or one with a known setting of the wrong type or outside
+-- what that setting may hold (VALID: a range or the allowed words, ruling R3) is refused whole; settings this
+-- version does not know are skipped and named in the preview; NEVER settings (a safety switch of this
+-- machine's) are never exported or imported, and the preview names them too.
 local _, SB = ...
 
 local L = SB.L
@@ -6933,6 +7665,94 @@ SB.Profiles = Pr
 local KEEP = { safeMode = true, setup = true } -- this machine's state: never saved, loaded or shared
 local FIELD_TYPES = { name = "string", query = "string", priority = "number", displayOrder = "number",
 	enabled = "boolean", inc = "list", exc = "list" }
+-- Never in a share string: withdrawAnyTab is the guild bank's safety switch (off until check G1, W3-10).
+local NEVER = { ["guildBank.withdrawAnyTab"] = true }
+
+-- What each setting may hold beyond its type (ruling R3): a number range (whole numbers where marked), the
+-- allowed words, or a text pattern. A setting not listed here is checked by its type only (the booleans).
+local function range(lo, hi, whole)
+	return function(v)
+		return v >= lo and v <= hi and (not whole or v == math.floor(v))
+	end
+end
+
+local function words(...)
+	local set = {}
+	for _, w in ipairs({ ... }) do
+		set[w] = true
+	end
+	return function(v)
+		return set[v] == true
+	end
+end
+
+local function pattern(p)
+	return function(v)
+		return v:match(p) ~= nil
+	end
+end
+
+local COLUMNS, SECTION_IDS = range(4, 40, true), pattern("^[%w_,]*$")
+local VALID = {
+	["bags.columns"] = COLUMNS, ["bags.scale"] = range(0.5, 2), ["bags.newRows"] = range(0, 10, true),
+	["bags.view"] = words("sections", "grid", "list"), ["bags.list.sort"] = words("value", "name", "count", "ilvl"),
+	["bags.footer.entries"] = pattern("^[%a,%-]*$"),
+	["bank.blizzardFrame"] = words("tiny", "beside"), ["bank.view"] = words("sections", "grid"), ["bank.columns"] = COLUMNS,
+	["guildBank.mode"] = words("full", "view"), ["guildBank.view"] = words("sections", "grid"),
+	["guildBank.columns"] = COLUMNS,
+	["prices.worth"] = words("fixed", "top", "off"), ["prices.worthGold"] = range(1, 10000000, true),
+	["prices.worthTop"] = range(1, 50, true),
+	["focus.resolve"] = words("merge", "priority"), ["focus.peek"] = words("peek", "keep"),
+	["focus.style"] = words("front", "collapse"),
+	["vendor.repair"] = words("own", "guild", "off"), ["theme.name"] = words("blizzard", "flat", "elvui"),
+	["tooltip.counts"] = words("auto", "on", "off"),
+}
+
+local function valid(path, v)
+	local check = VALID[path] or (path:match("^focus%.sections%.") and SECTION_IDS)
+	return check == nil or check(v)
+end
+
+-- A setting's name in the settings window (ruling R18: the preview never shows a dotted path).
+local LABELS = {
+	["bags.view"] = "SET_VIEW", ["bags.columns"] = "SET_COLUMNS", ["bags.scale"] = "SET_SCALE",
+	["bags.freeTile"] = "PROFILE_LABEL_FREE_TILE", ["bags.newAlways"] = "PROFILE_LABEL_NEW_ALWAYS",
+	["bags.reagentSeparate"] = "PROFILE_LABEL_REAGENTS",
+	["bags.newRows"] = "PROFILE_LABEL_NEW_ROWS", ["bags.showIlvl"] = "PROFILE_LABEL_SHOW_ILVL",
+	["bags.list.sort"] = "SET_LIST_SORT", ["bags.list.desc"] = "PROFILE_LABEL_LIST_DESC",
+	["bags.footer.entries"] = "PROFILE_LABEL_FOOTER",
+	["bank.blizzardFrame"] = "SET_BANK_FRAME", ["bank.view"] = "PROFILE_LABEL_BANK_VIEW",
+	["bank.columns"] = "PROFILE_LABEL_BANK_COLUMNS",
+	["guildBank.mode"] = "SET_GUILD_MODE", ["guildBank.withdrawAnyTab"] = "PROFILE_LABEL_ANYTAB",
+	["guildBank.view"] = "PROFILE_LABEL_GUILD_VIEW", ["guildBank.columns"] = "PROFILE_LABEL_GUILD_COLUMNS",
+	["prices.headerTotals"] = "SET_TOTALS", ["prices.worth"] = "SET_WORTH",
+	["prices.worthGold"] = "PROFILE_LABEL_WORTH_GOLD", ["prices.worthTop"] = "PROFILE_LABEL_WORTH_TOP",
+	["overlays.ilvl"] = "SET_OV_ILVL", ["overlays.track"] = "SET_OV_TRACK", ["overlays.upgrade"] = "SET_OV_UPGRADE",
+	["overlays.keystone"] = "SET_OV_KEYSTONE", ["overlays.junk"] = "SET_OV_JUNK", ["overlays.bind"] = "SET_OV_BIND",
+	["overlays.learn"] = "SET_OV_LEARN", ["overlays.lock"] = "SET_OV_LOCK", ["overlays.uncollected"] = "SET_OV_UNCOLLECTED",
+	["overlays.usePawn"] = "PROFILE_LABEL_PAWN",
+	["focus.auto"] = "PROFILE_LABEL_FOCUS_AUTO", ["focus.resolve"] = "PROFILE_LABEL_FOCUS_RESOLVE",
+	["focus.peek"] = "PROFILE_LABEL_FOCUS_PEEK", ["focus.announce"] = "PROFILE_LABEL_FOCUS_ANNOUNCE",
+	["focus.style"] = "PROFILE_LABEL_FOCUS_STYLE",
+	["vendor.autoSell"] = "SET_VENDOR_SELL", ["vendor.repair"] = "SET_VENDOR_REPAIR",
+	["consumables.warn"] = "SET_WATCH_WARN", ["theme.name"] = "SET_LOOK", ["tooltip.counts"] = "SET_TIP",
+}
+local MODES = { mplus = "MODE_MPLUS", raid = "MODE_RAID", delves = "MODE_DELVES", gathering = "MODE_GATHERING",
+	fishing = "MODE_FISHING", market = "MODE_MARKET" }
+
+function Pr.Label(path)
+	local key = LABELS[path]
+	if key then
+		return L[key]
+	end
+	local kind, mode = path:match("^focus%.(%a+)%.(%a+)$")
+	if MODES[mode] and kind == "on" then
+		return L.PROFILE_LABEL_FOCUS_ON:format(L[MODES[mode]])
+	elseif MODES[mode] and kind == "sections" then
+		return L.PROFILE_LABEL_FOCUS_SECTIONS:format(L[MODES[mode]])
+	end
+	return path
+end
 
 local function db()
 	return SB.Config.db
@@ -6965,12 +7785,25 @@ local function shareable(settings)
 	return out
 end
 
--- Replace the account settings by `settings`, keeping this machine's state; the old ones become the undo.
+-- The one step of undo: the settings as they are now, and with categories (an import that carries them,
+-- ruling R6) the user's categories, built-in edits and order too.
+local function backup(withCategories)
+	local d = db()
+	d.backups = type(d.backups) == "table" and d.backups or {}
+	local back = { settings = SB.Config.Copy(type(d.settings) == "table" and d.settings or {}) }
+	if withCategories then
+		back.withCategories = true
+		back.categories = SB.Config.Copy(type(d.categories) == "table" and d.categories or {})
+		back.userEdits = SB.Config.Copy(type(d.userEdits) == "table" and d.userEdits or {})
+		back.categoryOrder = SB.Config.Copy(d.categoryOrder)
+	end
+	d.backups.profile = back
+end
+
+-- Replace the account settings by `settings`, keeping this machine's state (the caller made the backup).
 local function replace(settings)
 	local d = db()
 	local old = type(d.settings) == "table" and d.settings or {}
-	d.backups = type(d.backups) == "table" and d.backups or {}
-	d.backups.profile = SB.Config.Copy(old)
 	local new = shareable(settings)
 	for k in pairs(KEEP) do
 		new[k] = SB.Config.Copy(old[k])
@@ -6980,22 +7813,10 @@ local function replace(settings)
 	Pr.Follow()
 end
 
--- The open windows follow at once, as after quick setup (UI/QuickSetup.lua): categories, totals,
--- overlays, the bags' layout and title, and the look.
+-- The open windows follow at once, exactly as after quick setup (SB.FollowSettings, Core/Init.lua: one
+-- definition, ruling R12), and the look.
 function Pr.Follow()
-	if SB.Categories then
-		SB.Categories.Load()
-	end
-	SB.Emit("SB_PRICES_CHANGED")
-	if SB.Overlays then
-		SB.Overlays.context = nil
-		SB.Overlays.RefreshAll()
-	end
-	local W = SB.BagsWindow
-	if W and W.IsOpen and W.IsOpen() then
-		W.RequestLayout("profile")
-		W.RefreshTitle()
-	end
+	SB.FollowSettings("profile")
 	if SB.Theme and SB.Theme.Apply then
 		SB.Theme.Apply(SB.Config.Get("theme.name"), false)
 	end
@@ -7031,6 +7852,7 @@ function Pr.Load(name)
 	elseif SB.Config.readOnly then
 		return false, "readonly"
 	end
+	backup(false)
 	replace(p.settings)
 	db().profile = name
 	return true
@@ -7053,6 +7875,7 @@ function Pr.Reset()
 	if SB.Config.readOnly then
 		return false, "readonly"
 	end
+	backup(false)
 	replace({})
 	db().profile = nil
 	return true
@@ -7062,11 +7885,16 @@ function Pr.Undo()
 	local d = db()
 	if SB.Config.readOnly then
 		return false, "readonly"
-	elseif type(d.backups) ~= "table" or type(d.backups.profile) ~= "table" then
+	elseif type(d.backups) ~= "table" or type(d.backups.profile) ~= "table"
+		or type(d.backups.profile.settings) ~= "table" then
 		return false, "none"
 	end
 	local back = d.backups.profile
-	replace(back)
+	if back.withCategories then
+		d.categories, d.userEdits = back.categories or {}, back.userEdits or {}
+		d.categoryOrder = back.categoryOrder
+	end
+	replace(back.settings) -- Follow() loads the categories again
 	d.backups.profile = nil
 	return true
 end
@@ -7160,7 +7988,7 @@ end
 function Pr.Export(withCategories)
 	local d, known, entries = db(), knownPaths(), {}
 	for path, v in pairs(leaves(shareable(d.settings), nil, {})) do
-		if known[path] and type(v) == known[path] then
+		if known[path] and type(v) == known[path] and not NEVER[path] then
 			entries[#entries + 1] = "s." .. path .. "=" .. encode(v)
 		end
 	end
@@ -7216,10 +8044,11 @@ local function decode(raw)
 end
 
 local function numbers(text)
-	local out = {}
+	local out, count = {}, 0
 	for part in text:gmatch("[^,]+") do
+		count = count + 1
 		local n = tonumber(part)
-		if not n or n < 1 or n ~= math.floor(n) or n == math.huge or not part:match("^%d+$") then
+		if count > Pr.MAX_LIST or not n or n < 1 or n ~= math.floor(n) or n == math.huge or not part:match("^%d+$") then
 			return nil
 		end
 		out[n] = true
@@ -7255,7 +8084,7 @@ local function parseWatch(text)
 end
 
 -- data = { settings = { [path] = value }, watch, users = { [id] = def }, edits = { [id] = def }, order,
---          skipped = { path } }
+--          skipped = { path }, ignored = { path } (NEVER settings) }
 function Pr.Parse(text)
 	if type(text) ~= "string" then
 		return nil, "empty"
@@ -7273,7 +8102,7 @@ function Pr.Parse(text)
 		return nil, "toolong"
 	end
 	local known = knownPaths()
-	local data = { settings = {}, users = {}, edits = {}, skipped = {} }
+	local data = { settings = {}, users = {}, edits = {}, skipped = {}, ignored = {} }
 	local count, cats = 0, {}
 	for entry in body:gmatch("[^;]+") do
 		count = count + 1
@@ -7291,10 +8120,14 @@ function Pr.Parse(text)
 		local path = key:match("^s%.(.+)$")
 		local prefix, id, field = key:match("^(c[ue])%.([%w_]+)%.(%a+)$")
 		if path then
-			if known[path] == nil then
+			if NEVER[path] then
+				data.ignored[#data.ignored + 1] = path
+			elseif known[path] == nil then
 				data.skipped[#data.skipped + 1] = path
 			elseif type(value) ~= known[path] or (type(value) == "string" and #value > Pr.MAX_STRING) then
 				return nil, "type", path
+			elseif not valid(path, value) then
+				return nil, "type", path -- outside the setting's range or words: refused whole (R3)
 			else
 				data.settings[path] = value
 			end
@@ -7341,14 +8174,52 @@ function Pr.Parse(text)
 		end
 	end
 	table.sort(data.skipped)
+	table.sort(data.ignored)
 	return data
 end
 
-local function show(v)
+-- A value as the preview shows it: on / off, a focus mode's sections by their names, else as it is.
+local function show(v, path)
 	if type(v) == "boolean" then
 		return v and L.OVERLAY_ON or L.OVERLAY_OFF
+	elseif type(v) == "string" and path:match("^focus%.sections%.") and SB.Categories then
+		local names = {}
+		for id in v:gmatch("[^,]+") do
+			names[#names + 1] = SB.Categories.Name(id)
+		end
+		return table.concat(names, ", ")
 	end
 	return tostring(v)
+end
+
+local function same(a, b)
+	if type(a) ~= "table" or type(b) ~= "table" then
+		return a == b
+	end
+	for k, v in pairs(a) do
+		if not same(v, b[k]) then
+			return false
+		end
+	end
+	for k in pairs(b) do
+		if a[k] == nil then
+			return false
+		end
+	end
+	return true
+end
+
+-- The string's watch list differs from the one in force (ruling R7: the user's own list is no change).
+local function watchChanged(data)
+	return data.watch ~= nil and not same(data.watch, SB.Config.Get("consumables.watch"))
+end
+
+local function labels(paths)
+	local out = {}
+	for i, path in ipairs(paths) do
+		out[i] = Pr.Label(path)
+	end
+	return table.concat(out, ", ")
 end
 
 function Pr.Preview(data)
@@ -7360,11 +8231,11 @@ function Pr.Preview(data)
 	for _, path in ipairs(paths) do
 		local now, new = SB.Config.Get(path), data.settings[path]
 		if now ~= new then
-			lines[#lines + 1] = L.PROFILE_PREVIEW_LINE:format(path, show(now), show(new))
+			lines[#lines + 1] = L.PROFILE_PREVIEW_LINE:format(Pr.Label(path), show(now, path), show(new, path))
 		end
 	end
-	if data.watch then
-		lines[#lines + 1] = L.PROFILE_PREVIEW_WATCH:format(#data.watch)
+	if watchChanged(data) then
+		lines[#lines + 1] = #data.watch == 1 and L.PROFILE_PREVIEW_WATCH_ONE or L.PROFILE_PREVIEW_WATCH:format(#data.watch)
 	end
 	local nu, ne = 0, 0
 	for _ in pairs(data.users) do
@@ -7378,6 +8249,9 @@ function Pr.Preview(data)
 	end
 	if #data.skipped > 0 then
 		lines[#lines + 1] = L.PROFILE_PREVIEW_SKIPPED:format(table.concat(data.skipped, ", "))
+	end
+	if #data.ignored > 0 then
+		lines[#lines + 1] = L.PROFILE_PREVIEW_IGNORED:format(labels(data.ignored))
 	end
 	if #lines == 0 then
 		lines[1] = L.PROFILE_PREVIEW_NOTHING
@@ -7404,6 +8278,8 @@ function Pr.Import(data)
 		return false, "readonly"
 	end
 	local d = db()
+	local withCategories = next(data.users) ~= nil or next(data.edits) ~= nil or data.order ~= nil
+	backup(withCategories) -- before anything changes: undo brings it all back (R6)
 	local settings = shareable(d.settings)
 	local n = 0
 	for path, value in pairs(data.settings) do
@@ -7412,13 +8288,14 @@ function Pr.Import(data)
 		end
 		setPath(settings, path, value)
 	end
-	if data.watch then
+	if watchChanged(data) then
 		settings.consumables = type(settings.consumables) == "table" and settings.consumables or {}
 		settings.consumables.watch = data.watch
 		n = n + 1
 	end
 	for id, def in pairs(data.users) do
 		d.categories = type(d.categories) == "table" and d.categories or {}
+		def.source = "import" -- spec 7.7: a category that came from a share string (ruling R22)
 		d.categories[id] = def
 		n = n + 1
 	end
@@ -7483,6 +8360,73 @@ SB.Slash.Register("profile", L.HELP_PROFILE, function(arg)
 end)
 ```
 
+In `SwagBag/Core/Init.lua`, find:
+
+```lua
+function SB.AtBank()
+	return SB.BankWindow ~= nil and SB.BankWindow.interaction == true
+end
+```
+
+and replace it with:
+
+```lua
+function SB.AtBank()
+	return SB.BankWindow ~= nil and SB.BankWindow.interaction == true
+end
+
+-- Week 7: after settings changed in one go (quick setup, a profile load, import, reset or undo) the open
+-- windows follow at once: categories, section totals, overlays, the bags' layout and title. One definition
+-- for UI/QuickSetup.lua and Engine/Profiles.lua (ruling R12).
+function SB.FollowSettings(reason)
+	if SB.Categories then
+		SB.Categories.Load()
+	end
+	SB.Emit("SB_PRICES_CHANGED")
+	if SB.Overlays then
+		SB.Overlays.context = nil
+		SB.Overlays.RefreshAll()
+	end
+	local W = SB.BagsWindow
+	if W and W.IsOpen and W.IsOpen() then
+		W.RequestLayout(reason)
+		W.RefreshTitle()
+	end
+end
+```
+
+In `SwagBag/UI/QuickSetup.lua`, find:
+
+```lua
+-- The open windows follow at once.
+local function refresh()
+	SB.Categories.Load()
+	-- No Focus.Refresh here: the focus.* writes above went through Config.Set, whose
+	-- SB_CONFIG_CHANGED Focus already listens to.
+	SB.Emit("SB_PRICES_CHANGED")
+	if SB.Overlays then
+		SB.Overlays.context = nil
+		SB.Overlays.RefreshAll()
+	end
+	local W = SB.BagsWindow
+	if W and W.IsOpen() then
+		W.RequestLayout("setup")
+		W.RefreshTitle()
+	end
+end
+```
+
+and replace it with:
+
+```lua
+-- The open windows follow at once, as after a profile load (SB.FollowSettings, Core/Init.lua; week 7,
+-- ruling R12). No Focus.Refresh here: the focus.* writes above went through Config.Set, whose
+-- SB_CONFIG_CHANGED Focus already listens to.
+local function refresh()
+	SB.FollowSettings("setup")
+end
+```
+
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -7515,8 +8459,33 @@ L.PROFILE_IMPORTED = "Imported %d changes. Your previous settings are kept: /swa
 L.PROFILE_AUTO_NAME = "Profile %d"
 L.PROFILE_PREVIEW_LINE = "%s: %s -> %s"
 L.PROFILE_PREVIEW_WATCH = "Consumables watch list: %d entries"
+L.PROFILE_PREVIEW_WATCH_ONE = "Consumables watch list: 1 entry"
 L.PROFILE_PREVIEW_CATEGORIES = "Categories: %d of yours, %d changed built-ins, order %s"
 L.PROFILE_PREVIEW_SKIPPED = "Not known by this version (skipped): %s"
+L.PROFILE_PREVIEW_IGNORED = "Never imported (a safety setting stays as you set it here): %s"
+-- The share preview names each setting as the settings window does (ruling R18); these have no row label.
+L.PROFILE_LABEL_NEW_ROWS = "Rows kept for New while the bags are open"
+L.PROFILE_LABEL_SHOW_ILVL = "Average item level in the bags' title"
+L.PROFILE_LABEL_FREE_TILE = "Free slots as one tile per bag type"
+L.PROFILE_LABEL_NEW_ALWAYS = "Show the New section when it is empty"
+L.PROFILE_LABEL_REAGENTS = "Reagent bag as its own section"
+L.PROFILE_LABEL_LIST_DESC = "The list view: highest first"
+L.PROFILE_LABEL_FOOTER = "The bar under the items"
+L.PROFILE_LABEL_BANK_VIEW = "Bank view"
+L.PROFILE_LABEL_BANK_COLUMNS = "Bank slots per row"
+L.PROFILE_LABEL_GUILD_VIEW = "Guild bank view"
+L.PROFILE_LABEL_GUILD_COLUMNS = "Guild bank slots per row"
+L.PROFILE_LABEL_ANYTAB = "A right-click in the guild bank withdraws from any tab"
+L.PROFILE_LABEL_WORTH_GOLD = "Gold glow at the bank: gold a stack"
+L.PROFILE_LABEL_WORTH_TOP = "Gold glow at the bank: your top percent"
+L.PROFILE_LABEL_PAWN = "Pawn decides the upgrade arrow"
+L.PROFILE_LABEL_FOCUS_AUTO = "Focus modes switch by themselves"
+L.PROFILE_LABEL_FOCUS_RESOLVE = "When two focus modes apply at once"
+L.PROFILE_LABEL_FOCUS_PEEK = "A click on a section a focus mode collapsed"
+L.PROFILE_LABEL_FOCUS_ANNOUNCE = "A chat line when the focus mode changes"
+L.PROFILE_LABEL_FOCUS_STYLE = "Focus modes: while a mode is on"
+L.PROFILE_LABEL_FOCUS_ON = "Focus mode %s"
+L.PROFILE_LABEL_FOCUS_SECTIONS = "Focus mode %s opens"
 L.PROFILE_PREVIEW_NOTHING = "Nothing would change: your settings already match."
 L.SHARE_EXPORT_TITLE = "SwagBag share string"
 L.SHARE_EXPORT_HINT = "Press Ctrl+C to copy. Anyone can import it with /swagbag profile import."
@@ -7772,6 +8741,9 @@ function SX.Preview()
 	local f = frame()
 	local data, err, detail = SB.Profiles.Parse(f.edit:GetText())
 	if not data then
+		if err == "type" and detail then
+			detail = SB.Profiles.Label(detail) -- a setting by its name in the settings window (ruling R18)
+		end
 		SX.data = nil
 		f.status:SetText(L[ERRORS[err] or "SHARE_ERR_DAMAGED"]:format(tostring(detail or "")))
 		return false
@@ -7814,7 +8786,7 @@ end
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1356 passed, 0 failed`.
+Expected: `1376 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -7822,14 +8794,16 @@ Expected: `1356 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (72 files)`, `1356 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (72 files)`, `1376 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add SwagBag/Engine/Profiles.lua \
+git add SwagBag/Core/Init.lua \
+	SwagBag/Engine/Profiles.lua \
 	SwagBag/Locale/enUS.lua \
 	SwagBag/SwagBag.toc \
+	SwagBag/UI/QuickSetup.lua \
 	SwagBag/UI/SettingsProfiles.lua \
 	SwagBag/UI/ShareBox.lua \
 	spec/profiles_spec.lua
@@ -7893,25 +8867,25 @@ You need: a vendor who repairs (a blacksmith or armorer); a few gray junk items 
 
 0. Claude installs the build first.
 1. Quit the game completely and start it again. Expected: the login screen.
-2. Log in. Expected: chat shows `SwagBag: v0.7.0 loaded. Type /swagbag help for commands.`
+2. Log in. Expected: chat shows `SwagBag: v0.7.0 loaded. Type /swagbag help for commands.` (If one of your own categories or watch-list searches uses the word `locked`, one more line follows: `SwagBag: Search note: the word locked now finds the items you locked in SwagBag. One of your saved categories or watch-list searches uses it; for items the game holds while they move or trade, use inuse.` It shows on this first login only.)
 3. Type `/swagbag sell`. Expected: `SwagBag: Auto-sell junk at vendors: on. Type /swagbag sell on, sell off, or sell junk (at a vendor).`
-4. Type `/swagbag repair`. Expected: `SwagBag: Repair at vendors: own. Type /swagbag repair own, repair guild, or repair off.`
+4. Type `/swagbag repair`. Expected: `SwagBag: Repair at vendors: Your gold. Type /swagbag repair own, repair guild, or repair off.`
 5. Press **B**. Pick up the gray item you want to keep (left-click it), then drop it on the small `Lock` button right of the search box (or click `Lock` while you hold it). Expected: chat shows `SwagBag: Locked: <its name>. SwagBag never sells it, and it shows a small lock.`, the item is back in its slot, and it shows a small padlock at the top middle.
 6. Move the mouse off the bags. Rest the mouse on the locked item. Expected: its tooltip has the line `Locked in SwagBag: never sold by SwagBag`. Move the mouse off it.
 7. Click `Lock` with nothing on the cursor. Expected: `SwagBag: Locked items: 1. Drag an item onto Lock (right of the search box) to lock or unlock it. Type /swagbag lock list or lock clear.`
 8. Move the mouse far from the bags. Right-click the vendor. Expected, within a few seconds:
    - your gray items leave the bags one by one (each leaves a dimmed placeholder; nothing else moves);
-   - the locked gray item stays;
-   - one chat line `SwagBag: Sold N junk items for ...` (for example `Sold 5 junk items for 1g 2s 3c.`); if you had more than 12, the same line goes on with `... more junk items wait (Blizzard's buyback keeps only the last 12): type /swagbag sell junk.`;
+   - the locked gray item stays, and so do a gray item to open or learn and gray gear whose look you have not collected (it shows the purple `*`), if you carry one;
+   - one chat line `SwagBag: Sold N junk items for ...` (for example `Sold 5 junk items for 1g 2s 3c.`); if you had more than 12, the same line goes on with `... more junk items wait: Blizzard's Buyback tab keeps only the last 12. Type /swagbag sell junk to sell them.`;
    - then `SwagBag: Repaired everything for ...` if your gear was damaged.
-9. Click the vendor's **Buyback** tab. Expected: every item SwagBag sold is there. (If more than 12 waited, type `/swagbag sell junk` now. Expected: the next ones sell and one line says so.)
+9. Click the vendor's **Buyback** tab. Expected: every item SwagBag sold is there. (If more than 12 waited, type `/swagbag sell junk` now. Expected: nothing sells, and `SwagBag: SwagBag already sold 12 items at this vendor, and Blizzard's Buyback tab keeps only the last 12: selling N more pushes the earlier ones out of it, so they can no longer be bought back. Type /swagbag sell junk again to sell them anyway.` Type it again only if you want them sold: they sell one by one and one line says so.)
 10. Right-click the **locked** gray item yourself. Expected: the vendor buys it (SwagBag cannot stop a right-click), and chat shows `SwagBag: You sold <its name>, which you locked. Buy it back from the vendor's Buyback tab if that was a mistake.`
 11. Buy it back from the Buyback tab. Expected: it returns to your bags and still shows the padlock.
-12. Put two or three gray items back into your bags (buy them back). Pick up any other item with a left-click and keep it on the cursor. Type `/swagbag sell junk` and press Enter. Expected: nothing is sold while the item is on the cursor. Put the item back with a left-click on its own slot and move the mouse off the bags. Expected: within a second the gray items sell one by one, then `SwagBag: Sold N junk items for ...`. (With no gray item left the answer is `SwagBag: No junk to sell: no gray items a vendor pays for (locked and equipment-set items are never sold).`)
+12. Put two or three gray items back into your bags (buy them back). Pick up any other item with a left-click and keep it on the cursor. Type `/swagbag sell junk` and press Enter. Expected: nothing is sold while the item is on the cursor. Put the item back with a left-click on its own slot and move the mouse off the bags. Expected: within a second the gray items sell one by one, then `SwagBag: Sold N junk items for ...`. (If SwagBag already sold 12 at this vendor, the first answer is step 9's Buyback warning instead: type the command again. With no gray item left the answer is `SwagBag: No junk to sell: no gray items a vendor pays for (never sold: locked items, equipment-set items, gear whose look you have not collected, items to open or learn, and gray BoE items worth more at auction).`)
 13. Walk away until the vendor window closes. Type `/swagbag lock list`. Expected: `SwagBag: Locked: <its name>.`
 14. Type `/swagbag settings vendor`. Expected: the Vendor page: `Sell gray junk by itself at every vendor` with `On` highlighted and `Off`; `Repair at vendors` with `Your gold` highlighted, `Guild bank first` and `Off`; a line about combat; `Lock or unlock an item (never sold by SwagBag)` with `Drop an item here`; `Locked items: 1` with `List them` and `Unlock all`.
 15. Click `Off` in the first row. Expected: the status line reads `Gray junk is no longer sold by itself. Type /swagbag sell junk at a vendor to sell it.`
-16. Click `On` in the first row. Expected: `Gray junk is now sold by itself at every vendor (never locked or equipment-set items).`
+16. Click `On` in the first row. Expected: `Gray junk is now sold by itself at every vendor (never sold: locked items, equipment-set items, gear whose look you have not collected, items to open or learn, and gray BoE items worth more at auction).`
 17. Close the settings window with its X.
 
 ### Session BK1: section actions and the gold glow at the bank (checks Tasks 6 and 7; about 15 minutes)
@@ -7923,7 +8897,7 @@ You need: a banker and a vendor; a few trade goods in your bags (a `Trade Goods`
 2. Log in. Expected: chat shows `SwagBag: v0.7.0 loaded. Type /swagbag help for commands.`
 3. Type `/swagbag worth`. Expected: `SwagBag: Gold glow at the bank: items worth 100g or more a stack (Auctionator prices, else what a vendor pays). Type /swagbag worth <gold>, worth top <percent>, or worth off.`
 4. Press **B**. Shift+right-click the `Trade Goods` header. Expected: chat shows `SwagBag: Section actions work at a vendor (Sell all) or a bank (Send all). Open one, then Shift+right-click a section's header.` Nothing moves.
-5. Move the mouse far from the bags. Right-click a banker. Expected: SwagBag's bank opens; in your bags and in the bank, stacks worth 100 g or more glow **gold**.
+5. Move the mouse far from the bags. Right-click a banker. Expected: SwagBag's bank opens; in your bags and in the bank, stacks worth 100 g or more glow **gold**. (A toy, mount or pet you have not learned that glows gold also shows its purple `*` at the right edge.)
 6. Type `/swagbag worth 1`. Expected: `SwagBag: Gold glow at the bank: items worth 1g or more a stack.`, and many more items glow gold.
 7. Type `/swagbag worth 100`. Expected: `SwagBag: Gold glow at the bank: items worth 100g or more a stack.`, and only the valuable ones glow again.
 8. Rest the mouse on the `Trade Goods` header in your bags. Expected: a tooltip `Trade Goods` with `Shift+right-click: Send all to the bank or the warband bank`.
@@ -7934,10 +8908,10 @@ You need: a banker and a vendor; a few trade goods in your bags (a `Trade Goods`
 13. Right-click any ordinary bag item. Expected: it goes into the bank group that says `deposits go here` (Blizzard's own deposit, unchanged).
 14. Walk away until the bank closes. Expected: the gold glows are gone.
 15. Right-click a vendor. Shift+right-click a section with something to sell (for example `Junk` or `Trade Goods`). Expected: a menu with `Sell all (N)` and `Cancel`.
-16. Click `Sell all (N)`. Expected: a Blizzard-style dialog `Sell N items from <section> for about <amount>? Locked items and items in an equipment set stay.` with `Yes` and `No`.
+16. Click `Sell all (N)`. Expected: a Blizzard-style dialog `Sell N items from <section> for about <amount>?`, then (only if Auctionator values them higher) `At the Auction House they are worth about <amount>.`, then `Never sold: locked items, equipment-set items, gear whose look you have not collected, items to open or learn, and gray BoE items worth more at auction.`, with `Yes` and `No`.
 17. Click `No`. Expected: nothing is sold.
-18. Do step 15 and 16 again and click `Yes`. Move the mouse off the bags. Expected: the items sell one by one, and chat shows `SwagBag: Sold N items for <amount>.` (More than 12: the line says how many wait and to use Sell all again.)
-19. Near a vendor with a training dummy (most capital cities have both), start combat with the dummy, open the vendor, Shift+right-click a section and click `Sell all (N)`. Expected: no question, and `SwagBag: In combat: nothing was moved. Try again once combat ends.` (The auto-sell also says `SwagBag: In combat: selling junk and repairing wait until combat ends, if the vendor is still open.`) Leave combat. If no dummy is near a vendor, skip this step.
+18. Do step 15 and 16 again and click `Yes`. Move the mouse off the bags. Expected: the items sell one by one, and chat shows `SwagBag: Sold N items for <amount>.` (More than fit in this visit's 12: the line goes on with `N more wait: Blizzard's Buyback tab keeps only the last 12. Use Sell all again to sell them.`, and that next dialog adds `SwagBag already sold 12 items at this vendor: selling these pushes the earlier ones out of Blizzard's Buyback tab, so they can no longer be bought back.` before its Yes.)
+19. Near a vendor with a training dummy (most capital cities have both), start combat with the dummy, open the vendor, Shift+right-click a section and click `Sell all (N)`. Expected: no question, and `SwagBag: In combat: nothing was moved. Try again once combat ends.` (If you carry junk or your gear needs repair, the auto-sell also says `SwagBag: In combat: selling junk and repairing wait until combat ends, if the vendor is still open.`; with nothing to do it says nothing.) Leave combat. If no dummy is near a vendor, skip this step.
 20. Type `/swagbag settings bank`. Expected: a row `Gold glow at the bank on items worth` with `100g or more` highlighted, then `500g or more`, `1000g or more`, `Your top 10%` and `Off`.
 21. Close the settings window with its X.
 
@@ -7959,10 +8933,11 @@ You need: nothing special.
 11. Click into the box and press **Ctrl+V**. Click `Import`. Expected: the box says `Press Preview first: SwagBag shows what changes before it changes anything.`
 12. Click `Preview`. Expected: `Nothing would change: your settings already match.` (it is your own string).
 13. Click into the box, delete the first few characters (so it no longer starts with `SWAGBAG:`), and click `Preview`. Expected: `That is not a SwagBag share string (they start with SWAGBAG:).`
-14. Close the box with **Esc**. Type `/swagbag settings profiles`. Expected: the Profiles page: a note, `Save your current settings` with `Save as a new profile`, a row `Main (last used)` with `Load` and `Delete`, `Share` with `Copy settings`, `Copy with categories` and `Import`, and `Go back` with `Undo last load or import` and `Defaults`.
-15. Click `Save as a new profile`. Expected: the status line reads `Saved your current settings as the profile "Profile 1".`, and a row `Profile 1 (last used)` appears.
-16. Click `Delete` in the `Profile 1` row. Expected: `Deleted the profile "Profile 1". Your current settings are unchanged.`
-17. Close the settings window with its X.
+14. Click into the box, press **Ctrl+A**, and type `SWAGBAG:1:s.bags.columns=n0` (zero slots per row). Click `Preview`. Expected: `That string has a wrong value for Slots per row; nothing was read.` Click `Import`. Expected: `Press Preview first: SwagBag shows what changes before it changes anything.`; nothing changed.
+15. Close the box with **Esc**. Type `/swagbag settings profiles`. Expected: the Profiles page: a note, `Save your current settings` with `Save as a new profile`, a row `Main (last used)` with `Load` and `Delete`, `Share` with `Copy settings`, `Copy with categories` and `Import`, and `Go back` with `Undo last load or import` and `Defaults`.
+16. Click `Save as a new profile`. Expected: the status line reads `Saved your current settings as the profile "Profile 1".`, and a row `Profile 1 (last used)` appears.
+17. Click `Delete` in the `Profile 1` row. Expected: `Deleted the profile "Profile 1". Your current settings are unchanged.`
+18. Close the settings window with its X.
 
 ## Week 7 exit check
 
@@ -7977,17 +8952,20 @@ You need: nothing special.
 ## Spec updates at week end
 
 Recorded in the week-7 ledger and applied to `docs/superpowers/specs/2026-09-30-swagbag-design.md` at week end (this plan commits only the plan file):
+- **§1.3 Non-goals (ruling R22):** the "Guild bank first" repair (Task 4, D11) spends guild bank money through Blizzard's own `RepairAllItems(true)`; it is not a money-management UI, it is off by default, and only the user picks it. Record it next to "No guild bank *money* management UI".
 - **§1.3 Non-goals / §5.2:** "Send all to bank / warband bank" (Task 6) chooses the bank type on the user's click through `UseContainerItem`'s own argument and neither reads nor writes Blizzard's selected type, like Deposit warbound (AC2.8). Right-click deposits still follow the selected tab. "Paste-string import of Syndicator/Baganator-syntax category strings" stays planned; SwagBag's own share strings (§8 new subsection, Task 9) are a separate, versioned format.
-- **§2.1:** new features F17 Auto-sell junk and auto-repair (D10–D13), F18 Item locks (D14–D17), F19 Section actions (D18–D21), F20 Profiles and share strings (D24–D27), each with ACs from this plan's tests. **F9 / AC9.1** gains the green "open or learn" glow, the lock mark and the uncollected star, each with its switch (AC9.2). **F10** gains the worth-money glow at the bank (D22), moved from v1.1.
+- **§2.1:** new features F17 Auto-sell junk and auto-repair (D10–D13, D31: 12 per vendor visit shared with Sell all, a second explicit yes past that; what is never sold), F18 Item locks (D14–D17), F19 Section actions (D18–D21), F20 Profiles and share strings (D24–D27: the per-setting validator table, `withdrawAnyTab` never shared, undo with categories), each with ACs from this plan's tests. **F9 / AC9.1** gains the green "open or learn" glow, the lock mark and the uncollected star, each with its switch (AC9.2). **F10** gains the worth-money glow at the bank (D22), moved from v1.1.
 - **§2.2:** v1.1 "worth-money highlight" and "uncollected transmog", and v1.2 "uncollected pet/toy" are delivered in week 7 (decor: the green glow only).
 - **§4.2 rule 5 / §4.3:** SwagBag's own item moves (the mover) follow rule 5: an item on the cursor holds every step without a limit while the vendor or bank is open; an item's button under the mouse holds it up to 20 retries, then it stays; a moved item leaves a placeholder.
 - **§6.3:** the M+, Raid and Delves default sets include Equipment sets (`c_sets`); `c_sets` joins every mode set that opens Gear.
-- **§7.3:** `locked` means locked by the user (Engine/Locks.lua); the client's lock is `inuse`; `uncollected` (appearances, toys, mounts, pets) is registered; `equipped` feeds the new category.
+- **§7.3:** `locked` means locked by the user (Engine/Locks.lua; a one-time login note for saved queries that use it); the client's lock is `inuse`; `uncollected` (appearances, toys, mounts, pets) is registered; `equipped` feeds the new category. **Ruling R22:** the table gives the Collection family the cache class `instance`, but week 7 registers `uncollected` as `volatile` (its answer changes when the account learns something, not with the item's link); update the table.
+- **§7.7 (ruling R22):** a category imported from a share string is stored with `source = "import"`, as the table's `source` field already allows (Task 9 sets it).
 - **§7.6:** the default set gains `Equipment sets` (`c_sets`, `equipped`, priority 92, right after Gear).
 - **§8.2:** `SwagBagDB.locks`, `.profiles`, `.profile`, `.backups.profile` (schema stays 2, read defensively); settings `vendor.autoSell`, `vendor.repair`, `prices.worth`, `prices.worthGold`, `prices.worthTop`, `overlays.learn`, `overlays.lock`, `overlays.uncollected`.
 - **§10.4:** the report's `Season data` line. **§10.5:** `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear]`, `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`.
 - **§13.2 item 4:** the season data file holds crest IDs and words, currency words, season items (Ascendant Venomstone 280562, to be confirmed in SN1) and knowledge items.
-- **§1.4 P2:** "answers exactly once": a run that takes time answers when it ends.
+- **§1.4 P2:** "answers exactly once": a run that takes time answers when it ends; an automatic action with nothing to do says nothing.
+- **§11.2 (check.sh):** the Adapter-only rule now also fails on a bare `C_*` name (no dot after it) outside `SwagBag/Core/Adapter.lua` (ruling R5).
 
 ## Spec coverage (week-7 scope → task)
 
@@ -7998,7 +8976,7 @@ Recorded in the week-7 ledger and applied to `docs/superpowers/specs/2026-09-30-
 | Pick 2: the upgrade-track / item-level overlay on Venomstone-boosted items | T2 test (D7); SN1 step 9 |
 | Pick 2: season data data-driven where hard-coded | T2 (D6: crests, currencies, items; dungeons and teleports already were) |
 | Pick 3: a glow on items to open, learn (knowledge, toys, mounts, pets, decor); C_* via the Adapter; its own switch, on | T3 (D8, D9) |
-| Pick 4: auto-sell grays (never locked, never set items), buyback-safe, one chat line; auto-repair with own gold, guild option off; nothing in combat; settings and commands; MERCHANT_SHOW via the Adapter; the vendor mode and P5 | T4 (D10–D13), T5 (locked) |
+| Pick 4: auto-sell grays (never locked, never set items), buyback-safe, one chat line; auto-repair with own gold, guild option off; nothing in combat; settings and commands; MERCHANT_SHOW via the Adapter; the vendor mode and P5 | T4 (D10–D13, D31: 12 per visit, protections), T5 (locked), T8 (uncollected looks) |
 | Pick 5: lock / unlock gesture within the constraints, per item, account-wide, a lock mark, never auto-sold or sold-all, the manual-sale answer, keyword `locked` | T5 (D14–D17), T6 |
 | Pick 6: header menu (Send all to bank / warband bank at a bank; Sell all with a confirmation at a vendor); bank type researched; no conflict with week-4/6 header clicks; small steps, out of combat, never under the mouse; Mail all decided | T6 (D18–D21), T4 (the mover) |
 | Pick 7: the worth-money glow at the bank in bags and bank windows; 100 g fixed default, top-X % alternative; Auctionator, vendor fallback; a Settings row and a command | T7 (D22) |
@@ -8008,11 +8986,12 @@ Recorded in the week-7 ledger and applied to `docs/superpowers/specs/2026-09-30-
 
 ## How this plan was checked (while writing it)
 
+- **Amendment (preflight rulings R1–R22).** The plan was amended after the preflight (`.superpowers/sdd/2026-10-06-swagbag-week7-research-picks/preflight.md`); every ruling is carried into the tasks' tests, code, strings, decisions (D3, D9–D12, D17, D20, D23, D24, D26, D27, D29, new D31), sessions and the week-end spec list. The amended plan was replayed whole, as below, on a fresh clone of `a1f7f86` at `/tmp/sb7b`.
 - Every task was first built on a scratch clone at `/tmp/sb7` (outside the repo), one commit per task, test-first. Every block in this file was then generated from those commits' diffs by a script: each find block is grown line by line until it occurs exactly once in the file as it is after the earlier edits, and starts and ends on a non-blank line; the script re-applied every block to the old file and compared the result with the commit's file.
-- **Replay.** A fresh clone of `a1f7f86` at `/tmp/sbr` was driven by a script that reads this file: for each task it applies the Step 1 blocks, runs the suite, applies the Step 3 blocks, runs the suite and `scripts/check.sh`. Every Step 2 count and FAIL list, every Step 4 total and every Step 5 `ALL CHECKS PASSED` and TOC count above is that script's output. The replayed tree was compared file by file with the scratch build (`SwagBag/`, `spec/`, `.luacheckrc`): identical. Final total: **1356 passed, 0 failed**.
-- **Mutations.** Every mutation listed under a Step 2 (87 in all) was applied, one at a time, to its own task's finished tree (an export of that task's commit), and the full suite run: every one made its named test fail.
+- **Replay.** A fresh clone of `a1f7f86` (`/tmp/sb7b` for the amended plan) was driven by a script that reads this file: for each task it applies the Step 1 blocks, runs the suite, applies the Step 3 blocks, runs the suite and `scripts/check.sh`, then commits. Every find block occurred exactly once when applied; every Step 2 count and FAIL list (name by name), every Step 4 total, every Step 5 `ALL CHECKS PASSED` and TOC count, and every Step 6 `git add` list (equal to the files the task changed, and to its Files section) above is that script's output. Final total: **1376 passed, 0 failed**.
+- **Mutations.** Every mutation listed under a Step 2 (124 in all; 87 before the amendment) was applied, one at a time, to its own task's replayed commit, and the spec files holding the named test run: every one made its named test fail. Task 8's `scripts/check.sh` rule was checked the same way: the old Collections comment `(C_TransmogCollection)` makes `scripts/check.sh` fail.
 - Greps on the final tree:
-  - no `C_`/`Enum.` outside `SwagBag/Core/Adapter.lua`;
+  - no `C_`/`Enum.` outside `SwagBag/Core/Adapter.lua`, and no bare `C_*` name either (check.sh enforces both from Task 8);
   - none of the forbidden tokens (a draft comment in `UI/LockButton.lua` that named the forbidden click scripts was reworded; check.sh caught it);
   - no `OnUpdate`; no `load`/`loadstring` anywhere in `SwagBag/` (the share string is parsed with patterns only);
   - no `Config` call at load (the load-order tests stay green);
@@ -8023,7 +9002,8 @@ Recorded in the week-7 ledger and applied to `docs/superpowers/specs/2026-09-30-
 
 1. **Pick coverage.** Each of the nine picks maps to a task in "Spec coverage", in the user's order, and every question in the brief has a decision row: placement and priority (D1), modes (D2), never sellable (D3); the Venomstone ID, the probe and how to confirm (D5, G1), the overlay (D7); the glow's sources and switch (D8); the auto-sell's safety, the repair, combat, MERCHANT_SHOW, the vendor mode and P5 (D10–D13); the lock key, gesture, manual-sale answer (not feasible, so a chat warning) and keyword (D14–D17); the header gesture, the bank-type research and routing, confirmations, Mail all (D18–D21); the worth line (D22); the star (D23); profiles, the string format, validation and the import flow (D24–D27).
 2. **Placeholder scan.** No "TBD", "TODO", "similar to", or test-free step. Every code step is a complete block (the replay applies them as written). The in-game expectations quote Locale strings verbatim; where a line holds the player's own numbers (counts, amounts, names) the step says so.
-3. **Type and name consistency.** These names are the same in every task that uses them: `c_sets` (T1; Tasks 4 and 6 read `inEquipmentSet`); `SB.Crests.ids/words/currencyWords/currencies/items/knowledge` (T2 → T3); `Collections.Learn/Uncollected/Invalidate/REFRESH`, `m.collected` (T3 → T8); `Mover.Start/Busy/IsBusy/Stop/DELAY/RETRY/MAX_WAITS`, `result.moved/left/kept/skipped/why` (T4 → T5, T6); `Vendor.open/Protected/Junk/Sell/Repair/Money/BUYBACK/WatchLocked` (T4 → T5, T6); `A.SellItem/MoveToBank/AllowedInBank/ShiftDown/BuybackLinks` and the mock's `m.used/m.onUse/m.notAllowed/m.shift/m.buyback` (T4–T6); `SB.Locks.*`, `SB_LOCKS_CHANGED`, `LockButton.Drop` (T5); `W.SectionSlots`, `SectionHeaders.onClick(id, button, header)/onEnter/onLeave` (T6); `Prices.WorthThreshold`, `Ov.worthMin/IsWorth/RefreshWorth` (T7); the overlay regions `glow`, `lock`, `star` and `Ov.NAMES` (T3, T5, T8); `Profiles.*`, `ShareBox.*` (T9). The Locale keys quoted in SN1, LN1, VN1, BK1 and PF1 were checked against the blocks.
+3. **Type and name consistency.** These names are the same in every task that uses them: `c_sets` (T1; Tasks 4 and 6 read `inEquipmentSet`); `SB.Crests.ids/words/currencyWords/currencies/items/knowledge` (T2 → T3); `Collections.Learn/Uncollected/Invalidate/REFRESH`, `m.collected` (T3 → T8); `Mover.Start/Busy/IsBusy/Stop/DELAY/RETRY/MAX_WAITS`, `job.ready`, `result.moved/left/kept/skipped/why` (T4 → T5, T6); `Vendor.open/Protected/Junk/Room/soldThisVisit/Sell/Repair/Money/BUYBACK/WatchLocked`, `L.VENDOR_KEEPS` (T4 → T5, T6, T8); `SB.AtBank` (T6 → T7), `SB.FollowSettings` (T9: QuickSetup and Profiles); `A.SellItem/MoveToBank/AllowedInBank/ShiftDown/BuybackLinks` and the mock's `m.used/m.onUse/m.notAllowed/m.shift/m.buyback` (T4–T6); `SB.Locks.*`, `SB_LOCKS_CHANGED`, `LockButton.Drop` (T5); `W.SectionSlots`, `SectionHeaders.onClick(id, button, header)/onEnter/onLeave` (T6); `Prices.WorthThreshold`, `Ov.worthMin/IsWorth/RefreshWorth` (T7); the overlay regions `glow`, `lock`, `star` and `Ov.NAMES` (T3, T5, T8); `Profiles.*` (with `Label`), `ShareBox.*` (T9). The Locale keys quoted in SN1, LN1, VN1, BK1 and PF1 were checked against the blocks.
 4. **Review Focus.** Each of the seven lines names its pinning tests, and each of those tests is in its owning task's Step 1.
 5. **Global Constraints.** No `C_`/`Enum.` or another addon's global outside the Adapter (StaticPopup and GameTooltip are UI globals SwagBag already used). No click script or hook on an item button: locking is a drop on SwagBag's own button, and section actions start from a header. Every new script runs under `ErrorTrap.Guard` or `Run` with the labels listed in P6. Every user-visible string is in `enUS.lua`. Every new setting has a default; new saved tables are read defensively; the schema stays 2. No `OnUpdate`; collection answers are cached; the worth line is worked out once per bank visit.
-6. **Known limits, stated in the plan.** A locked item can still be sold by hand (D16); lockboxes glow green (D8, G13); knowledge items other than "... Treatise ..." need their IDs (G9); the Venomstone ID is PTR data until SN1 (G1); `UseContainerItem`'s routing argument is documented, not yet seen by SwagBag (G4, with D19's fallback).
+6. **Known limits, stated in the plan.** A locked item can still be sold by hand (D16); lockboxes glow green (D8, G13); knowledge items other than "... Treatise ..." need their IDs (G9); the Venomstone ID is PTR data until SN1 (G1); `UseContainerItem`'s routing argument is documented, not yet seen by SwagBag (G4, with D19's fallback). The buyback count is SwagBag's own sales per vendor visit (R1): items the user sells by hand are not counted. The gray-BoE auction rule needs Auctionator; without it no item is kept for that reason (D31).
+7. **Preflight rulings R1–R22.** Each is in the plan: R1 (12 per visit, second yes) T4, T6; R2 and R20 (the last look before each move) T4, T5, T6; R3, R4, R6, R7, R13, R18 (validation, `load` intercepted, undo with categories, the watch list, `MAX_LIST`, setting names) T9; R5 (the comment, check.sh) T8; R8 and R9 (counts, silent combat vendor) T4, T6; R10 (star under gold) T8; R11 (no coin on locked) T5; R12 (`SB.AtBank`, `SB.FollowSettings`, `copperIf`) T4, T6, T7, T9; R13 (unused exports dropped) T5, T7; R14 (themed menu) T6; R15 (`"none"` traps) T3, T5; R16 (`LOCK_INVALID`) T5; R17 (the count follows) T5; R19 (D31) T4, T6, T8; R21 (the note, the live search) T5; R22 (week-end spec list, `source = "import"`) T9 and "Spec updates at week end".
