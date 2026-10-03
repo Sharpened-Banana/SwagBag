@@ -50,6 +50,7 @@ Engine/Consumables.lua
 Engine/Locks.lua
 Engine/Mover.lua
 Engine/Vendor.lua
+Engine/Profiles.lua
 
 # Providers
 Providers/Auctionator.lua
@@ -79,6 +80,8 @@ UI/SettingsPages.lua
 UI/SettingsFocus.lua
 UI/SettingsConsumables.lua
 UI/SettingsVendor.lua
+UI/SettingsProfiles.lua
+UI/ShareBox.lua
 UI/Footer.lua
 UI/Themes.lua
 UI/TooltipCounts.lua
