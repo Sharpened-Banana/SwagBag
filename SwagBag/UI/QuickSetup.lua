@@ -187,6 +187,13 @@ frame.intro:SetText(L.QS_INTRO)
 frame.columnsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 frame.columnsLabel:SetPoint("TOPLEFT", 14, -110)
 frame.columnsLabel:SetText(L.SET_COLUMNS)
+-- Week 6 (D18): what the Pause button on the bags is for, before the user meets it.
+frame.pauseNote = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+frame.pauseNote:SetPoint("TOPLEFT", 14, -160)
+frame.pauseNote:SetWidth(532)
+frame.pauseNote:SetJustifyH("LEFT")
+frame.pauseNote:SetWordWrap(true)
+frame.pauseNote:SetText(L.QS_PAUSE_NOTE)
 frame.status = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 frame.status:SetPoint("BOTTOMLEFT", 14, 44)
 frame.status:SetText(L.QS_HINT)
@@ -195,6 +202,7 @@ if SB.Theme then -- the look (UI/Theme.lua); the Blizzard theme keeps exactly th
 	SB.Theme.Text(frame.title, "titleLarge")
 	SB.Theme.Text(frame.intro, "body")
 	SB.Theme.Text(frame.columnsLabel, "label")
+	SB.Theme.Text(frame.pauseNote, "small")
 	SB.Theme.Text(frame.status, "small")
 end
 

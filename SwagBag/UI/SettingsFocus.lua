@@ -4,6 +4,7 @@
 -- only, and each mode's section set with "Reset to default" next to it (spec 6.3). The bags
 -- window's Pause button opens this page at the active mode with a right-click (AC8.5).
 --   SettingsFocus.Edit(modeId)   open the page with that mode's sections shown
+-- The page starts with a plain-words note, and every row with buttons has a tooltip (row.tip, week 6).
 -- Every write goes through Config.Set or the Focus writers; Config emits SB_CONFIG_CHANGED and
 -- Focus refreshes on it, so an open bag re-stacks at once (guarded as in Task 3). The editor
 -- reads and writes the raw section list (W4-2): only the effective view filters Gathering.
@@ -47,8 +48,8 @@ local function refusal(why)
 	return why == "unknown" and L.SET_FOCUS_UNKNOWN or L.SETTINGS_READONLY
 end
 
-local function setting(label, path, choices, done)
-	return { kind = "choice", label = label, choices = choices, get = function()
+local function setting(label, path, choices, done, tip)
+	return { kind = "choice", label = label, choices = choices, tip = tip, get = function()
 		return SB.Config.Get(path)
 	end, apply = function(v)
 		if not SB.Config.Set(path, v) then
@@ -70,7 +71,7 @@ local function sectionRows(rows)
 	for _, sid in ipairs(SB.Categories.SectionOrder()) do
 		if sid ~= SB.Categories.NEW then
 			local name = SB.Categories.Name(sid)
-			rows[#rows + 1] = { kind = "choice", label = name, width = 96,
+			rows[#rows + 1] = { kind = "choice", label = name, width = 96, tip = L.SET_SECTION_TIP:format(modeName(id)),
 				choices = { { value = true, text = L.SET_SECTION_OPEN }, { value = false, text = L.SET_SECTION_CLOSED } },
 				get = function()
 					return open[sid] == true
@@ -93,7 +94,8 @@ local function sectionRows(rows)
 				end }
 		end
 	end
-	rows[#rows + 1] = { kind = "actions", label = L.SET_SECTIONS_DEFAULT_LABEL, actions = { { text = L.SET_RESET_DEFAULT,
+	rows[#rows + 1] = { kind = "actions", label = L.SET_SECTIONS_DEFAULT_LABEL, tip = L.SET_SECTIONS_DEFAULT_TIP,
+		actions = { { text = L.SET_RESET_DEFAULT,
 		run = function()
 			local ok, why = F.ResetSections(id)
 			if not ok then
@@ -106,16 +108,25 @@ local function sectionRows(rows)
 	end
 end
 
+-- When each mode switches on, for its row's tooltip.
+local function whenText(id)
+	return ({ mplus = L.SET_MODE_WHEN_MPLUS, raid = L.SET_MODE_WHEN_RAID, delves = L.SET_MODE_WHEN_DELVES,
+		gathering = L.SET_MODE_WHEN_GATHERING, fishing = L.SET_MODE_WHEN_FISHING, market = L.SET_MODE_WHEN_MARKET })[id]
+		or ""
+end
+
 local function rows()
 	local F = SB.Focus
 	local out = {
+		{ kind = "note", label = L.SET_FOCUS_INTRO }, -- week 6: what focus modes are, in plain words (D18)
 		setting(L.SET_FOCUS_AUTO, "focus.auto", { { value = true, text = L.SET_FOCUS_AUTO_ON },
 			{ value = false, text = L.SET_OFF } }, function(v)
 			return v and L.SET_FOCUS_AUTO_DONE or L.SET_FOCUS_OFF_DONE
-		end),
+		end, L.SET_FOCUS_AUTO_TIP),
 		-- Week 6: move the mode's sections up (default) or collapse the rest (the week-4 way). The same
 		-- writer as /swagbag mode style, so both answer alike and refuse while read-only.
-		{ kind = "choice", label = L.SET_FOCUS_STYLE, choices = { { value = "front", text = L.SET_FOCUS_STYLE_FRONT },
+		{ kind = "choice", label = L.SET_FOCUS_STYLE, tip = L.SET_FOCUS_STYLE_TIP,
+			choices = { { value = "front", text = L.SET_FOCUS_STYLE_FRONT },
 			{ value = "collapse", text = L.SET_FOCUS_STYLE_COLLAPSE } },
 			get = F.Style,
 			apply = function(v)
@@ -128,16 +139,17 @@ local function rows()
 		setting(L.SET_FOCUS_RESOLVE, "focus.resolve", { { value = "merge", text = L.SET_FOCUS_MERGE },
 			{ value = "priority", text = L.SET_FOCUS_PRIORITY } }, function(v)
 			return v == "merge" and L.SET_FOCUS_MERGE_DONE or L.SET_FOCUS_PRIORITY_DONE
-		end),
+		end, L.SET_FOCUS_RESOLVE_TIP),
 		setting(L.SET_FOCUS_PEEK, "focus.peek", { { value = "peek", text = L.SET_FOCUS_PEEK_PEEK },
 			{ value = "keep", text = L.SET_FOCUS_PEEK_KEEP } }, function(v)
 			return v == "peek" and L.SET_FOCUS_PEEK_DONE or L.SET_FOCUS_KEEP_DONE
-		end),
+		end, L.SET_FOCUS_PEEK_TIP),
 		setting(L.SET_FOCUS_ANNOUNCE, "focus.announce", { { value = false, text = L.SET_FOCUS_QUIET },
 			{ value = true, text = L.SET_FOCUS_LOUD } }, function(v)
 			return v and L.SET_FOCUS_LOUD_DONE or L.SET_FOCUS_QUIET_DONE
-		end),
-		{ kind = "choice", label = L.SET_FOCUS_SCOPE, choices = { { value = false, text = L.SET_FOCUS_ACCOUNT },
+		end, L.SET_FOCUS_ANNOUNCE_TIP),
+		{ kind = "choice", label = L.SET_FOCUS_SCOPE, tip = L.SET_FOCUS_SCOPE_TIP,
+			choices = { { value = false, text = L.SET_FOCUS_ACCOUNT },
 			{ value = true, text = L.SET_FOCUS_CHARACTER } },
 			get = anyOverride,
 			apply = function(v)
@@ -149,6 +161,7 @@ local function rows()
 	}
 	for _, m in ipairs(F.MODES) do
 		out[#out + 1] = { kind = "choice", label = layered(L.SET_MODE_LABEL:format(L[m.name])),
+			tip = L.SET_MODE_TIP:format(whenText(m.id)),
 			choices = { { value = true, text = L.SET_ON }, { value = false, text = L.SET_OFF } },
 			get = function()
 				return F.IsEnabled(m.id)
@@ -161,7 +174,7 @@ local function rows()
 				return (v and L.SET_MODE_ON or L.SET_MODE_OFF):format(L[m.name])
 			end }
 	end
-	local pick = { kind = "choice", label = L.SET_EDIT_MODE, width = 76, choices = {}, get = function()
+	local pick = { kind = "choice", label = L.SET_EDIT_MODE, width = 76, tip = L.SET_EDIT_MODE_TIP, choices = {}, get = function()
 		return SF.editing
 	end, apply = function(v)
 		SF.editing = v

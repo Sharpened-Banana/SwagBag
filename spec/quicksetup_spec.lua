@@ -190,6 +190,13 @@ describe("Quick setup", function()
 		assert.same({ SB.L.QS_OPENED, SB.L.TOUR_LATER }, A.Lines())
 	end)
 
+	-- Week 6, D18. Mutation: delete the pauseNote SetText.
+	it("explains the bags' Pause button in one line", function()
+		SB.Slash.Dispatch("setup")
+		assert.equal(SB.L.QS_PAUSE_NOTE, QS.frame.pauseNote.text)
+		assert.truthy(QS.frame.pauseNote.shown)
+	end)
+
 	it("a picked style shows as picked; a second click unpicks it", function()
 		QS.Show()
 		pick("raid")

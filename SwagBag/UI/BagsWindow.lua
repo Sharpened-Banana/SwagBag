@@ -1291,7 +1291,8 @@ end
 
 -- Left-click: pause / resume. Right-click: the Focus modes settings page at the active mode's
 -- sections (AC8.5). The settings open under ErrorTrap "none": a settings glitch flashes
--- L.SETTINGS_FAILED here and never puts the bags into Safe Mode (W4-5). The tooltip says both.
+-- L.SETTINGS_FAILED here and never puts the bags into Safe Mode (W4-5). The tooltip says what a
+-- click does now, in plain words (week 6, D18), and names the right-click.
 W.modeButton = titleButton(L.BTN_PAUSE, "bags.modeButton", function(_, mouseButton)
 	if mouseButton == "RightButton" then
 		local ok = SB.SettingsFocus and
@@ -1305,9 +1306,10 @@ W.modeButton = titleButton(L.BTN_PAUSE, "bags.modeButton", function(_, mouseButt
 end, 64)
 W.modeButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 W.modeButton:SetScript("OnEnter", Guard("bags.modeTip", function(self)
+	local paused = SB.Focus and SB.Focus.IsPaused()
 	GameTooltip:SetOwner(self, "ANCHOR_TOP")
-	GameTooltip:SetText(L.MODE_TIP_TITLE)
-	GameTooltip:AddLine(L.MODE_TIP_LEFT, 1, 1, 1)
+	GameTooltip:SetText(paused and L.MODE_TIP_TITLE_PAUSED or L.MODE_TIP_TITLE)
+	GameTooltip:AddLine(paused and L.MODE_TIP_BODY_PAUSED or L.MODE_TIP_BODY, 1, 1, 1, true)
 	GameTooltip:AddLine(L.MODE_TIP_RIGHT, 1, 1, 1)
 	GameTooltip:Show()
 end, "bags"))
