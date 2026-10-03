@@ -25,6 +25,9 @@
 -- before each sale the slot is looked at again (rulings R2, R20: the vendor still open, the item still not
 -- protected). A sold item leaves a placeholder in the open bags (spec 4.3), so nothing else moves. One chat
 -- line per run says what was sold and for how much; the repair says its own.
+-- A locked item sold by hand (Blizzard's own right-click, which SwagBag does not hook) cannot be stopped:
+-- while a vendor is open, a locked item that leaves the bags and shows up in the buyback tab gets one chat
+-- line naming it and where to buy it back (Vendor.WatchLocked).
 local _, SB = ...
 
 local L = SB.L
@@ -245,8 +248,48 @@ function V.Visit()
 	repairSafely()
 end
 
+-- Where the locked items are while a vendor is open: ["bag:slot"] = { itemID, link }.
+V.lockedAt = {}
+function V.WatchLocked()
+	V.lockedAt = {}
+	if not (V.open and SB.Locks) then
+		return
+	end
+	for bag, slot, snap in SB.Inventory.Iterate("bags") do
+		if snap and SB.Locks.Has(snap.itemID) then
+			V.lockedAt[bag .. ":" .. slot] = { itemID = snap.itemID, link = snap.link }
+		end
+	end
+end
+
+local function inBuyback(link)
+	for _, l in ipairs(SB.Adapter.BuybackLinks()) do
+		if l == link then
+			return true
+		end
+	end
+	return false
+end
+
+-- P6: Inventory.Notify runs its listeners inside a "bags" trap; this one has its own "none" trap (ruling
+-- R15), so a failure in the warning is recorded and never switches the bags to Safe Mode.
+SB.Inventory.OnChanged(SB.ErrorTrap.Guard("vendor.inventory", function(mask, changes)
+	if not (V.open and SB.Inventory.Has(mask, SB.Inventory.R.ITEM)) then
+		return
+	end
+	for _, c in ipairs(changes) do
+		local was = V.lockedAt[c.bag .. ":" .. c.slot]
+		local now = SB.Inventory.GetSlot(c.bag, c.slot)
+		if was and not (now and now.itemID == was.itemID) and inBuyback(was.link) then
+			SB.Print(L.LOCK_SOLD:format(SB.Locks.Name(was.itemID)))
+		end
+	end
+	V.WatchLocked()
+end, "none"))
+
 SB.On("MERCHANT_SHOW", function()
 	V.open = true
+	V.WatchLocked()
 	V.soldThisVisit, V.pastAsked = 0, false -- a new visit: the Buyback tab has room for 12 of SwagBag's again
 	V.Visit()
 end, "none")
@@ -254,7 +297,10 @@ end, "none")
 SB.On("MERCHANT_CLOSED", function()
 	V.open = false
 	V.pastAsked = false
+	V.lockedAt = {}
 end, "none")
+
+SB.On("SB_LOCKS_CHANGED", V.WatchLocked, "none")
 
 ---------------------------------------------------------------------------
 -- /swagbag sell and /swagbag repair (P2: every form answers)

@@ -256,7 +256,12 @@ function K.RegisterAll()
 		end
 	end
 	kw("new", "volatile", flag("isNew"))
-	kw("locked", "volatile", flag("isLocked"))
+	-- Week 7 (user pick 5): `locked` is the user's own lock (Engine/Locks.lua). The client's lock on an
+	-- item being moved, traded or sold right now (spec 7.3's old `locked`) is `inuse`.
+	kw("locked", "volatile", function(r)
+		return SB.Locks ~= nil and SB.Locks.Has(r.itemID)
+	end)
+	kw("inuse", "volatile", flag("isLocked"))
 	kw("cooldown", "volatile", flag("onCooldown"))
 	kw("usable", "volatile", flag("isUsable"))
 	kw("equipped", "volatile", flag("inEquipmentSet"))

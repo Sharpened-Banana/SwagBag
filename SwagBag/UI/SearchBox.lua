@@ -5,7 +5,8 @@
 -- lays out (including reopen) and whenever slot data changes (Box.Apply).
 --   SB.SearchBox                the bags window's box (built at load, below)
 --   SB.SearchBox.New(o) -> box  another window's box. o = { parent, name, search, window,
---     debounceKey, isOpen = fn() -> bool, forEachSlot = fn(fn), setDimmed = fn(button, dimmed) }
+--     debounceKey, isOpen = fn() -> bool, forEachSlot = fn(fn), setDimmed = fn(button, dimmed),
+--     rightInset (optional: room kept free at the row's right end; the bags window's Lock button, week 7) }
 --   box.editBox, box.Apply(), box.Run(), box.ShowError(text, err), box.ClearError()
 local _, SB = ...
 
@@ -25,7 +26,7 @@ local function new(o)
 	-- Two lines at most, between the box and the window's right edge, top-aligned with
 	-- the box. Anchored TOPRIGHT (not RIGHT) so it never stretches down over the items.
 	errorLine:SetPoint("TOPLEFT", box, "TOPRIGHT", 8, 4)
-	errorLine:SetPoint("TOPRIGHT", o.parent, "TOPRIGHT", -8, -26)
+	errorLine:SetPoint("TOPRIGHT", o.parent, "TOPRIGHT", -(o.rightInset or 8), -26)
 	errorLine:SetJustifyH("LEFT")
 	errorLine:SetJustifyV("TOP")
 	errorLine:SetWordWrap(true)
@@ -113,6 +114,7 @@ local Box = new({
 	search = SB.Search,
 	window = "bags",
 	debounceKey = "search.bags",
+	rightInset = 62, -- the Lock button (UI/LockButton.lua) sits there
 	isOpen = function()
 		return W.IsOpen()
 	end,
@@ -131,6 +133,11 @@ SB.On("SB_BAGS_LAYOUT", function()
 end, "bags")
 
 SB.On("SB_BAGS_UPDATED", function()
+	Box.Apply()
+end, "bags")
+
+-- Week 7 (ruling R21): a lock or unlock re-applies the search, so a `locked` search follows it at once.
+SB.On("SB_LOCKS_CHANGED", function()
 	Box.Apply()
 end, "bags")
 
