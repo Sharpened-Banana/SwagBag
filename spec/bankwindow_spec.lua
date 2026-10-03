@@ -477,6 +477,16 @@ describe("BankWindow frames (check V2)", function()
 		assert.falsy(BW.reagentsBox.shown)
 	end)
 
+	-- Mutation: drop the BW.RefreshReagents() call in BW.DepositWarband (a stale box can mislead).
+	it("Deposit warbound re-reads the game's include-reagents choice, so a stale box shows the truth", function()
+		openBank()
+		assert.same({ false }, BW.reagentsBox.calls.SetChecked)
+		A.warband.reagents = true -- changed in Blizzard's own window while ours was open
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.equal(true, BW.reagentsBox.calls.SetChecked[#BW.reagentsBox.calls.SetChecked])
+		assert.equal(SB.L.DEPOSIT_STARTED_REAGENTS, BW.frame.title.text)
+	end)
+
 	-- P2 (the bags window's D27). Mutation: drop the SB.Print in BW.Flash.
 	it("a long answer cut short in the bank title also goes to chat", function()
 		openBank()

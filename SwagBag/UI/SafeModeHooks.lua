@@ -104,6 +104,7 @@ local function onBagKey(kind, arg)
 		-- ("none") did nothing, so this key press still toggles. Anything else already acted.
 		if Hooks.lastKind == "auto" then
 			Hooks.autoOpenedBy = nil
+			Hooks.toggleClosedUsers = false -- this press opened it: no earlier close is still pending
 			Hooks.lastKind = "toggle"
 			note(kind, arg, "user")
 			return

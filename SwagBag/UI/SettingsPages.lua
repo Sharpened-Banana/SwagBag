@@ -35,6 +35,13 @@ local function onOff(label, path, command)
 		end }
 end
 
+-- A row whose default is Off lists Off first (P1: the default is the first choice).
+local function offOn(label, path, command)
+	local row = onOff(label, path, command)
+	row.choices = { { value = false, text = L.SET_OFF }, { value = true, text = L.SET_ON } }
+	return row
+end
+
 -- Bags --------------------------------------------------------------------
 local function bagsRows()
 	local W = SB.BagsWindow
@@ -149,7 +156,8 @@ local OVERLAYS = {
 local function overlayRows()
 	local rows = {}
 	for _, o in ipairs(OVERLAYS) do
-		rows[#rows + 1] = onOff(o[3], o[2], "overlays " .. o[1])
+		rows[#rows + 1] = (SB.Config.Defaults.settings.overlays[o[1]] == false and offOn or onOff)(o[3], o[2],
+			"overlays " .. o[1])
 	end
 	rows[#rows + 1] = { kind = "choice", label = L.SET_OV_PAWN, get = get("overlays.usePawn"),
 		choices = { { value = false, text = L.SET_PAWN_ILVL }, { value = true, text = L.SET_PAWN_PAWN } },

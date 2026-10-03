@@ -252,6 +252,33 @@ describe("SafeModeHooks", function()
 		assert.is_nil(SB.SafeModeHooks.autoOpenedBy)
 	end)
 
+	-- Mutation: in onCloseAll, drop `frame ~= nil and` from the reopen condition.
+	it("a toggle that closed the user's window, then CloseAllBags() with no frame in the same frame, leaves it closed", function()
+		realToggle()
+		windowOpen = true -- opened with B
+		A.Advance(1)
+		hooks.ToggleBackpack() -- the bag key's own toggle closes it
+		assert.falsy(windowOpen)
+		hooks.CloseAllBags() -- no frame: runs inside the bag key itself, never a vendor walking away
+		assert.falsy(windowOpen)
+		assert.equal("nothing", SB.SafeModeHooks.trace[#SB.SafeModeHooks.trace].did)
+	end)
+
+	-- Mutation: in onBagKey's "auto" branch, drop `Hooks.toggleClosedUsers = false`.
+	it("a closed-by-the-user flag from an earlier key press does not make a later vendor close 'reopen'", function()
+		realToggle()
+		windowOpen = true
+		hooks.ToggleAllBags() -- the user closes their window: the flag is set
+		assert.falsy(windowOpen)
+		A.Advance(1)
+		hooks.OpenAllBags() -- inner call of the next bag key: opens the window
+		hooks.ToggleAllBags() -- the key itself: the window is the user's
+		assert.truthy(windowOpen)
+		hooks.CloseAllBags(named("MerchantFrame")) -- same frame
+		assert.truthy(windowOpen)
+		assert.equal("kept", SB.SafeModeHooks.trace[#SB.SafeModeHooks.trace].did)
+	end)
+
 	-- Mutation: in onBagKey, toggleClosedUsers = wasOpen and not W.IsOpen() (forgets who owned it).
 	it("a bag toggle inside a vendor's CloseAllBags that closed the game's window leaves it closed", function()
 		realToggle()

@@ -384,8 +384,18 @@ function Focus.Recompute(reason)
 	return true
 end
 
+-- The style the overrides were made under: peeks, pins and closes mean something only in "collapse",
+-- so a style change (SetStyle, a character override, a reset) drops them; they must not come back
+-- when the user returns to "collapse" within the same mode.
+local overridesStyle = nil
+
 function Focus.Refresh(reason)
 	invalidate()
+	local style = Focus.Style()
+	if overridesStyle ~= nil and style ~= overridesStyle then
+		Focus.overrides = {}
+	end
+	overridesStyle = style
 	if not Focus.Recompute(reason or "settings") then
 		emit(reason or "settings")
 	end
