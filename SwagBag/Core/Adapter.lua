@@ -697,6 +697,68 @@ function A.SortBank(kind)
 end
 
 ---------------------------------------------------------------------------
+-- Selling, repairing and moving items (week 7, user picks 4 and 6). C_Container.UseContainerItem is what
+-- a right-click on a bag item runs: at an open vendor it sells the item, at an open bank it moves the
+-- item into that bank. Addons call it out of combat (Baganator's transfers, EnhanceQoL's vendor and
+-- warband bank; names read only); SwagBag calls it out of combat only (Engine/Mover.lua checks).
+---------------------------------------------------------------------------
+function A.SellItem(bag, slot)
+	if not (C_Container and C_Container.UseContainerItem) then
+		return false
+	end
+	return pcall(C_Container.UseContainerItem, bag, slot)
+end
+
+-- Move a bag item into the bank of that kind: "bank" (character) | "warband". The bank type is the
+-- call's own argument (11.0+), so Blizzard's selected tab and bank type are neither read nor set.
+function A.MoveToBank(bag, slot, kind)
+	local BT = Enum and Enum.BankType
+	local bankType = BT and ((kind == "bank" and BT.Character) or (kind == "warband" and BT.Account))
+	if bankType == nil or not (C_Container and C_Container.UseContainerItem) then
+		return false
+	end
+	return pcall(C_Container.UseContainerItem, bag, slot, nil, bankType, false)
+end
+
+-- A copper amount the client gives only when a yes/no question allows it (the repair cost, the guild's
+-- repair money): nil without the API, on a "no", or on a secret.
+local function copperIf(canName, amountName)
+	local can, amount = _G[canName], _G[amountName]
+	if type(can) ~= "function" or type(amount) ~= "function" then
+		return nil
+	end
+	local okC, yes = pcall(can)
+	if not okC or isSecret(yes) or not yes then
+		return nil
+	end
+	local ok, copper = pcall(amount)
+	if not ok or type(copper) ~= "number" or isSecret(copper) then
+		return nil
+	end
+	return copper
+end
+
+-- What repairing everything costs at this vendor, in copper (0: nothing to repair); nil when this
+-- vendor does not repair or the client cannot say.
+function A.RepairCost()
+	return copperIf("CanMerchantRepair", "GetRepairAllCost")
+end
+
+-- Repair everything; guild = true pays from the guild bank. true when the call went through.
+function A.Repair(guild)
+	local fn = _G.RepairAllItems
+	if type(fn) ~= "function" then
+		return false
+	end
+	return (pcall(fn, guild == true))
+end
+
+-- Copper the guild lets this character spend on repairs today (-1: no limit), or nil when it may not.
+function A.GuildRepairMoney()
+	return copperIf("CanGuildBankRepair", "GetGuildBankWithdrawMoney")
+end
+
+---------------------------------------------------------------------------
 -- Blizzard frames and the bank (week 3). SwagBag only READS Blizzard's bank state
 -- (spec 5.2, 5.3): it never selects a tab or a bank type and never closes the bank.
 ---------------------------------------------------------------------------
@@ -1413,6 +1475,12 @@ A.CHECKS = {
 	{ path = "C_Container.GetContainerItemQuestInfo", window = "bags", required = false },
 	{ path = "C_Container.SortBags", window = "bags", required = false },
 	{ path = "C_Container.SortBank", window = "bank", required = false },
+	{ path = "C_Container.UseContainerItem", window = "bags", required = false },
+	{ path = "CanMerchantRepair", window = "bags", required = false },
+	{ path = "GetRepairAllCost", window = "bags", required = false },
+	{ path = "RepairAllItems", window = "bags", required = false },
+	{ path = "CanGuildBankRepair", window = "bags", required = false },
+	{ path = "GetGuildBankWithdrawMoney", window = "bags", required = false },
 	{ path = "GetCursorInfo", window = "bags", required = false },
 	{ path = "ClearCursor", window = "bags", required = false },
 	{ path = "GameTooltip", window = "bags", required = false },

@@ -72,6 +72,9 @@ Config.Defaults = {
 				fishing = "c_fish,c_cooking",
 				market = "c_junk,c_tradegoods,c_boe,c_wue",
 			} },
+		-- At a vendor (week 7, user pick 4; Engine/Vendor.lua). autoSell: sell gray junk at every vendor (on).
+		-- repair: "own" (repair with your gold, default) | "guild" (the guild bank first) | "off".
+		vendor = { autoSell = true, repair = "own" },
 		-- The low-consumables warning (spec 6.6, F11). warn: on by default. watch: nil means the
 		-- default list (Engine/Consumables.lua); the user's edited list is stored here.
 		consumables = { warn = true },

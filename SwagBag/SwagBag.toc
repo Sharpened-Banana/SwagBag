@@ -47,6 +47,8 @@ Engine/Focus.lua
 Engine/FocusData.lua
 Engine/Signals.lua
 Engine/Consumables.lua
+Engine/Mover.lua
+Engine/Vendor.lua
 
 # Providers
 Providers/Auctionator.lua
@@ -73,6 +75,7 @@ UI/SettingsWindow.lua
 UI/SettingsPages.lua
 UI/SettingsFocus.lua
 UI/SettingsConsumables.lua
+UI/SettingsVendor.lua
 UI/Footer.lua
 UI/Themes.lua
 UI/TooltipCounts.lua

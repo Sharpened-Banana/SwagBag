@@ -1,0 +1,295 @@
+-- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip
+-- Week 7 (user pick 4): at a vendor SwagBag sells gray junk (12 at most per vendor visit: Blizzard's buyback
+-- keeps 12), never items in an equipment set, items to open or learn, gray BoE items worth more at auction
+-- or items held by the client, then repairs with the player's gold (or the guild's, when chosen); nothing in
+-- combat; one chat line says what was sold.
+local Loader = dofile("spec/helpers/loader.lua")
+local Fake = dofile("spec/helpers/fakeframe.lua")
+local Env = dofile("spec/helpers/uienv.lua")
+local Fixtures = dofile("spec/fixtures/items.lua")
+
+local GRAY, GRAY_BOE = 400200, 400201
+
+describe("Vendor (week 7)", function()
+	local SB, A, Mover
+	before_each(function()
+		local files = { unpack(Env.ENGINE) }
+		files[#files + 1] = "SwagBag/Engine/Collections.lua"
+		files[#files + 1] = "SwagBag/Engine/Mover.lua"
+		files[#files + 1] = "SwagBag/Engine/Vendor.lua"
+		SB = Loader.New(files)
+		A, Mover = SB.Adapter, SB.Mover
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A) -- slot 6: Broken Tooth x3, gray
+		A.items[Fixtures.JUNK].sellPrice = 1234 -- 12s 34c each
+		A.AddItem(GRAY, { name = "Frayed Robe", classID = A.ITEM_CLASS.Armor, subclassID = 1, equipLoc = "INVTYPE_CHEST",
+			quality = 0, ilvl = 5, maxStack = 1, bind = "none", sellPrice = 50 })
+		A.money = 1000000
+		SB.Inventory.ScanAll()
+	end)
+
+	local function visit()
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		A.Advance(Mover.DELAY * 30)
+	end
+
+	local function sold()
+		local out = {}
+		for _, u in ipairs(A.used) do
+			if u.kind == "sell" then
+				out[#out + 1] = u.slot
+			end
+		end
+		return out
+	end
+
+	-- Mutations: Vendor.Protected ignores r.inEquipmentSet; Vendor.Junk drops `not r.isLocked`.
+	it("sells gray junk a vendor pays for; never a set piece, an item the client holds, or one worth nothing", function()
+		A.Put(0, 7, GRAY, 1, { inSet = true })
+		A.Put(0, 8, GRAY, 1, { isLocked = true })
+		A.Put(0, 9, GRAY, 1, { hasNoValue = true })
+		A.Put(0, 10, GRAY, 1)
+		SB.Inventory.ScanAll()
+		assert.equal(2, #SB.Vendor.Junk(), "the set piece, the held robe and the worthless one are not listed")
+		visit()
+		assert.same({ 6, 10 }, sold())
+		assert.same({ "Sold 2 junk items for 37s 52c." }, A.Lines(), "3 x 12s 34c + 50c, one chat line")
+	end)
+
+	-- Ruling R1: the 12 are per vendor visit, shared by the auto-sell, /swagbag sell junk and Sell all; past them
+	-- a second /swagbag sell junk is the explicit yes. Mutations: in Vendor.Sell, `math.min(#list, room)` ->
+	-- `#list`; or `local room = past and V.BUYBACK or V.Room()` -> `local room = V.BUYBACK` (a second sale in
+	-- the visit would push the first out of the Buyback tab without asking); or the MERCHANT_SHOW handler
+	-- keeps the count of the last visit.
+	it("sells at most 12 per vendor visit (the buyback tab keeps 12); more needs a second, explicit yes", function()
+		A.SetBagSize(1, 20)
+		for slot = 1, 9 do
+			A.Put(1, slot, GRAY, 1)
+		end
+		SB.Inventory.ScanAll()
+		visit()
+		assert.equal(10, #sold(), "the auto-sell: the Broken Tooth and 9 robes")
+		for slot = 10, 15 do
+			A.Put(1, slot, GRAY, 1)
+		end
+		SB.Inventory.ScanAll()
+		SB.Slash.Dispatch("sell junk")
+		A.Advance(Mover.DELAY * 10)
+		assert.equal(12, #sold(), "2 more fit in the visit's 12")
+		SB.Slash.Dispatch("sell junk")
+		A.Advance(Mover.DELAY * 10)
+		assert.equal(12, #sold(), "the visit's 12 are used: it asks first")
+		SB.Slash.Dispatch("sell junk")
+		A.Advance(Mover.DELAY * 10)
+		assert.equal(16, #sold(), "the second yes sells the rest")
+		assert.same({ "Sold 10 junk items for 41s 52c.", "Sold 2 junk items for 1s 0c. 4 more junk items wait: Blizzard's"
+			.. " Buyback tab keeps only the last 12. Type /swagbag sell junk to sell them.", SB.L.VENDOR_PAST_JUNK:format(4),
+			"Sold 4 junk items for 2s 0c." }, A.Lines())
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		assert.equal(12, SB.Vendor.Room(), "a new visit: 12 again")
+	end)
+
+	-- P2: the command answers once, with the sale's line. Mutation: in Vendor.Visit, drop the vendor.autoSell check.
+	it("auto-sell off: nothing is sold by itself; /swagbag sell junk sells at a vendor and refuses elsewhere", function()
+		SB.Slash.Dispatch("sell off")
+		visit()
+		assert.same({}, sold())
+		SB.Slash.Dispatch("sell junk")
+		A.Advance(Mover.DELAY * 3)
+		assert.same({ 6 }, sold())
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		SB.Slash.Dispatch("sell junk")
+		assert.same({ SB.L.VENDOR_SELL_OFF, "Sold 1 junk item for 37s 2c.",
+			SB.L.VENDOR_NOT_OPEN }, A.Lines())
+	end)
+
+	-- Mutation: in Vendor.Repair, skip the `money < cost` check (the call would fail at the vendor).
+	it("repairs with your gold after the sale; says when gold is short; Off repairs nothing", function()
+		A.repairCost = 52000
+		visit()
+		assert.same({ "own" }, A.repairs)
+		assert.same({ "Sold 1 junk item for 37s 2c.", "Repaired everything for 5g 20s 0c." }, A.Lines())
+		A.money = 100
+		A.Put(0, 6, Fixtures.JUNK, 1)
+		A.printed = {}
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		visit()
+		assert.same({ "own" }, A.repairs, "no second repair")
+		assert.equal("Repairs cost 5g 20s 0c, more than you carry, so nothing was repaired.", A.Lines()[2])
+		SB.Slash.Dispatch("repair off")
+		A.money = 1000000
+		visit()
+		assert.same({ "own" }, A.repairs)
+	end)
+
+	-- Mutation: in Vendor.Repair, drop the guild branch.
+	it("Guild bank first: the guild pays when it allows enough (or has no limit), else your gold", function()
+		SB.Slash.Dispatch("repair guild")
+		A.repairCost = 52000
+		A.guildRepair = -1
+		SB.Slash.Dispatch("sell off")
+		visit()
+		A.guildRepair = 100 -- not enough today
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		visit()
+		assert.same({ "guild", "own" }, A.repairs)
+		local lines = A.Lines()
+		assert.equal("Repaired everything for 5g 20s 0c from the guild bank.", lines[3])
+		assert.equal("Repaired everything for 5g 20s 0c.", lines[4])
+	end)
+
+	-- Mutation: in Vendor.Visit, drop the A.InCombat() branch.
+	it("a vendor opened in combat sells and repairs once combat ends, only if it is still open", function()
+		A.combat = true
+		A.repairCost = 100
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		assert.same({}, sold())
+		assert.same({ SB.L.VENDOR_COMBAT }, A.Lines())
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		A.Advance(Mover.DELAY * 3)
+		assert.same({ 6 }, sold())
+		assert.same({ "own" }, A.repairs)
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.Put(0, 6, Fixtures.JUNK, 1)
+		A.combat = true
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		A.Advance(Mover.DELAY * 3)
+		assert.same({ 6 }, sold(), "the vendor closed during combat: nothing more")
+	end)
+
+	-- Ruling R9 (P2: an automatic action with nothing to do says nothing). Mutation: in Vendor.Visit, drop the
+	-- `if work() then` around the combat line.
+	it("a vendor opened in combat with nothing to sell or repair says nothing", function()
+		A.Clear(0, 6)
+		SB.Inventory.ScanAll()
+		A.combat = true
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		A.Advance(Mover.DELAY * 3)
+		assert.same({}, A.Lines())
+	end)
+
+	-- Mutation: in Vendor.lua, drop `closed = "VENDOR_STOP_CLOSED", ` from STOP_LINES.
+	it("a vendor closed mid-run: the line says how many sold and how many stayed", function()
+		for slot = 7, 9 do
+			A.Put(0, slot, GRAY, 1)
+		end
+		SB.Inventory.ScanAll()
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.Advance(Mover.DELAY * 5)
+		assert.same({ 6 }, sold())
+		assert.same({ "Sold 1 junk item for 37s 2c. The vendor closed, so 3 stayed in your bags." }, A.Lines())
+	end)
+
+	-- Ruling R8: the line counts what really stayed. Mutation: in soldLine, `L[stop]:format(result.left)` ->
+	-- `L[stop]:format(result.left + result.skipped)` (an item used by hand would count as stayed).
+	it("the line never says 0 stayed, and an item used by hand during the run does not count as stayed", function()
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- the Broken Tooth sells at once
+		SB.eventFrame:Fire("MERCHANT_CLOSED") -- in the same 0.2 s: it was the last one
+		A.Advance(Mover.DELAY * 3)
+		for slot = 7, 9 do
+			A.Put(0, slot, GRAY, 1)
+		end
+		A.Put(0, 6, Fixtures.JUNK, 1)
+		SB.Inventory.ScanAll()
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- slot 6 sells at once
+		A.Clear(0, 7) -- the first robe is used up by hand
+		A.Advance(Mover.DELAY) -- the robe in slot 8 sells
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.Advance(Mover.DELAY * 3)
+		assert.same({ "Sold 1 junk item for 37s 2c.",
+			"Sold 2 junk items for 12s 84c. The vendor closed, so 1 stayed in your bags." }, A.Lines())
+	end)
+
+	-- Ruling R2: right before each sale the slot is checked again. Mutation: in sellable(), drop
+	-- `or V.Protected(r)` (an item put in a set during the run would still be sold).
+	it("an item that becomes protected during the run (here: put in an equipment set) is skipped, never sold", function()
+		A.Put(0, 7, GRAY, 1)
+		A.Put(0, 8, GRAY, 1)
+		SB.Inventory.ScanAll()
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- slot 6 sells at once; the robes wait their turn
+		A.slots[0][7].inSet = true
+		A.Advance(Mover.DELAY * 10)
+		assert.same({ 6, 8 }, sold())
+		assert.same({ "Sold 2 junk items for 37s 52c." }, A.Lines())
+	end)
+
+	-- Ruling R19 (gold-maker safety). Mutations: Vendor.Protected ignores Collections.Learn; or in
+	-- worthMoreAtAuction `ah > 2 *` -> `ah > 1 *` (a gray BoE worth a little more at auction would stay).
+	it("never sells an item to open or learn, or a gray BoE worth more than twice its vendor price at auction", function()
+		A.AddItem(GRAY_BOE, { name = "Rusted Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
+		A.AddItem(GRAY_BOE + 1, { name = "Bent Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
+		A.Put(0, 7, GRAY, 1, { hasLoot = true }) -- something to open
+		A.Put(0, 8, GRAY_BOE, 1) -- 5s at auction, 1s at a vendor
+		A.Put(0, 9, GRAY_BOE + 1, 1) -- 1s 50c at auction: not worth the trip
+		A.auctionator = { prices = { ["item:" .. GRAY_BOE] = 500, ["item:" .. (GRAY_BOE + 1)] = 150 } }
+		SB.Inventory.ScanAll()
+		visit()
+		assert.same({ 6, 9 }, sold())
+	end)
+
+	-- P2, ruling R18 (the state names the choice as the settings window does). Mutations: /swagbag repair accepts
+	-- any word; or the state line prints the stored word (`L[REPAIR_NAMES[mode] or REPAIR_NAMES.own]` ->
+	-- `tostring(mode)`).
+	it("/swagbag sell and /swagbag repair answer every form; read-only settings refuse", function()
+		SB.Slash.Dispatch("sell")
+		SB.Slash.Dispatch("sell maybe")
+		SB.Slash.Dispatch("repair")
+		SB.Slash.Dispatch("repair sometimes")
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("repair off")
+		SB.Slash.Dispatch("sell off")
+		local L = SB.L
+		assert.same({ L.VENDOR_SELL_STATE:format("on"), L.VENDOR_SELL_USAGE, L.VENDOR_REPAIR_STATE:format("Your gold"),
+			L.VENDOR_REPAIR_USAGE, L.SETTINGS_READONLY, L.SETTINGS_READONLY }, A.Lines())
+		assert.equal("own", SB.Config.Get("vendor.repair"))
+	end)
+end)
+
+describe("Settings: vendor page (week 7)", function()
+	local SB, SW, ran
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		SB.Config.Init(nil, nil)
+		Fake.Install()
+		ran = {}
+		for _, name in ipairs({ "sell", "repair" }) do
+			SB.Slash.Register(name, "test", function(arg)
+				ran[#ran + 1] = name .. " " .. arg
+				return "ran " .. name .. " " .. arg
+			end)
+		end
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsPages.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsVendor.lua")
+		SW = SB.SettingsWindow
+		SW.Show("vendor")
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	-- P1 / P2. Mutation: in the repair row's apply, always run "repair own".
+	it("defaults first (On; Your gold), each click runs the command and answers in the status line", function()
+		local shown = {}
+		for i = 1, SW.used.buttons do
+			shown[i] = { SW.buttons[i].text, SW.selected[SW.buttons[i]] == true }
+		end
+		assert.same({ { "On", true }, { "Off", false }, { "Your gold", true }, { "Guild bank first", false },
+			{ "Off", false } }, shown)
+		Fake.Fire(SW.buttons[2], "OnClick")
+		Fake.Fire(SW.buttons[4], "OnClick")
+		assert.same({ "sell off", "repair guild" }, ran)
+		assert.equal("ran repair guild", SW.lastStatus)
+	end)
+end)
