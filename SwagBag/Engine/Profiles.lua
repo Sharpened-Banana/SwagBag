@@ -433,6 +433,12 @@ local function numbers(text)
 	return out
 end
 
+-- A real chat escape opener in a query: |T |H |A |K, or |c with eight hex digits. Every other "|" is the
+-- OR operator ("herb|cloth").
+local function escapeCode(text)
+	return text:find("|[THAK]") ~= nil or text:find("|c%x%x%x%x%x%x%x%x") ~= nil
+end
+
 -- A user category id has the shape SwagBag makes (u_...), which is never a built-in or a section id
 -- (new, free, c_...); an edit may only name a built-in category.
 local function idOk(prefix, id)
@@ -563,7 +569,7 @@ function Pr.Parse(text)
 			elseif type(value) ~= kind then
 				return nil, "type", key
 			elseif kind == "string" and (#value > Pr.MAX_STRING or value:find("%c")
-				or (field == "name" and value:find("|", 1, true)) or (field == "query" and value:find("|[cCrRtTnNhHkKaA]"))) then
+				or (field == "name" and value:find("|", 1, true)) or (field == "query" and escapeCode(value))) then
 				return nil, "type", key
 			elseif kind == "number" and math.abs(value) > Pr.MAX_NUM then
 				return nil, "type", key
