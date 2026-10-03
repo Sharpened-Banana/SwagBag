@@ -36,7 +36,7 @@
 - No importers for other addons' SavedVariables in v1.0. Paste-string import of Syndicator/Baganator-syntax category strings is sufficient because the grammar is compatible.
 - No Classic, MoP Classic or WoW: Forever flavors. Retail only, by decision.
 - No replacement of Blizzard's bank tab purchase/settings UI (`PurchaseBankTab` stays untainted). We re-host Blizzard's real tab buttons and never emulate them.
-- No writing of any Blizzard bank state, ever (`BankFrame:SetTab`, `BankPanel.bankType`, `CloseBankFrame()` from our OnHide). See §5.
+- No writing of any Blizzard bank state, ever (`BankFrame:SetTab`, `BankPanel.bankType`, `CloseBankFrame()` from our OnHide). See §5. The one accepted exception is the include-reagents option of the "Deposit warbound" button (AC2.8): it is a user-facing game option, not bank state.
 - No tooltip parsing for core fields (bind state, ilvl, quality, type). Tooltip data is used only where no API exists and is always `issecretvalue()`-guarded.
 
 ### 1.4 Design principles (binding on every feature)
@@ -79,6 +79,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC1.3 Left-click, shift-click (split/link), drag, and drop behave exactly as in Blizzard bags (they are Blizzard's own handlers).
 - AC1.4 The reagent bag's items are mixed into categories by default; the "Show reagent bag separately" option puts them in their own section instead.
 - AC1.5 The window is movable, scalable (50–200 %), remembers its position, and closes on ESC without closing the bank interaction.
+- AC1.6 The footer's gold entry is a gold-coin icon (the size of the currency icons) and the whole gold with thousands separators, no silver or copper; its tooltip, "Gold on this character", gives the full amount with coins (D22).
 
 #### F2. Bank window (character bank + warband bank, stacked)
 - AC2.1 Visiting a banker opens one SwagBag bank window with two stacked groups of sections: "Character bank" and "Warband bank". Blizzard's bank frame is invisible but still open (tiny mode).
@@ -88,6 +89,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC2.5 SwagBag never calls `BankFrame:SetTab`, writes `BankPanel.bankType`, or calls `C_Bank.CloseBankFrame()` from any OnHide. (A luacheck rule and a grep in CI enforce this.)
 - AC2.6 If the first in-dev check "deposit lands correctly while Blizzard's bank is in tiny mode" fails, the fallback "Blizzard bank visible beside ours" setting becomes the default without code changes elsewhere.
 - AC2.7 Sort buttons for bags, character bank and warband bank call `C_Container.SortBags()` / `C_Container.SortBank(bankType)` and reflow the view afterwards.
+- AC2.8 A "Deposit warbound" button on SwagBag's bank window runs the game's own warband-bank deposit, with the warband bank type chosen on the user's click (it never sets Blizzard's selected bank type), refuses in combat, while the warband bank is locked, and when a refund could be lost, and answers once each time (P2). A "With reagents" box beside it mirrors and writes Blizzard's own include-reagents option (`bankAutoDepositReagents`), the one game setting SwagBag writes (accepted, week 6: the user asked for the button); it re-reads the option when the button is used. Both stay on SwagBag's window in tiny and beside mode. See §5.2.
 
 #### F3. Category view (default) and grid view
 - AC3.1 A header toggle switches between category sections and a flat grid without /reload, in and out of combat.
@@ -123,8 +125,8 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 
 #### F8. Focus modes (6 core)
 - AC8.1 Built-in modes M+, Raid, Delves, Gathering, Fishing, and AH/Vendor/Bank are ON by default and switch automatically.
-- AC8.2 Entering a Mythic+ dungeon collapses every section except the M+ mode's set within one `BAG_UPDATE_DELAYED` or `PLAYER_ENTERING_WORLD` cycle; leaving restores the previous state.
-- AC8.3 Clicking a collapsed header in a mode peeks it (expanded until the window closes or mode changes). A small pin on the peeked header, or the option "Keep open until mode changes", makes it sticky. Default is peek.
+- AC8.2 Entering a Mythic+ dungeon moves the M+ mode's sections to the top, right under New, within one `BAG_UPDATE_DELAYED` or `PLAYER_ENTERING_WORLD` cycle, and leaves every section open or collapsed as the user set it (the default `front` style, D15). With the `collapse` style it collapses every section except the M+ mode's set instead. Leaving restores the previous order or state.
+- AC8.3 With the `collapse` style, clicking a collapsed header in a mode peeks it (expanded until the window closes or mode changes). A small pin on the peeked header, or the option "Keep open until mode changes", makes it sticky. Default is peek. In the `front` style a header click is the user's own collapse or expand, saved as such; there is no peek or pin.
 - AC8.4 Overlapping modes expand the union of their sections (default). The option "Strict priority" uses combat > activity > location.
 - AC8.5 The current mode is shown in the window title ("SwagBag — M+") and a click on it opens the mode's section list for editing.
 - AC8.6 Gathering detection uses a spell-ID allowlist; opening a chest or archaeology never triggers it.
@@ -332,6 +334,8 @@ On `BANKFRAME_OPENED`, out of combat:
 
 Deposit target: SwagBag never chooses it. Right-click on a bag item runs Blizzard's handler, which uses `BankFrame:GetActiveBankType()`. SwagBag reads the same value (read-only) to highlight the receiving group and to label the header ("Deposits go to Warband bank - switch with the tabs below"; the re-hosted tabs sit under the title row). Verified in the spike: deposit followed the active tab in normal mode with zero writes.
 
+Deposit warbound (AC2.8): the button runs the game's deposit for the warband bank type on the user's own click, so the selected bank type (`BankFrame:GetActiveBankType()`) is neither read nor written for it. Right-click deposits still follow the active tab as above.
+
 ### 5.3 Taint rules (enforced by CI grep + luacheck)
 
 Forbidden anywhere in SwagBag source: `BankFrame:SetTab`, `BankFrame.SetTab`, `.bankType =`, `C_Bank.CloseBankFrame`, `CloseBankFrame(`, `OpenAllBags(`, `PurchaseBankTab`, assignments to global `_`. The spike's taint probe proved that one `BankFrame:SetTab()` call from addon code taints `UseContainerItem` until /reload; this is a NO-GO, permanently.
@@ -363,8 +367,9 @@ Because the character bank is unreadable away from a banker (0 slots, measured),
 - **Signal:** a named boolean or enum fact about the world, set by `Signals` from events (e.g. `instanceType = "party"`, `challengeMode = true`, `fishing = true`, `merchantOpen = true`).
 - **Mode:** `{id, name, enabled, class = "combat"|"activity"|"location", trigger = predicate over signals, sections = set of category ids, order = optional section ordering override, builtin = bool}`.
 - **Active set:** modes whose trigger is true. Re-evaluated on every signal change (cheap: a handful of table lookups).
+- **Style (`focus.style`, D15):** `front` (default) or `collapse`. In `front` an active mode moves its sections to the top, right under New, in the mode's order, and collapses nothing; sections the user collapsed stay collapsed (also a mode section moved to the top), and New always stays open. In `collapse` an active mode collapses every section it does not use (New always open). Changing the style drops peeks and pins. The same choice is `/swagbag mode style [front|collapse]` and a Settings → Focus modes row.
 - **Resolution:** active set → expanded section set, by **merge** (union; default) or **strict priority** (`combat` > `activity` > `location`; within a class, user order). "No active mode" → all sections expanded (normal browsing).
-- **Peek:** clicking a collapsed header while a mode is active expands it until the window closes or the active set changes. **Pin:** a pin icon on a peeked header, or the option "Keep open until mode changes", keeps it until the active set changes. Default: peek.
+- **Peek** (`collapse` style only): clicking a collapsed header while a mode is active expands it until the window closes or the active set changes. **Pin:** a pin icon on a peeked header, or the option "Keep open until mode changes", keeps it until the active set changes. Default: peek.
 - **Manual override:** the mode title in the window header offers "Pause modes for this session" (one click, with a visible "Paused" badge and a resume button).
 
 ### 6.2 Signals and detection
@@ -397,12 +402,14 @@ All handlers are `O(1)` table writes plus one `Focus.Recompute()` that touches a
 | **Delves** | activity | `delve` | Consumables, Gear, Delve items (keys/curios via query), New |
 | **Gathering** | activity | `gathering` | the profession's materials sections for owned gathering professions (Herbs / Ore / Leather / Cloth), Tools, New |
 | **Fishing** | activity | `fishing` | Fish & Lures, Cooking materials, New |
-| **AH/Vendor/Bank** | location | `auctionOpen` or `merchantOpen` or `bankOpen` | Junk, Trade Goods, BoE gear, Sellables (worth-money rule), New; at the bank: everything expands by default (bank mode is about highlighting, not collapsing) |
+| **AH/Vendor/Bank** | location | `auctionOpen` or `merchantOpen` or `bankOpen` | Junk, Trade Goods, BoE gear, Warbound until equipped, Sellables (worth-money rule), New; at the bank: everything expands by default (bank mode is about highlighting, not collapsing) |
 | PvP (v1.1) | activity | `pvpMatch` | Consumables, PvP gear, New |
 | Vendor / AH split (v1.1) | location | separate triggers | — |
 | Crafting, Cooking, Profession knowledge (v1.1/1.2) | location | `tradeSkillOpen` + profession | Materials for that profession, Knowledge items |
 | Questing, Leveling, Travel (v1.1) | activity | quest log / level < max / taxi or mount channel | Quest items, Gear upgrades, Travel items |
 | Disenchanting/Salvage, Gear upgrade/Catalyst, Transmog farming, Pet battles, Housing (v1.2) | activity/location | enchanting window / upgrade NPC / instance with `PLAYER_TARGET` in legacy raid / pet battle events / housing zone | per mode |
+
+`c_wue` (Warbound until equipped, §7.6) joins every mode set that contains `c_boe` (today only AH/Vendor/Bank).
 
 Every built-in mode's section set is editable; "Reset to default" is next to it (P1). Users create custom modes with the same editor: name, trigger (choose from the signal list, or "manual only"), sections.
 
@@ -424,6 +431,8 @@ Every built-in mode's section set is editable; "Reset to default" is next to it 
                      print one line if the user enabled
                      "announce mode changes" (default off)
 ```
+
+Style `front` does not collapse or expand anything: it re-orders whole sections (each with its header and its cells) under New. A re-order the world starts (a key, a vendor, a bank visit) waits while the mouse is anywhere over the items, then applies once; loot that arrives meanwhile lands in the order still drawn (P5). The diagram above is the `collapse` style.
 
 Applying a mode never moves a button relative to its own section header; sections below a collapsed one shift as a whole, and the hover guard holds the restack. Collapsing a section hides its buttons and placeholders and re-stacks section headers below it; the hover guard still applies (a collapse that would move the hovered button is deferred to `OnLeave`). Re-expanding uses the stored layout, so items return to the same cells.
 
@@ -516,7 +525,7 @@ Verified against Syndicator v284 by desk spike F (`docs/research/2026-10-syndica
 
 ### 7.6 Default category set (first run, display order)
 
-New · Keystone & Crests · Consumables · Gear · BoE gear · Trade Goods · Herbs · Ore · Leather & Cloth · Enchanting · Cooking · Fish & Lures · Quest · Housing · Pets & Mounts & Toys · Teleports & Tools · Reagents (only when "reagent bag separate" is on) · Junk · Other · Free.
+New · Keystone & Crests · Consumables · Gear · BoE gear · Warbound until equipped (`c_wue`, `gear & wue`, priority 74, just below BoE gear) · Trade Goods · Herbs · Ore · Leather & Cloth · Enchanting · Cooking · Fish & Lures · Quest · Housing · Pets & Mounts & Toys · Teleports & Tools · Reagents (only when "reagent bag separate" is on) · Junk · Other · Free.
 
 The wizard's playstyle hides or reorders these (e.g. "Gold" promotes Trade Goods and BoE gear; "Collector" adds Transmog/Collectibles sections when overlays arrive in v1.1).
 
@@ -596,7 +605,7 @@ snapshot = { v = 1, at = <epoch>, containers = {
   [bagID] = { size = 36, s = "1:|cff...|Hitem:191380::::::::80:::::|h[Healing Potion]|h|r;5\n7:...;1\n" } } }
 ```
 
-One string per container: `slot:link;count\n` lines, full hyperlinks, no derived values (ilvl, quality, type are recomputed from the link when displayed, which survives squishes and API changes). Links are stored verbatim so caged pets, keystones and bonus IDs round-trip.
+One string per container: `slot:link;count\n` lines, full hyperlinks, no derived values (ilvl, quality, type are recomputed from the link when displayed, which survives squishes and API changes). Links are stored verbatim so caged pets, keystones and bonus IDs round-trip. A link that an earlier slot of the same container holds is written once, as `slot:=thatSlot;count` (D21); `Deserialize` reads both forms, `v` stays 1 and the schema stays 2.
 
 ### 8.4 Size budgets (from measured numbers)
 
@@ -609,6 +618,8 @@ Measured: ≈22 KB per character with full links (bags + character bank), ≈2.2
 | Hard cap | 1.5 MB: when exceeded, the oldest-seen characters' bank snapshots are dropped first, with one chat line and a "manage snapshots" button |
 | Warning | at 1 MB: Settings → Alt data shows a size bar and per-character delete buttons |
 
+Open: the 30 KB per-character aim and the warband budget are not promised; the `=slot` form (D21) and the report's `Snapshot sizes` line exist to measure them, in session TF1.
+
 Decision: full links (needed for the offline view and ilvl overlays). Aggregated counts are derived at load into an in-memory index (`itemID → {char → count}`) and never stored.
 
 ### 8.5 Schema versioning and migrations
@@ -620,7 +631,7 @@ Decision: full links (needed for the offline view and ilvl overlays). Aggregated
 ### 8.6 Uninstall and rollback
 
 - Disabling SwagBag returns the user to unmodified Blizzard bags with no residue (we hook via `hooksecurefunc` guarded by `enabled`, reparent only while loaded, and restore on `PLAYER_LOGOUT` as well).
-- Downgrading one minor version is safe because migrations are additive and the newer-schema guard prevents corruption.
+- Downgrading one minor version is safe because migrations are additive and the newer-schema guard prevents corruption. One caveat (accepted, week 6): version 0.5.0 reads a repeated stack written in the `=slot` form (§8.3) as an unknown item until the snapshot is saved again.
 - `/swagbag reset` (with a confirmation popup) wipes both DBs after a backup copy.
 
 ---
@@ -632,7 +643,7 @@ Decision: full links (needed for the offline view and ilvl overlays). Aggregated
 | Idle CPU, windows closed | 0 ms/frame; no `OnUpdate` anywhere | `BAG_UPDATE` → dirty bits only; signal handlers O(1) | spike F handler costs |
 | Button pool creation at login | ≤ 150 ms total, ≤ 10 ms per 100 | create all at login behind the loading screen; grow out of combat | 1,290 in ≈55 ms, worst 100 = 4.3 ms |
 | First bag open (≈210 slots) | ≤ 25 ms, frame hidden until layout completes | full layout + categorize memo | grid 212 buttons measured well under bank's 60 ms |
-| First bank open (≈700 slots) | ≤ 80 ms, hidden until complete | same | 702 buttons in 60 ms |
+| First bank open (≈700 slots) | ≤ 80 ms, hidden until complete (open: measured in session TF1 with the report's `Last bank layout` and `Bank layout parts` lines) | same | 702 buttons in 60 ms |
 | Warm open | ≤ 10 ms | memo + stored layout | — |
 | Incremental update (one `BAG_UPDATE_DELAYED`) | ≤ 5 ms for ≤ 10 changed slots | diff only | spike incremental |
 | Reflow after sort | ≤ 40 ms | full layout; sort moved 195 items in the spike | — |
@@ -662,6 +673,7 @@ Event policy:
 ### 10.1 Safe Mode mechanics (proven in spike S)
 
 - Suppression method: `HookScript("OnShow", Hide)` on `ContainerFrame1..NUM_CONTAINER_FRAMES` and `ContainerFrameCombinedBags` while `SafeMode.IsOn("bags") == false`; plus `hooksecurefunc` on `ToggleAllBags`, `ToggleBackpack`, `OpenAllBags`, `CloseAllBags` that open/close SwagBag's window only while SwagBag is active. The hooks check a flag; flipping the flag is the toggle. Verified: live toggle in and out of combat with no blocked actions. Not yet verified: item use from Blizzard bags in combat after a toggle (check V3, §11.3).
+- Who opened the window decides (D16): a window the user opened (B, a bag icon) is closed only by the user (B, Esc, the X); no `CloseAllBags` closes it, with a frame or without one. A window the game opened (its open call named a frame) closes with that frame's `CloseAllBags`, or with one that names no frame; when the open call named no frame, any `CloseAllBags` closes it. A bag toggle that runs inside a frame's `CloseAllBags` and closed the user's window opens it again in the same frame; `CloseAllBags()` with no frame inside the bag key itself changes nothing. The last five hook calls are in `/swagbag report` (`Bag hooks (last 5)`).
 - Bank: Safe Mode for the bank restores `BankFrame` and `TabSystem` parents (deferred to out of combat if necessary — reparenting Blizzard's bank frame in combat is the one thing we did not test) and stops opening SwagBag's bank window.
 - Per window: `bags` and `bank` have independent Safe Mode flags.
 
@@ -691,7 +703,7 @@ This is what the user pastes into Claude Code. BugGrabber/BugSack compatibility:
 
 ### 10.5 Slash commands (all with feedback, P2)
 
-`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count).
+`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count).
 
 ---
 
