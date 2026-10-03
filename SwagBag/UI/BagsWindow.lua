@@ -1289,6 +1289,16 @@ function W.RefreshModeButton()
 	W.modeButton:SetText(SB.Focus and SB.Focus.IsPaused() and L.BTN_RESUME or L.BTN_PAUSE)
 end
 
+-- The Pause button's tooltip: the version for what a click does now (Pause, or Resume while paused).
+function W.ShowModeTip(self)
+	local paused = SB.Focus and SB.Focus.IsPaused()
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:SetText(paused and L.MODE_TIP_TITLE_PAUSED or L.MODE_TIP_TITLE)
+	GameTooltip:AddLine(paused and L.MODE_TIP_BODY_PAUSED or L.MODE_TIP_BODY, 1, 1, 1, true)
+	GameTooltip:AddLine(L.MODE_TIP_RIGHT, 1, 1, 1)
+	GameTooltip:Show()
+end
+
 -- Left-click: pause / resume. Right-click: the Focus modes settings page at the active mode's
 -- sections (AC8.5). The settings open under ErrorTrap "none": a settings glitch flashes
 -- L.SETTINGS_FAILED here and never puts the bags into Safe Mode (W4-5). The tooltip says what a
@@ -1302,16 +1312,15 @@ W.modeButton = titleButton(L.BTN_PAUSE, "bags.modeButton", function(_, mouseButt
 		end
 	else
 		W.TogglePause()
+		-- still hovered: the tooltip shows what a click does now, not what it did
+		if GameTooltip and GameTooltip.IsOwned and GameTooltip:IsOwned(W.modeButton) then
+			W.ShowModeTip(W.modeButton)
+		end
 	end
 end, 64)
 W.modeButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 W.modeButton:SetScript("OnEnter", Guard("bags.modeTip", function(self)
-	local paused = SB.Focus and SB.Focus.IsPaused()
-	GameTooltip:SetOwner(self, "ANCHOR_TOP")
-	GameTooltip:SetText(paused and L.MODE_TIP_TITLE_PAUSED or L.MODE_TIP_TITLE)
-	GameTooltip:AddLine(paused and L.MODE_TIP_BODY_PAUSED or L.MODE_TIP_BODY, 1, 1, 1, true)
-	GameTooltip:AddLine(L.MODE_TIP_RIGHT, 1, 1, 1)
-	GameTooltip:Show()
+	W.ShowModeTip(self)
 end, "bags"))
 W.modeButton:SetScript("OnLeave", Guard("bags.modeTipHide", function()
 	GameTooltip:Hide()
