@@ -16,6 +16,9 @@ describe("Focus", function()
 	before_each(function()
 		SB = Loader.New(FILES)
 		SB.Config.Init(nil, nil)
+		-- These tests pin the "collapse" style (week 4's behaviour, now the alternative); the default
+		-- "front" style has its own block below. Set before the listener, so no event is counted.
+		SB.Config.Set("focus.style", "collapse")
 		F = SB.Focus
 		events = {}
 		SB.On("SB_FOCUS_CHANGED", function(_, reason)
@@ -138,8 +141,9 @@ describe("Focus", function()
 		assert.truthy(F.Applies())
 		SB.Config.Set("focus.sections.mplus", "c_junk")
 		assert.same({ "new", "c_junk" }, openIds())
-		SB.Config.Reset()
-		assert.same({ "new", "c_keystone", "c_consumables", "c_gear" }, openIds())
+		SB.Config.Reset() -- the defaults again: the "front" style, and M+'s own sections in front
+		assert.falsy(F.Applies(), "front collapses nothing")
+		assert.same({ "c_consumables", "c_keystone", "c_gear" }, F.Front())
 	end)
 
 	it("the collapsed view is read-only", function()
@@ -397,5 +401,111 @@ describe("Focus", function()
 		end
 		local perCall = (os.clock() - t0) * 1000 / 1000
 		assert.truthy(perCall < 0.5, ("%.3f ms per Recompute"):format(perCall))
+	end)
+end)
+
+-- Week 6, user request 1: the "front" style (the default). An active mode collapses nothing; its
+-- sections are drawn first, right after New, in the mode's order. The "collapse" style above is the
+-- alternative.
+describe("Focus front style (week 6)", function()
+	local SB, F, events
+	before_each(function()
+		SB = Loader.New(FILES)
+		SB.Config.Init(nil, nil)
+		F = SB.Focus
+		events = {}
+		SB.On("SB_FOCUS_CHANGED", function(_, reason)
+			events[#events + 1] = reason
+		end)
+	end)
+
+	-- Mutation: in Config.Defaults, focus.style = "collapse".
+	it("is the default: a running key collapses nothing and moves M+'s sections up, right after New", function()
+		local user = { c_junk = true }
+		F.SetSignal("challengeMode", true)
+		assert.equal("front", F.Style())
+		assert.falsy(F.Applies())
+		assert.equal(user, F.CollapsedView(user), "the user's own collapse set, as it is")
+		assert.same({ "new", "c_consumables", "c_keystone", "c_gear", "c_boe", "c_tradegoods", "c_herbs", "c_ore",
+			"c_leathercloth", "c_fish", "c_cooking", "c_tools", "c_junk", "c_other", "free" }, F.SectionOrder(ORDER))
+		assert.equal("M+", F.Label(), "the title still names the mode")
+	end)
+
+	-- Mutation: in SectionOrder, table.insert into `order` itself instead of building `out`.
+	it("never writes the order it is given; leaving the mode gives the same order back", function()
+		local order = { unpack(ORDER) }
+		F.SetSignal("challengeMode", true)
+		F.SectionOrder(order)
+		assert.same(ORDER, order, "the category order is untouched")
+		F.SetSignal("challengeMode", false)
+		assert.equal(order, F.SectionOrder(order), "no mode: the very same list")
+		assert.is_nil(SB.Config.db.categoryOrder)
+	end)
+
+	-- Mutation: in computeFront, drop the `seen` check.
+	it("merge: two modes move both sets up, each section once, the first mode's first", function()
+		F.SetSignal("challengeMode", true)
+		F.SetSignal("instanceType", "raid") -- Raid opens Consumables and Gear: already in front
+		F.SetSignal("fishing", true)
+		assert.same({ "c_consumables", "c_keystone", "c_gear", "c_fish", "c_cooking" }, F.Front())
+		SB.Config.Set("focus.resolve", "priority")
+		assert.same({ "c_consumables", "c_keystone", "c_gear" }, F.Front(), "priority: M+ only (mode order)")
+	end)
+
+	-- Mutation: in SectionOrder, append every id of Front() whether or not order has it.
+	it("a section the bag does not have is skipped; New and Free keep their places", function()
+		F.SetSignal("fishing", true)
+		assert.same({ "new", "c_cooking", "c_gear", "c_junk", "free" },
+			F.SectionOrder({ "new", "c_gear", "c_cooking", "c_junk", "free" }))
+		assert.same({ "c_gear", "free" }, F.SectionOrder({ "c_gear", "free" }), "no New: nothing is added")
+	end)
+
+	-- Mutation: in computeFront, drop the expandAll check.
+	it("the bank moves nothing; pause and switching modes off move nothing", function()
+		F.SetSignal("merchantOpen", true)
+		assert.same({ "c_junk", "c_tradegoods", "c_boe" }, F.Front())
+		F.SetSignal("bankOpen", true)
+		assert.is_nil(F.Front(), "at the bank everything stays where it is")
+		F.SetSignal("bankOpen", false)
+		F.Pause()
+		assert.is_nil(F.Front())
+		assert.equal(ORDER, F.SectionOrder(ORDER))
+		F.Resume()
+		SB.Config.Set("focus.auto", false)
+		assert.is_nil(F.Front())
+	end)
+
+	-- Mutation: Applies() returns Expanded() ~= nil (ignores the style).
+	it("a header click or right-click is the user's own: HeaderClick and Pin refuse, no override is kept", function()
+		F.SetSignal("challengeMode", true)
+		assert.falsy(F.HeaderClick("c_junk", true))
+		assert.falsy(F.Pin("c_junk"))
+		assert.is_nil(F.OverrideOf("c_junk"))
+	end)
+
+	-- Mutations: drop SetStyle's readOnly check (the M5 skip then answers true for the value already in
+	-- force while read-only); drop the `write` skip (M5), so a repeat emits.
+	it("SetStyle switches live, refuses unknown words and read-only, and a repeat writes nothing (M5)", function()
+		F.SetSignal("challengeMode", true)
+		events = {}
+		assert.truthy(F.SetStyle("collapse"))
+		assert.same({ "settings" }, events)
+		assert.truthy(F.Applies())
+		assert.is_nil(F.Front())
+		assert.truthy(F.SetStyle("collapse"), "a repeat still answers")
+		assert.same({ "settings" }, events, "a repeat writes nothing, so nothing re-stacks")
+		assert.same({ false, "unknown" }, { F.SetStyle("sideways") })
+		SB.Config.readOnly = true
+		assert.same({ false, "readonly" }, { F.SetStyle("front") })
+		assert.same({ false, "readonly" }, { F.SetStyle("collapse") }, "read-only refuses, even the same style")
+		assert.equal("collapse", F.Style())
+	end)
+
+	-- M5 (week-4 deferred). Mutation: SetEnabled calls Config.Set directly again.
+	it("a focus writer whose value is already in force emits nothing", function()
+		assert.truthy(F.SetEnabled("mplus", true))
+		assert.truthy(F.SetSections("mplus", { "c_consumables", "c_keystone", "c_gear" }))
+		assert.same({}, events)
+		assert.is_nil(SB.Config.db.settings.focus, "nothing was stored")
 	end)
 end)

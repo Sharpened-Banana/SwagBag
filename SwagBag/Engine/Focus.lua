@@ -7,8 +7,16 @@
 --   Focus.Expanded() -> set | nil                the open sections, or nil when no mode applies
 --                                                (none active, paused, switched off, or a mode
 --                                                that expands everything: the bank)
+--   Focus.Style() -> "front" | "collapse"         what an active mode does (focus.style, week 6):
+--                                                "front" (default) moves its sections to the top and
+--                                                collapses nothing; "collapse" collapses the rest
+--   Focus.Front() -> { ids } | nil               "front" style: the sections the deciding modes move
+--                                                up, in the modes' order (never New or Free), or nil
+--   Focus.SectionOrder(order) -> order           the drawn section order: order itself, or in "front"
+--                                                style New, then Front(), then the rest as they were
+--   Focus.Applies() -> bool                      a mode's collapse set is in force ("collapse" style)
 --   Focus.CollapsedView(userSet) -> lookup       collapsed[id] for Layout.Position / Apply:
---                                                userSet itself when no mode applies
+--                                                userSet itself when no mode collapses ("front" too)
 --   Focus.HeaderClick(id, collapsedNow) -> "peek" | "close"   a header click while a mode applies
 --   Focus.Pin(id) -> "pin" | "unpin"             right-click: keep a section open until the
 --                                                mode changes (spec 6.1 pin)
@@ -18,6 +26,9 @@
 --   Focus.Label() -> text | nil                  "M+", "M+ + Fishing", "Paused" (title, AC8.5)
 --   Focus.Sections(id, raw) -> { category ids }       a mode's section set (settings or default)
 --   Focus.SetSections(id, list) -> bool, Focus.ResetSections(id) -> bool, Focus.SetEnabled(id, on) -> bool
+--   Focus.SetStyle(style) -> bool                "front" | "collapse"; false, "unknown" | "readonly"
+-- A writer whose value is already in force writes nothing (no SB_CONFIG_CHANGED, so no re-stack:
+-- week-4 deferred M5).
 --   Focus.ListLines() -> { lines }               one chat line per mode (/swagbag mode list)
 -- No announce while paused; Resume recomputes silently (the title and the view change, no chat line).
 -- A view change with the same active set (bank opens, professions arrive) emits and keeps peeks and pins.
@@ -25,7 +36,9 @@
 -- changed ("signal"), "pause", "resume", or a focus setting ("settings"). A change of the active
 -- set ends every peek and pin (spec 6.4). New is never collapsed by a mode.
 -- Settings (Core/Config.lua): focus.auto, focus.resolve ("merge" | "priority"), focus.peek
--- ("peek" | "keep"), focus.announce, focus.on.<id>, focus.sections.<id> (comma-separated ids).
+-- ("peek" | "keep"), focus.announce, focus.on.<id>, focus.sections.<id> (comma-separated ids),
+-- focus.style ("front" | "collapse"). In "front" style a mode never collapses anything: there is no
+-- peek, pin or close, and a header click is the user's own collapse, saved as without a mode.
 local _, SB = ...
 
 local Focus = { signals = {}, overrides = {}, paused = false, key = "", viewKey = "", active = {} }
@@ -165,8 +178,13 @@ local function viewKeyOf(active)
 end
 
 local expandedCache, cacheValid = nil, false
+local frontCache, frontValid = nil, false
 local function invalidate()
-	cacheValid = false
+	cacheValid, frontValid = false, false
+end
+
+function Focus.Style()
+	return cfg("focus.style") == "collapse" and "collapse" or "front"
 end
 
 local function computeExpanded()
@@ -194,11 +212,74 @@ function Focus.Expanded()
 	return expandedCache
 end
 
--- What Layout sees as collapsed. The user's own set while no mode applies; otherwise the mode's
--- set with this session's peeks, pins and closes on top. The user's saved set is never written.
+-- The sections the deciding modes move to the top in "front" style, each once, in the modes'
+-- order (merge: the first mode's, then the next one's new ones). nil while no mode applies, in
+-- "collapse" style, or while a deciding mode expands everything (the bank: nothing moves there).
+local function computeFront()
+	if Focus.Style() ~= "front" or Focus.paused or #Focus.active == 0 then
+		return nil
+	end
+	local list, seen = {}, { new = true, free = true }
+	for _, id in ipairs(deciding()) do
+		local m = byId[id]
+		if m.expandAll and m.expandAll(Focus.signals) then
+			return nil
+		end
+		for _, sid in ipairs(Focus.Sections(id)) do
+			if not seen[sid] then
+				seen[sid] = true
+				list[#list + 1] = sid
+			end
+		end
+	end
+	return list
+end
+
+-- Cached like Expanded(). Read only: callers never change the list.
+function Focus.Front()
+	if not frontValid then
+		frontCache, frontValid = computeFront(), true
+	end
+	return frontCache
+end
+
+-- The order the sections are drawn in. order (New first, Free last, as Layout keeps it) is
+-- returned as it is unless "front" style moves sections: then a new list with New, the mode's
+-- sections that are in order, and every other id in its own order (Free stays last). A section the
+-- mode names but the bag does not have is skipped. Nothing is saved: the user's category order and
+-- collapse set are never written (W10: each section moves whole, with its header).
+function Focus.SectionOrder(order)
+	local front = Focus.Front()
+	if not front or #front == 0 then
+		return order
+	end
+	local present, moved, out = {}, {}, {}
+	for _, id in ipairs(order) do
+		present[id] = true
+	end
+	if present.new then
+		out[1] = "new"
+	end
+	for _, id in ipairs(front) do
+		if present[id] then
+			out[#out + 1] = id
+			moved[id] = true
+		end
+	end
+	for _, id in ipairs(order) do
+		if id ~= "new" and not moved[id] then
+			out[#out + 1] = id
+		end
+	end
+	return out
+end
+
+-- What Layout sees as collapsed. The user's own set while no mode collapses (none applies, paused,
+-- or "front" style); otherwise the mode's set with this session's peeks, pins and closes on top.
+-- The user's saved set is never written.
 function Focus.CollapsedView(userSet)
 	local open = Focus.Expanded()
-	if not open then
+	if not open or Focus.Style() ~= "collapse" then
 		return userSet
 	end
 	local overrides = Focus.overrides
@@ -217,8 +298,9 @@ function Focus.CollapsedView(userSet)
 	end })
 end
 
+-- A mode's collapse set is in force: peeks, pins and closes mean something only then.
 function Focus.Applies()
-	return Focus.Expanded() ~= nil
+	return Focus.Expanded() ~= nil and Focus.Style() == "collapse"
 end
 
 function Focus.OverrideOf(id)
@@ -352,12 +434,20 @@ local function refuse(id)
 	end
 end
 
+-- M5: a value already in force is not written again (no event, so nothing re-stacks).
+local function write(path, value)
+	if SB.Config.Get(path) == value then
+		return true
+	end
+	return SB.Config.Set(path, value)
+end
+
 function Focus.SetEnabled(id, on)
 	local why = refuse(id)
 	if why then
 		return false, why
 	end
-	if not SB.Config.Set("focus.on." .. id, on and true or false) then
+	if not write("focus.on." .. id, on and true or false) then
 		return false, "readonly"
 	end
 	return true
@@ -368,7 +458,20 @@ function Focus.SetSections(id, list)
 	if why then
 		return false, why
 	end
-	if not SB.Config.Set("focus.sections." .. id, table.concat(list, ",")) then
+	if not write("focus.sections." .. id, table.concat(list, ",")) then
+		return false, "readonly"
+	end
+	return true
+end
+
+-- "front" (move the mode's sections to the top, collapse nothing) or "collapse" (week-4 behaviour).
+function Focus.SetStyle(style)
+	if style ~= "front" and style ~= "collapse" then
+		return false, "unknown"
+	elseif SB.Config.readOnly then
+		return false, "readonly"
+	end
+	if not write("focus.style", style) then
 		return false, "readonly"
 	end
 	return true
