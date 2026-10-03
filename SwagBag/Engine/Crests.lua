@@ -8,6 +8,8 @@
 --                  footer shows every owned currency whose name has one of them
 --   currencies     currency IDs of the season's crests, confirmed in game (empty: the words decide)
 --   items          bag items the footer shows next to the crests, with how many the bags hold
+--   knowledge      profession knowledge items, for the "learn" glow (Engine/Collections.lua): `ids`
+--                  confirmed in game, else a lower-case name word (never matched on gear)
 -- An item the user drops on the Keystone & Crests header joins it whatever this file says (spec
 -- AC4.3). /swagbag report's "Season data" line names what the game has, so Claude can move confirmed
 -- IDs here when the user pastes it.
@@ -25,4 +27,7 @@ SB.Crests = {
 	currencyWords = { "crest", "valorstone", "venomstone" },
 	currencies = {},
 	items = { VENOMSTONE },
+	-- Week 7 (user pick 3): Midnight's knowledge books are expected to be named "... Treatise ..." as in the
+	-- last two expansions; other knowledge items are added by ID once seen in game (session LN1).
+	knowledge = { ids = {}, words = { "treatise" } },
 }

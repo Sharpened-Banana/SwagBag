@@ -239,6 +239,7 @@ function A.GetSlot(bag, slot)
 		isBound = info.isBound == true,
 		name = info.itemName,
 		hasNoValue = info.hasNoValue == true,
+		hasLoot = info.hasLoot == true, -- a container to open (a cache, a lockbox): week 7, the "learn" glow
 	}
 end
 
@@ -564,6 +565,86 @@ function A.IsToy(itemID)
 	end
 	local ok, toyID = pcall(C_ToyBox.GetToyInfo, itemID)
 	return ok and toyID ~= nil
+end
+
+---------------------------------------------------------------------------
+-- Collections (week 7, user picks 3 and 9): is this toy, mount, pet or decor item already the
+-- account's? true = collected, false = not yet, nil = the client cannot say or the item is not that
+-- kind (then no glow and no marker: never a wrong one). A secret answer is nil. Real APIs only (P7).
+---------------------------------------------------------------------------
+local function known(ok, v)
+	if not ok or isSecret(v) or type(v) ~= "boolean" then
+		return nil
+	end
+	return v
+end
+
+function A.ToyKnown(itemID)
+	local fn = _G.PlayerHasToy
+	if type(fn) ~= "function" then
+		return nil
+	end
+	return known(pcall(fn, itemID))
+end
+
+function A.MountKnown(itemID)
+	local J = C_MountJournal
+	if not (J and J.GetMountFromItem and J.GetMountInfoByID) then
+		return nil
+	end
+	local ok, mountID = pcall(J.GetMountFromItem, itemID)
+	if not ok or type(mountID) ~= "number" or isSecret(mountID) then
+		return nil -- not a mount item
+	end
+	return known(pcall(function()
+		return (select(11, J.GetMountInfoByID(mountID))) -- isCollected
+	end))
+end
+
+-- A caged pet's species is in its link (battlepet:<species>); a pet item asks the journal for it.
+function A.PetKnown(itemID, link)
+	local J = C_PetJournal
+	if not (J and J.GetNumCollectedInfo) then
+		return nil
+	end
+	local species = type(link) == "string" and not isSecret(link) and tonumber(link:match("battlepet:(%d+)")) or nil
+	if not species and J.GetPetInfoByItemID then
+		local ok, s = pcall(function()
+			return (select(13, J.GetPetInfoByItemID(itemID))) -- speciesID
+		end)
+		species = ok and type(s) == "number" and not isSecret(s) and s or nil
+	end
+	if not species then
+		return nil
+	end
+	local ok, n = pcall(J.GetNumCollectedInfo, species)
+	if not ok or type(n) ~= "number" or isSecret(n) then
+		return nil
+	end
+	return n > 0
+end
+
+-- Decor counts as collected once the account has one placed, in storage, or still to redeem.
+function A.DecorKnown(itemID)
+	local H = C_HousingCatalog
+	if not (H and H.GetCatalogEntryInfoByItem) then
+		return nil
+	end
+	local ok, info = pcall(H.GetCatalogEntryInfoByItem, itemID)
+	if not ok or type(info) ~= "table" then
+		return nil
+	end
+	local owned, seen = 0, false
+	for _, field in ipairs({ "totalNumPlaced", "remainingRedeemable", "totalNumStored" }) do
+		local v = info[field]
+		if type(v) == "number" and not isSecret(v) then
+			owned, seen = owned + v, true
+		end
+	end
+	if not seen then
+		return nil
+	end
+	return owned > 0
 end
 
 function A.IsQuestItem(bag, slot)
@@ -1344,6 +1425,12 @@ A.CHECKS = {
 	{ path = "C_Item.GetItemUpgradeInfo", window = "bags", required = false },
 	{ path = "C_Item.GetDetailedItemLevelInfo", window = "bank", required = false },
 	{ path = "C_ToyBox.GetToyInfo", window = "bags", required = false },
+	{ path = "PlayerHasToy", window = "bags", required = false },
+	{ path = "C_MountJournal.GetMountFromItem", window = "bags", required = false },
+	{ path = "C_MountJournal.GetMountInfoByID", window = "bags", required = false },
+	{ path = "C_PetJournal.GetPetInfoByItemID", window = "bags", required = false },
+	{ path = "C_PetJournal.GetNumCollectedInfo", window = "bags", required = false },
+	{ path = "C_HousingCatalog.GetCatalogEntryInfoByItem", window = "bags", required = false },
 	{ path = "C_Timer.After", window = "bags", required = true },
 	{ path = "C_AddOns.IsAddOnLoaded", window = "bags", required = false },
 	{ path = "ItemLocation.CreateFromBagAndSlot", window = "bags", required = true },

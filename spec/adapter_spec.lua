@@ -1,6 +1,7 @@
 -- luacheck: globals IsInGuild
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
 -- luacheck: globals Auctionator ColorManager ITEM_QUALITY_COLORS
+-- luacheck: globals PlayerHasToy C_MountJournal C_PetJournal C_HousingCatalog
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
 -- F1: spec/runner.lua installs format51 before any spec loads, so this first-sorting spec (no loader,
 -- no single-file escape) is as strict as WoW too. Mutation: delete the require from spec/runner.lua.
@@ -220,5 +221,58 @@ describe("Adapter.IsInGuild (W5-6)", function()
 		assert.equal(true, A.IsInGuild())
 		IsInGuild = function() return false end
 		assert.equal(false, A.IsInGuild())
+	end)
+end)
+
+-- Week 7 (user picks 3 and 9): the collection answers the "learn" glow and the uncollected marker use.
+describe("Adapter collections (week 7)", function()
+	local A
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+	end)
+
+	after_each(function()
+		PlayerHasToy, C_MountJournal, C_PetJournal, C_HousingCatalog, issecretvalue = nil, nil, nil, nil, nil
+	end)
+
+	-- Mutation: in A.ToyKnown, return `ok and v` (a secret or a non-boolean passes through).
+	it("toys and mounts: true, false, or nil without the API, for a non-mount item, or a secret", function()
+		assert.is_nil(A.ToyKnown(1))
+		PlayerHasToy = function(id) return id == 1 end
+		assert.same({ true, false }, { A.ToyKnown(1), A.ToyKnown(2) })
+		issecretvalue = function(v) return v == true end
+		assert.is_nil(A.ToyKnown(1), "a secret answer is no answer")
+		issecretvalue = nil
+		assert.is_nil(A.MountKnown(5))
+		C_MountJournal = { GetMountFromItem = function(id) return id == 5 and 77 or nil end,
+			GetMountInfoByID = function() return "Horse", 1, 2, false, true, 0, false, false, 0, false, false end }
+		assert.equal(false, A.MountKnown(5))
+		assert.is_nil(A.MountKnown(6), "not a mount item")
+	end)
+
+	-- Mutation: in A.PetKnown, ignore the link (always ask GetPetInfoByItemID).
+	it("pets: a caged pet's species comes from its link, a pet item's from the journal; decor from the catalog", function()
+		local asked = {}
+		C_PetJournal = { GetNumCollectedInfo = function(species)
+			asked[#asked + 1] = species
+			return species == 1387 and 1 or 0
+		end, GetPetInfoByItemID = function() return "Pup", 1, 1, 1, "", "", false, true, true, false, true, 1, 42 end }
+		assert.equal(true, A.PetKnown(82800, "|cff0070dd|Hbattlepet:1387:25:3:1546:276:276:0|h[Hatespark]|h|r"))
+		assert.equal(false, A.PetKnown(12345, "item:12345"))
+		assert.same({ 1387, 42 }, asked)
+		assert.is_nil(A.DecorKnown(9))
+		C_HousingCatalog = { GetCatalogEntryInfoByItem = function(id)
+			if id == 9 then
+				return { totalNumPlaced = 0, remainingRedeemable = 0, totalNumStored = 2 }
+			elseif id == 10 then
+				return { totalNumPlaced = 0, remainingRedeemable = 0, totalNumStored = 0 }
+			end
+			return id == 11 and {} or nil
+		end }
+		assert.same({ true, false }, { A.DecorKnown(9), A.DecorKnown(10) })
+		assert.is_nil(A.DecorKnown(11), "no counts: the client cannot say")
+		assert.is_nil(A.DecorKnown(12), "not decor")
 	end)
 end)

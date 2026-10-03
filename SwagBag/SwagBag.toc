@@ -41,6 +41,7 @@ Engine/Snapshots.lua
 Engine/AltData.lua
 Engine/Prices.lua
 Engine/OverlayData.lua
+Engine/Collections.lua
 Engine/Sort.lua
 Engine/Focus.lua
 Engine/FocusData.lua

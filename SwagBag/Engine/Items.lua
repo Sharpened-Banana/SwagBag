@@ -18,6 +18,7 @@
 --   tab             bank tab number (1-based) | nil
 --   track           { track, level, max } upgrade track | nil (overlays)
 --   hasNoValue      boolean: a vendor pays nothing for it
+--   hasLoot         boolean: a container to open (a cache, a lockbox; week 7)
 --   pending         true while the item's data has not loaded
 -- }
 local _, SB = ...
@@ -59,6 +60,7 @@ function Items.Describe(bag, slot, s)
 		hasUpgradeTrack = hasTrack,
 		track = track,
 		hasNoValue = s.hasNoValue == true,
+		hasLoot = s.hasLoot == true,
 		isUsable = A.IsUsable(s.itemID),
 		isToy = A.IsToy(s.itemID),
 		isQuestItem = A.IsQuestItem(bag, slot) or inst.classID == A.ITEM_CLASS.Questitem,
@@ -122,6 +124,7 @@ function Items.DescribeLink(info, bag, slot, tab, location)
 		hasUpgradeTrack = hasTrack == true,
 		track = track,
 		hasNoValue = false,
+		hasLoot = false,
 		isUsable = A.IsUsable(info.itemID),
 		isToy = A.IsToy(info.itemID),
 		isQuestItem = inst.classID == A.ITEM_CLASS.Questitem,

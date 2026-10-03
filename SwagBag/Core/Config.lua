@@ -50,8 +50,9 @@ Config.Defaults = {
 		-- too cluttered; the "BoE gear" and "Warbound until equipped" sections say it instead). Only a
 		-- value the user saved is stored (Config.Get falls back to these defaults), so whoever never
 		-- touched it gets the new default and whoever saved "on" keeps it.
+		-- learn (week 7): a green glow on items to open or learn (caches, toys, mounts, pets, decor, knowledge).
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = false,
-			usePawn = false },
+			learn = true, usePawn = false },
 		-- Focus modes (spec 6, Engine/Focus.lua). auto: modes switch by themselves (AC8.1);
 		-- resolve: "merge" (open the union, default) | "priority" (combat > activity > location,
 		-- AC8.4); peek: a click on a collapsed header opens it until the bag closes ("peek") or

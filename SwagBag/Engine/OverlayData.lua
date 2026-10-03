@@ -7,9 +7,11 @@
 --     keystone  { level, dungeon } | nil   from the keystone link; dungeon = short name
 --     junk      boolean         poor quality, a vendor pays for it, and not in an equipment set
 --     bind      "BoE" | "WuE" | nil   bind on equip / warbound until equipped, not yet bound
---     upgrade   boolean         the arrow (AC9.3, see IsUpgrade) }
+--     upgrade   boolean         the arrow (AC9.3, see IsUpgrade)
+--     learn     "open" | "learn" | nil   an item to click: open it, or learn it (ctx.learn, week 7) }
 --   ctx = { equipped = { [invSlot] = { ilvl, equipLoc } }, canUse = fn(itemID) -> bool,
---           dungeonName = fn(mapID) -> name | nil, pawn = fn(record) -> true | false | nil }
+--           dungeonName = fn(mapID) -> name | nil, pawn = fn(record) -> true | false | nil,
+--           learn = fn(record) -> "open" | "learn" | nil (Engine/Collections.lua) }
 --   OverlayData.IsUpgrade(record, equipped, canUse) -> boolean
 --   OverlayData.Short(name) -> short dungeon name ("Darkflame Cleft" -> "DC")
 local _, SB = ...
@@ -160,6 +162,9 @@ function O.For(record, ctx)
 		elseif record.bind == "equip" then
 			out.bind = L.BADGE_BOE
 		end
+	end
+	if ctx.learn then
+		out.learn = ctx.learn(record)
 	end
 	-- Pawn replaces only the item-level rule: eligibility (loading, unusable, not worn gear) comes first.
 	if O.CanCompare(record, ctx.canUse) then

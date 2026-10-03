@@ -420,6 +420,7 @@ function M.AddContainers(m)
 			isBound = s.isBound == true,
 			name = (not it.pending) and it.name or nil,
 			hasNoValue = s.hasNoValue == true,
+			hasLoot = s.hasLoot == true,
 		}
 	end
 
@@ -586,6 +587,30 @@ function M.AddContainers(m)
 
 	function m.IsToy(itemID)
 		return itemOf(itemID).toy == true
+	end
+
+	-- Collections (week 7): m.collected.toys / .mounts / .decor [itemID] and .pets [species or itemID] =
+	-- true (collected) | false (not yet); no entry = the client gives no answer. m.collectionCalls counts asks.
+	m.collected, m.collectionCalls = { toys = {}, mounts = {}, pets = {}, decor = {} }, 0
+	function m.ToyKnown(itemID)
+		m.collectionCalls = m.collectionCalls + 1
+		return m.collected.toys[itemID]
+	end
+
+	function m.MountKnown(itemID)
+		m.collectionCalls = m.collectionCalls + 1
+		return m.collected.mounts[itemID]
+	end
+
+	function m.PetKnown(itemID, link)
+		m.collectionCalls = m.collectionCalls + 1
+		local species = type(link) == "string" and tonumber(link:match("battlepet:(%d+)"))
+		return m.collected.pets[species or itemID]
+	end
+
+	function m.DecorKnown(itemID)
+		m.collectionCalls = m.collectionCalls + 1
+		return m.collected.decor[itemID]
 	end
 
 	function m.IsQuestItem(bag, slot)
