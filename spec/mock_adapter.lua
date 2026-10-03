@@ -639,14 +639,23 @@ function M.AddContainers(m)
 
 	-- Repairs: m.repairCost (nil: this vendor does not repair), m.guildRepair (nil: the guild does not pay;
 	-- -1: no limit), m.repairs = { "own" | "guild" }.
-	m.repairCost, m.guildRepair, m.repairs = nil, nil, {}
+	-- m.guildBalance: copper in the guild bank (nil: unknown). A repair empties m.repairCost unless
+	-- m.repairStays (the client did not finish it).
+	m.repairCost, m.guildRepair, m.guildBalance, m.repairs = nil, nil, nil, {}
 	function m.RepairCost()
 		return m.repairCost
 	end
 
 	function m.Repair(guild)
 		m.repairs[#m.repairs + 1] = guild and "guild" or "own"
+		if not m.repairStays and m.repairCost then
+			m.repairCost = 0
+		end
 		return true
+	end
+
+	function m.GuildBankMoney()
+		return m.guildBalance
 	end
 
 	function m.GuildRepairMoney()
