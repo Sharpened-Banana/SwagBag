@@ -29,6 +29,15 @@ describe("Prices (spec F10, 3.3)", function()
 			{ P.Money(12), P.Money(3550), P.Money(12400000), P.Money(1234567890), P.Money(10000), P.Money(0) })
 	end)
 
+	-- Week 7 (user pick 7). Mutation: in WorthThreshold, math.ceil -> math.floor (top 10% of 5 values: none).
+	it("worth-money line: a fixed gold amount, or the top percent of the valued stacks; off or nothing valued: none", function()
+		assert.equal(1000000, P.WorthThreshold({}, "fixed", 100, 10))
+		assert.equal(60, P.WorthThreshold({ 10, 20, 30, 40, 50, 60, 70, 0 }, "top", 100, 20), "20% of 7 rounds up to 2")
+		assert.equal(500, P.WorthThreshold({ 5, 500, 50, 0, 1 }, "top", 100, 10), "at least one item")
+		assert.is_nil(P.WorthThreshold({ 0, 0 }, "top", 100, 10))
+		assert.is_nil(P.WorthThreshold({ 10 }, "off", 100, 10))
+	end)
+
 	it("without Auctionator the vendor price answers and the source is Vendor", function()
 		assert.same({ 1500, "Vendor" }, { P.Value(HERB_LINK, Fixtures.HERB) })
 		assert.equal("Vendor", P.Source())

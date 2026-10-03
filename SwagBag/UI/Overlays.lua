@@ -7,6 +7,8 @@
 --                 (bottom left on gray gear, under its item level)
 --   whole button  a soft green glow on an item to open or learn  (overlays.learn, week 7)
 --   left middle   a small padlock on an item the user locked      (overlays.lock, week 7)
+--   whole button  a gold glow while the bank is open on items worth money (prices.worth, week 7;
+--                 at the bank it wins over the green glow). /swagbag worth sets it.
 -- The stack count is Blizzard's own (SetItemButtonCount); nothing is drawn bottom right. Sizes
 -- are the constants below (W4-15: larger, thick outline), so a check in game can tune them.
 -- overlays.usePawn hands the arrow to Pawn (Adapter.PawnUpgrade) for bag and bank items; where
@@ -29,7 +31,7 @@ local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "j
 	FONT = "Fonts\\ARIALN.TTF", FONT_SIZE = 13, BIND_SIZE = 11, FONT_FLAGS = "THICKOUTLINE", TEXT_WIDTH = 33,
 	ARROW_SIZE = 16, JUNK_SIZE = 16, JUNK_OUTLINE = 3, JUNK_TINT = { 1, 0.9, 0.35 },
 	-- Week 7: the whole-button glow, Blizzard's white bag glow tinted (green: open or learn).
-	GLOW_ATLAS = "bags-glow-white", LEARN_TINT = { 0.35, 1, 0.35 },
+	GLOW_ATLAS = "bags-glow-white", LEARN_TINT = { 0.35, 1, 0.35 }, WORTH_TINT = { 1, 0.82, 0 }, WORTH_DELAY = 0.1,
 	-- The lock mark (week 7): Blizzard's pet-battle padlock, a plain texture file.
 	LOCK_TEXTURE = "Interface\\PetBattles\\PetBattle-LockIcon", LOCK_SIZE = 10 }
 SB.Overlays = Ov
@@ -185,14 +187,79 @@ function Ov.Apply(button, record, bag)
 	show(r.junk, junk)
 	show(r.junkShadow, junk)
 	show(r.reagent, reagentEmpty)
-	-- One glow per button (week 7): green for an item to open or learn.
-	local glow = on("learn") and d.learn ~= nil
+	-- One glow per button (week 7): gold at the bank for an item worth money, else green for an item to
+	-- open or learn.
+	local worth = Ov.IsWorth(record)
+	local glow = worth or (on("learn") and d.learn ~= nil)
 	if glow then
-		r.glow:SetVertexColor(unpack(Ov.LEARN_TINT))
+		r.glow:SetVertexColor(unpack(worth and Ov.WORTH_TINT or Ov.LEARN_TINT))
 	end
 	show(r.glow, glow)
 	show(r.lock, on("lock") and d.locked)
 end
+
+---------------------------------------------------------------------------
+-- Worth money at the bank (week 7, user pick 7): Ov.worthMin is the stack value (copper) from which an
+-- item glows gold; nil while the bank is closed or the glow is off. Worked out once when the bank opens
+-- (and again when prices, the setting or the bags' layout change during the visit), never per button.
+-- A missing or secret price is no price (Engine/Prices.lua): such an item never glows.
+---------------------------------------------------------------------------
+local function stackValue(record)
+	if not record or record.pending or record.offline then
+		return 0
+	end
+	local P = SB.Prices
+	local v = P and P.Value(record.link, record.itemID, P.Bound(record))
+	return (v or 0) * (record.count or 1)
+end
+
+function Ov.IsWorth(record)
+	return Ov.worthMin ~= nil and stackValue(record) >= Ov.worthMin and stackValue(record) > 0
+end
+
+-- Work the threshold out over the bags and both banks, then re-draw. SB.AtBank: Core/Init.lua (one
+-- definition for the section actions and this glow, ruling R12).
+function Ov.RefreshWorth()
+	Ov.worthMin = nil
+	if SB.AtBank() and SB.Prices then
+		local values = {}
+		local function collect(forEach)
+			forEach(function(_, record)
+				values[#values + 1] = stackValue(record)
+			end)
+		end
+		local bags, bank = SB.BagsWindow, SB.BankWindow
+		if bags and bags.IsOpen() then
+			collect(bags.ForEachSlot)
+		end
+		if bank and bank.IsOpen() then
+			collect(bank.view.ForEachSlot)
+		end
+		local C = SB.Config
+		Ov.worthMin = SB.Prices.WorthThreshold(values, C.Get("prices.worth"), C.Get("prices.worthGold"),
+			C.Get("prices.worthTop"))
+	end
+	Ov.RefreshAll()
+end
+
+local function worthSoon()
+	SB.Debounce("overlays.worth", Ov.WORTH_DELAY, Ov.RefreshWorth, "none")
+end
+SB.On("BANKFRAME_OPENED", worthSoon, "none")
+SB.On("BANKFRAME_CLOSED", function()
+	Ov.worthMin = nil
+	Ov.RefreshAll()
+end, "none")
+SB.On("SB_PRICES_CHANGED", function()
+	if SB.AtBank() then
+		worthSoon()
+	end
+end, "none")
+SB.On("SB_BAGS_LAYOUT", function()
+	if SB.AtBank() then
+		worthSoon()
+	end
+end, "none")
 
 -- Re-draw the buttons of every open window (equipment or settings changed).
 function Ov.RefreshAll()
@@ -269,4 +336,46 @@ SB.Slash.Register("overlays", L.HELP_OVERLAYS, function(arg)
 		return { line, L.OVERLAYS_NO_PAWN }
 	end
 	return line
+end)
+
+-- /swagbag worth                   what glows gold at the bank, and how to change it
+-- /swagbag worth <gold>            items worth that much gold or more a stack (1 to 10,000,000)
+-- /swagbag worth top <percent>     your most valuable percent of items (1 to 50)
+-- /swagbag worth off               no gold glow
+local function worthState()
+	local C = SB.Config
+	local mode = C.Get("prices.worth")
+	if mode == "fixed" then
+		return L.WORTH_FIXED:format(C.Get("prices.worthGold"))
+	elseif mode == "top" then
+		return L.WORTH_TOP:format(C.Get("prices.worthTop"))
+	end
+	return L.WORTH_OFF
+end
+
+SB.Slash.Register("worth", L.HELP_WORTH, function(arg)
+	local a, b = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
+	local C = SB.Config
+	if a == "" then
+		return L.WORTH_STATE:format(worthState())
+	end
+	local ok
+	if a == "off" and b == "" then
+		ok = C.Set("prices.worth", "off")
+	elseif a == "top" and tonumber(b) and tonumber(b) >= 1 and tonumber(b) <= 50 then
+		local n = math.floor(tonumber(b))
+		ok = C.Set("prices.worthTop", n) and C.Set("prices.worth", "top")
+	elseif b == "" and tonumber(a) and tonumber(a) >= 1 and tonumber(a) <= 10000000 then
+		local n = math.floor(tonumber(a))
+		ok = C.Set("prices.worthGold", n) and C.Set("prices.worth", "fixed")
+	else
+		return L.WORTH_USAGE
+	end
+	if not ok then
+		return L.SETTINGS_READONLY
+	end
+	if SB.AtBank() then
+		Ov.RefreshWorth()
+	end
+	return L.WORTH_SET:format(worthState())
 end)

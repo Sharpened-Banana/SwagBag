@@ -142,6 +142,23 @@ local function bankRows()
 				SB.Emit("SB_PRICES_CHANGED") -- open windows re-read their header texts in place
 				return v and L.SET_TOTALS_ON or L.SET_TOTALS_OFF
 			end },
+		-- Week 7 (user pick 7): the gold glow at the bank; every click runs /swagbag worth.
+		{ kind = "choice", label = L.SET_WORTH, tip = L.SET_WORTH_TIP, width = 90, get = function()
+			local mode = SB.Config.Get("prices.worth")
+			if mode == "fixed" then
+				return SB.Config.Get("prices.worthGold")
+			end
+			return mode
+		end, choices = { { value = 100, text = L.SET_WORTH_GOLD:format(100) },
+			{ value = 500, text = L.SET_WORTH_GOLD:format(500) }, { value = 1000, text = L.SET_WORTH_GOLD:format(1000) },
+			{ value = "top", text = L.SET_WORTH_TOP:format(SB.Config.Get("prices.worthTop")) },
+			{ value = "off", text = L.SET_OFF } },
+		apply = function(v)
+			if v == "top" then
+				return run("worth top " .. SB.Config.Get("prices.worthTop"))
+			end
+			return run("worth " .. v)
+		end },
 		{ kind = "note", label = L.SET_BANK_NOTE },
 	}
 end

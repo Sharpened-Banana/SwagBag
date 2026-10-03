@@ -150,6 +150,64 @@ describe("Overlays (spec F9)", function()
 		assert.falsy(off.lock.shown)
 	end)
 
+	-- Week 7 (user pick 7). Mutations: Ov.IsWorth ignores Ov.worthMin (always nil: no glow); or the
+	-- BANKFRAME_CLOSED handler keeps Ov.worthMin.
+	it("at the bank items worth 100g or more glow gold (their stack value); closing the bank ends it", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Prices.lua")
+		A.items[Fixtures.HEALING_POTION].sellPrice = 300000 -- 30g each, 5 in the stack: 150g
+		A.items[Fixtures.FLASK].sellPrice = 400000 -- 40g each, 2: 80g
+		local drawn = {}
+		SB.BankWindow = { interaction = true, IsOpen = function() return false end }
+		SB.BagsWindow = { IsOpen = function() return true end, RefreshTitle = function() end, ForEachSlot = function(fn)
+			for slot = 1, 2 do
+				drawn[slot] = drawn[slot] or Fake.New("ItemButton")
+				fn(drawn[slot], SB.Items.Describe(0, slot), 0, slot)
+			end
+		end }
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		A.Advance(Ov.WORTH_DELAY)
+		assert.equal(1000000, Ov.worthMin)
+		assert.same({ true, false }, { Ov.regions[drawn[1]].glow.shown, Ov.regions[drawn[2]].glow.shown })
+		assert.same({ 1, 0.82, 0 }, Ov.regions[drawn[1]].glow.calls.SetVertexColor)
+		SB.BankWindow.interaction = false
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		assert.falsy(Ov.regions[drawn[1]].glow.shown)
+	end)
+
+	-- Week 7. Mutation: in Overlays.Apply, the tint `worth and Ov.WORTH_TINT or Ov.LEARN_TINT` ->
+	-- `d.learn and Ov.LEARN_TINT or Ov.WORTH_TINT` (green would win at the bank).
+	it("gold at the bank wins over green; a price the game will not give (secret, missing) never glows", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Prices.lua")
+		SB.Collections = { Learn = function() return "learn" end }
+		A.items[Fixtures.HEALING_POTION].sellPrice = 300000
+		Ov.worthMin = 1000000
+		local _, potion = draw(0, 1)
+		assert.same({ true, { 1, 0.82, 0 } }, { potion.glow.shown, potion.glow.calls.SetVertexColor })
+		local _, flask = draw(0, 2)
+		assert.same({ true, { 0.35, 1, 0.35 } }, { flask.glow.shown, flask.glow.calls.SetVertexColor }, "no price: green")
+		Ov.worthMin = nil
+		local _, after = draw(0, 1)
+		assert.same({ 0.35, 1, 0.35 }, after.glow.calls.SetVertexColor)
+	end)
+
+	-- P2. Mutation: /swagbag worth top accepts 0 (no item would ever be the top 0%).
+	it("/swagbag worth shows, sets a gold amount, a top percent or off; wrong forms and read-only refuse", function()
+		SB.Slash.Dispatch("worth")
+		SB.Slash.Dispatch("worth 250")
+		SB.Slash.Dispatch("worth top 5")
+		SB.Slash.Dispatch("worth top 0")
+		SB.Slash.Dispatch("worth lots")
+		SB.Slash.Dispatch("worth off")
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("worth 100")
+		local L = SB.L
+		assert.same({ L.WORTH_STATE:format("items worth 100g or more a stack"), "Gold glow at the bank: items worth 250g or"
+			.. " more a stack.", "Gold glow at the bank: your most valuable 5% of items.", L.WORTH_USAGE, L.WORTH_USAGE,
+			"Gold glow at the bank: off.", L.SETTINGS_READONLY }, A.Lines())
+		assert.same({ "off", 250, 5 }, { SB.Config.Get("prices.worth"), SB.Config.Get("prices.worthGold"),
+			SB.Config.Get("prices.worthTop") })
+	end)
+
 	-- Fix round 1. Mutation: in Overlays.Apply's region setup, put the lock back at ("TOP", button, "TOP", 0, -1)
 	-- with size 14 (it then covers the item level and the upgrade arrow).
 	it("the lock sits where no other corner overlay is (37 px button, rects in pixels from its top left)", function()

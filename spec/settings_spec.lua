@@ -191,6 +191,20 @@ describe("Settings window", function()
 		click("Pawn")
 	end)
 
+	-- Week 7 (user pick 7), P1. Mutation: in the worth row's apply, run "worth top 10" whatever the setting.
+	it("bank page: the gold glow row, 100g first and selected; each choice runs /swagbag worth", function()
+		SB.Slash.Register("worth", "test", function(arg)
+			ran[#ran + 1] = "worth " .. arg
+			return "ran worth " .. arg
+		end)
+		SB.Config.Set("prices.worthTop", 15)
+		SW.Show("bank")
+		assert.truthy(SW.selected[button("100g or more")])
+		click("500g or more")
+		click("Your top 15%")
+		assert.same({ "worth 500", "worth top 15" }, ran)
+	end)
+
 	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
 	it("an error in a change is recorded without Safe Mode, and the status line says so", function()
 		SW.Show("bags")
