@@ -720,6 +720,32 @@ function A.MoveToBank(bag, slot, kind)
 	return pcall(C_Container.UseContainerItem, bag, slot, nil, bankType, false)
 end
 
+-- true / false: whether the bank of that kind takes the bag item; nil when the client cannot say.
+function A.AllowedInBank(bag, slot, kind)
+	local BT = Enum and Enum.BankType
+	local bankType = BT and ((kind == "bank" and BT.Character) or (kind == "warband" and BT.Account))
+	if bankType == nil or not (C_Bank and C_Bank.IsItemAllowedInBankType) then
+		return nil
+	end
+	local ok, yes = pcall(function()
+		return C_Bank.IsItemAllowedInBankType(bankType, location(bag, slot))
+	end)
+	if not ok or isSecret(yes) or type(yes) ~= "boolean" then
+		return nil
+	end
+	return yes
+end
+
+-- true while Shift is held (the section actions' Shift+right-click, week 7).
+function A.ShiftDown()
+	local fn = _G.IsShiftKeyDown
+	if type(fn) ~= "function" then
+		return false
+	end
+	local ok, yes = pcall(fn)
+	return ok and yes == true
+end
+
 -- A copper amount the client gives only when a yes/no question allows it (the repair cost, the guild's
 -- repair money): nil without the API, on a "no", or on a secret.
 local function copperIf(canName, amountName)
@@ -1514,6 +1540,7 @@ A.CHECKS = {
 	{ path = "CanGuildBankRepair", window = "bags", required = false },
 	{ path = "GetGuildBankWithdrawMoney", window = "bags", required = false },
 	{ path = "GetNumBuybackItems", window = "bags", required = false },
+	{ path = "IsShiftKeyDown", window = "bags", required = false },
 	{ path = "GetBuybackItemLink", window = "bags", required = false },
 	{ path = "GetGuildBankMoney", window = "bags", required = false },
 	{ path = "GetCursorInfo", window = "bags", required = false },

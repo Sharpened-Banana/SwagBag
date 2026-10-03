@@ -62,6 +62,7 @@ UI/Buttons.lua
 UI/SectionHeaders.lua
 UI/ListRows.lua
 UI/BagsWindow.lua
+UI/SectionActions.lua
 UI/SafeModeHooks.lua
 UI/SearchBox.lua
 UI/LockButton.lua

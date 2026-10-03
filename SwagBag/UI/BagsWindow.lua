@@ -1247,12 +1247,15 @@ function W.DropOnSection(id)
 	return true
 end
 
-SB.SectionHeaders.onClick = function(id, mouseButton)
+-- Week 7 (user pick 6): Shift+right-click opens the section actions (UI/SectionActions.lua).
+SB.SectionHeaders.onClick = function(id, mouseButton, header)
 	if dropGuard == id then
 		return
 	end
 	if SB.Adapter.CursorItem() then
 		W.DropOnSection(id)
+	elseif mouseButton == "RightButton" and SB.SectionActions and SB.Adapter.ShiftDown() then
+		SB.SectionActions.Open(id, header)
 	elseif mouseButton == "RightButton" then
 		W.PinSection(id)
 	else
@@ -1263,6 +1266,30 @@ SB.SectionHeaders.onDrop = function(id)
 	if dropGuard ~= id then
 		W.DropOnSection(id)
 	end
+end
+SB.SectionHeaders.onEnter = function(id, header)
+	if SB.SectionActions then
+		SB.SectionActions.Hint(id, header)
+	end
+end
+SB.SectionHeaders.onLeave = function(_, header)
+	if GameTooltip and GameTooltip.IsOwned and GameTooltip:IsOwned(header) then
+		GameTooltip:Hide()
+	end
+end
+
+-- The items drawn in a section now: { { bag, slot, record } } (placeholders and empty slots left out).
+function W.SectionSlots(id)
+	local out = {}
+	local sec = W.state and W.state.sections[id]
+	for i = 1, sec and sec.size or 0 do
+		local c = sec.cells[i]
+		local r = c and c.bag and not c.placeholder and W.records[c.bag] and W.records[c.bag][c.slot]
+		if r then
+			out[#out + 1] = { bag = c.bag, slot = c.slot, record = r }
+		end
+	end
+	return out
 end
 
 W.reflowButton = titleButton(L.BTN_REFLOW, "bags.reflowButton", function()

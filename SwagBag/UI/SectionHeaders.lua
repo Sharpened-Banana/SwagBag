@@ -2,8 +2,10 @@
 -- A header reads "- Consumables (12)" ("+" while collapsed); New adds "+N more below"
 -- when arrivals overflowed into Free (spec 4.3). Plain Buttons, so creating one in
 -- combat is allowed (ruling P9). The window supplies the actions:
---   Headers.onClick(sectionId, mouseButton)  left- or right-click ("LeftButton" | "RightButton"):
---                               collapse/expand, peek or pin (focus modes), or drop the cursor item
+--   Headers.onClick(sectionId, mouseButton, header)  left- or right-click ("LeftButton" | "RightButton"):
+--                               collapse/expand, peek or pin (focus modes), drop the cursor item, or
+--                               (Shift+right-click, week 7) the section actions menu beside `header`
+--   Headers.onEnter(sectionId, header) / Headers.onLeave(sectionId, header)   optional: a hint tooltip
 --   Headers.onDrop(sectionId)   an item dragged onto the header (AC4.3)
 -- Those two are the bags window's. Another window passes its own { onClick, onDrop, window } as the
 -- owner of the headers it acquires, and releases only the headers inside its own frame.
@@ -72,7 +74,25 @@ local function create(parent)
 		SB.ErrorTrap.Run("header.click", o and o.window or "bags", function()
 			o = o or H
 			if o.onClick then
-				o.onClick(self.sectionId, mouseButton)
+				o.onClick(self.sectionId, mouseButton, self)
+			end
+		end)
+	end)
+	h:SetScript("OnEnter", function(self)
+		local o = owners[self]
+		SB.ErrorTrap.Run("header.enter", o and o.window or "bags", function()
+			o = o or H
+			if o.onEnter then
+				o.onEnter(self.sectionId, self)
+			end
+		end)
+	end)
+	h:SetScript("OnLeave", function(self)
+		local o = owners[self]
+		SB.ErrorTrap.Run("header.leave", o and o.window or "bags", function()
+			o = o or H
+			if o.onLeave then
+				o.onLeave(self.sectionId, self)
 			end
 		end)
 	end)

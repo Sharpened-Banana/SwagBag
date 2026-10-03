@@ -2300,6 +2300,37 @@ describe("BagsWindow focus front style (week 6)", function()
 			"- BoE gear (1)", "- Junk (1)", "- Free (9)" }, headers())
 	end)
 
+	-- Week 7 (user pick 6). Mutation: in SectionHeaders.onClick, drop the Shift+right-click branch.
+	it("Shift+right-click on a header opens its section actions; a plain right-click still collapses", function()
+		local opened
+		SB.SectionActions = { Open = function(id, h) opened = { id, h } end }
+		W.Open()
+		A.shift = true
+		click("c_gear", "RightButton")
+		assert.same({ "c_gear", header("c_gear") }, opened)
+		assert.equal("- Gear (1)", header("c_gear").text.text, "nothing collapsed")
+		A.shift = false
+		click("c_gear", "RightButton")
+		assert.equal("+ Gear (1)", header("c_gear").text.text)
+	end)
+
+	-- Week 7. Mutation: in W.SectionSlots, drop `not c.placeholder` (a used item's ghost would be sold).
+	it("SectionSlots lists the items drawn in a section, never a placeholder", function()
+		W.Open()
+		assert.same({ { 0, 1 }, { 0, 2 } }, (function()
+			local out = {}
+			for i, c in ipairs(W.SectionSlots("c_consumables")) do
+				out[i] = { c.bag, c.slot }
+			end
+			return out
+		end)())
+		A.Put(0, 1, Fixtures.HERB, 5) -- the potions went and a herb took the slot: a placeholder holds the cell
+		bagUpdate()
+		assert.same({ 0, 2 }, { W.SectionSlots("c_consumables")[1].bag, W.SectionSlots("c_consumables")[1].slot })
+		assert.equal(1, #W.SectionSlots("c_consumables"), "the herb in slot 1 is in New, not under its ghost")
+		assert.same({}, W.SectionSlots("c_nothing"))
+	end)
+
 	-- Pins week-4 D10 for the new style: the grid view has no sections, only the title changes.
 	it("in the grid view a mode changes only the title", function()
 		SB.Config.Set("bags.view", "grid")
