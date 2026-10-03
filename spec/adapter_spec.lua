@@ -281,12 +281,13 @@ describe("Adapter collections (week 7)", function()
 	it("appearances: collected or not; nil with no source, one the account cannot collect, or a secret", function()
 		assert.is_nil(A.AppearanceKnown("item:1"))
 		C_TransmogCollection = {
-			GetItemInfo = function(link) return 7, ({ ["item:1"] = 101, ["item:2"] = 102, ["item:3"] = 103 })[link] end,
-			AccountCanCollectSource = function(source) return true, source ~= 103 end,
+			GetItemInfo = function(link) return 7, ({ ["item:1"] = 101, ["item:2"] = 102, ["item:3"] = 103, ["item:5"] = 104 })[link] end,
+			AccountCanCollectSource = function(source) return source ~= 104, source ~= 103 end,
 			PlayerHasTransmogItemModifiedAppearance = function(source) return source == 101 end,
 		}
 		assert.same({ true, false }, { A.AppearanceKnown("item:1"), A.AppearanceKnown("item:2") })
-		assert.is_nil(A.AppearanceKnown("item:3"), "the account cannot collect it")
+		assert.equal("cannot", A.AppearanceKnown("item:3"), "the account cannot collect it")
+		assert.is_nil(A.AppearanceKnown("item:5"), "the client has no data for the source yet")
 		assert.is_nil(A.AppearanceKnown("item:4"), "no appearance (a ring)")
 		issecretvalue = function(v) return v == false end
 		assert.is_nil(A.AppearanceKnown("item:2"), "a secret answer")

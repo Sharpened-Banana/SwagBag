@@ -608,11 +608,18 @@ function M.AddContainers(m)
 		return m.collected.pets[species or itemID]
 	end
 
-	-- Appearances: m.collected.looks[link] = true | false (no entry: no appearance, or the client cannot say).
+	-- Appearances: m.collected.looks[link] = true | false | "cannot" (the account cannot collect it) |
+	-- "unknown" (the client cannot say); no entry: m.collected.defaultLook (nil: the client cannot say).
 	m.collected.looks = {}
 	function m.AppearanceKnown(link)
 		m.collectionCalls = m.collectionCalls + 1
-		return m.collected.looks[link]
+		local v = m.collected.looks[link]
+		if v == "unknown" then
+			return nil
+		elseif v == nil then
+			return m.collected.defaultLook
+		end
+		return v
 	end
 
 	function m.DecorKnown(itemID)

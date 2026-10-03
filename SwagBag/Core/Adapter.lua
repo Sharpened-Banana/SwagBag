@@ -647,9 +647,12 @@ function A.DecorKnown(itemID)
 	return owned > 0
 end
 
--- Whether the account has collected an item's appearance (week 7, user pick 9): true / false, or nil
--- when the item has no appearance, the account cannot collect it, or the client cannot say. Read from
--- C_TransmogCollection only (no armor-type rule of SwagBag's own: 12.2.5 lifts those restrictions).
+-- Whether the account has collected an item's appearance (week 7, user pick 9). Four answers:
+--   true       collected
+--   false      a look the account can collect and has not
+--   "cannot"   the client says the account cannot collect it (nothing to protect, no star)
+--   nil        unknown: no appearance source, the client has no data yet, a secret, or no API
+-- Read from C_TransmogCollection only (no armor-type rule of SwagBag's own: 12.2.5 lifts those restrictions).
 function A.AppearanceKnown(link)
 	local T = C_TransmogCollection
 	if type(link) ~= "string" or isSecret(link) or not (T and T.GetItemInfo and T.PlayerHasTransmogItemModifiedAppearance) then
@@ -660,9 +663,12 @@ function A.AppearanceKnown(link)
 		return nil
 	end
 	if T.AccountCanCollectSource then
-		local okC, _, canCollect = pcall(T.AccountCanCollectSource, sourceID)
-		if not okC or isSecret(canCollect) or canCollect ~= true then
+		local okC, hasData, canCollect = pcall(T.AccountCanCollectSource, sourceID)
+		if not okC or isSecret(hasData) or isSecret(canCollect) or hasData ~= true then
 			return nil
+		end
+		if canCollect ~= true then
+			return "cannot"
 		end
 	end
 	return known(pcall(T.PlayerHasTransmogItemModifiedAppearance, sourceID))

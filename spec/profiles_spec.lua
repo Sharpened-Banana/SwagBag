@@ -133,6 +133,19 @@ describe("Profiles (week 7)", function()
 			{ Pr.Parse("SWAGBAG:1:cu.u_x.inc=s" .. ("1%2C"):rep(Pr.MAX_LIST) .. "1") })
 	end)
 
+	-- Final review fix 5. Mutation: drop `["vendor.repair"] = true` from NEVER (the guild-funded repair choice
+	-- would travel in a share string).
+	it("vendor.repair never travels: not exported, ignored on import and named in the preview", function()
+		C.Set("vendor.repair", "guild")
+		assert.falsy(Pr.Export(false):find("vendor.repair", 1, true), "never exported")
+		local data = assert(Pr.Parse("SWAGBAG:1:s.bags.columns=n14;s.vendor.repair=sguild"))
+		assert.same({ { ["bags.columns"] = 14 }, { "vendor.repair" } }, { data.settings, data.ignored })
+		C.Set("vendor.repair", "own")
+		local lines = Pr.Preview(data)
+		assert.equal(SB.L.PROFILE_PREVIEW_IGNORED:format(SB.L.SET_VENDOR_REPAIR), lines[#lines])
+		assert.equal("own", C.Get("vendor.repair"))
+	end)
+
 	-- Mutations: in Pr.Parse, an unknown setting path is stored in data.settings (then imported as junk); or
 	-- (ruling R4: the global `load` is the one intercepted) `local known = knownPaths()` -> `local known =
 	-- load("return 1") and knownPaths()`.
@@ -240,6 +253,14 @@ describe("Profiles (week 7)", function()
 		refused("cu.u_x.query=sx%7CHitem%3A1%7Ch")
 		refused("cu.u_x.query=sx%7CcFFFF0000red")
 		refused("cu.u_x.name=sOK;cu.u_x.priority=n99999")
+		-- Final review fix 9. Mutation: drop the `field == "priority" and value >= Pr.MAX_PRIORITY` branch.
+		refused("cu.u_x.name=sOK;cu.u_x.priority=n90")
+		refused("cu.u_x.name=sOK;cu.u_x.priority=n100")
+		refused("ce.c_other.priority=n95")
+		assert.equal(89, assert(Pr.Parse("SWAGBAG:1:cu.u_x.name=sOK;cu.u_x.priority=n89")).users.u_x.priority)
+		-- Final review fix 8. Mutation: drop `or text:find("|c[nN]")` from escapeCode.
+		refused("cu.u_x.query=sx%7CcnIQ4%3Aok%7Cr")
+		refused("cu.u_x.query=sx%7CcNIQ4%3Aok%7Cr")
 		refused("cu.u_x.name=sOK;cu.u_x.inc=s" .. ("9"):rep(300))
 		refused("cu.u_x.priority=n5", "u_x")
 		refused("cu.u_x.name=sa%0Ab")

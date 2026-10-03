@@ -30,14 +30,15 @@ local _, SB = ...
 
 local L = SB.L
 local Pr = { VERSION = 1, HEADER = "SWAGBAG:", MAX_TEXT = 30000, MAX_ENTRIES = 1500, MAX_STRING = 500,
-	MAX_NAME = 24, MAX_ITEM = 10000000, MAX_NUM = 1000, MAX_CATEGORIES = 100, MAX_LIST = 2000, MAX_WATCH = 50 }
+	MAX_NAME = 24, MAX_ITEM = 10000000, MAX_NUM = 1000, MAX_CATEGORIES = 100, MAX_PRIORITY = 90, MAX_LIST = 2000, MAX_WATCH = 50 }
 SB.Profiles = Pr
 
 local KEEP = { safeMode = true, setup = true } -- this machine's state: never saved, loaded or shared
 local FIELD_TYPES = { name = "string", query = "string", priority = "number", displayOrder = "number",
 	enabled = "boolean", inc = "list", exc = "list" }
--- Never in a share string: withdrawAnyTab is the guild bank's safety switch (off until check G1, W3-10).
-local NEVER = { ["guildBank.withdrawAnyTab"] = true }
+-- Never in a share string: withdrawAnyTab is the guild bank's safety switch (off until check G1, W3-10);
+-- vendor.repair is a money choice (the guild bank's gold) that only its owner may make on this account.
+local NEVER = { ["guildBank.withdrawAnyTab"] = true, ["vendor.repair"] = true }
 
 -- What each setting may hold beyond its type (ruling R3): a number range (whole numbers where marked), the
 -- allowed words, or a text pattern. A setting not listed here is checked by its type only (the booleans).
@@ -433,10 +434,10 @@ local function numbers(text)
 	return out
 end
 
--- A real chat escape opener in a query: |T |H |A |K, or |c with eight hex digits. Every other "|" is the
--- OR operator ("herb|cloth").
+-- A real chat escape opener in a query: |T |H |A |K, |c with eight hex digits, or |cn / |cN (a named colour,
+-- |cnNAME:). Every other "|" is the OR operator ("herb|cloth").
 local function escapeCode(text)
-	return text:find("|[THAK]") ~= nil or text:find("|c%x%x%x%x%x%x%x%x") ~= nil
+	return text:find("|[THAK]") ~= nil or text:find("|c%x%x%x%x%x%x%x%x") ~= nil or text:find("|c[nN]") ~= nil
 end
 
 -- A user category id has the shape SwagBag makes (u_...), which is never a built-in or a section id
@@ -573,6 +574,8 @@ function Pr.Parse(text)
 				return nil, "type", key
 			elseif kind == "number" and math.abs(value) > Pr.MAX_NUM then
 				return nil, "type", key
+			elseif field == "priority" and value >= Pr.MAX_PRIORITY then
+				return nil, "type", key -- an imported category never outranks Junk, Sets, Keystone or Reagents
 			elseif field == "query" and not SB.Query.Compile(value).fn then
 				return nil, "type", key
 			else

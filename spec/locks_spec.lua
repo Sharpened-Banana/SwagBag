@@ -69,10 +69,47 @@ describe("Locks (week 7)", function()
 		SB.Slash.Dispatch("lock clear")
 		SB.Config.readOnly = false
 		SB.Slash.Dispatch("lock clear")
+		SB.Slash.Dispatch("lock clear")
 		SB.Slash.Dispatch("lock list")
 		local L = SB.L
 		assert.same({ L.LOCK_STATE:format(2), "Locked: Algari Healing Potion, Flask of Alchemical Chaos.", L.LOCK_USAGE,
-			L.SETTINGS_READONLY, "Unlocked all items (2).", L.LOCK_NONE }, A.Lines())
+			L.SETTINGS_READONLY, L.LOCK_CLEAR_ASK:format(2), "Unlocked all items (2).", L.LOCK_NONE }, A.Lines())
+	end)
+
+	-- Final review fix 2. Mutations: Locks.AskClear clears at once (drop the ask); or the window check `<=`
+	-- CONFIRM is removed (a stale ask confirms); or Locks.Clear keeps no backup; or Locks.Undo forgets to
+	-- drop the backup (a second undo answers again).
+	it("lock clear asks first; only a second within 10 seconds clears; lock undo brings the set back once", function()
+		local L = SB.L
+		Locks.Toggle(Fixtures.HEALING_POTION)
+		Locks.Toggle(Fixtures.FLASK)
+		SB.Slash.Dispatch("lock undo") -- nothing cleared yet
+		SB.Slash.Dispatch("lock clear")
+		assert.equal(2, #Locks.List(), "the first press only asks")
+		A.Advance(11)
+		SB.Slash.Dispatch("lock clear")
+		assert.equal(2, #Locks.List(), "too late: asks again")
+		A.Advance(9)
+		SB.Slash.Dispatch("lock clear")
+		assert.equal(0, #Locks.List())
+		SB.Slash.Dispatch("lock undo")
+		assert.same({ true, true }, { Locks.Has(Fixtures.HEALING_POTION), Locks.Has(Fixtures.FLASK) })
+		assert.equal(2, #Locks.List(), "both are back")
+		SB.Slash.Dispatch("lock undo")
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("lock undo")
+		assert.same({ L.LOCK_UNDO_NONE, L.LOCK_CLEAR_ASK:format(2), L.LOCK_CLEAR_ASK:format(2), "Unlocked all items (2).",
+			L.LOCK_UNDONE:format(2), L.LOCK_UNDO_NONE, L.SETTINGS_READONLY }, A.Lines())
+	end)
+
+	-- Final review fix 2: a lock made between the two presses starts the question over.
+	it("a lock or unlock between the two presses starts the question over", function()
+		Locks.Toggle(Fixtures.HEALING_POTION)
+		SB.Slash.Dispatch("lock clear")
+		Locks.Toggle(Fixtures.FLASK)
+		SB.Slash.Dispatch("lock clear")
+		assert.equal(2, #Locks.List())
+		assert.equal(SB.L.LOCK_CLEAR_ASK:format(2), A.Lines()[2])
 	end)
 
 	-- Mutation: Locks.TooltipLine adds its line whatever Has says.

@@ -37,8 +37,9 @@ local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "j
 	GLOW_ATLAS = "bags-glow-white", LEARN_TINT = { 0.35, 1, 0.35 }, WORTH_TINT = { 1, 0.82, 0 }, WORTH_DELAY = 0.1,
 	-- The lock mark (week 7): Blizzard's pet-battle padlock, a plain texture file.
 	LOCK_TEXTURE = "Interface\\PetBattles\\PetBattle-LockIcon", LOCK_SIZE = 10,
-	-- The uncollected mark (week 7): a text star, so no texture can go missing.
-	STAR = "*", STAR_SIZE = 18, STAR_COLOR = { 0.85, 0.55, 1 } }
+	-- The uncollected mark (week 7): a text star, so no texture can go missing. It sits at the right edge in
+	-- the gap between the upgrade arrow (bottom at 17 px) and the stack count (top at 24 px).
+	STAR = "*", STAR_SIZE = 11, STAR_Y = -2, STAR_COLOR = { 0.85, 0.55, 1 } }
 SB.Overlays = Ov
 
 local regions = setmetatable({}, { __mode = "k" }) -- [button] = its overlay regions
@@ -82,7 +83,7 @@ local function regionsFor(button)
 			star = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall"),
 		}
 		r.star:SetFont((r.star:GetFont()) or Ov.FONT, Ov.STAR_SIZE, Ov.FONT_FLAGS)
-		r.star:SetPoint("RIGHT", button, "RIGHT", -2, 0)
+		r.star:SetPoint("RIGHT", button, "RIGHT", -2, Ov.STAR_Y)
 		r.star:SetTextColor(unpack(Ov.STAR_COLOR))
 		r.star:SetText(Ov.STAR)
 		r.star:Hide()
@@ -131,7 +132,10 @@ function Ov.Context()
 		local A = SB.Adapter
 		local ctx = { equipped = A.EquippedItems(), canUse = A.CanUse, dungeonName = A.DungeonName,
 			learn = SB.Collections and SB.Collections.Learn, locked = SB.Locks and SB.Locks.Has,
-			uncollected = SB.Collections and SB.Collections.Uncollected }
+			uncollected = SB.Collections and SB.Collections.Uncollected,
+			protected = function(record) -- the vendor's own rule: a coin only where SwagBag could sell it
+				return SB.Vendor ~= nil and SB.Vendor.Protected(record) == true
+			end }
 		if SB.Config.Get("overlays.usePawn") then
 			ctx.pawn = function(record)
 				if record.bag and A.BagKind(record.bag) then -- bag and bank slots; not the guild bank

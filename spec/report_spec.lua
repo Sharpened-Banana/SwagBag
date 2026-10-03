@@ -60,6 +60,16 @@ describe("Report", function()
 			.. " items in bags Ascendant Venomstone (280562) 12", 1, true))
 	end)
 
+	-- Final review fix 6. Mutation: call SB.Footer.SeasonText() without pcall (the report would fail whole).
+	it("a failure reading the season data leaves the rest of the report intact", function()
+		SB.Checks.last = {}
+		SB.Footer = { SeasonText = function() error("boom") end }
+		local text
+		assert.truthy(pcall(function() text = SB.Report.Build() end))
+		assert.truthy(text:find("\n" .. SB.L.REPORT_SEASON_FAILED, 1, true))
+		assert.truthy(text:find("Bag-related addons", 1, true))
+	end)
+
 	it("lists SwagBag's blocked actions and ignores other addons'", function()
 		SB.Checks.last = {}
 		A.combat = true

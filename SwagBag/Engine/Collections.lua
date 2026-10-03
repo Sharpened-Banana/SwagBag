@@ -6,6 +6,8 @@
 --   Collections.Uncollected(record) -> "appearance" | "toy" | "mount" | "pet" | nil   (user pick 9)
 --     appearance  gear whose look the account has not collected (Adapter.AppearanceKnown)
 --     toy / mount / pet   an item that teaches one the account does not have yet
+--   Collections.LookUnknown(record) -> bool   gray gear whose look the client cannot say (the sell path:
+--     such a piece is protected; the answer is never cached, so the next sale asks again)
 --   Collections.Invalidate()   drop the cached answers (something was learned, or an item left the bags)
 -- Every answer comes from the client's collection APIs through the Adapter (spec P7: no tooltip
 -- reading); one the client cannot give (nil, or secret) means "nothing to do", so an item never glows
@@ -106,6 +108,16 @@ function Coll.Uncollected(r)
 		return kind
 	end
 	return nil
+end
+
+-- For SELLING only (Vendor.Protected): a gray piece of gear whose look the client cannot say (no source,
+-- no data yet, a secret) might be an uncollected look, so it stays. "Cannot collect" is an answer
+-- ("cannot"), not an unknown. Asked fresh each time: an unknown is never cached on this path.
+function Coll.LookUnknown(r)
+	if not r or r.offline or r.pending or r.quality ~= 0 or not isGear(r) then
+		return false
+	end
+	return type(r.link) ~= "string" or SB.Adapter.AppearanceKnown(r.link) == nil
 end
 
 function Coll.Learn(r)
