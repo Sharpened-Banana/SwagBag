@@ -151,4 +151,15 @@ describe("Lock button (week 7)", function()
 		assert.same({ SB.L.LOCK_STATE:format(0), SB.L.SETTINGS_READONLY, SB.L.LOCK_INVALID }, A.Lines())
 		assert.same({ "TOPRIGHT", SB.BagsWindow.frame, "TOPRIGHT", -8, -31 }, button.points[1], "right of the search box")
 	end)
+
+	-- Fix round 1: every caged battle pet is the one item 82800, so a lock would lock them all. Mutation: in
+	-- Locks.Toggle, drop the `itemID == Locks.PET_CAGE` refusal.
+	it("a caged battle pet cannot be locked (all cages share one item ID); it stays on the cursor", function()
+		A.cursor = { itemID = 82800, link = "battlepet:1234:25:3:1500:300:300:0000000000000000" }
+		Fake.Fire(button, "OnClick", "LeftButton")
+		assert.truthy(A.cursor, "refused: still on the cursor")
+		assert.falsy(SB.Locks.Has(82800))
+		assert.same({ false, "invalid" }, { SB.Locks.Toggle(82800) })
+		assert.same({ SB.L.LOCK_INVALID }, A.Lines())
+	end)
 end)

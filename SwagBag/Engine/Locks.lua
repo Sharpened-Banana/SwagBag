@@ -16,7 +16,8 @@
 local _, SB = ...
 
 local L = SB.L
-local Locks = {}
+-- Every caged battle pet is the one item 82800: a lock on it would lock every cage, so it is refused.
+local Locks = { PET_CAGE = 82800 }
 SB.Locks = Locks
 
 local function store(create)
@@ -43,7 +44,7 @@ function Locks.Has(itemID)
 end
 
 function Locks.Toggle(itemID)
-	if not valid(itemID) then
+	if not valid(itemID) or itemID == Locks.PET_CAGE then
 		return false, "invalid"
 	end
 	if SB.Config.readOnly then

@@ -6,7 +6,7 @@
 --   top left      junk coin on gray items a vendor pays for       (overlays.junk)
 --                 (bottom left on gray gear, under its item level)
 --   whole button  a soft green glow on an item to open or learn  (overlays.learn, week 7)
---   top middle    a small padlock on an item the user locked      (overlays.lock, week 7)
+--   left middle   a small padlock on an item the user locked      (overlays.lock, week 7)
 -- The stack count is Blizzard's own (SetItemButtonCount); nothing is drawn bottom right. Sizes
 -- are the constants below (W4-15: larger, thick outline), so a check in game can tune them.
 -- overlays.usePawn hands the arrow to Pawn (Adapter.PawnUpgrade) for bag and bank items; where
@@ -31,7 +31,7 @@ local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "j
 	-- Week 7: the whole-button glow, Blizzard's white bag glow tinted (green: open or learn).
 	GLOW_ATLAS = "bags-glow-white", LEARN_TINT = { 0.35, 1, 0.35 },
 	-- The lock mark (week 7): Blizzard's pet-battle padlock, a plain texture file.
-	LOCK_TEXTURE = "Interface\\PetBattles\\PetBattle-LockIcon", LOCK_SIZE = 14 }
+	LOCK_TEXTURE = "Interface\\PetBattles\\PetBattle-LockIcon", LOCK_SIZE = 10 }
 SB.Overlays = Ov
 
 local regions = setmetatable({}, { __mode = "k" }) -- [button] = its overlay regions
@@ -76,7 +76,7 @@ local function regionsFor(button)
 		r.glow:SetAllPoints(button)
 		r.lock:SetTexture(Ov.LOCK_TEXTURE)
 		r.lock:SetSize(Ov.LOCK_SIZE, Ov.LOCK_SIZE)
-		r.lock:SetPoint("TOP", button, "TOP", 0, -1)
+		r.lock:SetPoint("LEFT", button, "LEFT", 1, 0) -- the one spot between the corner texts and the arrow
 		r.lock:Hide()
 		r.arrow:SetSize(Ov.ARROW_SIZE, Ov.ARROW_SIZE)
 		r.arrow:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
