@@ -2098,6 +2098,186 @@ describe("BagsWindow focus modes (spec 6)", function()
 	end)
 end)
 
+-- Week 6, user request 1: the "front" style, the default. A mode collapses nothing: the user's own
+-- open and collapsed sections stay as they are, and the mode's sections are drawn first, right after
+-- New. Each section moves whole with its header (W10), and every week-4 hold applies (P5, W4-13, W4-1).
+describe("BagsWindow focus front style (week 6)", function()
+	local SB, A, W, B, F
+	before_each(function()
+		local files = { unpack(FILES) }
+		files[#files + 1] = "SwagBag/Engine/Focus.lua"
+		SB = Loader.New(files)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A) -- potion, flask, BoE ring, soulbound helm, keystone, junk
+		SB.Config.Set("bags.newAlways", true) -- New keeps its rows, so it is drawn first as in the game
+		CreateFrame = function(kind) return newFake(kind) end
+		UIParent = newFake("Frame")
+		UIParent.h = 2000
+		UISpecialFrames = {}
+		IsControlKeyDown = function() return false end
+		B = fakeButtons()
+		SB.Buttons = B
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/ListRows.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+		W, F = SB.BagsWindow, SB.Focus
+		-- Like the client: a hovered item button lies inside the scroll frame.
+		W.scroll.IsMouseOver = function(self)
+			if self.mouseOver == true then
+				return true
+			end
+			for _, list in pairs(B.buttons) do
+				for _, b in pairs(list) do
+					if b.shown and rawget(b, "mouseOver") == true then
+						return true
+					end
+				end
+			end
+			return false
+		end
+		SB.Emit("SB_LOGIN")
+	end)
+
+	after_each(function()
+		UIParent, UISpecialFrames, IsControlKeyDown = nil, nil, nil
+	end)
+
+	local function headers()
+		local out = {}
+		for i, h in ipairs(SB.SectionHeaders.inUse) do
+			out[i] = h.text.text
+		end
+		return out
+	end
+
+	local function header(id)
+		for _, h in ipairs(SB.SectionHeaders.inUse) do
+			if h.sectionId == id then
+				return h
+			end
+		end
+	end
+
+	local function bagUpdate(bag)
+		SB.eventFrame:Fire("BAG_UPDATE", bag or 0)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.06)
+	end
+
+	local function click(id, mouseButton)
+		header(id).scripts.OnClick(header(id), mouseButton or "LeftButton")
+	end
+
+	-- Every shown button's offset to its own section's header (W10).
+	local SECTION_OF = { [1] = "c_consumables", [2] = "c_consumables", [3] = "c_boe", [4] = "c_gear",
+		[5] = "c_keystone", [6] = "c_junk" }
+	local function offsets()
+		local out = {}
+		for slot, id in pairs(SECTION_OF) do
+			out[slot] = B.Get(0, slot).y - header(id).points[1][5]
+		end
+		return out
+	end
+
+	local USER = { "- New (0)", "- Keystone & Crests (1)", "- Consumables (2)", "- Gear (1)", "- BoE gear (1)",
+		"+ Junk (1)", "- Free (10)" }
+	local MARKET = { "- New (0)", "+ Junk (1)", "- BoE gear (1)", "- Keystone & Crests (1)", "- Consumables (2)",
+		"- Gear (1)", "- Free (10)" }
+
+	-- Mutations: W.EffectiveOrder returns st.order; or Restack's M1 shortcut checks sameView only
+	-- (nothing collapses in "front", so the re-order would never be drawn).
+	it("a vendor visit moves Junk, Trade Goods and BoE gear up and collapses nothing; leaving puts them back",
+		function()
+			W.Open()
+			W.ToggleSection("c_junk") -- the user's own choice, saved
+			F.SetSignal("merchantOpen", true)
+			assert.same(MARKET, headers(), "Junk stays collapsed: the user's choice")
+			assert.truthy(B.Get(0, 4).shown, "Gear stays open")
+			assert.equal("SwagBag — AH/Vendor/Bank", W.frame.title.text)
+			assert.same({ c_junk = true }, SB.Config.UI().collapsed.bags, "the saved set is untouched")
+			assert.is_nil(SB.Config.db.categoryOrder, "the category order is untouched")
+			F.SetSignal("merchantOpen", false)
+			assert.same(USER, headers())
+		end)
+
+	-- Mutation: in Layout.Position, iterate st.order instead of opts.order or st.order.
+	it("W10: a re-order keeps every button at the same offset to its own header", function()
+		W.Open()
+		local before = offsets()
+		F.SetSignal("merchantOpen", true)
+		assert.equal("- Junk (1)", headers()[2], "the re-order was drawn")
+		assert.same(before, offsets())
+		assert.truthy(B.Get(0, 6).y > B.Get(0, 5).y, "Junk is drawn above Keystone now")
+	end)
+
+	-- W4-13 / P5. Mutation: in W.Restack, drop `area == true or` from `wait` (only a moving button holds).
+	it("a re-order the world started waits while the mouse is anywhere over the items, then applies", function()
+		W.Open()
+		W.scroll.mouseOver = true -- over a gap: no button under the mouse
+		F.SetSignal("merchantOpen", true)
+		assert.equal("- Keystone & Crests (1)", headers()[2], "held: still the user's order")
+		A.Advance(W.RETRY)
+		assert.equal("- Keystone & Crests (1)", headers()[2], "still held while the mouse stays")
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.equal("- Junk (1)", headers()[2], "applied once the mouse left")
+	end)
+
+	-- W4-1. Mutation: in W.ApplyChanges, position with W.EffectiveOrder(st) instead of W.order.
+	it("loot during a held re-order lays out in the drawn order: nothing moves under the mouse", function()
+		W.Open()
+		local ring = B.Get(0, 3)
+		local x, y = ring.x, ring.y
+		ring.mouseOver = true -- BoE gear would move up under the vendor
+		F.SetSignal("merchantOpen", true)
+		A.Put(0, 10, Fixtures.HERB, 20) -- an arrival: ApplyChanges runs
+		bagUpdate()
+		assert.equal("- New (1)", header("new").text.text, "the arrival was drawn")
+		assert.same({ x, y }, { ring.x, ring.y }, "the hovered ring has not moved")
+		assert.equal("- Keystone & Crests (1)", headers()[2], "the drawn order is kept")
+		ring.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.equal("- Junk (1)", headers()[2], "the re-order applies once the mouse leaves")
+	end)
+
+	-- Mutation: Focus.Applies() returns Expanded() ~= nil (a click would peek and save nothing).
+	it("a header click in a mode is the user's own collapse: saved, no peek, and it stays after the mode",
+		function()
+			W.Open()
+			F.SetSignal("challengeMode", true)
+			click("c_gear")
+			assert.equal("+ Gear (1)", header("c_gear").text.text, "no peek suffix")
+			assert.same({ c_gear = true }, SB.Config.UI().collapsed.bags, "saved like any click without a mode")
+			click("c_keystone", "RightButton")
+			assert.equal("+ Keystone & Crests (1)", header("c_keystone").text.text, "a right-click collapses too")
+			F.SetSignal("challengeMode", false)
+			assert.equal("+ Gear (1)", header("c_gear").text.text, "the user's choice stays")
+		end)
+
+	-- Pause and Resume go through the same re-order: red until W.EffectiveOrder exists (the Resume half
+	-- needs the mode's order drawn), then it pins it. Mutation: W.EffectiveOrder returns st.order.
+	it("Pause draws the user's order again and Resume moves the mode's sections back up", function()
+		W.Open()
+		F.SetSignal("merchantOpen", true)
+		W.TogglePause()
+		assert.equal("- Keystone & Crests (1)", headers()[2])
+		W.TogglePause()
+		assert.equal("- Junk (1)", headers()[2])
+	end)
+
+	-- Pins week-4 D10 for the new style: the grid view has no sections, only the title changes.
+	it("in the grid view a mode changes only the title", function()
+		SB.Config.Set("bags.view", "grid")
+		W.Open()
+		local x, y = B.Get(0, 6).x, B.Get(0, 6).y
+		F.SetSignal("merchantOpen", true)
+		assert.equal("SwagBag — AH/Vendor/Bank", W.frame.title.text)
+		assert.same({ x, y }, { B.Get(0, 6).x, B.Get(0, 6).y })
+		assert.same({}, headers())
+	end)
+end)
+
 describe("BagsWindow load order", function()
 	it("loads before Config.Init without touching Config", function()
 		local SB = Loader.New(FILES)

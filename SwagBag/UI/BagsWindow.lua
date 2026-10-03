@@ -24,6 +24,7 @@ local W = {
 	state = nil, -- sections view: Layout state while open (nil when closed or in grid view)
 	pos = nil, -- sections view: last Layout.Position result
 	view = nil, -- sections view: the collapsed lookup W.pos was built with (what is drawn, W4-1)
+	order = nil, -- sections view: the section order W.pos was built with (what is drawn, W4-1)
 	drawn = "sections", -- the view the current layout was drawn in (the setting may change before a held layout)
 	areaHeld = false, -- a world-started re-stack is waiting for the mouse to leave the items (W4-13)
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
@@ -115,7 +116,7 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 		return
 	end
 	W.state, W.pos, W.view, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, nil, false, false, false
-	W.areaHeld, W.scaleWarned = false, false
+	W.order, W.areaHeld, W.scaleWarned = nil, false, false
 	W.ClearDropGuard()
 	if SB.Focus then
 		SB.Focus.WindowClosed() -- peeks and closes end with the bag; pins stay until the mode changes (spec 6.1)
@@ -373,6 +374,13 @@ function W.EffectiveCollapsed()
 	return SB.Focus and SB.Focus.CollapsedView(own) or own
 end
 
+-- The order the sections are drawn in: the layout's own (New, the categories, Free), or with a focus
+-- mode in the "front" style its sections right after New (Engine/Focus.lua). A fresh list, asked
+-- for every layout and re-stack; the category order itself is never written.
+function W.EffectiveOrder(st)
+	return SB.Focus and SB.Focus.SectionOrder(st.order) or st.order
+end
+
 -- A frozen copy of a collapsed lookup for the sections in st (the only ids Layout reads), so
 -- W.view stays what is drawn: a later header toggle or mode switch changes only the live
 -- lookup, never the copy (ruling W4-1).
@@ -390,19 +398,19 @@ local function columns()
 	return SB.Config.Get("bags.columns")
 end
 
-local function positionOpts()
+local function positionOpts(order)
 	if isList() then -- one column of rows, each as tall as its (scaled) button
 		return { columns = 1, size = W.LIST_ROW, gap = W.LIST_GAP, padding = W.PAD, header = W.SECTION_HEADER,
-			sectionGap = W.SECTION_GAP }
+			sectionGap = W.SECTION_GAP, order = order }
 	end
 	return { columns = columns(), size = W.SLOT, gap = W.GAP, padding = W.PAD, header = W.SECTION_HEADER,
-		sectionGap = W.SECTION_GAP }
+		sectionGap = W.SECTION_GAP, order = order }
 end
 
--- Layout.Position for the drawn view. A list is LIST_WIDTH wide (its single column of cells is
--- only an icon wide; the rows' texts fill the rest).
-local function position(st, view)
-	local pos = SB.Layout.Position(st, positionOpts(), view)
+-- Layout.Position for the drawn view and section order. A list is LIST_WIDTH wide (its single
+-- column of cells is only an icon wide; the rows' texts fill the rest).
+local function position(st, view, order)
+	local pos = SB.Layout.Position(st, positionOpts(order), view)
 	if isList() then
 		pos.width = W.LIST_WIDTH
 	end
@@ -825,7 +833,8 @@ local function layoutSections(bags)
 			newRows = isList() and W.LIST_NEW_ROWS or SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
 			family = SB.Adapter.BagFamily, hideEmptyNew = not SB.Config.Get("bags.newAlways") })
 	W.view = snapshot(W.state, W.EffectiveCollapsed())
-	W.pos = position(W.state, W.view)
+	W.order = W.EffectiveOrder(W.state)
+	W.pos = position(W.state, W.view, W.order)
 	return render()
 end
 
@@ -894,7 +903,7 @@ function W.Layout(reason)
 		W.columnsBar:Hide()
 	end
 	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -W.HeaderHeight())
-	W.records, W.state, W.pos, W.view, W.areaHeld = {}, nil, nil, nil, false
+	W.records, W.state, W.pos, W.view, W.order, W.areaHeld = {}, nil, nil, nil, nil, false
 	B.ReleasePlaceholders(child)
 	SB.SectionHeaders.ReleaseAll(child)
 	local width, height
@@ -955,6 +964,9 @@ end
 -- every 300 ms. A focus-mode switch comes here too: whichever state is current when the retry
 -- runs is the one drawn (a switch that waits is never queued behind another). Only a re-stack
 -- that runs switches W.view, the lookup ApplyChanges lays out with (ruling W4-1).
+-- In the "front" style a mode moves sections instead of collapsing them: the same cells, the
+-- sections in another order (W.order, drawn like W.view), so every button keeps its offset to its
+-- own header (W10) and the same holds apply to the re-order.
 -- area = true (a switch the world started, not the user's click): it also waits while the mouse
 -- is anywhere over the items, a header, a placeholder or a gap, so no item slides under the
 -- pointer (ruling W4-13). While such a switch waits, every re-stack waits the same way, so a
@@ -979,6 +991,19 @@ local function overSettings()
 	return f ~= nil and f:IsShown() and f:IsMouseOver() == true
 end
 
+-- Two section orders are the same list of ids.
+local function sameOrder(a, b)
+	if not (a and b) or #a ~= #b then
+		return false
+	end
+	for i = 1, #a do
+		if a[i] ~= b[i] then
+			return false
+		end
+	end
+	return true
+end
+
 -- Two collapsed lookups (snapshots) draw the same sections.
 local function sameView(a, b)
 	if not (a and b) then
@@ -1001,8 +1026,8 @@ function W.Restack(area)
 	if not W.state then
 		return true
 	end
-	local view = snapshot(W.state, W.EffectiveCollapsed())
-	if area == true and sameView(view, W.view) then
+	local view, order = snapshot(W.state, W.EffectiveCollapsed()), W.EffectiveOrder(W.state)
+	if area == true and sameView(view, W.view) and sameOrder(order, W.order) then
 		-- M1: the world asked for what is already drawn (or took back a switch still waiting):
 		-- nothing moves, so nothing holds and no area hold is left for the next header click.
 		W.areaHeld = false
@@ -1010,7 +1035,7 @@ function W.Restack(area)
 		W.RefreshHeaders()
 		return true
 	end
-	local pos = position(W.state, view)
+	local pos = position(W.state, view, order)
 	local wait = area == true or W.areaHeld
 	if not wait and type(area) == "string" and W.pos then
 		wait = headerY(W.pos, area) ~= headerY(pos, area)
@@ -1024,7 +1049,7 @@ function W.Restack(area)
 		return false
 	end
 	local oldPos = W.pos
-	W.pos, W.view, W.areaHeld = pos, view, false
+	W.pos, W.view, W.order, W.areaHeld = pos, view, order, false
 	local width, height = renderMoved(oldPos, pos)
 	sizeFrame(width, height, true)
 	SB.Emit("SB_BAGS_UPDATED")
@@ -1384,7 +1409,7 @@ function W.ApplyChanges(changes)
 	if #result.moved > 0 or (newSec and newSec.overflow or 0) ~= overflowBefore then
 		result.rendered = true
 		local oldPos = W.pos
-		W.pos = position(st, W.view)
+		W.pos = position(st, W.view, W.order)
 		local width, height = renderMoved(oldPos, W.pos)
 		sizeFrame(width, height, true)
 	end
