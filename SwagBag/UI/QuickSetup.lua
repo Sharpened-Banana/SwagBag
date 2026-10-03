@@ -91,21 +91,11 @@ local function names(picked)
 	return out
 end
 
--- The open windows follow at once.
+-- The open windows follow at once, as after a profile load (SB.FollowSettings, Core/Init.lua; week 7,
+-- ruling R12). No Focus.Refresh here: the focus.* writes above went through Config.Set, whose
+-- SB_CONFIG_CHANGED Focus already listens to.
 local function refresh()
-	SB.Categories.Load()
-	-- No Focus.Refresh here: the focus.* writes above went through Config.Set, whose
-	-- SB_CONFIG_CHANGED Focus already listens to.
-	SB.Emit("SB_PRICES_CHANGED")
-	if SB.Overlays then
-		SB.Overlays.context = nil
-		SB.Overlays.RefreshAll()
-	end
-	local W = SB.BagsWindow
-	if W and W.IsOpen() then
-		W.RequestLayout("setup")
-		W.RefreshTitle()
-	end
+	SB.FollowSettings("setup")
 end
 
 -- Apply the picked styles. Returns the feedback line.
