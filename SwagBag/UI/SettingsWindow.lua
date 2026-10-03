@@ -10,6 +10,10 @@
 --   { kind = "drop", label, text, onDrop() -> feedback }   a button that takes the item on the
 --       cursor (dragged onto it, or clicked while holding it)
 --   { kind = "note", label }
+-- Any row may carry tip: a plain-words explanation shown when the mouse rests on one of its buttons,
+-- under the row's label; a choice or action may carry its own tip, shown after the row's (week 6).
+-- A button is as wide as its text (plus TEXT_PAD), never narrower than the row's width (or
+-- BUTTON); a button that no longer fits the line starts the next one, and the rows below move down.
 -- Pages register with SW.AddPage{ id, title, rows = function() -> list }, in TOC order, and are
 -- rebuilt after every click, so a page can change its rows (the focus mode being edited).
 -- Every click answers in the status line at the bottom (P2): the feedback text, which for a
@@ -20,7 +24,7 @@ local _, SB = ...
 local L = SB.L
 local Guard = SB.ErrorTrap.Guard
 local SW = { pages = {}, byId = {}, current = nil, labels = {}, buttons = {}, used = { labels = 0, buttons = 0 },
-	selected = {}, WIDTH = 640, HEIGHT = 470, NAV = 140, BUTTON = 120, ROW = 20, GAP = 8 }
+	selected = {}, tips = {}, WIDTH = 640, HEIGHT = 470, NAV = 140, BUTTON = 120, ROW = 20, GAP = 8, LINE_GAP = 4, TEXT_PAD = 24 }
 SB.SettingsWindow = SW
 
 -- "BackdropTemplate" is a plain (non-secure) template, so this window still opens in combat.
@@ -91,6 +95,24 @@ function SW.Say(feedback)
 	frame.status:SetText(feedback)
 end
 
+-- The tooltip of a row's button (week 6): the row's label, its tip, then the button's own tip.
+-- SW.tips[button] = { title, text, extra } for the buttons of the page as drawn.
+function SW.ShowTip(b)
+	local tip = SW.tips[b]
+	if not (GameTooltip and tip and (tip.text or tip.extra)) then
+		return
+	end
+	GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+	GameTooltip:SetText(tip.title or "")
+	if tip.text then
+		GameTooltip:AddLine(tip.text, 1, 1, 1, true)
+	end
+	if tip.extra then
+		GameTooltip:AddLine(tip.extra, 1, 1, 1, true)
+	end
+	GameTooltip:Show()
+end
+
 -- Run fn (a click) inside ErrorTrap; its return value is the feedback. Then redraw the page.
 local function act(label, fn, ...)
 	local ok, feedback = SB.ErrorTrap.Run(label, "none", fn, ...)
@@ -132,14 +154,28 @@ local function button()
 				self.onDrop()
 			end
 		end, "none"))
+		b:SetScript("OnEnter", Guard("settings.tip", function(self)
+			SW.ShowTip(self)
+		end, "none"))
+		b:SetScript("OnLeave", Guard("settings.tipHide", function(self)
+			if GameTooltip and (not GameTooltip.IsOwned or GameTooltip:IsOwned(self)) then
+				GameTooltip:Hide()
+			end
+		end, "none"))
 		if SB.Theme then
 			SB.Theme.Button(b)
 		end
 		SW.buttons[SW.used.buttons] = b
 	end
-	b.onClick, b.onDrop = nil, nil
+	b.onClick, b.onDrop, SW.tips[b] = nil, nil, nil
 	b:Show()
 	return b
+end
+
+-- The full width of a button's text (0 when the client cannot say).
+local function textWidth(b)
+	local w = b.GetTextWidth and b:GetTextWidth()
+	return type(w) == "number" and w or 0
 end
 
 local function setSelected(b, on)
@@ -218,13 +254,21 @@ function SW.Render()
 		end
 		if items then
 			local current = row.get and row.get()
-			local x = 12
+			local x, room = 12, (child:GetWidth() or SW.WIDTH) - 4
 			for _, item in ipairs(items) do
 				local b = button()
 				b:SetText(item.text)
-				b:SetWidth(item.width or row.width or SW.BUTTON)
+				-- as wide as its text, never narrower than the row's width; out of room: the next line
+				local w = math.min(room - 12, math.max(item.width or row.width or SW.BUTTON, textWidth(b) + SW.TEXT_PAD))
+				if x > 12 and x + w > room then
+					x, y = 12, y - SW.ROW - SW.LINE_GAP
+				end
+				b:SetWidth(w)
 				place(b, x, y)
-				x = x + (item.width or row.width or SW.BUTTON) + 4
+				x = x + w + 4
+				if row.tip or item.tip then
+					SW.tips[b] = { title = row.label, text = row.tip, extra = item.tip }
+				end
 				if row.kind == "choice" then
 					setSelected(b, current == item.value)
 					b.onClick = function()

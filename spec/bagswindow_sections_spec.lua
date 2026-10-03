@@ -1921,15 +1921,19 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.falsy(F.IsPaused())
 	end)
 
-	-- Mutation: delete the AddLine for the right-click.
-	it("the Pause tooltip names both clicks", function()
+	-- Week 6, D18 (FM1: the user did not know what Pause does). Mutations: delete the AddLine for
+	-- the right-click; always show the Pause text (ignore IsPaused).
+	it("the Pause tooltip says in plain words what a click does now, and names the right-click", function()
 		local lines = {}
 		GameTooltip = { SetOwner = function() end, SetText = function(_, t) lines[#lines + 1] = t end,
 			AddLine = function(_, t) lines[#lines + 1] = t end, Show = function() end, Hide = function() end }
 		W.Open()
 		W.modeButton.scripts.OnEnter(W.modeButton)
+		W.modeButton.scripts.OnClick(W.modeButton, "LeftButton")
+		W.modeButton.scripts.OnEnter(W.modeButton)
 		GameTooltip = nil
-		assert.same({ SB.L.MODE_TIP_TITLE, SB.L.MODE_TIP_LEFT, SB.L.MODE_TIP_RIGHT }, lines)
+		assert.same({ "Pause focus modes", SB.L.MODE_TIP_BODY, SB.L.MODE_TIP_RIGHT,
+			"Resume focus modes", SB.L.MODE_TIP_BODY_PAUSED, SB.L.MODE_TIP_RIGHT }, lines)
 	end)
 
 	it("/swagbag mode answers every form (P2)", function()

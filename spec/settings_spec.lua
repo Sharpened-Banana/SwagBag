@@ -266,6 +266,72 @@ describe("Settings window", function()
 		SW.Show("bags")
 		assert.equal(n, #Fake.created)
 	end)
+
+	-- A test page shaped like Settings > Alt data (O2 step 19: "Shown (not twice with Syndicator)"
+	-- spilled out of its button and the next button was cut). Text is 6 px per character.
+	local function wideRows()
+		local create = CreateFrame
+		CreateFrame = function(kind, name, parent, template)
+			local f = create(kind, name, parent, template)
+			if kind == "Button" then
+				function f.GetTextWidth(self)
+					return 6 * #(self.text or "")
+				end
+			end
+			return f
+		end
+		SW.AddPage({ id = "wide", title = "Wide", rows = function()
+			return {
+				{ kind = "choice", label = "Counts", width = 190, tip = "What the row does.", get = function() return "auto" end,
+					choices = { { value = "auto", text = "Shown (not twice with Syndicator)", tip = "The default." },
+						{ value = "on", text = "Always shown" }, { value = "off", text = "Hidden" } },
+					apply = function() return "done" end },
+				{ kind = "note", label = "Below" },
+			}
+		end })
+		SW.Show("wide")
+	end
+
+	local function topLeft(region)
+		local p = region.points[#region.points]
+		return { p[4], p[5] }
+	end
+
+	-- Week 6, D19. Mutations: size every button to the row's width only (no text width); drop the
+	-- out-of-room line break.
+	it("a button is as wide as its text plus padding; one that does not fit starts the next line", function()
+		wideRows()
+		local b1, b2, b3 = button("Shown (not twice with Syndicator)"), button("Always shown"), button("Hidden")
+		assert.equal(6 * 33 + SW.TEXT_PAD, b1.w, "the long text fits its button")
+		assert.equal(190, b2.w, "never narrower than the row's width")
+		assert.same({ 12, -22 }, topLeft(b1))
+		assert.same({ 12 + b1.w + 4, -22 }, topLeft(b2))
+		assert.same({ 12, -22 - SW.ROW - SW.LINE_GAP }, topLeft(b3), "out of room: the next line")
+		assert.same({ 4, -22 - SW.ROW - SW.LINE_GAP - SW.ROW - SW.GAP }, topLeft(SW.labels[2]),
+			"the row grew: the note below moved down")
+		assert.truthy(b2.w + topLeft(b2)[1] <= SW.child:GetWidth(), "nothing runs past the page")
+	end)
+
+	-- Week 6, D18. Mutations: in ShowTip, skip the item's own tip; in OnLeave, always Hide.
+	it("a row's tip shows on its buttons with the button's own tip after it; leaving hides it", function()
+		wideRows()
+		local lines = {}
+		GameTooltip = Fake.New("GameTooltip")
+		function GameTooltip.SetText(_, t) lines[#lines + 1] = t end
+		function GameTooltip.AddLine(_, t) lines[#lines + 1] = t end
+		function GameTooltip.IsOwned(t, owner) return t.calls.SetOwner ~= nil and t.calls.SetOwner[1] == owner end
+		Fake.Fire(button("Shown (not twice with Syndicator)"), "OnEnter")
+		assert.same({ "Counts", "What the row does.", "The default." }, lines)
+		GameTooltip:Show()
+		Fake.Fire(button("Hidden"), "OnLeave")
+		assert.truthy(GameTooltip.shown, "another button's leave leaves the tooltip alone")
+		Fake.Fire(button("Shown (not twice with Syndicator)"), "OnLeave")
+		assert.falsy(GameTooltip.shown)
+		SW.Show("bags")
+		lines = {}
+		Fake.Fire(button("Categories"), "OnEnter")
+		assert.same({}, lines, "a row without a tip shows none")
+	end)
 end)
 
 describe("Settings window load order", function()

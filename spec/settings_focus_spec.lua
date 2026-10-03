@@ -48,6 +48,29 @@ describe("Settings: focus modes page", function()
 		return SW.selected[rowButton(rowLabel, text)] == true
 	end
 
+	-- Week 6, D18 (S1: the page was not understood). Mutations: drop the intro row; drop the tip of
+	-- the style row (or of any other row with buttons).
+	it("starts with a plain-words intro, and every row with buttons explains itself on hover", function()
+		local all = SW.byId.focus.rows()
+		assert.same({ kind = "note", label = L.SET_FOCUS_INTRO }, all[1])
+		assert.equal(L.SET_FOCUS_INTRO, SW.labels[1].text)
+		for _, row in ipairs(all) do
+			if row.choices or row.actions then
+				assert.truthy(type(row.tip) == "string" and row.tip ~= "", "no tip on " .. row.label)
+			end
+		end
+		local lines = {}
+		GameTooltip = { SetOwner = function() end, SetText = function(_, t) lines[#lines + 1] = t end,
+			AddLine = function(_, t) lines[#lines + 1] = t end, Show = function() end }
+		Fake.Fire(rowButton(L.SET_FOCUS_STYLE, L.SET_FOCUS_STYLE_COLLAPSE), "OnEnter")
+		Fake.Fire(rowButton(L.SET_MODE_LABEL:format("Fishing"), L.SET_ON), "OnEnter")
+		Fake.Fire(rowButton("Junk", L.SET_SECTION_OPEN), "OnEnter")
+		assert.same({ L.SET_FOCUS_STYLE, L.SET_FOCUS_STYLE_TIP,
+			L.SET_MODE_LABEL:format("Fishing"), "On: this mode switches on by itself while you fish. Off: it never does;"
+				.. " the other modes still work.",
+			"Junk", L.SET_SECTION_TIP:format("M+") }, lines)
+	end)
+
 	it("AC8.1 and P1: the defaults are selected, each with its alternative next to it", function()
 		assert.truthy(selected(L.SET_FOCUS_AUTO, L.SET_FOCUS_AUTO_ON))
 		assert.truthy(selected(L.SET_FOCUS_RESOLVE, L.SET_FOCUS_MERGE))
@@ -164,8 +187,8 @@ describe("Settings: focus modes page", function()
 		assert.truthy(labels[L.SET_THIS_CHARACTER:format(L.SET_SECTIONS_OF:format("M+"))])
 		assert.truthy(labels[L.SET_THIS_CHARACTER:format(L.SET_MODE_LABEL:format("Raid"))])
 		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_ACCOUNT)
-		assert.truthy(SW.byId.focus.rows()[1].label == L.SET_FOCUS_AUTO)
-		assert.falsy(SW.byId.focus.rows()[7].label:find("this character", 1, true), "row 7: the first mode")
+		assert.truthy(SW.byId.focus.rows()[2].label == L.SET_FOCUS_AUTO, "row 1 is the intro (week 6)")
+		assert.falsy(SW.byId.focus.rows()[8].label:find("this character", 1, true), "row 8: the first mode")
 	end)
 
 	it("the scope row shows This character when only one focus path is overridden", function()
