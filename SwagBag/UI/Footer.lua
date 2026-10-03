@@ -1,6 +1,8 @@
 -- SwagBag footer (ruling W4-14): a bar along the bottom of the bags window. Entries, left to right
 -- in the user's order (setting bags.footer.entries; /swagbag footer; Settings > Footer):
---   gold        the character's gold
+--   gold        the character's gold: a gold coin as big as the currency icons and the whole gold
+--               pieces, with thousands separators ("1,234,567"); silver and copper are in its tooltip
+--               (week 6, D22)
 --   currencies  the currencies ticked "Show on backpack" in Blizzard's Currency tab
 --   crests      every crest currency the character owns (none owned: nothing shows)
 --   keystone    the keystone in the bags: dungeon short name and level ("AKCE +12")
@@ -19,6 +21,7 @@
 --   Footer.Move(id, delta) -> ok, why   delta -1 = left, +1 = right; why: "unknown" | "edge" | "readonly"
 --   Footer.Position(id) -> n            the entry's place in the order
 --   Footer.Items() -> { { entry, text, icon, tip } }  what to draw, in order (reads the game)
+--   Footer.GoldText(copper) -> text     pure: the whole gold pieces with thousands separators
 --   Footer.Flow(widths, maxWidth) -> places, rows      pure: places[i] = { x, row }
 --   Footer.Layout(width) -> height      place the items for a window this wide (0: nothing to show)
 --   Footer.Refresh()                    re-read, re-place, and resize the window if the height changed
@@ -28,7 +31,8 @@ local L = SB.L
 local Guard = SB.ErrorTrap.Guard
 local F = { IDS = { "gold", "currencies", "crests", "keystone", "free" }, items = {}, widgets = {}, used = 0,
 	height = 0, places = {}, widths = {}, dirty = true,
-	ROW = 16, ROW_GAP = 2, GAP = 12, ICON = 14, PAD = 2, INSET = 4, DELAY = 0.1 }
+	ROW = 16, ROW_GAP = 2, GAP = 12, ICON = 14, PAD = 2, INSET = 4, DELAY = 0.1,
+	GOLD_ICON = "Interface\\MoneyFrame\\UI-GoldIcon" } -- the gold coin texture file (a plain path)
 SB.Footer = F
 
 local PATH = "bags.footer.entries"
@@ -200,6 +204,15 @@ function F.FreeCounts()
 	return n
 end
 
+function F.GoldText(copper)
+	local text = tostring(math.floor(copper / 10000))
+	local grouped
+	repeat
+		text, grouped = text:gsub("^(%d+)(%d%d%d)", "%1,%2")
+	until grouped == 0
+	return text
+end
+
 function F.Items()
 	local A, out, shown = SB.Adapter, {}, {}
 	local function add(entry, text, icon, tip)
@@ -222,7 +235,7 @@ function F.Items()
 				F.lastMoney = copper
 			end
 			if F.lastMoney then
-				add("gold", A.MoneyText(F.lastMoney), nil, { kind = "money" })
+				add("gold", F.GoldText(F.lastMoney), F.GOLD_ICON, { kind = "money", copper = F.lastMoney })
 			end
 		elseif e.on and e.id == "currencies" then
 			currencies("currencies", A.BackpackCurrencies())
@@ -298,7 +311,7 @@ function F.Tooltip(owner, item)
 		end
 	elseif tip.kind == "money" then
 		T:SetText(L.FOOTER_GOLD)
-		T:AddLine(item.text, 1, 1, 1)
+		T:AddLine(SB.Adapter.MoneyText(tip.copper), 1, 1, 1) -- gold, silver and copper, with the client's coins
 	else
 		T:SetText(L.FOOTER_FREE_TITLE)
 		T:AddLine(L.FOOTER_FREE_BAGS:format(tip.counts.any), 1, 1, 1)

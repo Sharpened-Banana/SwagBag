@@ -37,6 +37,43 @@ describe("Snapshots (spec 8.3 format, 5.7 timing, 8.4 budget)", function()
 		assert.same({ size = 4, s = "1:item:1;5\n3:" .. PET .. ";1\n" }, c)
 	end)
 
+	-- Week 6, D21. Mutation: in Serialize, always write the link (no "=slot" for a repeat).
+	it("a link repeated in one container is written once; later slots point back to it", function()
+		local herb = "|cffffffff|Hitem:210796::::::::80:253::::1:28:2462:::::|h[Mycobloom]|h|r"
+		local slots = { [1] = { link = herb, count = 200 }, [2] = { link = PET, count = 1 }, [4] = { link = herb, count = 200 },
+			[7] = { link = herb, count = 13 } }
+		local c = Snap.Serialize(slots, 8)
+		assert.equal("1:" .. herb .. ";200\n2:" .. PET .. ";1\n4:=1;200\n7:=1;13\n", c.s)
+		assert.same(slots, Snap.Deserialize(c))
+		local plain = 0
+		for _, s in pairs(slots) do
+			plain = plain + #s.link
+		end
+		assert.truthy(#c.s < plain, "smaller than writing every link out")
+		assert.same({ [2] = { link = PET, count = 1 } }, Snap.Deserialize({ s = "3:=9;5\n2:" .. PET .. ";1\n" }),
+			"a pointer to a slot with no link is skipped")
+	end)
+
+	-- Week 6, D21: the schema stays 2 and old snapshots read as before. Mutation: Deserialize reads
+	-- only "=slot" lines' links (drops the plain-link branch).
+	it("a snapshot written by 0.5.0 (every link written out) reads exactly as before", function()
+		local old = { size = 4, s = "1:" .. KEY .. ";1\n2:item:1;5\n3:item:1;5\n" }
+		assert.same({ [1] = { link = KEY, count = 1 }, [2] = { link = "item:1", count = 5 }, [3] = { link = "item:1", count = 5 } },
+			Snap.Deserialize(old))
+	end)
+
+	-- Week 6, D21. Mutation: BytesByKind adds the bank snapshots into bags.
+	it("BytesByKind splits the saved size into bags, banks, warband and guild banks", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.Advance(0.3)
+		Snap.SaveGuild("Tidewatch-Argent Dawn", { [2] = { name = "Gear", slots = { [5] = { link = "item:1", count = 1 } } } })
+		SB.eventFrame:Fire("PLAYER_LOGOUT")
+		local k = Snap.BytesByKind()
+		assert.truthy(k.bags > 0 and k.bank > 0 and k.warband > 0 and k.guild > 0)
+		assert.equal(Snap.Bytes(), k.bags + k.bank + k.warband + k.guild)
+	end)
+
 	it("round-trips caged pets, keystones and a link that contains a semicolon", function()
 		local odd = "|Hitem:1|h[Odd;Name]|h"
 		local slots = { [2] = { link = PET, count = 1 }, [5] = { link = KEY, count = 1 }, [9] = { link = odd, count = 20 } }

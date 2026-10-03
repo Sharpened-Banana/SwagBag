@@ -431,6 +431,43 @@ describe("BankWindow contents", function()
 		assert.same({ "c_herbs" }, SB.BagsWindow.dropped)
 	end)
 
+	-- Week 6, D20. Mutation: describe reads the slot again for the record (Items.Describe(bag, slot)).
+	it("a bank layout reads each slot once, for the button and the record", function()
+		openBank()
+		local get, reads = A.GetSlot, {}
+		A.GetSlot = function(bag, slot)
+			local k = bag * 1000 + slot
+			reads[k] = (reads[k] or 0) + 1
+			return get(bag, slot)
+		end
+		BW.Layout("reflow")
+		local n = 0
+		for k, times in pairs(reads) do
+			n = n + 1
+			assert.equal(1, times, "slot " .. k)
+		end
+		assert.equal(16, n, "both groups' 8 slots")
+		assert.equal(5, BW.view.Record(6, 1).count, "the record still has the item")
+	end)
+
+	-- Week 6, D20: /swagbag report shows where the bank layout's time goes. Mutation: drop
+	-- `v.stats.phases = b.ms` in GroupView's commit.
+	it("a bank layout records its parts: tabs, reading, categories, positions, drawing", function()
+		local ms = 0
+		A.ProfileMs = function()
+			ms = ms + 1 -- every reading of the clock is 1 ms later
+			return ms
+		end
+		openBank()
+		local p = BW.view.stats.phases
+		local sum = 0
+		for _, part in ipairs({ "groups", "read", "categories", "positions", "drawing" }) do
+			assert.truthy(type(p[part]) == "number" and p[part] > 0, part)
+			sum = sum + p[part]
+		end
+		assert.truthy(sum <= BW.view.stats.lastLayoutMs, "the parts fit inside the whole")
+	end)
+
 	it("the first visit to a full bank (1,078 slots) is laid out within 80 ms (spec 9)", function()
 		Big.Install(A)
 		local t0 = os.clock()

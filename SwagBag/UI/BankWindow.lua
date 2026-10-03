@@ -298,14 +298,15 @@ local function bagsOf(kind)
 end
 
 -- Paint the slot's button and return its item record (nil for an empty slot). A pending item
--- has no slot icon yet; placeholders still need one.
+-- has no slot icon yet; placeholders still need one. The slot is read once, for both (D20).
 local function describe(bag, slot)
 	local A, B = SB.Adapter, SB.Buttons
+	local s = A.GetSlot(bag, slot)
 	local button = B.Get(bag, slot)
 	if button then
-		B.Paint(button, A.GetSlot(bag, slot))
+		B.Paint(button, s)
 	end
-	local record = SB.Items.Describe(bag, slot)
+	local record = SB.Items.Describe(bag, slot, s or false)
 	if record and not record.icon then
 		record.icon = (A.GetItemInstant(record.itemID) or {}).icon
 	end
@@ -598,8 +599,9 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 			local old = v.Record(c.bag, c.slot)
 			touched = true
 			if not Inv.Has(c.reasons, Inv.R.ITEM) then
-				B.Paint(button, A.GetSlot(c.bag, c.slot))
-				local fresh = SB.Items.Describe(c.bag, c.slot)
+				local s = A.GetSlot(c.bag, c.slot)
+				B.Paint(button, s)
+				local fresh = SB.Items.Describe(c.bag, c.slot, s or false)
 				if old and fresh and fresh.itemID == old.itemID then
 					fresh.icon = fresh.icon or old.icon
 					v.SetRecord(c.bag, c.slot, fresh)

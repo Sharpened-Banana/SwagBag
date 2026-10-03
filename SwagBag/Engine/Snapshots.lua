@@ -3,7 +3,9 @@
 -- /swagbag snapshot and /swagbag report.
 -- Format (spec 8.3): snapshot = { v = 1, at = epoch, containers = { [bag] = { size, s } } },
 -- one string per container of "slot:link;count\n" lines in slot order, full links verbatim
--- (caged pets, keystones and bonus IDs round-trip), no derived values.
+-- (caged pets, keystones and bonus IDs round-trip), no derived values. Week 6 (D21): a link that
+-- an earlier slot of the same container already has is written "slot:=thatSlot;count" (a stack of
+-- the same item written once); Deserialize reads both forms, so every older snapshot reads as before.
 -- Where they live (spec 8.2): SwagBagDB.chars["Name-Realm"] = { class, level, lastSeen, guild,
 -- bags, bank }, SwagBagDB.warband (one for the account), SwagBagDB.guilds["Guild-Realm"] =
 -- { lastSeen, tabs = { [tab] = name }, snapshot }. guild: the character's guild key when last seen
@@ -40,17 +42,22 @@ SB.Snapshots = Snap
 ---------------------------------------------------------------------------
 -- slots[slot] = { link, count } (nil = empty) for slots 1..size.
 function Snap.Serialize(slots, size)
-	local parts = {}
+	local parts, first = {}, {}
 	for slot = 1, size do
 		local s = slots[slot]
 		if s and s.link then
-			parts[#parts + 1] = slot .. ":" .. s.link .. ";" .. (s.count or 1) .. "\n"
+			local ref = first[s.link]
+			if not ref then
+				first[s.link] = slot
+			end
+			parts[#parts + 1] = slot .. ":" .. (ref and ("=" .. ref) or s.link) .. ";" .. (s.count or 1) .. "\n"
 		end
 	end
 	return { size = size, s = table.concat(parts) }
 end
 
--- The inverse: slots[slot] = { link, count }. A damaged line is skipped.
+-- The inverse: slots[slot] = { link, count }. A damaged line, or a "=slot" whose slot has no
+-- link above it, is skipped.
 function Snap.Deserialize(container)
 	local slots = {}
 	if type(container) ~= "table" or type(container.s) ~= "string" then
@@ -58,7 +65,12 @@ function Snap.Deserialize(container)
 	end
 	for line in container.s:gmatch("[^\n]+") do
 		local slot, link, count = line:match("^(%d+):(.*);(%d+)$")
-		if slot then
+		local ref = link and link:match("^=(%d+)$")
+		if ref then
+			local earlier = slots[tonumber(ref)]
+			link = earlier and earlier.link
+		end
+		if slot and link then
 			slots[tonumber(slot)] = { link = link, count = tonumber(count) }
 		end
 	end
@@ -229,21 +241,29 @@ local function snapshotBytes(snap)
 	return n
 end
 
--- Approximate saved size of every snapshot (strings plus a small per-container overhead).
-function Snap.Bytes()
+-- Approximate saved size of every snapshot (strings plus a small per-container overhead), split by
+-- kind (week 6, D21: /swagbag report): { bags, bank, warband, guild } in bytes.
+function Snap.BytesByKind()
 	local db = Snap.DB()
-	local n = snapshotBytes(db.warband)
+	local out = { bags = 0, bank = 0, warband = snapshotBytes(db.warband), guild = 0 }
 	for _, c in pairs(db.chars) do
 		if type(c) == "table" then
-			n = n + snapshotBytes(c.bags) + snapshotBytes(c.bank)
+			out.bags = out.bags + snapshotBytes(c.bags)
+			out.bank = out.bank + snapshotBytes(c.bank)
 		end
 	end
 	for _, g in pairs(db.guilds) do
 		if type(g) == "table" then
-			n = n + snapshotBytes(g.snapshot)
+			out.guild = out.guild + snapshotBytes(g.snapshot)
 		end
 	end
-	return n
+	return out
+end
+
+-- The total of BytesByKind (one traversal).
+function Snap.Bytes()
+	local k = Snap.BytesByKind()
+	return k.bags + k.bank + k.warband + k.guild
 end
 
 -- Over the hard cap: drop other characters' bank snapshots, seen longest ago first (ties: name

@@ -210,6 +210,7 @@ L.DEPOSIT_REAGENTS_FAILED = "The reagents choice did not change: use Blizzard's 
 L.BANK_VIEW_GRID = "SwagBag bank - grid view"
 L.BANK_VIEW_SECTIONS = "SwagBag bank - category view"
 L.REPORT_BANK_LAYOUT = "Last bank layout: %.1f ms (%s)"
+L.REPORT_BANK_PHASES = "Bank layout parts: tabs %.1f ms, reading %.1f ms, categories %.1f ms, positions %.1f ms, drawing %.1f ms"
 
 -- Guild bank window (spec F16)
 L.GUILD_TITLE = "SwagBag guild bank"
@@ -259,6 +260,7 @@ L.AGE_MINUTES = "%d min ago"
 L.AGE_HOURS = "%d h ago"
 L.AGE_DAYS = "%d days ago"
 L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
+L.REPORT_SNAPSHOT_KINDS = "Snapshot sizes: bags %.1f KB, banks %.1f KB, warband %.1f KB, guild banks %.1f KB"
 
 -- Prices (spec F10)
 L.MONEY_GOLD = "%sg"

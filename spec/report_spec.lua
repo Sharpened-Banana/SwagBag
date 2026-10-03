@@ -83,6 +83,10 @@ describe("Report", function()
 			1, true))
 		SB.BankWindow.view = { stats = { lastLayoutMs = 61.27, lastLayoutReason = "open" } }
 		assert.truthy(SB.Report.Build():find("\nLast bank layout: 61.3 ms (open)", 1, true), "spec 9: first bank open")
+		-- Week 6, D20. Mutation: drop the REPORT_BANK_PHASES line.
+		SB.BankWindow.view.stats.phases = { groups = 0.5, read = 40.04, categories = 12.3, positions = 6.1, drawing = 2 }
+		assert.truthy(SB.Report.Build():find("\nBank layout parts: tabs 0.5 ms, reading 40.0 ms, categories 12.3 ms,"
+			.. " positions 6.1 ms, drawing 2.0 ms", 1, true))
 	end)
 
 	it("shows the guild bank setting and the last visit (check G1)", function()
@@ -95,6 +99,10 @@ describe("Report", function()
 		SB.Checks.last = {}
 		SB.Snapshots = { Count = function() return 3, 1 end, Bytes = function() return 40 * 1024 end }
 		assert.truthy(SB.Report.Build():find("\nSnapshots: 3 characters, 1 guilds, 40 KB", 1, true))
+		-- Week 6, D21. Mutation: drop the REPORT_SNAPSHOT_KINDS line.
+		SB.Snapshots.BytesByKind = function() return { bags = 9216, bank = 20480, warband = 10240, guild = 512 } end
+		assert.truthy(SB.Report.Build():find("\nSnapshot sizes: bags 9.0 KB, banks 20.0 KB, warband 10.0 KB,"
+			.. " guild banks 0.5 KB", 1, true))
 	end)
 
 	it("shows which price source answers and how many prices are cached (F10)", function()
