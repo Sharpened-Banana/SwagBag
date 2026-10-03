@@ -662,6 +662,17 @@ function M.AddContainers(m)
 		return m.guildRepair
 	end
 
+	-- Section actions (week 7): m.shift (Shift held); m.notAllowed[kind][itemID] = true (that bank refuses it).
+	m.shift, m.notAllowed = false, { bank = {}, warband = {} }
+	function m.ShiftDown()
+		return m.shift == true
+	end
+
+	function m.AllowedInBank(bag, slot, kind)
+		local s = m.slots[bag] and m.slots[bag][slot]
+		return not (s and m.notAllowed[kind][s.itemID])
+	end
+
 	-- The vendor's buyback tab: m.buyback = { link, ... } (week 7, the locked-item warning).
 	m.buyback = {}
 	function m.BuybackLinks()
