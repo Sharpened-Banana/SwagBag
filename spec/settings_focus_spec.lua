@@ -66,8 +66,7 @@ describe("Settings: focus modes page", function()
 		Fake.Fire(rowButton(L.SET_MODE_LABEL:format("Fishing"), L.SET_ON), "OnEnter")
 		Fake.Fire(rowButton("Junk", L.SET_SECTION_OPEN), "OnEnter")
 		assert.same({ L.SET_FOCUS_STYLE, L.SET_FOCUS_STYLE_TIP,
-			L.SET_MODE_LABEL:format("Fishing"), "On: this mode switches on by itself while you fish. Off: it never does;"
-				.. " the other modes still work.",
+			L.SET_MODE_LABEL:format("Fishing"), L.SET_MODE_TIP:format(L.SET_MODE_WHEN_FISHING),
 			"Junk", L.SET_SECTION_TIP:format("M+") }, lines)
 	end)
 

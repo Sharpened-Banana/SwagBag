@@ -497,6 +497,7 @@ function BW.DepositWarband()
 		BW.Flash(L.DEPOSIT_AFTER_COMBAT)
 		return false
 	end
+	BW.RefreshReagents() -- the game's setting may have changed since the box was drawn: show what is used
 	local usable, why = A.WarbandDepositState()
 	if not usable then
 		BW.Flash(why == "locked" and L.DEPOSIT_LOCKED or L.DEPOSIT_UNAVAILABLE)

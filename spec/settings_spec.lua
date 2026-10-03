@@ -181,6 +181,16 @@ describe("Settings window", function()
 		assert.same({ "overlays ilvl off", "overlays pawn on" }, ran)
 	end)
 
+	-- P1: the default is the first choice. Mutation: build the bind row with onOff (On first) again.
+	it("overlays page: Show BoE/WuE is Off first (its default); the others stay On first", function()
+		SW.Show("overlays")
+		local list = buttons()
+		assert.equal("On", list[1][1])
+		assert.same({ "Off", true }, list[11], "default Off: listed first and selected")
+		assert.same({ "On", false }, list[12])
+		click("Pawn")
+	end)
+
 	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
 	it("an error in a change is recorded without Safe Mode, and the status line says so", function()
 		SW.Show("bags")

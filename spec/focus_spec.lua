@@ -525,6 +525,23 @@ describe("Focus front style (week 6)", function()
 		assert.equal("collapse", F.Style())
 	end)
 
+	-- Mutation: drop the `Focus.overrides = {}` in Refresh's style check (peeks resurrect on collapse again).
+	it("a style change drops the peeks and pins: collapse -> front -> collapse in one mode starts clean", function()
+		assert.truthy(F.SetStyle("collapse"))
+		F.SetSignal("challengeMode", true)
+		assert.equal("peek", F.HeaderClick("c_junk", true))
+		assert.equal("pin", F.Pin("c_gear"))
+		assert.truthy(F.SetStyle("front"))
+		assert.truthy(F.SetStyle("collapse"))
+		assert.is_nil(F.OverrideOf("c_junk"))
+		assert.is_nil(F.OverrideOf("c_gear"))
+		assert.equal(true, F.CollapsedView({})["c_junk"], "c_junk is collapsed by the mode again")
+		-- a setting that is not the style keeps them
+		assert.equal("peek", F.HeaderClick("c_junk", true))
+		SB.Config.Set("focus.peek", "keep")
+		assert.equal("peek", F.OverrideOf("c_junk"))
+	end)
+
 	-- P2: every form answers. Mutation: styleCommand returns nil for a word it does not know.
 	it("/swagbag mode style answers every form: the style now, a switch, a wrong word, read-only", function()
 		local L = SB.L
