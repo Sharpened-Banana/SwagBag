@@ -23,6 +23,8 @@
 --   v.ForEachSlot(fn)                   fn(button, record, bag, slot) for every slot (search)
 --   v.Record(bag, slot), v.SetRecord(bag, slot, record), v.GroupOf(bag), v.Size(bag), v.IsOpen()
 --   v.Clear()                           window closed: hide the buttons, forget the layout
+--   v.stats = { lastLayoutMs, lastLayoutReason, phases = { groups, read, categories, positions,
+--     drawing } }   the last full layout's time, and where it went (ms; week 6, D20: /swagbag report)
 -- cfg = { key = "bank" | "guild", window = ErrorTrap window (default "bank"), child, scroll,
 --   button(bag, slot) -> button | nil;  describe(bag, slot) -> record | nil (paints the button),
 --   groups() -> { { id, bags = { { bag, size } } } } in display order,
@@ -367,13 +369,20 @@ function GV.New(cfg)
 	-- Full layout
 	---------------------------------------------------------------------------
 	-- Read every slot into a fresh candidate (groups, records, sizes); nothing is drawn.
+	-- b.ms: where the time went (the groups and their buttons, reading the slots, the categories).
 	local function build()
-		local b = { groups = {}, byId = {}, records = {}, sizes = {}, groupOf = {} }
+		local A = SB.Adapter
+		local b = { groups = {}, byId = {}, records = {}, sizes = {}, groupOf = {},
+			ms = { groups = 0, read = 0, categories = 0, positions = 0, drawing = 0 } }
 		local sections = cfg.view() ~= "grid"
 		local order = sections and SB.Categories.SectionOrder() or nil
-		for _, def in ipairs(cfg.groups()) do
+		local t = A.ProfileMs()
+		local defs = cfg.groups()
+		b.ms.groups = A.ProfileMs() - t
+		for _, def in ipairs(defs) do
 			local g = { id = def.id, bags = def.bags }
 			local slots = {}
+			t = A.ProfileMs()
 			for _, bag in ipairs(def.bags) do
 				b.sizes[bag.bag], b.groupOf[bag.bag] = bag.size, def.id
 				for slot = 1, bag.size do
@@ -384,10 +393,13 @@ function GV.New(cfg)
 					end
 				end
 			end
+			b.ms.read = b.ms.read + A.ProfileMs() - t
 			if sections then
+				t = A.ProfileMs()
 				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order, { columns = cfg.columns(),
 					newRows = cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile() or nil,
 					family = SB.Adapter.BagFamily, hideEmptyNew = cfg.hideEmptyNew })
+				b.ms.categories = b.ms.categories + A.ProfileMs() - t
 			end
 			b.groups[#b.groups + 1] = g
 			b.byId[g.id] = g
@@ -395,8 +407,17 @@ function GV.New(cfg)
 		return b
 	end
 
+	-- A candidate's positions, timed (b.ms.positions).
+	local function positionTimed(b)
+		local t = SB.Adapter.ProfileMs()
+		local pos = positionAll(b.groups, b.records)
+		b.ms.positions = SB.Adapter.ProfileMs() - t
+		return pos
+	end
+
 	-- Make a candidate the view's layout and draw it at pos.
 	local function commit(b, pos, reason, t0)
+		local t1 = SB.Adapter.ProfileMs()
 		local old = v.pos
 		v.groups, v.byId, v.records, v.sizes, v.groupOf, v.redrawPending = b.groups, b.byId, b.records, b.sizes,
 			b.groupOf, false
@@ -406,15 +427,18 @@ function GV.New(cfg)
 		end
 		render(pos)
 		cfg.onResize(pos.width, pos.height, reason ~= "open")
-		v.stats.lastLayoutMs = SB.Adapter.ProfileMs() - t0
+		local now = SB.Adapter.ProfileMs()
+		v.stats.lastLayoutMs = now - t0
 		v.stats.lastLayoutReason = reason
+		b.ms.drawing = now - t1
+		v.stats.phases = b.ms
 		return pos.width, pos.height
 	end
 
 	function v.Layout(reason)
 		local t0 = SB.Adapter.ProfileMs()
 		local b = build()
-		return commit(b, positionAll(b.groups, b.records), reason, t0)
+		return commit(b, positionTimed(b), reason, t0)
 	end
 
 	-- A full layout while open (Reflow, sort, view toggle, a tab's first answer): held back,
@@ -437,7 +461,7 @@ function GV.New(cfg)
 		local b, pos
 		if not held then
 			b = build()
-			pos = positionAll(b.groups, b.records)
+			pos = positionTimed(b)
 			v.heldKey = nil
 			for _, k in ipairs(SB.Layout.Moves(v.pos, pos)) do
 				if busy(math.floor(k / 1000), k % 1000) then

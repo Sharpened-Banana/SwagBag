@@ -62,7 +62,7 @@ describe("Footer (ruling W4-14)", function()
 		assert.same({ { id = "gold", on = true }, { id = "currencies", on = true }, { id = "crests", on = true },
 			{ id = "keystone", on = true }, { id = "free", on = true } }, F.Entries())
 		F.Refresh()
-		assert.same({ "123g", "500", "45", "AKCE +12", "10 free" }, texts())
+		assert.same({ "123", "500", "45", "AKCE +12", "10 free" }, texts(), "gold: the whole gold pieces (week 6)")
 		assert.equal(1, resized, "the window fits the new footer")
 	end)
 
@@ -70,7 +70,7 @@ describe("Footer (ruling W4-14)", function()
 	it("crests come from the season's confirmed currency IDs when Engine/Crests.lua has them", function()
 		SB.Crests.currencies = { 2815 }
 		F.Refresh()
-		assert.same({ "123g", "500", "900", "AKCE +12", "10 free" }, texts())
+		assert.same({ "123", "500", "900", "AKCE +12", "10 free" }, texts())
 	end)
 
 	-- Mutation: in Footer.Flow, `if x > 0 and x + w > maxWidth then` → `if false then`.
@@ -106,7 +106,7 @@ describe("Footer (ruling W4-14)", function()
 			"Footer: Crests is now off.", "Footer: Free slots is now number 4.",
 			"Footer: Gold cannot move further that way.", SB.L.FOOTER_USAGE }, A.Lines())
 		assert.equal("gold,currencies,-crests,free,keystone", SB.Config.Get("bags.footer.entries"))
-		assert.same({ "123g", "500", "10 free", "AKCE +12" }, texts())
+		assert.same({ "123", "500", "10 free", "AKCE +12" }, texts())
 	end)
 
 	-- Mutation: in Footer's save(), ignore SB.Config.Set's result (`SB.Config.Set(...) return true`).
@@ -145,7 +145,7 @@ describe("Footer (ruling W4-14)", function()
 		A.backpack = { { id = 3056, name = "Kej", quantity = 500, icon = 1 },
 			{ id = 3107, name = "Weathered Ethereal Crest", quantity = 45, icon = 2 } }
 		F.Refresh()
-		assert.same({ "123g", "500", "45", "AKCE +12", "10 free" }, texts())
+		assert.same({ "123", "500", "45", "AKCE +12", "10 free" }, texts())
 		assert.equal("currencies", F.items[3].entry)
 		for _, item in ipairs(F.items) do
 			assert.truthy(item.entry ~= "crests", "no crest entry")
@@ -182,10 +182,32 @@ describe("Footer (ruling W4-14)", function()
 		assert.same({ "500", "45", "AKCE +12", "10 free" }, texts(), "nothing known yet: no gold entry")
 		A.money = 1234567
 		F.Refresh()
-		assert.equal("123g", texts()[1])
+		assert.equal("123", texts()[1])
 		A.money = nil
 		F.Refresh()
-		assert.equal("123g", texts()[1], "the last known amount")
+		assert.equal("123", texts()[1], "the last known amount")
+	end)
+
+	-- Week 6, D22 (FT1, O1: the gold needs a proper coin). Mutations: add the gold entry with no
+	-- icon; in GoldText, drop the separator loop; the money tooltip shows item.text (gold only).
+	it("gold: a full-size coin, the whole gold with thousands separators; silver and copper in its tooltip", function()
+		A.money = 12345678901 -- 1,234,567 gold 89 silver 1 copper
+		local asked
+		A.MoneyText = function(copper)
+			asked = copper
+			return "1,234,567g 89s 1c"
+		end
+		F.Refresh()
+		assert.equal("1,234,567", F.items[1].text)
+		assert.equal(F.GOLD_ICON, F.items[1].icon)
+		assert.truthy(F.widgets[1].icon.shown)
+		assert.equal(F.widgets[2].icon.w, F.widgets[1].icon.w, "the coin is as big as the currency icons")
+		Fake.Fire(F.widgets[1], "OnEnter")
+		assert.equal(SB.L.FOOTER_GOLD, GameTooltip.text)
+		assert.same({ "1,234,567g 89s 1c", 1, 1, 1 }, GameTooltip.calls.AddLine)
+		assert.equal(12345678901, asked, "the full amount, silver and copper too")
+		assert.same({ "0", "0", "1", "999", "1,000", "10,000,000" }, { F.GoldText(0), F.GoldText(9999), F.GoldText(10000),
+			F.GoldText(9990000), F.GoldText(10000000), F.GoldText(100000000000) })
 	end)
 
 	-- M2. Mutation: delete the SB_BAGS_CLOSED handler in Footer.lua.

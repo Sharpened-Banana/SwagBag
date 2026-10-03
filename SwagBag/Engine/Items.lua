@@ -1,7 +1,8 @@
 -- SwagBag Items: one "item record" per occupied slot. The record is the ONLY
 -- input the query engine sees (Engine/Keywords.lua reads these fields).
 --
--- Items.Describe(bag, slot) -> record, or nil + "empty"
+-- Items.Describe(bag, slot[, s]) -> record, or nil + "empty". s: the slot as the caller already read
+--   it with Adapter.GetSlot (false: read as empty), so the slot is not read twice (week 6, D20)
 -- record = {
 --   bag, slot, itemID, link, count, icon,
 --   name            string | nil (nil while the item is still loading)
@@ -24,9 +25,11 @@ local _, SB = ...
 local Items = {}
 SB.Items = Items
 
-function Items.Describe(bag, slot)
+function Items.Describe(bag, slot, s)
 	local A = SB.Adapter
-	local s = A.GetSlot(bag, slot)
+	if s == nil then
+		s = A.GetSlot(bag, slot)
+	end
 	if not s then
 		return nil, "empty"
 	end

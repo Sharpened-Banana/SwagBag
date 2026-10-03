@@ -116,6 +116,10 @@ function Report.Build()
 		local bankStats = bank.view and bank.view.stats
 		if bankStats and bankStats.lastLayoutMs then -- spec 9: first bank open <= 80 ms
 			lines[#lines + 1] = L.REPORT_BANK_LAYOUT:format(bankStats.lastLayoutMs, tostring(bankStats.lastLayoutReason))
+			local p = bankStats.phases
+			if p then -- week 6 (D20): where the bank layout's time goes
+				lines[#lines + 1] = L.REPORT_BANK_PHASES:format(p.groups, p.read, p.categories, p.positions, p.drawing)
+			end
 		end
 	end
 	if SB.Prices then
@@ -124,6 +128,10 @@ function Report.Build()
 	if SB.Snapshots and SB.Config.db then -- spec 8.4 budgets, check V10
 		local chars, guilds = SB.Snapshots.Count()
 		lines[#lines + 1] = L.REPORT_SNAPSHOTS:format(chars, guilds, math.floor(SB.Snapshots.Bytes() / 1024 + 0.5))
+		if SB.Snapshots.BytesByKind then -- week 6 (D21): where the snapshot bytes are
+			local k = SB.Snapshots.BytesByKind()
+			lines[#lines + 1] = L.REPORT_SNAPSHOT_KINDS:format(k.bags / 1024, k.bank / 1024, k.warband / 1024, k.guild / 1024)
+		end
 	end
 	local F, S = SB.Focus, SB.Signals
 	if F and S and SB.Config.db then -- checks V5-V8: what the signals said, and the spells before loot
