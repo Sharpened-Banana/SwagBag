@@ -112,6 +112,7 @@ describe("Vendor (week 7)", function()
 		assert.same({ "Sold 1 junk item for 37s 2c.", "Repaired everything for 5g 20s 0c." }, A.Lines())
 		A.money = 100
 		A.Put(0, 6, Fixtures.JUNK, 1)
+		A.repairCost = 52000
 		A.printed = {}
 		SB.eventFrame:Fire("MERCHANT_CLOSED")
 		visit()
@@ -123,20 +124,88 @@ describe("Vendor (week 7)", function()
 		assert.same({ "own" }, A.repairs)
 	end)
 
+	-- Review fix 1. Mutation: in repairSafely, call repairNow() at once (no SB.OutOfCombat).
+	it("a sale stopped by combat repairs only after combat, and only if the vendor is still open", function()
+		for slot = 7, 9 do
+			A.Put(0, slot, GRAY, 1)
+		end
+		SB.Inventory.ScanAll()
+		A.repairCost = 52000
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		A.combat = true
+		A.Advance(Mover.DELAY * 5)
+		assert.same({}, A.repairs, "no repair in combat")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.same({ "own" }, A.repairs, "repaired once combat ended")
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		-- the vendor closes while combat holds the repair back
+		A.repairCost = 52000
+		A.Put(0, 6, Fixtures.JUNK, 1)
+		SB.Inventory.ScanAll()
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		A.combat = true
+		A.Advance(Mover.DELAY * 5)
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.combat = false
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.same({ "own" }, A.repairs, "closed vendor: no repair")
+	end)
+
+	-- Review fix 2. Mutation: in V.Repair, `local room = limit < 0 and balance or math.min(limit, balance)` ->
+	-- `local room = limit < 0 and cost or limit`; in repairResult drop the `after > 0` branch.
+	it("guild repair needs the guild bank to hold the cost; the line says whose gold paid; an unfinished repair says so", function()
+		SB.Slash.Dispatch("repair guild")
+		SB.Slash.Dispatch("sell off")
+		local L = SB.L
+		local function run(limit, balance)
+			A.repairCost, A.guildRepair, A.guildBalance, A.repairs, A.printed = 52000, limit, balance, {}, {}
+			SB.eventFrame:Fire("MERCHANT_CLOSED")
+			visit()
+			return A.repairs, A.Lines()
+		end
+		local repairs, lines = run(-1, 100)
+		assert.same({ "own" }, repairs, "no limit but a poor guild bank")
+		assert.same({ L.VENDOR_REPAIRED_OWN_GUILD:format("5g 20s 0c") }, lines)
+		repairs = run(100, 1000000)
+		assert.same({ "own" }, repairs, "the limit is too low")
+		repairs = run(-1, nil)
+		assert.same({ "own" }, repairs, "an unknown balance is no guild money")
+		repairs, lines = run(60000, 70000)
+		assert.same({ "guild" }, repairs)
+		assert.same({ "Repaired everything for 5g 20s 0c from the guild bank." }, lines)
+		A.repairStays = true
+		lines = select(2, run(-1, 1000000))
+		assert.same({ L.VENDOR_REPAIR_UNFINISHED }, lines, "gear still needs repair after the call")
+		A.repairStays = nil
+	end)
+
+	-- Review fix 3. Mutation: in soldLine, drop the `n == 0` early return.
+	it("a run where every item was skipped says nothing", function()
+		local hovered = true
+		SB.BagsWindow = { IsOpen = function() return true end, ButtonBusy = function() return hovered end }
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- the Broken Tooth waits: the mouse rests on it
+		A.slots[0][6].inSet = true -- and is put in a set meanwhile
+		hovered = false
+		A.Advance(Mover.DELAY * 5)
+		assert.same({}, sold())
+		assert.same({}, A.Lines())
+	end)
+
 	-- Mutation: in Vendor.Repair, drop the guild branch.
 	it("Guild bank first: the guild pays when it allows enough (or has no limit), else your gold", function()
 		SB.Slash.Dispatch("repair guild")
 		A.repairCost = 52000
-		A.guildRepair = -1
+		A.guildRepair, A.guildBalance = -1, 1000000
 		SB.Slash.Dispatch("sell off")
 		visit()
-		A.guildRepair = 100 -- not enough today
+		A.guildRepair, A.repairCost = 100, 52000 -- not enough today
 		SB.eventFrame:Fire("MERCHANT_CLOSED")
 		visit()
 		assert.same({ "guild", "own" }, A.repairs)
 		local lines = A.Lines()
 		assert.equal("Repaired everything for 5g 20s 0c from the guild bank.", lines[3])
-		assert.equal("Repaired everything for 5g 20s 0c.", lines[4])
+		assert.equal(SB.L.VENDOR_REPAIRED_OWN_GUILD:format("5g 20s 0c"), lines[4])
 	end)
 
 	-- Mutation: in Vendor.Visit, drop the A.InCombat() branch.

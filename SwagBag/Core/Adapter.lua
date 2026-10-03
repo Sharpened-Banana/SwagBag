@@ -758,6 +758,19 @@ function A.GuildRepairMoney()
 	return copperIf("CanGuildBankRepair", "GetGuildBankWithdrawMoney")
 end
 
+-- Copper in the guild bank (what the guild can actually pay), or nil when the client cannot say or it is secret.
+function A.GuildBankMoney()
+	local fn = _G.GetGuildBankMoney
+	if type(fn) ~= "function" then
+		return nil
+	end
+	local ok, copper = pcall(fn)
+	if not ok or type(copper) ~= "number" or isSecret(copper) then
+		return nil
+	end
+	return copper
+end
+
 ---------------------------------------------------------------------------
 -- Blizzard frames and the bank (week 3). SwagBag only READS Blizzard's bank state
 -- (spec 5.2, 5.3): it never selects a tab or a bank type and never closes the bank.
@@ -1481,6 +1494,7 @@ A.CHECKS = {
 	{ path = "RepairAllItems", window = "bags", required = false },
 	{ path = "CanGuildBankRepair", window = "bags", required = false },
 	{ path = "GetGuildBankWithdrawMoney", window = "bags", required = false },
+	{ path = "GetGuildBankMoney", window = "bags", required = false },
 	{ path = "GetCursorInfo", window = "bags", required = false },
 	{ path = "ClearCursor", window = "bags", required = false },
 	{ path = "GameTooltip", window = "bags", required = false },

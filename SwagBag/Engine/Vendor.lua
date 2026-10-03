@@ -91,13 +91,16 @@ local function soldLine(result, kind, waiting)
 		copper = copper + (it.price or 0) * (it.count or 1)
 	end
 	local junk = kind == "junk"
+	local stop = STOP_LINES[result.why or ""]
+	if n == 0 and not (stop and result.left > 0) and result.kept == 0 and waiting == 0 then
+		return nil -- P2: nothing was sold and there is nothing to add: say nothing
+	end
 	local line
 	if n == 1 then
 		line = (junk and L.VENDOR_SOLD_JUNK_ONE or L.VENDOR_SOLD_ONE):format(V.Money(copper))
 	else
 		line = (junk and L.VENDOR_SOLD_JUNK or L.VENDOR_SOLD):format(n, V.Money(copper))
 	end
-	local stop = STOP_LINES[result.why or ""]
 	if stop and result.left > 0 then
 		line = line .. " " .. L[stop]:format(result.left)
 	elseif result.kept > 0 then
@@ -140,11 +143,27 @@ function V.Sell(list, kind, after, past)
 		return V.open
 	end, done = function(result)
 		V.soldThisVisit = V.soldThisVisit + #result.moved
-		SB.Print(soldLine(result, kind, waiting))
+		local line = soldLine(result, kind, waiting)
+		if line then
+			SB.Print(line)
+		end
 		if after then
 			after(result)
 		end
 	end })
+end
+
+-- After the repair call: read the cost again. 0: it worked; still more than 0: it did not finish; nil: the
+-- client cannot say, so the line claims nothing.
+local function repairResult(cost, paidBy)
+	local after = SB.Adapter.RepairCost()
+	if after == nil then
+		return L.VENDOR_REPAIR_SENT:format(V.Money(cost))
+	elseif after > 0 then
+		return L.VENDOR_REPAIR_UNFINISHED
+	end
+	return (paidBy == "guild" and L.VENDOR_REPAIRED_GUILD or paidBy == "ownAfterGuild" and L.VENDOR_REPAIRED_OWN_GUILD
+		or L.VENDOR_REPAIRED):format(V.Money(cost))
 end
 
 function V.Repair()
@@ -157,10 +176,15 @@ function V.Repair()
 	if not cost or cost <= 0 then
 		return nil
 	end
+	local guildTried = false
 	if mode == "guild" then
-		local funds = A.GuildRepairMoney()
-		if funds and (funds < 0 or funds >= cost) and A.Repair(true) then
-			return L.VENDOR_REPAIRED_GUILD:format(V.Money(cost))
+		guildTried = true
+		local limit, balance = A.GuildRepairMoney(), A.GuildBankMoney()
+		if limit and balance then
+			local room = limit < 0 and balance or math.min(limit, balance)
+			if room >= cost and A.Repair(true) then
+				return repairResult(cost, "guild")
+			end
 		end
 	end
 	local money = A.Money()
@@ -168,7 +192,7 @@ function V.Repair()
 		return L.VENDOR_REPAIR_POOR:format(V.Money(cost))
 	end
 	if A.Repair(false) then
-		return L.VENDOR_REPAIRED:format(V.Money(cost))
+		return repairResult(cost, guildTried and "ownAfterGuild" or "own")
 	end
 	return L.VENDOR_REPAIR_FAILED
 end
@@ -178,6 +202,16 @@ local function repairNow()
 	if line then
 		SB.Print(line)
 	end
+end
+
+-- Repairing never happens in combat: in combat it waits for combat's end (one waiting repair at most) and
+-- only goes ahead if the vendor is still open.
+local function repairSafely()
+	SB.OutOfCombat(function()
+		if V.open then
+			repairNow()
+		end
+	end, "vendor.repair", "none")
 end
 
 -- Is there anything for the visit to do: junk to sell, or gear to repair?
@@ -204,11 +238,11 @@ function V.Visit()
 	end
 	if SB.Config.Get("vendor.autoSell") and not SB.Mover.Busy() then
 		local junk = V.Junk()
-		if #junk > 0 and V.Sell(junk, "junk", repairNow) then
+		if #junk > 0 and V.Sell(junk, "junk", repairSafely) then
 			return
 		end
 	end
-	repairNow()
+	repairSafely()
 end
 
 SB.On("MERCHANT_SHOW", function()
