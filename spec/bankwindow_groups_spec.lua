@@ -99,6 +99,7 @@ describe("BankWindow contents", function()
 	end)
 
 	it("bank items get their overlays (the BoE ring's item level and badge)", function()
+		SB.Config.Set("overlays.bind", true) -- the badge is off by default since week 6
 		openBank()
 		local r = SB.Overlays.regions[B.Get(12, 2)]
 		assert.same({ "285", "BoE" }, { r.topLeft.text, r.bind.text })

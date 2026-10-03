@@ -353,6 +353,7 @@ describe("Alt viewer", function()
 
 	-- Ruling W5-10, the guild case. Mutation: apply the unknown bind to guild records too.
 	it("a BoE item in a saved guild bank stays BoE (never bound there), beside the same ring in the bags", function()
+		SB.Config.Set("overlays.bind", true) -- the badge is off by default since week 6
 		local tab = SB.Snapshots.DB().guilds["Tidewatch-Argent Dawn"].snapshot.containers[1]
 		tab.s = tab.s .. "6:item:225001;1\n"
 		OW.Open("Abby-ArgentDawn")

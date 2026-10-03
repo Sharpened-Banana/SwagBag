@@ -146,6 +146,19 @@ function C.Load()
 				C.display[#C.display + 1] = c
 			end
 		end
+		-- A built-in added in an update (def.after) joins the saved order right after the category it
+		-- follows by default, when that one is placed; otherwise it follows with the rest (week 6).
+		for _, def in ipairs(SB.CategoryDefaults) do
+			if def.after and not placed[def.id] and placed[def.after] and C.byId[def.id] then
+				for i, c in ipairs(C.display) do
+					if c.id == def.after then
+						table.insert(C.display, i + 1, C.byId[def.id])
+						placed[def.id] = true
+						break
+					end
+				end
+			end
+		end
 	end
 	for _, c in ipairs(C.list) do
 		if not placed[c.id] then
