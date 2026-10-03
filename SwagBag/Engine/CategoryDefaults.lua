@@ -20,6 +20,10 @@ SB.CategoryDefaults = {
 	{ id = "c_keystone", name = L.CAT_KEYSTONE, query = "keystone | crest", priority = 95, displayOrder = 10 },
 	{ id = "c_consumables", name = L.CAT_CONSUMABLES, query = "consumable", priority = 65, displayOrder = 20 },
 	{ id = "c_gear", name = L.CAT_GEAR, query = "gear", priority = 70, displayOrder = 30 },
+	-- Week 7 (user pick 1): items in any of the character's equipment sets (the "equipped" keyword,
+	-- Items.inEquipmentSet). Priority 92: above Junk (90), BoE gear (75) and Gear (70), so a set piece
+	-- is never filed as junk or as gear to sell; below Keystone & Crests (95) and Reagents (100).
+	{ id = "c_sets", name = L.CAT_SETS, query = "equipped", priority = 92, displayOrder = 35, after = "c_gear" },
 	{ id = "c_boe", name = L.CAT_BOE, query = "gear & boe", priority = 75, displayOrder = 40 },
 	-- Week 6 (user request 2): gear that is warbound until equipped, next to BoE gear. Above Gear (70)
 	-- so WuE gear lands here; "wue" and "boe" never match the same item (Engine/Keywords.lua).

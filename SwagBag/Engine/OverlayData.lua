@@ -5,7 +5,7 @@
 --     ilvl      number | nil    equippable gear only
 --     track     "H3/6" | nil    upgrade track initial, level / max
 --     keystone  { level, dungeon } | nil   from the keystone link; dungeon = short name
---     junk      boolean         poor quality and a vendor pays for it
+--     junk      boolean         poor quality, a vendor pays for it, and not in an equipment set
 --     bind      "BoE" | "WuE" | nil   bind on equip / warbound until equipped, not yet bound
 --     upgrade   boolean         the arrow (AC9.3, see IsUpgrade) }
 --   ctx = { equipped = { [invSlot] = { ilvl, equipLoc } }, canUse = fn(itemID) -> bool,
@@ -152,7 +152,8 @@ function O.For(record, ctx)
 			out.keystone = { level = tonumber(level), dungeon = O.Short(name) }
 		end
 	end
-	out.junk = record.quality == 0 and not record.hasNoValue
+	-- A gray piece in an equipment set is never marked as junk (week 7: set items are never sellable).
+	out.junk = record.quality == 0 and not record.hasNoValue and not record.inEquipmentSet
 	if not record.isBound then
 		if record.isWUE then
 			out.bind = L.BADGE_WUE

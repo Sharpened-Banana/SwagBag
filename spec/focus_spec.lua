@@ -143,7 +143,7 @@ describe("Focus", function()
 		assert.same({ "new", "c_junk" }, openIds())
 		SB.Config.Reset() -- the defaults again: the "front" style, and M+'s own sections in front
 		assert.falsy(F.Applies(), "front collapses nothing")
-		assert.same({ "c_consumables", "c_keystone", "c_gear" }, F.Front())
+		assert.same({ "c_consumables", "c_keystone", "c_gear", "c_sets" }, F.Front())
 	end)
 
 	it("the collapsed view is read-only", function()
@@ -259,6 +259,25 @@ describe("Focus", function()
 		end
 		assert.equal(6, n)
 		assert.equal(1, withBoe, "only the market mode opens BoE gear")
+	end)
+
+	-- Week 7 (user pick 1): the modes that open Gear also open Equipment sets; the market mode never
+	-- does (a set piece is never for sale). Mutation: drop c_sets from the raid default.
+	it("M+, Raid and Delves open Equipment sets; AH/Vendor/Bank, Gathering and Fishing do not", function()
+		local function has(mode)
+			for _, v in ipairs(F.Sections(mode)) do
+				if v == "c_sets" then
+					return true
+				end
+			end
+			return false
+		end
+		for _, mode in ipairs({ "mplus", "raid", "delves" }) do
+			assert.truthy(has(mode), mode)
+		end
+		for _, mode in ipairs({ "market", "gathering", "fishing" }) do
+			assert.falsy(has(mode), mode)
+		end
 	end)
 
 	-- Mutation: make deciding() always return the strongest mode (strict) even under merge.
@@ -391,7 +410,7 @@ describe("Focus", function()
 		assert.same({ "settings" }, events)
 		assert.truthy(F.ResetSections("mplus"))
 		assert.is_nil(SB.Config.db.settings.focus.sections.mplus)
-		assert.same({ "c_consumables", "c_keystone", "c_gear" }, F.Sections("mplus"))
+		assert.same({ "c_consumables", "c_keystone", "c_gear", "c_sets" }, F.Sections("mplus"))
 	end)
 
 	-- Mutation: in ResetSections, always Set(path, nil) (that removes the character override).
@@ -400,7 +419,7 @@ describe("Focus", function()
 		F.SetSections("mplus", { "c_junk" })
 		assert.truthy(F.ResetSections("mplus"))
 		assert.truthy(SB.Config.IsCharOverride("focus.sections.mplus"))
-		assert.same({ "c_consumables", "c_keystone", "c_gear" }, F.Sections("mplus"))
+		assert.same({ "c_consumables", "c_keystone", "c_gear", "c_sets" }, F.Sections("mplus"))
 	end)
 
 	it("read-only settings: SetEnabled, SetSections and ResetSections refuse and change nothing", function()
@@ -471,9 +490,9 @@ describe("Focus front style (week 6)", function()
 		F.SetSignal("challengeMode", true)
 		F.SetSignal("instanceType", "raid") -- Raid opens Consumables and Gear: already in front
 		F.SetSignal("fishing", true)
-		assert.same({ "c_consumables", "c_keystone", "c_gear", "c_fish", "c_cooking" }, F.Front())
+		assert.same({ "c_consumables", "c_keystone", "c_gear", "c_sets", "c_fish", "c_cooking" }, F.Front())
 		SB.Config.Set("focus.resolve", "priority")
-		assert.same({ "c_consumables", "c_keystone", "c_gear" }, F.Front(), "priority: M+ only (mode order)")
+		assert.same({ "c_consumables", "c_keystone", "c_gear", "c_sets" }, F.Front(), "priority: M+ only (mode order)")
 	end)
 
 	-- Mutation: in SectionOrder, append every id of Front() whether or not order has it.
@@ -558,7 +577,7 @@ describe("Focus front style (week 6)", function()
 	-- M5 (week-4 deferred). Mutation: SetEnabled calls Config.Set directly again.
 	it("a focus writer whose value is already in force emits nothing", function()
 		assert.truthy(F.SetEnabled("mplus", true))
-		assert.truthy(F.SetSections("mplus", { "c_consumables", "c_keystone", "c_gear" }))
+		assert.truthy(F.SetSections("mplus", { "c_consumables", "c_keystone", "c_gear", "c_sets" }))
 		assert.same({}, events)
 		assert.is_nil(SB.Config.db.settings.focus, "nothing was stored")
 	end)

@@ -60,12 +60,13 @@ Config.Defaults = {
 		-- the mode opens, comma-separated category ids (New is always open). style: "front" (default:
 		-- a mode moves its sections to the top, right after New, and collapses nothing) | "collapse"
 		-- (a mode collapses every section it does not open; week 4's behaviour). Week 6, user request.
+		-- Equipment sets (c_sets, week 7) join every mode that opens Gear.
 		focus = { auto = true, resolve = "merge", peek = "peek", announce = false, style = "front",
 			on = { mplus = true, raid = true, delves = true, gathering = true, fishing = true, market = true },
 			sections = {
-				mplus = "c_consumables,c_keystone,c_gear",
-				raid = "c_consumables,c_gear",
-				delves = "c_consumables,c_gear",
+				mplus = "c_consumables,c_keystone,c_gear,c_sets",
+				raid = "c_consumables,c_gear,c_sets",
+				delves = "c_consumables,c_gear,c_sets",
 				gathering = "c_herbs,c_ore,c_leathercloth,c_tools",
 				fishing = "c_fish,c_cooking",
 				market = "c_junk,c_tradegoods,c_boe,c_wue",
