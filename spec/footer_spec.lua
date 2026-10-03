@@ -73,6 +73,69 @@ describe("Footer (ruling W4-14)", function()
 		assert.same({ "123", "500", "900", "AKCE +12", "10 free" }, texts())
 	end)
 
+	-- Week 7 (user pick 2). Mutation: in Footer.Items, drop the F.SeasonItems() loop.
+	it("crests: the Venomstones in the bags show after the crest currencies, counted over every stack", function()
+		A.AddItem(280562, { name = "Ascendant Venomstone", classID = A.ITEM_CLASS.Consumable, subclassID = 8, quality = 4,
+			maxStack = 100, bind = "pickup" })
+		A.Put(0, 7, 280562, 6)
+		A.SetBagSize(1, 10)
+		A.Put(1, 2, 280562, 4)
+		SB.Inventory.ScanAll()
+		F.Refresh()
+		assert.same({ "123", "500", "45", "10", "AKCE +12", "18 free" }, texts())
+		assert.same({ entry = "crests", text = "10", icon = 280562, tip = { kind = "item", id = 280562 } }, F.items[4])
+		Fake.Fire(F.widgets[4], "OnEnter")
+		assert.same({ 280562 }, GameTooltip.calls.SetItemByID, "the item's own tooltip")
+		A.Clear(0, 7)
+		A.Clear(1, 2)
+		SB.Inventory.ScanAll()
+		F.Refresh()
+		assert.same({ "123", "500", "45", "AKCE +12", "20 free" }, texts(), "none carried: nothing shows")
+	end)
+
+	-- Week 7: should the live game make Venomstones a currency, the season words find it. Mutation: drop
+	-- "venomstone" from SB.Crests.currencyWords.
+	it("crests: a currency named like the season's (Venomstone) shows when no currency IDs are confirmed", function()
+		A.currencies[#A.currencies + 1] = { id = 3400, name = "Ascendant Venomstone", quantity = 30, icon = 5 }
+		F.Refresh()
+		assert.same({ "123", "500", "45", "30", "AKCE +12", "10 free" }, texts())
+	end)
+
+	-- Week 7. Mutation: in the Inventory listener, drop `or (Inv.Has(mask, Inv.R.COUNT) and seasonCount(changes))`.
+	it("a Venomstone stack that grows refreshes the footer; other count changes still do not (W4-26)", function()
+		A.AddItem(280562, { name = "Ascendant Venomstone", classID = A.ITEM_CLASS.Consumable, subclassID = 8, quality = 4,
+			maxStack = 100, bind = "pickup" })
+		A.Put(0, 7, 280562, 6)
+		SB.Inventory.ScanAll()
+		F.Refresh()
+		local reads, items = 0, F.Items
+		F.Items = function()
+			reads = reads + 1
+			return items()
+		end
+		local Inv = SB.Inventory
+		Inv.Notify(Inv.R.COUNT, { { bag = 0, slot = 1, reasons = Inv.R.COUNT } })
+		A.Advance(0.2)
+		assert.equal(0, reads, "a potion used: no refresh")
+		Inv.Notify(Inv.R.COUNT, { { bag = 0, slot = 7, reasons = Inv.R.COUNT } })
+		A.Advance(0.2)
+		assert.equal(1, reads, "a Venomstone looted onto its stack")
+	end)
+
+	-- Mutation: in Footer.SeasonText, skip the currencies loop.
+	it("SeasonText names the season's currencies (with IDs) and its items' counts, for the report", function()
+		A.AddItem(280562, { name = "Ascendant Venomstone", classID = A.ITEM_CLASS.Consumable, subclassID = 8, quality = 4,
+			maxStack = 100, bind = "pickup" })
+		A.Put(0, 7, 280562, 12)
+		SB.Inventory.ScanAll()
+		local currencies, items = F.SeasonText()
+		assert.equal("Weathered Ethereal Crest (3107) 45, Carved Ethereal Crest (3108) 0", currencies)
+		assert.equal("Ascendant Venomstone (280562) 12", items)
+		A.currencies = {}
+		SB.Crests.items = {}
+		assert.same({ "none", "none" }, { F.SeasonText() })
+	end)
+
 	-- Mutation: in Footer.Flow, `if x > 0 and x + w > maxWidth then` → `if false then`.
 	it("entries that do not fit the width wrap to the next row, never overlap, and the height follows", function()
 		W.size[1] = 100

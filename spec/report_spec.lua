@@ -52,6 +52,14 @@ describe("Report", function()
 		assert.falsy(text:find("AdiBags", 1, true))
 	end)
 
+	-- Week 7 (user pick 2). Mutation: delete the Season data line in Report.Build.
+	it("names the season's currencies and items (Footer.SeasonText), so their IDs can be confirmed", function()
+		SB.Checks.last = {}
+		SB.Footer = { SeasonText = function() return "Weathered Ethereal Crest (3107) 45", "Ascendant Venomstone (280562) 12" end }
+		assert.truthy(SB.Report.Build():find("\nSeason data: crest currencies Weathered Ethereal Crest (3107) 45; season"
+			.. " items in bags Ascendant Venomstone (280562) 12", 1, true))
+	end)
+
 	it("lists SwagBag's blocked actions and ignores other addons'", function()
 		SB.Checks.last = {}
 		A.combat = true
