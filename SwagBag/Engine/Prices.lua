@@ -16,6 +16,10 @@
 --   Prices.SectionTotals(state, recordOf) -> { [sectionId] = copper }   value x count per
 --                                      layout section (Engine/Layout.lua state), placeholders skipped
 --   Prices.Money(copper) -> "1,240g" | "35s" | "12c"
+--   Prices.WorthThreshold(values, mode, gold, percent) -> copper | nil   the worth-money glow's line (week 7,
+--                                      user pick 7): "fixed" gold x 10000; "top" the stack value of the
+--                                      last item in the top `percent` of `values` (stack values above 0);
+--                                      nil for "off" or when nothing has a value
 --   Prices.Invalidate()
 local _, SB = ...
 
@@ -146,6 +150,27 @@ function P.Money(copper)
 		return L.MONEY_SILVER:format(math.floor(copper / 100))
 	end
 	return L.MONEY_COPPER:format(copper)
+end
+
+function P.WorthThreshold(values, mode, gold, percent)
+	if mode == "fixed" then
+		return (tonumber(gold) or 0) * 10000
+	elseif mode ~= "top" then
+		return nil
+	end
+	local list = {}
+	for _, v in ipairs(values) do
+		if v > 0 then
+			list[#list + 1] = v
+		end
+	end
+	if #list == 0 then
+		return nil
+	end
+	table.sort(list, function(a, b)
+		return a > b
+	end)
+	return list[math.max(1, math.ceil(#list * (tonumber(percent) or 0) / 100))]
 end
 
 -- The built-in fallback: what a vendor pays.

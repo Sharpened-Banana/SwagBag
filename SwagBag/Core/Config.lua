@@ -44,7 +44,10 @@ Config.Defaults = {
 		-- view / columns: as for the bank window.
 		guildBank = { mode = "full", withdrawAnyTab = false, view = "sections", columns = 14 },
 		-- headerTotals: each section header shows its total value (spec F10).
-		prices = { headerTotals = true },
+		-- worth (week 7, user pick 7; spec v1.1 "worth-money highlight"): while the bank is open, a gold glow
+		-- on items worth "fixed" (worthGold gold or more a stack, default 100) | "top" (your most valuable
+		-- worthTop percent) | "off". Prices: Auctionator, else the vendor (Engine/Prices.lua).
+		prices = { headerTotals = true, worth = "fixed", worthGold = 100, worthTop = 10 },
 		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow. bind: the "BoE" /
 		-- "WuE" badge, off by default since week 6 (user request: the item level, track and badge were
 		-- too cluttered; the "BoE gear" and "Warbound until equipped" sections say it instead). Only a
