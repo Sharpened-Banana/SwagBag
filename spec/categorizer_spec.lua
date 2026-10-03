@@ -35,6 +35,20 @@ describe("Categorizer", function()
 		return counter
 	end
 
+	-- Week 7 (user pick 1). Mutation: give c_sets priority 60 (below Gear, BoE gear and Junk).
+	it("an item in an equipment set is filed under Equipment sets, never as Junk, BoE gear, WuE or Gear", function()
+		A.AddItem(400100, { name = "Frayed Robe", classID = A.ITEM_CLASS.Armor, subclassID = 1, equipLoc = "INVTYPE_CHEST",
+			quality = 0, ilvl = 5, maxStack = 1, bind = "none", sellPrice = 12 })
+		A.Put(0, 4, Fixtures.SOULBOUND_HELM, 1, { isBound = true, inSet = true })
+		A.Put(0, 7, Fixtures.SOULBOUND_HELM, 1, { isBound = true })
+		A.Put(0, 8, Fixtures.BOE_RING, 1, { inSet = true })
+		A.Put(0, 9, Fixtures.BOE_RING, 1, { isWUE = true, inSet = true })
+		A.Put(0, 10, 400100, 1, { inSet = true })
+		A.Put(0, 11, 400100, 1)
+		assert.same({ "c_sets", "c_gear", "c_sets", "c_sets", "c_sets", "c_junk" },
+			{ at(4), at(7), at(8), at(9), at(10), at(11) })
+	end)
+
 	it("files the fixture bag into the default sections, keystones and caged pets by link", function()
 		A.Put(0, 7, Fixtures.HERB, 40)
 		A.Put(0, 8, Fixtures.ORE, 10)

@@ -63,6 +63,16 @@ describe("OverlayData (spec F9)", function()
 		assert.equal(false, O.For(SB.Items.Describe(0, 1)).junk)
 	end)
 
+	-- Week 7: a gray piece kept in an equipment set is not junk. Mutation: drop `and not record.inEquipmentSet`.
+	it("no junk coin on a gray item in an equipment set", function()
+		A.AddItem(400100, { name = "Frayed Robe", classID = A.ITEM_CLASS.Armor, subclassID = 1, equipLoc = "INVTYPE_CHEST",
+			quality = 0, ilvl = 5, maxStack = 1, bind = "none", sellPrice = 12 })
+		A.Put(0, 7, 400100, 1)
+		A.Put(0, 8, 400100, 1, { inSet = true })
+		assert.equal(true, O.For(SB.Items.Describe(0, 7)).junk)
+		assert.equal(false, O.For(SB.Items.Describe(0, 8)).junk)
+	end)
+
 	it("BoE and WuE badges until the item is bound", function()
 		assert.equal("BoE", O.For(SB.Items.Describe(0, 3)).bind)
 		assert.equal("WuE", O.For(gear("INVTYPE_HEAD", 1, { bind = "equip", isWUE = true })).bind)

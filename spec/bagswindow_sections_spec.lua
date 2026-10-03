@@ -1966,7 +1966,7 @@ describe("BagsWindow focus modes (spec 6)", function()
 			SB.L.MODE_ALREADY_PAUSED, SB.L.MODE_RESUMED, SB.L.MODE_NOT_PAUSED }, lines)
 		SB.Slash.Dispatch("mode list")
 		lines = A.Lines()
-		assert.equal("M+: on, active now - opens Consumables, Keystone & Crests, Gear", lines[6])
+		assert.equal("M+: on, active now - opens Consumables, Keystone & Crests, Gear, Equipment sets", lines[6])
 		assert.equal("AH/Vendor/Bank: on - opens Junk, Trade Goods, BoE gear, Warbound until equipped", lines[11])
 	end)
 
@@ -2286,6 +2286,18 @@ describe("BagsWindow focus front style (week 6)", function()
 		assert.equal("- Keystone & Crests (1)", headers()[2])
 		W.TogglePause()
 		assert.equal("- Junk (1)", headers()[2])
+	end)
+
+	-- Week 7 (user pick 1). Mutation: give c_sets priority 60 (the set helm files under Gear).
+	it("a set piece has its own section right after Gear, and a key moves it up with Gear", function()
+		A.Put(0, 4, Fixtures.SOULBOUND_HELM, 1, { isBound = true, inSet = true })
+		A.Put(0, 7, Fixtures.SOULBOUND_HELM, 1, { isBound = true })
+		W.Open()
+		assert.same({ "- New (0)", "- Keystone & Crests (1)", "- Consumables (2)", "- Gear (1)", "- Equipment sets (1)",
+			"- BoE gear (1)", "- Junk (1)", "- Free (9)" }, headers())
+		F.SetSignal("challengeMode", true)
+		assert.same({ "- New (0)", "- Consumables (2)", "- Keystone & Crests (1)", "- Gear (1)", "- Equipment sets (1)",
+			"- BoE gear (1)", "- Junk (1)", "- Free (9)" }, headers())
 	end)
 
 	-- Pins week-4 D10 for the new style: the grid view has no sections, only the title changes.

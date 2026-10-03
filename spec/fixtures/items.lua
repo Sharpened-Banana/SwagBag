@@ -45,14 +45,15 @@ function Fixtures.Install(m)
 		quality = 1, ilvl = 1, maxStack = 1, bind = "equip" })
 end
 
--- A small backpack: 16 slots, 6 items.
+-- A small backpack: 16 slots, 6 items. The helm is in no equipment set (week 7: a set piece has its
+-- own section); a test that needs one puts { inSet = true } on its own slot.
 function Fixtures.SmallBags(m)
 	Fixtures.Install(m)
 	m.SetBagSize(0, 16)
 	m.Put(0, 1, Fixtures.HEALING_POTION, 5)
 	m.Put(0, 2, Fixtures.FLASK, 2, { onCooldown = true })
 	m.Put(0, 3, Fixtures.BOE_RING, 1, { upgrade = true, link = "item:225001::upgradable" })
-	m.Put(0, 4, Fixtures.SOULBOUND_HELM, 1, { isBound = true, inSet = true })
+	m.Put(0, 4, Fixtures.SOULBOUND_HELM, 1, { isBound = true })
 	m.Put(0, 5, Fixtures.KEYSTONE, 1, { isBound = true, link = "|cffa335ee|Hkeystone:180653:503:12:10:9:0:0|h[Keystone: Ara-Kara]|h|r" })
 	m.Put(0, 6, Fixtures.JUNK, 3)
 end

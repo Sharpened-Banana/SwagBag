@@ -14,6 +14,7 @@ local FILES = {
 -- Reagent bag (5) slot 1 herb; character bank tab 2 (bag 7) slot 3 ore; warband tab 2 (bag 13) slot 1 ore.
 local function setup(A)
 	Fixtures.SmallBags(A)
+	A.Put(0, 4, Fixtures.SOULBOUND_HELM, 1, { isBound = true, inSet = true }) -- in an equipment set (the fixture's is not)
 	A.Put(0, 7, Fixtures.HERB, 40)
 	A.Put(0, 8, Fixtures.ORE, 10)
 	A.Put(0, 9, Fixtures.PET_CAGE, 1, { link = "|cff0070dd|Hbattlepet:1387:25:3:1546:276:276:0|h[Hatespark]|h|r" })
