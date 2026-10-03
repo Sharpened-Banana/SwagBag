@@ -400,6 +400,76 @@ describe("BankWindow frames (check V2)", function()
 		assert.equal(UIParent, bf.parent)
 	end)
 
+	-- Week 6, user request 3. Mutations: drop the A.DepositWarband() call in BW.DepositWarband; or add
+	-- bf:Show() there (a Blizzard write the strict fake logs).
+	it("Deposit warbound runs the game's warband deposit and answers; Blizzard's bank is not touched", function()
+		A.SetBagSize(0, 16)
+		openBank()
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.equal(1, A.warbandDeposits)
+		assert.equal(SB.L.DEPOSIT_STARTED, BW.frame.title.text)
+		assert.same({}, blizzardWrites(bf), "only the tiny-mode moves, nothing else")
+		assert.equal("bank", A.activeBankType, "the selected bank type is never set")
+		assert.same({ { bag = 0, size = 16 } }, A.refundChecks[1], "the refund check read the bags")
+	end)
+
+	-- Item safety and P2. Mutation: in BW.DepositWarband, `if refundable then` (an unknown answer deposits).
+	it("it refuses in combat, while the warband bank is busy, and when a refund could be lost; each says why", function()
+		openBank()
+		A.combat = true
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.equal(SB.L.DEPOSIT_AFTER_COMBAT, BW.frame.title.text)
+		A.combat = false
+		A.warband.usable, A.warband.reason = false, "locked"
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.equal(SB.L.DEPOSIT_LOCKED, BW.frame.title.text)
+		A.warband.reason = "unavailable"
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.equal(SB.L.DEPOSIT_UNAVAILABLE, BW.frame.title.text)
+		A.warband.usable, A.warband.refundable = true, true
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.equal(SB.L.DEPOSIT_REFUNDABLE, BW.frame.title.text)
+		A.warband.refundable = nil
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.equal(SB.L.DEPOSIT_UNSURE, BW.frame.title.text)
+		assert.equal(0, A.warbandDeposits, "nothing was deposited")
+	end)
+
+	-- Never invisible but clickable. Mutation: create the button on Blizzard's bank (parent bf).
+	it("the deposit button is on SwagBag's window in tiny and beside mode, so it hides with that window", function()
+		openBank()
+		assert.equal(BW.frame, BW.depositButton.parent)
+		assert.equal(SB.TinyHost.Parent(), bf.parent, "tiny: Blizzard's bank is invisible, our button is not")
+		Fake.Fire(BW.blizzardButton, "OnClick")
+		assert.equal(UIParent, bf.parent, "beside")
+		assert.equal(BW.frame, BW.depositButton.parent)
+		assert.truthy(BW.frame.shown and BW.depositButton.shown)
+	end)
+
+	-- Mutation: the box's OnClick flashes without calling A.SetDepositReagents.
+	it("With reagents shows Blizzard's include-reagents choice, switches it and answers", function()
+		openBank()
+		assert.same({ false }, BW.reagentsBox.calls.SetChecked)
+		Fake.Fire(BW.reagentsBox, "OnClick")
+		assert.equal(true, A.warband.reagents)
+		assert.equal(SB.L.DEPOSIT_REAGENTS_ON, BW.frame.title.text)
+		assert.same({ true }, BW.reagentsBox.calls.SetChecked)
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.equal(SB.L.DEPOSIT_STARTED_REAGENTS, BW.frame.title.text)
+		A.DepositReagents = function() return nil end -- the game cannot say: no box
+		BW.RefreshReagents()
+		assert.falsy(BW.reagentsBox.shown)
+	end)
+
+	-- P2 (the bags window's D27). Mutation: drop the SB.Print in BW.Flash.
+	it("a long answer cut short in the bank title also goes to chat", function()
+		openBank()
+		BW.frame.title.IsTruncated = function() return true end
+		A.warband.refundable = true
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.same({ SB.L.DEPOSIT_REFUNDABLE }, A.Lines())
+	end)
+
 	it("an error in a tab-click hook switches only the bank to Safe Mode", function()
 		openBank()
 		A.ActiveBankType = function() error("boom") end

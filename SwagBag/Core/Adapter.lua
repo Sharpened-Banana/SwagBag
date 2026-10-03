@@ -714,8 +714,8 @@ local function warbandType()
 	return BT and BT.Account
 end
 
--- true when the warband bank takes items now; otherwise false and why: "locked" (another
--- character of the account has it open) or "unavailable" (no API, no tab, not at a banker).
+-- true when the warband bank takes items now; otherwise false and why: "locked" (any
+-- locked reason, for example another character of the account has it open) or "unavailable" (no API, no tab, not at a banker).
 function A.WarbandDepositState()
 	local account = warbandType()
 	if account == nil or not (C_Bank and C_Bank.AutoDepositItemsIntoBank) then

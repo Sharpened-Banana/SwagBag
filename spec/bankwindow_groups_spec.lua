@@ -193,6 +193,24 @@ describe("BankWindow contents", function()
 			assert.same({ 7, 7 }, { number(6, 3), number(12, 3) })
 		end)
 
+	-- Week 6, user request 4: the free tile in the bank. Every tab of a group shares one tile (bank tabs
+	-- are family "any", reagent-filtered tabs too: the client reports no bag family for them), in the
+	-- character bank and the warband bank alike. Mutation: in GroupView's build(), pass
+	-- `family = function(bag) return bag end` (one tile per tab).
+	it("each group's tabs share one free tile with the group's number: character bank and warband bank", function()
+		A.bagIDs.bank, A.bagIDs.warband = { 6, 7 }, { 12, 13 }
+		A.SetBagSize(7, 4)
+		A.SetBagSize(13, 4)
+		SB.Buttons.EnsureBankTabs()
+		openBank()
+		assert.same({ 10, 10 }, { number(6, 3), number(12, 3) }, "6 + 4 free slots in each group, one number")
+		for slot = 1, 4 do
+			assert.falsy(B.Get(7, slot).shown, "the second character tab's empties are spares")
+			assert.falsy(B.Get(13, slot).shown, "the second warband tab's empties are spares")
+		end
+		assert.equal("- Free (10)", header("warband:free").text.text)
+	end)
+
 	-- Plan D19. Mutations: delete `freeTile = function() ... end` from the bank's GroupView cfg; delete
 	-- the bank window's SB_FREE_TILE_CHANGED handler.
 	it("the bank follows bags.freeTile: one tile per group by default, every free slot after /swagbag free all",
