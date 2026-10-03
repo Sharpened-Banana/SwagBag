@@ -307,6 +307,18 @@ describe("Vendor (week 7)", function()
 		assert.same({ 6, 9 }, sold())
 	end)
 
+	-- Ruling R19: a gray piece whose look the account lacks is a transmog, not junk. Mutation: Vendor.Protected
+	-- drops `or SB.Collections.Uncollected(r) ~= nil`.
+	it("never sells gray gear whose look the account has not collected", function()
+		A.Put(0, 7, GRAY, 1, { link = "item:400200::look" })
+		A.Put(0, 8, GRAY, 1)
+		A.collected.looks["item:400200::look"] = false
+		A.collected.looks["item:400200"] = true
+		SB.Inventory.ScanAll()
+		visit()
+		assert.same({ 6, 8 }, sold())
+	end)
+
 	-- Week 7 (user pick 5). Mutation: Vendor.Protected ignores SB.Locks.
 	it("a locked junk item is never sold, by auto-sell or by /swagbag sell junk", function()
 		A.Put(0, 7, GRAY, 1)

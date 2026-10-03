@@ -647,6 +647,27 @@ function A.DecorKnown(itemID)
 	return owned > 0
 end
 
+-- Whether the account has collected an item's appearance (week 7, user pick 9): true / false, or nil
+-- when the item has no appearance, the account cannot collect it, or the client cannot say. Read from
+-- C_TransmogCollection only (no armor-type rule of SwagBag's own: 12.2.5 lifts those restrictions).
+function A.AppearanceKnown(link)
+	local T = C_TransmogCollection
+	if type(link) ~= "string" or isSecret(link) or not (T and T.GetItemInfo and T.PlayerHasTransmogItemModifiedAppearance) then
+		return nil
+	end
+	local ok, _, sourceID = pcall(T.GetItemInfo, link)
+	if not ok or type(sourceID) ~= "number" or isSecret(sourceID) then
+		return nil
+	end
+	if T.AccountCanCollectSource then
+		local okC, _, canCollect = pcall(T.AccountCanCollectSource, sourceID)
+		if not okC or isSecret(canCollect) or canCollect ~= true then
+			return nil
+		end
+	end
+	return known(pcall(T.PlayerHasTransmogItemModifiedAppearance, sourceID))
+end
+
 function A.IsQuestItem(bag, slot)
 	local ok, info = pcall(C_Container.GetContainerItemQuestInfo, bag, slot)
 	return ok and type(info) == "table" and (info.isQuestItem == true or info.questID ~= nil)
@@ -1561,6 +1582,9 @@ A.CHECKS = {
 	{ path = "C_PetJournal.GetPetInfoByItemID", window = "bags", required = false },
 	{ path = "C_PetJournal.GetNumCollectedInfo", window = "bags", required = false },
 	{ path = "C_HousingCatalog.GetCatalogEntryInfoByItem", window = "bags", required = false },
+	{ path = "C_TransmogCollection.GetItemInfo", window = "bags", required = false },
+	{ path = "C_TransmogCollection.AccountCanCollectSource", window = "bags", required = false },
+	{ path = "C_TransmogCollection.PlayerHasTransmogItemModifiedAppearance", window = "bags", required = false },
 	{ path = "C_Timer.After", window = "bags", required = true },
 	{ path = "C_AddOns.IsAddOnLoaded", window = "bags", required = false },
 	{ path = "ItemLocation.CreateFromBagAndSlot", window = "bags", required = true },

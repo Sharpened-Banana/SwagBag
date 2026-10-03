@@ -7,6 +7,8 @@
 --                 (bottom left on gray gear, under its item level)
 --   whole button  a soft green glow on an item to open or learn  (overlays.learn, week 7)
 --   left middle   a small padlock on an item the user locked      (overlays.lock, week 7)
+--   right middle  a purple star on gear whose look the account lacks, and on a toy, mount or pet not
+--                 collected yet while the green glow is not drawn (off, or gold at the bank)  (overlays.uncollected)
 --   whole button  a gold glow while the bank is open on items worth money (prices.worth, week 7;
 --                 at the bank it wins over the green glow). /swagbag worth sets it.
 -- The stack count is Blizzard's own (SetItemButtonCount); nothing is drawn bottom right. Sizes
@@ -25,7 +27,8 @@
 local _, SB = ...
 
 local L = SB.L
-local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind", "learn", "lock" },
+local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind", "learn", "lock",
+	"uncollected" },
 	-- Sizes in pixels on a 37 px button (W4-15, O1 steps 3-5 and 10). FONT is the fallback when the
 	-- template font has no file; TEXT_WIDTH clips a text inside the button.
 	FONT = "Fonts\\ARIALN.TTF", FONT_SIZE = 13, BIND_SIZE = 11, FONT_FLAGS = "THICKOUTLINE", TEXT_WIDTH = 33,
@@ -33,7 +36,9 @@ local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "j
 	-- Week 7: the whole-button glow, Blizzard's white bag glow tinted (green: open or learn).
 	GLOW_ATLAS = "bags-glow-white", LEARN_TINT = { 0.35, 1, 0.35 }, WORTH_TINT = { 1, 0.82, 0 }, WORTH_DELAY = 0.1,
 	-- The lock mark (week 7): Blizzard's pet-battle padlock, a plain texture file.
-	LOCK_TEXTURE = "Interface\\PetBattles\\PetBattle-LockIcon", LOCK_SIZE = 10 }
+	LOCK_TEXTURE = "Interface\\PetBattles\\PetBattle-LockIcon", LOCK_SIZE = 10,
+	-- The uncollected mark (week 7): a text star, so no texture can go missing.
+	STAR = "*", STAR_SIZE = 18, STAR_COLOR = { 0.85, 0.55, 1 } }
 SB.Overlays = Ov
 
 local regions = setmetatable({}, { __mode = "k" }) -- [button] = its overlay regions
@@ -74,7 +79,13 @@ local function regionsFor(button)
 			reagent = button:CreateTexture(nil, "OVERLAY", nil, 6),
 			glow = texture(button, 5, Ov.GLOW_ATLAS, 1, 1, 1, 0.25),
 			lock = button:CreateTexture(nil, "OVERLAY", nil, 7),
+			star = button:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall"),
 		}
+		r.star:SetFont((r.star:GetFont()) or Ov.FONT, Ov.STAR_SIZE, Ov.FONT_FLAGS)
+		r.star:SetPoint("RIGHT", button, "RIGHT", -2, 0)
+		r.star:SetTextColor(unpack(Ov.STAR_COLOR))
+		r.star:SetText(Ov.STAR)
+		r.star:Hide()
 		r.glow:SetAllPoints(button)
 		r.lock:SetTexture(Ov.LOCK_TEXTURE)
 		r.lock:SetSize(Ov.LOCK_SIZE, Ov.LOCK_SIZE)
@@ -119,7 +130,8 @@ function Ov.Context()
 	if not Ov.context then
 		local A = SB.Adapter
 		local ctx = { equipped = A.EquippedItems(), canUse = A.CanUse, dungeonName = A.DungeonName,
-			learn = SB.Collections and SB.Collections.Learn, locked = SB.Locks and SB.Locks.Has }
+			learn = SB.Collections and SB.Collections.Learn, locked = SB.Locks and SB.Locks.Has,
+			uncollected = SB.Collections and SB.Collections.Uncollected }
 		if SB.Config.Get("overlays.usePawn") then
 			ctx.pawn = function(record)
 				if record.bag and A.BagKind(record.bag) then -- bag and bank slots; not the guild bank
@@ -196,6 +208,12 @@ function Ov.Apply(button, record, bag)
 	end
 	show(r.glow, glow)
 	show(r.lock, on("lock") and d.locked)
+	-- One signal per item (D9): a toy, mount or pet the green glow already marks gets no star; gear's look,
+	-- and a toy, mount or pet under the gold glow at the bank (green not drawn), get the star in their own
+	-- corner (ruling R10).
+	local green = glow and not worth
+	local star = d.uncollected == "appearance" or (d.uncollected ~= nil and not green)
+	show(r.star, on("uncollected") and star)
 end
 
 ---------------------------------------------------------------------------

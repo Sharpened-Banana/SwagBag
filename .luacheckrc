@@ -24,7 +24,7 @@ read_globals = {
 	"IsModifiedClick", "HandleModifiedItemClick", "time", "UnitName", "UnitClass", "UnitLevel",
 	"C_ChallengeMode", "C_PlayerInfo", "GetInventoryItemLink",
 	"C_RestrictedActions", "C_PartyInfo", "C_Spell", "C_NewItems", "C_CurrencyInfo",
-	"C_MountJournal", "C_PetJournal", "C_HousingCatalog",
+	"C_MountJournal", "C_PetJournal", "C_HousingCatalog", "C_TransmogCollection",
 }
 
 files["spec/"] = {

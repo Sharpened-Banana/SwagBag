@@ -112,7 +112,8 @@ describe("Overlays (spec F9)", function()
 		SB.Slash.Dispatch("overlays")
 		SB.Slash.Dispatch("overlays sparkles on")
 		assert.same({ "Overlay bind is now off.",
-			"Overlays: ilvl off, track on, upgrade on, keystone on, junk on, bind off, learn on, lock on, pawn off, title on",
+			"Overlays: ilvl off, track on, upgrade on, keystone on, junk on, bind off, learn on, lock on, uncollected on, pawn"
+				.. " off, title on",
 			SB.L.OVERLAYS_USAGE }, A.Lines())
 		assert.equal(false, SB.Config.Get("overlays.bind"))
 	end)
@@ -206,6 +207,36 @@ describe("Overlays (spec F9)", function()
 			"Gold glow at the bank: off.", L.SETTINGS_READONLY }, A.Lines())
 		assert.same({ "off", 250, 5 }, { SB.Config.Get("prices.worth"), SB.Config.Get("prices.worthGold"),
 			SB.Config.Get("prices.worthTop") })
+	end)
+
+	-- Week 7 (user pick 9). Mutations: in Overlays.Apply, `or (d.uncollected ~= nil and not green)` ->
+	-- `or d.uncollected ~= nil` (a toy would show the star and the glow); or `show(r.star, on("uncollected") and
+	-- star)` -> `show(r.star, star)`; or (ruling R10) `local green = glow and not worth` -> `local green =
+	-- on("learn") and d.learn ~= nil` (under the gold glow at the bank the toy would show no star).
+	it("a star on gear whose look is not collected; on a toy, mount or pet only while the green glow is not drawn", function()
+		SB.Collections = { Learn = function(r)
+			return r.slot == 2 and "learn" or nil
+		end, Uncollected = function(r)
+			return (r.slot == 3 and "appearance") or (r.slot == 2 and "toy") or nil
+		end }
+		local _, ring = draw(0, 3)
+		local _, toy = draw(0, 2)
+		local _, potion = draw(0, 1)
+		assert.same({ true, false, false }, { ring.star.shown, toy.star.shown, potion.star.shown })
+		assert.same({ "RIGHT", "*" }, { ring.star.points[1][1], ring.star.text })
+		Loader.LoadFile(SB, "SwagBag/Engine/Prices.lua")
+		A.items[Fixtures.FLASK].sellPrice = 100
+		Ov.worthMin = 1 -- at the bank the toy's stack is worth money: it glows gold, not green, so the star shows too
+		local _, toyAtBank = draw(0, 2)
+		assert.same({ true, { 1, 0.82, 0 }, true },
+			{ toyAtBank.glow.shown, toyAtBank.glow.calls.SetVertexColor, toyAtBank.star.shown })
+		Ov.worthMin = nil
+		SB.Slash.Dispatch("overlays learn off")
+		local _, toyNoGlow = draw(0, 2)
+		assert.truthy(toyNoGlow.star.shown, "the glow is off: the star says it instead")
+		SB.Slash.Dispatch("overlays uncollected off")
+		local _, off = draw(0, 3)
+		assert.falsy(off.star.shown)
 	end)
 
 	-- Fix round 1. Mutation: in Overlays.Apply's region setup, put the lock back at ("TOP", button, "TOP", 0, -1)

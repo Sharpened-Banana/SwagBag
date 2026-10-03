@@ -3,6 +3,9 @@
 --     open    a container the client says holds loot (record.hasLoot: caches, bags of goods, lockboxes)
 --     learn   a toy, mount, pet or decor item the account has not collected yet, or a profession
 --             knowledge item (Engine/Crests.lua `knowledge`)
+--   Collections.Uncollected(record) -> "appearance" | "toy" | "mount" | "pet" | nil   (user pick 9)
+--     appearance  gear whose look the account has not collected (Adapter.AppearanceKnown)
+--     toy / mount / pet   an item that teaches one the account does not have yet
 --   Collections.Invalidate()   drop the cached answers (something was learned, or an item left the bags)
 -- Every answer comes from the client's collection APIs through the Adapter (spec P7: no tooltip
 -- reading); one the client cannot give (nil, or secret) means "nothing to do", so an item never glows
@@ -60,6 +63,51 @@ local function knowledge(r)
 	return false
 end
 
+local function teaches(r)
+	local A = SB.Adapter
+	local C, MS = A.ITEM_CLASS, A.MISC_SUB
+	local id = r.itemID
+	if r.isToy then
+		return "toy", cached("toy:" .. id, function()
+			return A.ToyKnown(id)
+		end)
+	elseif r.classID == C.Miscellaneous and r.subclassID == MS.Mount then
+		return "mount", cached("mount:" .. id, function()
+			return A.MountKnown(id)
+		end)
+	elseif r.isCagedPet or r.classID == C.Battlepet or (r.classID == C.Miscellaneous and r.subclassID == MS.CompanionPet) then
+		local species = type(r.link) == "string" and r.link:match("battlepet:(%d+)")
+		return "pet", cached("pet:" .. (species and ("s" .. species) or id), function()
+			return A.PetKnown(id, r.link)
+		end)
+	elseif r.classID == C.Housing then
+		return "decor", cached("decor:" .. id, function()
+			return A.DecorKnown(id)
+		end)
+	end
+	return nil, nil
+end
+
+function Coll.Uncollected(r)
+	if not r or r.offline or r.pending then
+		return nil
+	end
+	if isGear(r) then
+		local link = r.link
+		if type(link) == "string" and cached("look:" .. link, function()
+			return SB.Adapter.AppearanceKnown(link)
+		end) == false then
+			return "appearance"
+		end
+		return nil
+	end
+	local kind, collected = teaches(r)
+	if collected == false and kind ~= "decor" then
+		return kind
+	end
+	return nil
+end
+
 function Coll.Learn(r)
 	if not r or r.offline then
 		return nil -- an alt's saved item: not this character's to click
@@ -67,28 +115,8 @@ function Coll.Learn(r)
 	if r.hasLoot then
 		return "open"
 	end
-	local A = SB.Adapter
-	local C, MS = A.ITEM_CLASS, A.MISC_SUB
-	local id, missing = r.itemID, nil
-	if r.isToy then
-		missing = cached("toy:" .. id, function()
-			return A.ToyKnown(id)
-		end) == false
-	elseif r.classID == C.Miscellaneous and r.subclassID == MS.Mount then
-		missing = cached("mount:" .. id, function()
-			return A.MountKnown(id)
-		end) == false
-	elseif r.isCagedPet or r.classID == C.Battlepet or (r.classID == C.Miscellaneous and r.subclassID == MS.CompanionPet) then
-		local species = type(r.link) == "string" and r.link:match("battlepet:(%d+)")
-		missing = cached("pet:" .. (species and ("s" .. species) or id), function()
-			return A.PetKnown(id, r.link)
-		end) == false
-	elseif r.classID == C.Housing then
-		missing = cached("decor:" .. id, function()
-			return A.DecorKnown(id)
-		end) == false
-	end
-	if missing or knowledge(r) then
+	local _, collected = teaches(r)
+	if collected == false or knowledge(r) then
 		return "learn"
 	end
 	return nil
@@ -105,7 +133,7 @@ local function learned()
 	end, "none")
 end
 
-for _, event in ipairs({ "NEW_TOY_ADDED", "NEW_MOUNT_ADDED", "NEW_PET_ADDED" }) do
+for _, event in ipairs({ "NEW_TOY_ADDED", "NEW_MOUNT_ADDED", "NEW_PET_ADDED", "TRANSMOG_COLLECTION_UPDATED" }) do
 	SB.On(event, learned, "none")
 end
 
