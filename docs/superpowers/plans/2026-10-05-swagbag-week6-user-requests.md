@@ -8,6 +8,14 @@
 3. "bank should have a deposit all warband items" button.
 4. "and it should have the same empty slot with a number in it idea" (the free-slot tile, in the bank).
 
+**Tasks 7–9 (added 2026-10-03, from the user's in-game testing of 0.5.0):** six fixes.
+1. Bags opened with B closed when the user walked away from a vendor (FM1 step 8). They now stay open, and `/swagbag report` gains the last five bag-hook calls.
+2. The Pause button and the Focus modes page were not understood (S1, FM1). They get plain-words tooltips and an intro line. Quick setup explains Pause.
+3. A long choice spilled out of its button on Settings > Alt data (O2 step 19). Buttons now fit their text and wrap to a new line.
+4. The bank's `Blizzard's bank is shown for this visit` flash was never seen (V2 step 6). It now shows for 3 s and also goes to chat.
+5. Bank open took 72–86 ms (budget 80 ms), and one character's snapshots were 40 KB. The bank now reads each slot once and reports where its open time goes. Repeated stacks are written once in snapshots, and the report splits the snapshot size by kind.
+6. The footer's gold gets a full-size coin and a plain amount like `1,234,567` (FT1, O1).
+
 **Architecture:** (1) `Engine/Focus.lua` gets a style, `focus.style = "front"` (the new default) or `"collapse"` (today's behaviour). In "front" style no mode collapses anything: `Focus.CollapsedView` returns the user's own set and `Focus.SectionOrder(order)` returns a new list with New, then the mode's sections, then everything else in its own order. `Engine/Layout.lua`'s `Position` takes that order as `opts.order`. The bags window keeps the order it last drew (`W.order`) beside the collapsed lookup it last drew (`W.view`, W4-1), and re-orders through the same `W.Restack`. So P5, the area hold (W4-13), W10, W4-1 and W4-16 hold for a re-order exactly as they do for a collapse, in the category view and the list view. `/swagbag mode style` and a Settings > Focus modes row write the setting. (2) `overlays.bind` defaults to `false`, and a built-in "Warbound until equipped" category (`c_wue`, `gear & wue`) sits next to "BoE gear". (3) The bank window gets SwagBag's own plain `Deposit warbound` button. It makes the same C call Blizzard's button makes, through the Adapter. Beside it is a `With reagents` box for Blizzard's own include-reagents setting. (4) The bank's free tile already works for both groups; Task 6 pins it with a test and the DP1 session shows the user where it is.
 
 **Tech Stack:** Lua 5.1 (WoW Retail 12.1.x, Interface 120100/120105). LuaJIT 2.1 for tests. The in-repo runner `spec/runner.lua`. luacheck. bash `scripts/check.sh`. git.
@@ -95,7 +103,7 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 
 ## Review Focus
 
-These are the five failure modes most likely to bite the user that the spec implies but does not spell out, most likely first. Each is pinned by tests in the task that owns the code.
+These are the five failure modes most likely to bite the user that the spec implies but does not spell out, most likely first, plus one the user hit in game (6, Task 7). Each is pinned by tests in the task that owns the code.
 
 1. **A key, a vendor or a bank visit starts while the mouse rests on the bag ("front" style).** The re-order moves every section below New. Expected: nothing moves under the pointer. The re-order lands once the mouse leaves the items, and loot that arrives meanwhile lands in the order still drawn. Pinned by Task 2: "a re-order the world started waits while the mouse is anywhere over the items, then applies" and "loot during a held re-order lays out in the drawn order: nothing moves under the mouse".
 2. **A header click during a key ("front" style).** Expected: it is the user's own collapse, it stays after the key, and nothing the mode does writes the saved collapse set or the category order. Pinned by:
@@ -110,6 +118,11 @@ These are the five failure modes most likely to bite the user that the spec impl
    - "a built-in added later joins a saved order right after the one it follows (WuE after BoE gear)";
    - "Warbound until equipped keeps a user's rename as a diff; reset restores it".
 5. **A long answer in the bank's bounded title.** The refund refusal is about 150 characters, and the title is cut short at the title buttons (W3-26). Expected: the whole line also goes to chat. Pinned by Task 6: "a long answer cut short in the bank title also goes to chat".
+6. **Bags the user opened, then a vendor that closes by walking away (FM1 step 8, seen in game).** Expected: the bags stay open; a vendor-opened window still closes with the vendor. Pinned by Task 7:
+   - "CloseAllBags() with no frame leaves a window the user opened open";
+   - "a bag toggle inside a vendor's CloseAllBags that closed the user's window opens it again";
+   - "CloseAllBags() with no frame still closes a window the game opened";
+   - the trace test, and session TF1 steps 3–6.
 
 ## Decisions and resolved spec ambiguities (read before Task 1)
 
@@ -130,6 +143,13 @@ These are the five failure modes most likely to bite the user that the spec impl
 | D13 | "the free-slot tile in the bank … Verify it works for the character bank AND the warband bank groups, and the reagent-tab case" | It already works (week-3 W3-12/D19, `UI/BankWindow.lua` `freeTile`, GroupView builds each group with `family = Adapter.BagFamily`). Bank tabs report no bag family. In 12.1, reagent storage is a bank tab with a deposit filter, not a reagent bag. So every tab of a group is family `"any"`, and the group shows **one** tile whose number counts the free slots of all its tabs. Task 6 adds a test with two character tabs and two warband tabs, and session DP1 shows the user where to look. | Nothing missing, so nothing changes in GroupView. That is also why the guild bank's pending-item gap (week-5 ledger) is not touched this week (see "Week-5 carry-overs"). |
 | D14 | — (P2 in the bank window) | `BW.Flash` also prints to chat when the bounded title (W3-26) cuts the text short. This is the bags window's D27 (week 5). | The deposit's refusals are long. A truncated answer is no answer. |
 | D15 | Spec §6.1 "collapse everything except …", AC8.2 | The spec's wording now describes the "collapse" style. The user's request (binding) makes "front" the default. The spec text is updated at week end, recorded in the ledger. This plan commits only the plan file. | The ledgers bind, the user's request outranks the spec's wording, and executors read this table first. |
+| D16 | FM1 step 8: "walked out of vendor range, the bags closed" (they were opened with B); "a window the user opened stays open whenever any game frame's CloseAllBags runs … decide what CloseAllBags() with nil frame should do" | **Who opened the window decides.** A window the user opened (B, a bag icon) is closed only by the user: B, Esc or the X. No `CloseAllBags` closes it, **with a frame or without one**. A window the game opened (its open-all-bags call named a frame) closes with that frame's `CloseAllBags`, or with a `CloseAllBags()` that names no frame. When the open call named no frame, any `CloseAllBags` closes it, as before. A bag toggle that runs inside a frame's `CloseAllBags` and closes the user's window opens it again in the same frame, as `onOpenAll` already does for its inner toggle. `CloseAllBags()` inside the bag key itself (ToggleAllBags) changes nothing: the key's own toggle closes the window, once. The last five hook calls (hook, argument, what SwagBag did, time) go to `/swagbag report`. | Blizzard's FrameXML is not on disk, so the walk-away path cannot be read. Both explanations that fit (a frameless close, or a toggle inside the vendor's close) are closed. Blizzard's own bags survive a vendor that did not open them, which is what the user expects. The frameless close's other callers that matter are the bag key (handled by its own toggle) and other addons' "close all bags". Those now leave a user-opened window alone. That cost is accepted: a user-opened window is the user's. Esc still closes it through `UISpecialFrames`. Session TF1 step 6 reads the trace, so the next week knows which path it was. |
+| D17 | V2 step 6: "the title flash was never seen" | `BW.Flash(text, seconds, toChat)`. The Blizzard bank button's answer shows 3 s (`BW.VISIT_FLASH`) and is printed once in chat. A line that is also cut short in the title still prints once. Other bank flashes keep 1.5 s (`BW.FLASH`) and print only when cut short (D14). | The window jumps beside Blizzard's bank on that click, so the eye is elsewhere for the first second. Chat is where a missed answer can be read again (P2). |
+| D18 | S1/FM1: "did not understand Pause/Resume and the Focus modes page" | One generic mechanism: a row's `tip` (and an item's own `tip`) shows on hover over its buttons in every settings page. Settings > Focus modes: an intro note, and a tip on every row with buttons (including Task 3's style row and every section row). Pause tooltip: title `Pause focus modes` (or `Resume focus modes` while paused), one plain sentence, and the right-click line kept. Quick setup: one line under the slots-per-row buttons. | Tooltips cost no space and never move a row. One builder change serves later pages too. The intro is the user's own sentence, lightly adapted. |
+| D19 | O2 step 19: "Shown (not twice with Syndicator)" spills, next button cut | Each button is `max(row/item width or SW.BUTTON, text width + SW.TEXT_PAD)`, capped at the line. A button that would cross the line starts the next line (`SW.ROW + SW.LINE_GAP` lower), and the rows below move down. | Generic: fixes every page, keeps today's minimum widths (no visual change where text fits), and needs no per-page width tuning. |
+| D20 | "Bank open layout ~72–86 ms (target ≤ 80 ms)… find the hot spots … if you can't justify a concrete code change, make this instrumentation" | One concrete change: the bank's `describe` passes the slot it read to `Items.Describe(bag, slot, s)`, so each slot is read once, not twice (2,156 → 1,078 client reads for a full bank). Plus instrumentation: `GroupView` records the parts of every full layout, and the report prints `Bank layout parts: tabs …, reading …, categories …, positions …, drawing …`. Not done: skipping per-item client calls (item level, toy, quest, cooldown lookups) for some item kinds. Each changes a field some search keyword reads, so it waits for the numbers. | Reading the code proves the double read and nothing else. The other costs are client calls whose real price only the game shows. The mock makes every call cost the same, so a mock timing would mislead. |
+| D21 | "Snapshot 40 KB for one character (target ~30 KB) … schema stays 2; reading old snapshots must keep working" | A link that an earlier slot of the same container holds is written `slot:=thatSlot;count`. `Deserialize` reads both forms, so every snapshot saved before still reads the same (tested), and the schema stays 2. A snapshot's `v` stays 1: `v` names the container layout (`{ size, s }`), which is unchanged. Not done: shortening links (the colour code or the name), because the alt viewer's shift-click puts the saved link into chat, and a shortened link may not post. The report adds `Snapshot sizes: bags …, banks …, warband …, guild banks …`. | Repeated stacks are common in a gold-maker's banks: 10 stacks each of two herbs go from 1,591 to 358 bytes. The 30 KB aim is not promised. The split shows where the bytes are. A downgrade to 0.5.0 would read a pointed-to stack as an unknown item, and the next save rewrites it. Accepted. |
+| D22 | FT1/O1: "gold needs a proper gold-coin icon … silver and copper move into the tooltip" | The gold entry is a 14-px coin (`F.ICON`, the same as the currencies and crests) and the whole gold with `,` separators (`F.GoldText`). The tooltip is `Gold on this character` and `Adapter.MoneyText` of the full amount. The texture is the file path `Interface\MoneyFrame\UI-GoldIcon`, a string rather than a Blizzard global, so it stays in `Footer.lua`. | English only (the addon's scope), so `,` is the separator. One widget path for every footer icon keeps the sizes equal. |
 
 ## Blizzard's deposit control (what was found, and what needs an in-game check)
 
@@ -159,7 +179,7 @@ Blizzard's FrameXML is not on disk. These names come from knowledge of 11.x/12.x
 | Ledger item | Where |
 |---|---|
 | "amend P6/no-schema-bump/BackdropTemplate constraint wording" | Global Constraints above: **P6** (F3 row tooltips and W5-2 `bags.listScale` under `"none"`; this week's labels), **Secure frames** (`BackdropTemplate` named; `UICheckButtonTemplate` added), **Settings** (F14: what needs a schema bump and what does not). |
-| "guild bank pending-item relayout gap" (fix "if GroupView is touched") | **Not this week.** No task changes `UI/GroupView.lua`: the free tile already works (D13). Week 7, with "list view for bank/guild windows (D9)", which rewrites GroupView's drawing anyway. |
+| "guild bank pending-item relayout gap" (fix "if GroupView is touched") | **Not this week.** Tasks 1–6 do not change `UI/GroupView.lua`: the free tile already works (D13). Task 9 adds only timing to GroupView's full layout (D20). Nothing is drawn differently, and the relayout path the gap lives in is untouched. Week 7, with "list view for bank/guild windows (D9)", which rewrites GroupView's drawing anyway. |
 | "list view for bank/guild windows (D9)" | Not this week (see above). |
 | "Syndicator loaded mid-session callbacks" | Not this week: no task touches `Providers/Syndicator.lua`. |
 | In-game: F6 SetScale in combat (L1 step 14), IsTruncated timing, ElvUI media timing, ItemButton template-less behaviour | Still in `docs/superpowers/plans/2026-10-04-swagbag-week5-checklists.md` (L1, TH1, OF1). This plan adds no step for them. Task 6 relies on `IsTruncated` the same way the bags window does, so L1's answer covers both. |
@@ -174,22 +194,34 @@ New and changed files only. Everything else is as on `3d2421d`.
 ```
 SwagBag/Engine/Focus.lua               MOD  (T1) Style, Front, SectionOrder, Applies, SetStyle, writers skip no-ops (M5); (T3) /swagbag mode style
 SwagBag/Engine/Layout.lua              MOD  (T2) Position reads opts.order
-SwagBag/UI/BagsWindow.lua              MOD  (T2) W.order, W.EffectiveOrder, sameOrder; Layout/Restack/ApplyChanges draw with the order
-SwagBag/UI/SettingsFocus.lua           MOD  (T3) the style row; focus.style in Paths
-SwagBag/Core/Report.lua                MOD  (T3) the Focus line names the style; "collapsing" follows Applies()
+SwagBag/UI/BagsWindow.lua              MOD  (T2) W.order, W.EffectiveOrder, sameOrder; Layout/Restack/ApplyChanges draw with the order;
+                                            (T8) the Pause tooltip
+SwagBag/UI/SettingsFocus.lua           MOD  (T3) the style row; focus.style in Paths; (T8) intro note, every row's tip
+SwagBag/Core/Report.lua                MOD  (T3) the Focus line names the style; "collapsing" follows Applies();
+                                            (T7) Bag hooks line; (T9) Bank layout parts, Snapshot sizes
 SwagBag/Core/Config.lua                MOD  (T1) focus.style; (T4) overlays.bind = false
 SwagBag/Engine/CategoryDefaults.lua    MOD  (T4) c_wue, the `after` field
 SwagBag/Engine/Categories.lua          MOD  (T4) a built-in with `after` joins a saved order after its neighbour
 SwagBag/Core/Adapter.lua               MOD  (T5) WarbandDepositState, RefundableForWarband, DepositWarband, DepositReagents, SetDepositReagents, CHECKS
-SwagBag/UI/BankWindow.lua              MOD  (T6) Deposit warbound, With reagents, Flash to chat when cut short
-SwagBag/Locale/enUS.lua                MOD  (T3, T4, T6)
+SwagBag/UI/BankWindow.lua              MOD  (T6) Deposit warbound, With reagents, Flash to chat when cut short;
+                                            (T7) Flash(text, seconds, toChat), ToggleVisit 3 s + chat; (T9) describe reads once
+SwagBag/UI/SafeModeHooks.lua           MOD  (T7) D16 ownership rule, toggleClosedUsers, the trace (TraceText)
+SwagBag/UI/SettingsWindow.lua          MOD  (T8) row/item tip, SW.ShowTip, buttons fit their text and wrap
+SwagBag/UI/QuickSetup.lua              MOD  (T8) the Pause note
+SwagBag/Engine/Items.lua               MOD  (T9) Describe(bag, slot, s)
+SwagBag/UI/GroupView.lua               MOD  (T9) stats.phases
+SwagBag/Engine/Snapshots.lua           MOD  (T9) "=slot" repeats, BytesByKind
+SwagBag/UI/Footer.lua                  MOD  (T9) gold coin, GoldText, money tooltip
+SwagBag/Locale/enUS.lua                MOD  (T3, T4, T6, T7, T8, T9)
 SwagBag/SwagBag.toc, SwagBag/Core/Init.lua   MOD  (T1) 0.6.0
 .luacheckrc                            MOD  (T5) C_CVar
 spec/adapter_bank_spec.lua             NEW  (T5)
 spec/focus_spec.lua (T1, T3), bagswindow_sections_spec.lua (T1, T2, T4), bagswindow_list_spec.lua (T1, T2),
 spec/settings_focus_spec.lua, signals_spec.lua (T3), overlays_spec.lua, categories_spec.lua, categorizer_spec.lua,
 spec/bankwindow_groups_spec.lua, guildbank_spec.lua, offline_spec.lua (T4), mock_adapter.lua (T5),
-spec/bankwindow_spec.lua (T6), bankwindow_groups_spec.lua (T6)                                          MOD
+spec/bankwindow_spec.lua (T6, T7), bankwindow_groups_spec.lua (T6, T9), safemodehooks_spec.lua (T7),
+spec/report_spec.lua (T7, T9), settings_spec.lua, quicksetup_spec.lua (T8), settings_focus_spec.lua (T3, T8),
+spec/bagswindow_sections_spec.lua (T8), snapshots_spec.lua, footer_spec.lua (T9)                       MOD
 ```
 
 No file is added to `SwagBag/`, so the TOC keeps 62 files (`TOC OK (62 files)` after every task).
@@ -202,7 +234,8 @@ The user plays keys daily, so the focus style comes first and is testable after 
 |---|---|---|
 | 1 | 1, 2, 3 | **yes:** session FS1 (focus "front" style, about 10 minutes, at a vendor; one step at the next key) |
 | 1 | 4 | **yes:** session OV1 (the cleaner item and the new category, about 5 minutes) |
-| 2 | 5, 6 | **yes:** session DP1 (Deposit warbound and the bank's free tile, about 10 minutes, at a banker); **Week 6 exit check** |
+| 2 | 5, 6 | **yes:** session DP1 (Deposit warbound and the bank's free tile, about 10 minutes, at a banker) |
+| 3 | 7, 8, 9 (the fixes from the 0.5.0 testing) | **yes:** session TF1 (the fixes, about 10 minutes, at a vendor and a banker); **Week 6 exit check** |
 
 Cumulative `scripts/check.sh` test totals (from 1226 on `3d2421d`). Each was produced by replaying this file's blocks in order on a fresh clone of `3d2421d`:
 - T1 1234 passed, 0 failed (+8)
@@ -211,6 +244,9 @@ Cumulative `scripts/check.sh` test totals (from 1226 on `3d2421d`). Each was pro
 - T4 1248 passed, 0 failed (+4)
 - T5 1252 passed, 0 failed (+4)
 - T6 1258 passed, 0 failed (+6)
+- T7 1264 passed, 0 failed (+6)
+- T8 1268 passed, 0 failed (+4)
+- T9 1274 passed, 0 failed (+6)
 
 ## How to read the code steps
 
@@ -2958,9 +2994,2336 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ```
 
 ---
+### Task 7: Bags you opened stay open when a vendor closes; the bag-hook trace; the bank's "Blizzard bank" answer in chat
+
+From the user's in-game testing of 0.5.0 (fixes 1 and 4).
+- **FM1 step 8.** The user opened the bags with B, opened a vendor, then walked out of range: SwagBag's bags closed. Closing the vendor by hand (step 5) kept them open. The only close path is `SwagBag/UI/SafeModeHooks.lua` `onCloseAll`. It closes when `frame == nil` or when the window was opened for that frame (`autoOpenedBy`). Blizzard's code is not on disk, so the walk-away path cannot be read. Two explanations fit what the user saw, and this task closes both (D16). (a) The walk-away close calls `CloseAllBags` without a frame: from now on a frameless call closes only a window the game opened. (b) A bag toggle runs inside the vendor's close and closes the window: a toggle inside a frame's `CloseAllBags` that closed the user's window opens it again, in the same frame, as `onOpenAll` already does for its inner toggle. A small trace keeps the last five hook calls for `/swagbag report` (`Bag hooks (last 5): …`), so session TF1 shows which one it was.
+- **V2 step 6.** The bank's title flash `Blizzard's bank is shown for this visit` was never seen: the window jumps beside Blizzard's bank and the flash lasted 1.5 s. `BW.Flash` takes an optional duration and an optional "also to chat". The Blizzard bank button's answer stays 3 s and prints once in chat (D17). A line that is also cut short in the title still prints once, not twice.
+
+**Files:**
+- Modify: `SwagBag/UI/SafeModeHooks.lua` (header, `Hooks` fields, new `note`/`argName`/`didText`/`Hooks.TraceText`, `onBagKey`, `onOpenAll`, `onCloseAll`, `Hooks.Install`)
+- Modify: `SwagBag/Core/Report.lua` (the `Bag hooks` line)
+- Modify: `SwagBag/UI/BankWindow.lua` (`BW.FLASH`, `BW.VISIT_FLASH`, `BW.Flash`, `BW.ToggleVisit`)
+- Modify: `SwagBag/Locale/enUS.lua` (`REPORT_BAG_HOOKS`, `REPORT_BAG_HOOK`, `HOOK_*`)
+- Test: `spec/safemodehooks_spec.lua` (one test replaced by two, one test changed, three new), `spec/report_spec.lua` (one new), `spec/bankwindow_spec.lua` (one new)
+
+**Interfaces:**
+- Consumes: `SB.Adapter.Now`, `SB.BagsWindow.IsOpen/Open/Close/Toggle`, `SB.Print`, `SB.Adapter.After`, `SB.L.REPORT_NONE`.
+- Produces:
+  - `SB.SafeModeHooks.trace`: a list, newest last, of at most `Hooks.TRACE` (5) entries `{ kind, arg, did, at }`. `kind` is the hook (`"ToggleAllBags"`, `"ToggleBackpack"`, `"ToggleBag"`, `"OpenAllBags"`, `"CloseAllBags"`). `arg` is the frame's name, `"nil"`, `"?"` (a frame without a name), the bag number, or `""`. `did` is one of `opened`, `closed`, `kept`, `reopened`, `game`, `user`, `nothing`, `inactive`. `at` is `Adapter.Now()`;
+  - `SB.SafeModeHooks.TraceText() -> text` (`L.REPORT_NONE` when empty) and `Hooks.toggleClosedUsers`;
+  - `BW.Flash(text, seconds?, toChat?)` with `BW.FLASH = 1.5` and `BW.VISIT_FLASH = 3`;
+  - the report line `Bag hooks (last 5): …`.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `spec/bankwindow_spec.lua`, find:
+
+```lua
+	end)
+
+	it("the Blizzard bank button does nothing in combat and says so", function()
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	-- Week 6, D17 (V2 step 6: the flash was never seen). Mutations: ToggleVisit's Flash without
+	-- toChat; ToggleVisit's Flash without BW.VISIT_FLASH (1.5 s).
+	it("the Blizzard bank button's answer stays 3 s in the title and goes to chat once", function()
+		openBank()
+		BW.frame.title.IsTruncated = function() return true end -- cut short too: still one chat line
+		Fake.Fire(BW.blizzardButton, "OnClick")
+		assert.same({ SB.L.BANK_SHOWING_BLIZZARD }, A.Lines())
+		A.Advance(2)
+		assert.equal(SB.L.BANK_SHOWING_BLIZZARD, BW.frame.title.text, "still there after 2 s")
+		A.Advance(1)
+		assert.equal(SB.L.BANK_TITLE, BW.frame.title.text)
+		BW.frame.title.IsTruncated = nil
+		Fake.Fire(BW.blizzardButton, "OnClick")
+		assert.same({ SB.L.BANK_SHOWING_BLIZZARD, SB.L.BANK_HIDING_BLIZZARD }, A.Lines())
+	end)
+
+	it("the Blizzard bank button does nothing in combat and says so", function()
+```
+
+In `spec/report_spec.lua`, find:
+
+```lua
+	end)
+
+	it("shows the bank setting, the last visit and the deposit target (check V2)", function()
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	-- Week 6, D16 (FM1 step 8). Mutation: drop the REPORT_BAG_HOOKS line in Report.Build.
+	it("shows the last bag hook calls, for the vendor walk-away check", function()
+		SB.Checks.last = {}
+		SB.SafeModeHooks = { TRACE = 5, TraceText = function() return "CloseAllBags(nil) kept open at 10.5" end }
+		assert.truthy(SB.Report.Build():find("\nBag hooks (last 5): CloseAllBags(nil) kept open at 10.5", 1, true))
+	end)
+
+	it("shows the bank setting, the last visit and the deposit target (check V2)", function()
+```
+
+In `spec/safemodehooks_spec.lua` (edit 1 of 3), find:
+
+```lua
+	end)
+
+	it("CloseAllBags() with no frame always closes", function()
+		windowOpen = true
+		hooks.CloseAllBags()
+		assert.falsy(windowOpen)
+	end)
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	-- Week 6, D16 (FM1 step 8: walking away from a vendor closed bags opened with B). Mutation: in
+	-- onCloseAll, close when `frame == nil` whoever opened the window (the week-1 rule).
+	it("CloseAllBags() with no frame leaves a window the user opened open", function()
+		windowOpen = true -- opened with B before talking to the vendor
+		hooks.OpenAllBags(named("MerchantFrame"))
+		A.Advance(1)
+		hooks.CloseAllBags() -- the walk-away close, if it names no frame
+		assert.truthy(windowOpen)
+		assert.equal(0, closes)
+	end)
+
+	-- Mutation: in onCloseAll, drop `frame == nil or` from the game-opened test.
+	it("CloseAllBags() with no frame still closes a window the game opened", function()
+		hooks.OpenAllBags(named("MerchantFrame"))
+		A.Advance(1)
+		hooks.CloseAllBags()
+		assert.falsy(windowOpen)
+		assert.is_nil(SB.SafeModeHooks.autoOpenedBy)
+	end)
+```
+
+In `spec/safemodehooks_spec.lua` (edit 2 of 3), find:
+
+```lua
+	end)
+
+	it("a bag key whose ToggleAllBags closes through CloseAllBags() does not reopen", function()
+		realToggle()
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	-- D16: the inner CloseAllBags() leaves the user's window alone; the key itself closes it, once.
+	it("a bag key whose ToggleAllBags runs CloseAllBags() inside closes the window once", function()
+		realToggle()
+```
+
+In `spec/safemodehooks_spec.lua` (edit 3 of 3), find:
+
+```lua
+		assert.falsy(windowOpen)
+		assert.equal(0, toggles)
+	end)
+```
+
+and replace it with:
+
+```lua
+		assert.falsy(windowOpen)
+		assert.equal(1, toggles)
+		assert.equal(0, closes)
+	end)
+
+	-- D16, the other way the walk-away could close it. Mutation: delete the reopen branch in onCloseAll.
+	it("a bag toggle inside a vendor's CloseAllBags that closed the user's window opens it again", function()
+		realToggle()
+		windowOpen = true -- opened with B
+		hooks.OpenAllBags(named("MerchantFrame")) -- found it open: still the user's
+		A.Advance(1)
+		hooks.ToggleBackpack() -- inner call of the vendor's close, same frame
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.truthy(windowOpen)
+		assert.is_nil(SB.SafeModeHooks.autoOpenedBy)
+	end)
+
+	-- Mutation: in onBagKey, toggleClosedUsers = wasOpen and not W.IsOpen() (forgets who owned it).
+	it("a bag toggle inside a vendor's CloseAllBags that closed the game's window leaves it closed", function()
+		realToggle()
+		hooks.OpenAllBags(named("MerchantFrame")) -- the game opened it for the vendor
+		A.Advance(1)
+		hooks.ToggleBackpack() -- inner call, same frame
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.falsy(windowOpen)
+	end)
+
+	-- Week 6: /swagbag report shows the last five. Mutation: drop the table.remove in note (keeps all).
+	it("keeps the last five hook calls, oldest first, with what SwagBag did and when", function()
+		realToggle()
+		hooks.ToggleAllBags()
+		A.Advance(0.5)
+		hooks.OpenAllBags(named("MerchantFrame"))
+		A.Advance(10)
+		hooks.CloseAllBags()
+		A.Advance(1)
+		hooks.ToggleBag(2)
+		A.Advance(1)
+		hooks.ToggleBag(2)
+		A.Advance(1)
+		hooks.CloseAllBags(named("MerchantFrame"))
+		assert.equal(5, #SB.SafeModeHooks.trace)
+		assert.equal("OpenAllBags(MerchantFrame) nothing at 0.5, CloseAllBags(nil) kept open at 10.5, "
+			.. "ToggleBag(2) closed at 11.5, ToggleBag(2) opened at 12.5, CloseAllBags(MerchantFrame) kept open at 13.5",
+			SB.SafeModeHooks.TraceText())
+		SB.SafeMode.Enable("bags", "manual")
+		hooks.ToggleAllBags()
+		assert.same({ kind = "ToggleAllBags", arg = "", did = "inactive", at = 13.5 }, SB.SafeModeHooks.trace[5],
+			"Safe Mode: noted, nothing done")
+	end)
+```
+
+- [ ] **Step 2: Run the tests to see them fail**
+
+Run: `luajit spec/runner.lua spec/*_spec.lua`
+
+Expected: the last line is `1258 passed, 6 failed`, and the failures are exactly:
+```text
+FAIL spec/bankwindow_spec.lua :: BankWindow frames (check V2) > the Blizzard bank button's answer stays 3 s in the title and goes to chat once
+FAIL spec/report_spec.lua :: Report > shows the last bag hook calls, for the vendor walk-away check
+FAIL spec/safemodehooks_spec.lua :: SafeModeHooks > CloseAllBags() with no frame leaves a window the user opened open
+FAIL spec/safemodehooks_spec.lua :: SafeModeHooks > a bag key whose ToggleAllBags runs CloseAllBags() inside closes the window once
+FAIL spec/safemodehooks_spec.lua :: SafeModeHooks > a bag toggle inside a vendor's CloseAllBags that closed the user's window opens it again
+FAIL spec/safemodehooks_spec.lua :: SafeModeHooks > keeps the last five hook calls, oldest first, with what SwagBag did and when
+```
+Two new tests pass at Step 2 because they pin behaviour that already exists. "CloseAllBags() with no frame still closes a window the game opened" passes because today a frameless call closes every window. "a bag toggle inside a vendor's CloseAllBags that closed the game's window leaves it closed" passes because today nothing reopens.
+
+Critical tests and the mutation each must catch (applied to the finished Task 7 code):
+- "CloseAllBags() with no frame leaves a window the user opened open": in `onCloseAll`, replace `if by and (by == true or frame == nil or (frame.GetName and frame:GetName() == by)) then` with `if frame == nil or (by and (by == true or (frame.GetName and frame:GetName() == by))) then` (the week-1 rule).
+- "CloseAllBags() with no frame still closes a window the game opened": in the same line, drop `frame == nil or ` and guard the name with `frame and`.
+- "a bag toggle inside a vendor's CloseAllBags that closed the user's window opens it again": replace `if frame ~= nil and now == Hooks.lastAt and Hooks.lastKind == "toggle" and Hooks.toggleClosedUsers then` with `if false then`.
+- "a bag toggle inside a vendor's CloseAllBags that closed the game's window leaves it closed": in `onBagKey`, `Hooks.toggleClosedUsers = wasOpen and not W.IsOpen()`.
+- "keeps the last five hook calls …": in `note`, delete the `if #t > Hooks.TRACE then table.remove(t, 1) end` block.
+- "shows the last bag hook calls …": delete the `REPORT_BAG_HOOKS` line in `Report.Build`.
+- "the Blizzard bank button's answer stays 3 s …": in `BW.ToggleVisit`, drop the `true` argument; separately, pass `nil` instead of `BW.VISIT_FLASH`.
+
+- [ ] **Step 3: Write the implementation**
+
+In `SwagBag/Core/Report.lua`, find:
+
+```lua
+	end
+	local bank = SB.BankWindow
+```
+
+and replace it with:
+
+```lua
+	end
+	local hooks = SB.SafeModeHooks
+	if hooks and hooks.TraceText then -- week 6 (D16): the last bag functions the game ran, and what SwagBag did
+		lines[#lines + 1] = L.REPORT_BAG_HOOKS:format(hooks.TRACE, hooks.TraceText())
+	end
+	local bank = SB.BankWindow
+```
+
+In `SwagBag/Locale/enUS.lua`, find:
+
+```lua
+L.REPORT_CATEGORIES = "Categories: %d (%d edited)  Broken: %s"
+L.REPORT_LAYOUT = "Last bags layout: %.1f ms (%s)"
+
+-- Bags window
+```
+
+and replace it with:
+
+```lua
+L.REPORT_CATEGORIES = "Categories: %d (%d edited)  Broken: %s"
+L.REPORT_LAYOUT = "Last bags layout: %.1f ms (%s)"
+-- The bag hooks' trace (week 6, D16): "Bag hooks (last 5): CloseAllBags(MerchantFrame) kept open at 1234.5, ..."
+L.REPORT_BAG_HOOKS = "Bag hooks (last %d): %s"
+L.REPORT_BAG_HOOK = "%s(%s) %s at %.1f"
+L.HOOK_OPENED = "opened"
+L.HOOK_CLOSED = "closed"
+L.HOOK_KEPT = "kept open"
+L.HOOK_REOPENED = "opened again"
+L.HOOK_GAME = "now the game's"
+L.HOOK_USER = "now yours"
+L.HOOK_NOTHING = "nothing"
+L.HOOK_INACTIVE = "off (Safe Mode or not ready)"
+
+-- Bags window
+```
+
+In `SwagBag/UI/BankWindow.lua` (edit 1 of 4), find:
+
+```lua
+	SORT_TIMEOUT = 1.5,
+}
+```
+
+and replace it with:
+
+```lua
+	SORT_TIMEOUT = 1.5,
+	FLASH = 1.5, -- seconds a title answer shows
+	VISIT_FLASH = 3, -- the Blizzard bank button's answer: the window may jump beside Blizzard's (D17)
+}
+```
+
+In `SwagBag/UI/BankWindow.lua` (edit 2 of 4), find:
+
+```lua
+-- A flash cut short by the title's room (W3-26 bounds it) also goes to chat, so a long answer is
+-- never lost (P2; the bags window's D27, week 5).
+function BW.Flash(text)
+	titleToken = titleToken + 1
+	local token = titleToken
+	frame.title:SetText(text)
+	if frame.title.IsTruncated and frame.title:IsTruncated() then
+		SB.Print(text)
+	end
+	SB.Adapter.After(1.5, Guard("bank.flash", function()
+		if token == titleToken then
+```
+
+and replace it with:
+
+```lua
+-- A flash cut short by the title's room (W3-26 bounds it) also goes to chat, so a long answer is
+-- never lost (P2; the bags window's D27, week 5). seconds: how long it shows (default FLASH);
+-- toChat: the line also goes to chat, once, whether or not it was cut short (week 6, D17).
+function BW.Flash(text, seconds, toChat)
+	titleToken = titleToken + 1
+	local token = titleToken
+	frame.title:SetText(text)
+	if toChat or (frame.title.IsTruncated and frame.title:IsTruncated()) then
+		SB.Print(text)
+	end
+	SB.Adapter.After(seconds or BW.FLASH, Guard("bank.flash", function()
+		if token == titleToken then
+```
+
+In `SwagBag/UI/BankWindow.lua` (edit 3 of 4), find:
+
+```lua
+end
+
+-- The "Blizzard bank" button: show or hide Blizzard's bank for this visit.
+function BW.ToggleVisit()
+```
+
+and replace it with:
+
+```lua
+end
+
+-- The "Blizzard bank" button: show or hide Blizzard's bank for this visit. The window jumps
+-- beside Blizzard's bank (or back), so the answer shows longer and also goes to chat (D17).
+function BW.ToggleVisit()
+```
+
+In `SwagBag/UI/BankWindow.lua` (edit 4 of 4), find:
+
+```lua
+	BW.ApplyMode()
+	BW.Flash(BW.visit == "beside" and L.BANK_SHOWING_BLIZZARD or L.BANK_HIDING_BLIZZARD)
+	return true
+```
+
+and replace it with:
+
+```lua
+	BW.ApplyMode()
+	BW.Flash(BW.visit == "beside" and L.BANK_SHOWING_BLIZZARD or L.BANK_HIDING_BLIZZARD, BW.VISIT_FLASH, true)
+	return true
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 1 of 11), find:
+
+```lua
+-- the bookkeeping instead of toggling again.
+local _, SB = ...
+```
+
+and replace it with:
+
+```lua
+-- the bookkeeping instead of toggling again.
+-- Who owns the window (week 6, D16): a window the user opened (B, a bag icon) closes only by the
+-- user's own hand (B, Esc, the X). No CloseAllBags closes it, with a frame or without one, and a
+-- bag toggle that runs inside a frame's CloseAllBags and closes it opens it again. A window the
+-- game opened for a frame (its OpenAllBags named that frame) closes with that frame's CloseAllBags,
+-- or with a CloseAllBags() that names no frame.
+-- Hooks.TraceText() -> text: the last TRACE hook calls (hook, its argument, what SwagBag did, when),
+-- oldest first, for /swagbag report ("Bag hooks (last 5): ...").
+local _, SB = ...
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 2 of 11), find:
+
+```lua
+-- lastKind: "toggle" (a bag key toggled), "auto" (OpenAllBags opened it), "closed"
+-- (CloseAllBags closed it), "none" (OpenAllBags found it already open).
+local Hooks = { installed = false, lastAt = -1, lastKind = nil, toggleOpened = false, autoOpenedBy = nil }
+SB.SafeModeHooks = Hooks
+
+function Hooks.IsActive()
+```
+
+and replace it with:
+
+```lua
+-- lastKind: "toggle" (a bag key toggled), "auto" (OpenAllBags opened it), "closed"
+-- (CloseAllBags closed it), "none" (OpenAllBags found it already open).
+-- toggleClosedUsers: the last toggle closed a window the user had opened (D16).
+local Hooks = { installed = false, lastAt = -1, lastKind = nil, toggleOpened = false, toggleClosedUsers = false,
+	autoOpenedBy = nil, trace = {}, TRACE = 5 }
+SB.SafeModeHooks = Hooks
+
+-- The trace (week 6): one entry per hook call, the newest last, at most TRACE of them.
+local function note(kind, arg, did)
+	local t = Hooks.trace
+	t[#t + 1] = { kind = kind, arg = arg, did = did, at = SB.Adapter.Now() }
+	if #t > Hooks.TRACE then
+		table.remove(t, 1)
+	end
+end
+
+local function argName(frame)
+	if frame == nil then
+		return "nil"
+	end
+	local name = frame.GetName and frame:GetName()
+	return type(name) == "string" and name or "?"
+end
+
+local function didText(did)
+	local L = SB.L
+	return ({ opened = L.HOOK_OPENED, closed = L.HOOK_CLOSED, kept = L.HOOK_KEPT, reopened = L.HOOK_REOPENED,
+		game = L.HOOK_GAME, user = L.HOOK_USER, nothing = L.HOOK_NOTHING, inactive = L.HOOK_INACTIVE })[did] or did
+end
+
+function Hooks.TraceText()
+	local L, parts = SB.L, {}
+	for i, e in ipairs(Hooks.trace) do
+		parts[i] = L.REPORT_BAG_HOOK:format(e.kind, e.arg, didText(e.did), e.at)
+	end
+	return #parts > 0 and table.concat(parts, ", ") or L.REPORT_NONE
+end
+
+function Hooks.IsActive()
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 3 of 11), find:
+
+```lua
+end
+
+-- B / backpack / bag-bar icon.
+local function onBagKey()
+	if not Hooks.IsActive() then
+		Hooks.autoOpenedBy = nil
+		return
+```
+
+and replace it with:
+
+```lua
+end
+
+-- B / backpack / bag-bar icon. kind: the hook's name; arg: ToggleBag's bag number or "".
+local function onBagKey(kind, arg)
+	if not Hooks.IsActive() then
+		Hooks.autoOpenedBy = nil
+		note(kind, arg, "inactive")
+		return
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 4 of 11), find:
+
+```lua
+			Hooks.lastKind = "toggle"
+			return
+		elseif Hooks.lastKind ~= "none" then
+			return
+		end
+	end
+	Hooks.autoOpenedBy = nil
+```
+
+and replace it with:
+
+```lua
+			Hooks.lastKind = "toggle"
+			note(kind, arg, "user")
+			return
+		elseif Hooks.lastKind ~= "none" then
+			note(kind, arg, "nothing")
+			return
+		end
+	end
+	local wasUsers = Hooks.autoOpenedBy == nil
+	Hooks.autoOpenedBy = nil
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 5 of 11), find:
+
+```lua
+	Hooks.toggleOpened = not wasOpen and W.IsOpen()
+end
+```
+
+and replace it with:
+
+```lua
+	Hooks.toggleOpened = not wasOpen and W.IsOpen()
+	Hooks.toggleClosedUsers = wasOpen and wasUsers and not W.IsOpen()
+	note(kind, arg, W.IsOpen() and "opened" or "closed")
+end
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 6 of 11), find:
+
+```lua
+local function onOpenAll(frame)
+	if not Hooks.IsActive() then
+		return
+```
+
+and replace it with:
+
+```lua
+local function onOpenAll(frame)
+	local arg = argName(frame)
+	if not Hooks.IsActive() then
+		note("OpenAllBags", arg, "inactive")
+		return
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 7 of 11), find:
+
+```lua
+		-- opened it; if it closed a window the user had open, open it again.
+		if Hooks.lastKind == "toggle" then
+			if Hooks.toggleOpened then
+				Hooks.autoOpenedBy = frameName(frame)
+			elseif not W.IsOpen() then
+				W.Open()
+			end
+		end
+		return
+```
+
+and replace it with:
+
+```lua
+		-- opened it; if it closed a window the user had open, open it again.
+		local did = "nothing"
+		if Hooks.lastKind == "toggle" then
+			if Hooks.toggleOpened then
+				Hooks.autoOpenedBy = frameName(frame)
+				did = "game"
+			elseif not W.IsOpen() then
+				W.Open()
+				did = "reopened"
+			end
+		end
+		note("OpenAllBags", arg, did)
+		return
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 8 of 11), find:
+
+```lua
+		Hooks.lastKind = "none"
+		return
+```
+
+and replace it with:
+
+```lua
+		Hooks.lastKind = "none"
+		note("OpenAllBags", arg, "nothing")
+		return
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 9 of 11), find:
+
+```lua
+		Hooks.lastKind = "auto"
+	end
+end
+
+-- CloseAllBags(frame): close only a window the game opened for that frame
+-- (CloseAllBags() with no frame always closes).
+local function onCloseAll(frame)
+	if not Hooks.IsActive() then
+		return
+	end
+	local by = Hooks.autoOpenedBy
+	if frame == nil or (by and (by == true or (frame.GetName and frame:GetName() == by))) then
+		local wasOpen = SB.BagsWindow.IsOpen()
+		SB.BagsWindow.Close()
+		Hooks.autoOpenedBy = nil
+		if wasOpen then
+			Hooks.lastAt, Hooks.lastKind = SB.Adapter.Now(), "closed"
+		end
+	end
+end
+```
+
+and replace it with:
+
+```lua
+		Hooks.lastKind = "auto"
+		note("OpenAllBags", arg, "opened")
+	else
+		note("OpenAllBags", arg, "nothing")
+	end
+end
+
+-- CloseAllBags(frame) (D16): closes only a window the game opened, for that frame (any frame
+-- when its OpenAllBags named none), or with no frame at all. A window the user opened stays,
+-- with or without a frame: the vendor's walk-away close (FM1 step 8) leaves it open, as
+-- Blizzard's own bags stay open after a vendor that did not open them.
+local function onCloseAll(frame)
+	local arg = argName(frame)
+	if not Hooks.IsActive() then
+		note("CloseAllBags", arg, "inactive")
+		return
+	end
+	local W = SB.BagsWindow
+	local now = SB.Adapter.Now()
+	if frame ~= nil and now == Hooks.lastAt and Hooks.lastKind == "toggle" and Hooks.toggleClosedUsers then
+		-- A bag toggle ran inside this frame's CloseAllBags and closed the user's window: open it
+		-- again. Never for CloseAllBags() with no frame: that runs inside the bag key itself.
+		Hooks.toggleClosedUsers = false
+		W.Open()
+		note("CloseAllBags", arg, "reopened")
+		return
+	end
+	local by = Hooks.autoOpenedBy
+	if by and (by == true or frame == nil or (frame.GetName and frame:GetName() == by)) then
+		local wasOpen = W.IsOpen()
+		W.Close()
+		Hooks.autoOpenedBy = nil
+		if wasOpen then
+			Hooks.lastAt, Hooks.lastKind = now, "closed"
+		end
+		note("CloseAllBags", arg, wasOpen and "closed" or "nothing")
+		return
+	end
+	note("CloseAllBags", arg, W.IsOpen() and "kept" or "nothing")
+end
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 10 of 11), find:
+
+```lua
+	local Guard = SB.ErrorTrap.Guard
+	hooksecurefunc("ToggleAllBags", Guard("hook:ToggleAllBags", onBagKey, "bags"))
+	hooksecurefunc("ToggleBackpack", Guard("hook:ToggleBackpack", onBagKey, "bags"))
+	if ToggleBag then
+```
+
+and replace it with:
+
+```lua
+	local Guard = SB.ErrorTrap.Guard
+	hooksecurefunc("ToggleAllBags", Guard("hook:ToggleAllBags", function()
+		onBagKey("ToggleAllBags", "")
+	end, "bags"))
+	hooksecurefunc("ToggleBackpack", Guard("hook:ToggleBackpack", function()
+		onBagKey("ToggleBackpack", "")
+	end, "bags"))
+	if ToggleBag then
+```
+
+In `SwagBag/UI/SafeModeHooks.lua` (edit 11 of 11), find:
+
+```lua
+			if type(id) == "number" and id >= 0 and id <= 5 then
+				onBagKey()
+			end
+```
+
+and replace it with:
+
+```lua
+			if type(id) == "number" and id >= 0 and id <= 5 then
+				onBagKey("ToggleBag", tostring(id))
+			end
+```
+
+- [ ] **Step 4: Run the tests to see them pass**
+
+Run: `luajit spec/runner.lua spec/*_spec.lua`
+Expected: `1264 passed, 0 failed`
+
+- [ ] **Step 5: Run the full checks**
+
+Run: `bash scripts/check.sh`
+Expected: `TOC OK (62 files)`, `1264 passed, 0 failed`, and the last line `ALL CHECKS PASSED`. (A comment that writes the forbidden open-all-bags call with its parenthesis fails step 3/5. The header says "its OpenAllBags named that frame" for that reason.)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add SwagBag/UI/SafeModeHooks.lua SwagBag/Core/Report.lua SwagBag/UI/BankWindow.lua SwagBag/Locale/enUS.lua \
+  spec/safemodehooks_spec.lua spec/report_spec.lua spec/bankwindow_spec.lua
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 6 Task 7: bags the user opened stay open when a vendor closes, bag-hook trace in the report, Blizzard bank answer in chat for 3 s
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
+```
+
+---
+### Task 8: Plain-words explanations (Focus modes page, Pause, quick setup) and choice buttons that fit their text
+
+From the user's in-game testing of 0.5.0 (fixes 2 and 3).
+- **S1 and FM1.** The user did not understand the Pause/Resume button or the Focus modes page. The shared row builder (`UI/SettingsWindow.lua` `SW.Render`) learns a row-level `tip`: a short text shown when the mouse rests on any of the row's buttons, under the row's label. A choice or action may add its own `tip` after it. Any page can use it later. Settings > Focus modes starts with a plain-words note (`L.SET_FOCUS_INTRO`). Every row with buttons gets a tip, including Task 3's `While a mode is on` row (`L.SET_FOCUS_STYLE`, `Move to the top` / `Collapse the rest`), each mode's row and each section row. The Pause button's tooltip now says what a click does in plain words, with a Resume version while paused, and keeps the right-click line. Quick setup gets one line about the Pause button (D18).
+- **O2 step 19.** On Settings > Alt data, `Shown (not twice with Syndicator)` spilled past its 190-px button and the next button was cut. In the same row builder, each button is now as wide as its text plus `SW.TEXT_PAD`, never narrower than the row's width. A button that no longer fits the line starts the next one, and the rows below move down by the extra line (D19).
+
+The tooltip and wrap code is in the settings window, so its scripts trap under `"none"` (P6: settings), with the labels `settings.tip` and `settings.tipHide`. The tips live in `SW.tips[button]`, a side table like `SW.selected`. A field on the pooled button would read as a method on the test fakes (a fake answers every unknown key with a function), and the side table is cleared with the pool.
+
+**Files:**
+- Modify: `SwagBag/UI/SettingsWindow.lua` (header, `SW` fields `tips`/`LINE_GAP`/`TEXT_PAD`, new `SW.ShowTip`, `button()` scripts and reset, new `textWidth`, the item loop in `SW.Render`)
+- Modify: `SwagBag/UI/SettingsFocus.lua` (header, `setting` takes a tip, section and reset rows' tips, new `whenText`, `rows()` intro and tips)
+- Modify: `SwagBag/UI/BagsWindow.lua` (the Pause button's tooltip)
+- Modify: `SwagBag/UI/QuickSetup.lua` (`frame.pauseNote`)
+- Modify: `SwagBag/Locale/enUS.lua` (`SET_FOCUS_INTRO`, `SET_*_TIP`, `SET_MODE_WHEN_*`, `MODE_TIP_*`, `QS_PAUSE_NOTE`; `MODE_TIP_LEFT` is removed, since nothing uses it any more)
+- Test: `spec/settings_spec.lua` (two new), `spec/settings_focus_spec.lua` (one new; one test's row numbers move by one), `spec/bagswindow_sections_spec.lua` (the Pause tooltip test rewritten), `spec/quicksetup_spec.lua` (one new)
+
+**Interfaces:**
+- Consumes: `SB.Focus.Style/IsPaused/MODES`, `SB.Focus.byId`, `Button:GetTextWidth()` (WoW; 0 when the client cannot say), `GameTooltip`.
+- Produces:
+  - row field `tip` and item field `tip` for every settings page, with `SW.tips[button] = { title, text, extra }` and `SW.ShowTip(button)`;
+  - `SW.TEXT_PAD = 24` and `SW.LINE_GAP = 4`;
+  - `QS.frame.pauseNote`;
+  - Locale keys quoted in session TF1.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `spec/bagswindow_sections_spec.lua` (edit 1 of 2), find:
+
+```lua
+	end)
+
+	-- Mutation: delete the AddLine for the right-click.
+	it("the Pause tooltip names both clicks", function()
+		local lines = {}
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	-- Week 6, D18 (FM1: the user did not know what Pause does). Mutations: delete the AddLine for
+	-- the right-click; always show the Pause text (ignore IsPaused).
+	it("the Pause tooltip says in plain words what a click does now, and names the right-click", function()
+		local lines = {}
+```
+
+In `spec/bagswindow_sections_spec.lua` (edit 2 of 2), find:
+
+```lua
+		W.modeButton.scripts.OnEnter(W.modeButton)
+		GameTooltip = nil
+		assert.same({ SB.L.MODE_TIP_TITLE, SB.L.MODE_TIP_LEFT, SB.L.MODE_TIP_RIGHT }, lines)
+	end)
+```
+
+and replace it with:
+
+```lua
+		W.modeButton.scripts.OnEnter(W.modeButton)
+		W.modeButton.scripts.OnClick(W.modeButton, "LeftButton")
+		W.modeButton.scripts.OnEnter(W.modeButton)
+		GameTooltip = nil
+		assert.same({ "Pause focus modes", SB.L.MODE_TIP_BODY, SB.L.MODE_TIP_RIGHT,
+			"Resume focus modes", SB.L.MODE_TIP_BODY_PAUSED, SB.L.MODE_TIP_RIGHT }, lines)
+	end)
+```
+
+In `spec/quicksetup_spec.lua`, find:
+
+```lua
+	end)
+
+	it("a picked style shows as picked; a second click unpicks it", function()
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	-- Week 6, D18. Mutation: delete the pauseNote SetText.
+	it("explains the bags' Pause button in one line", function()
+		SB.Slash.Dispatch("setup")
+		assert.equal(SB.L.QS_PAUSE_NOTE, QS.frame.pauseNote.text)
+		assert.truthy(QS.frame.pauseNote.shown)
+	end)
+
+	it("a picked style shows as picked; a second click unpicks it", function()
+```
+
+In `spec/settings_focus_spec.lua` (edit 1 of 2), find:
+
+```lua
+		return SW.selected[rowButton(rowLabel, text)] == true
+	end
+
+	it("AC8.1 and P1: the defaults are selected, each with its alternative next to it", function()
+```
+
+and replace it with:
+
+```lua
+		return SW.selected[rowButton(rowLabel, text)] == true
+	end
+
+	-- Week 6, D18 (S1: the page was not understood). Mutations: drop the intro row; drop the tip of
+	-- the style row (or of any other row with buttons).
+	it("starts with a plain-words intro, and every row with buttons explains itself on hover", function()
+		local all = SW.byId.focus.rows()
+		assert.same({ kind = "note", label = L.SET_FOCUS_INTRO }, all[1])
+		assert.equal(L.SET_FOCUS_INTRO, SW.labels[1].text)
+		for _, row in ipairs(all) do
+			if row.choices or row.actions then
+				assert.truthy(type(row.tip) == "string" and row.tip ~= "", "no tip on " .. row.label)
+			end
+		end
+		local lines = {}
+		GameTooltip = { SetOwner = function() end, SetText = function(_, t) lines[#lines + 1] = t end,
+			AddLine = function(_, t) lines[#lines + 1] = t end, Show = function() end }
+		Fake.Fire(rowButton(L.SET_FOCUS_STYLE, L.SET_FOCUS_STYLE_COLLAPSE), "OnEnter")
+		Fake.Fire(rowButton(L.SET_MODE_LABEL:format("Fishing"), L.SET_ON), "OnEnter")
+		Fake.Fire(rowButton("Junk", L.SET_SECTION_OPEN), "OnEnter")
+		assert.same({ L.SET_FOCUS_STYLE, L.SET_FOCUS_STYLE_TIP,
+			L.SET_MODE_LABEL:format("Fishing"), "On: this mode switches on by itself while you fish. Off: it never does;"
+				.. " the other modes still work.",
+			"Junk", L.SET_SECTION_TIP:format("M+") }, lines)
+	end)
+
+	it("AC8.1 and P1: the defaults are selected, each with its alternative next to it", function()
+```
+
+In `spec/settings_focus_spec.lua` (edit 2 of 2), find:
+
+```lua
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_ACCOUNT)
+		assert.truthy(SW.byId.focus.rows()[1].label == L.SET_FOCUS_AUTO)
+		assert.falsy(SW.byId.focus.rows()[7].label:find("this character", 1, true), "row 7: the first mode")
+	end)
+```
+
+and replace it with:
+
+```lua
+		click(L.SET_FOCUS_SCOPE, L.SET_FOCUS_ACCOUNT)
+		assert.truthy(SW.byId.focus.rows()[2].label == L.SET_FOCUS_AUTO, "row 1 is the intro (week 6)")
+		assert.falsy(SW.byId.focus.rows()[8].label:find("this character", 1, true), "row 8: the first mode")
+	end)
+```
+
+In `spec/settings_spec.lua`, find:
+
+```lua
+		assert.equal(n, #Fake.created)
+	end)
+end)
+```
+
+and replace it with:
+
+```lua
+		assert.equal(n, #Fake.created)
+	end)
+
+	-- A test page shaped like Settings > Alt data (O2 step 19: "Shown (not twice with Syndicator)"
+	-- spilled out of its button and the next button was cut). Text is 6 px per character.
+	local function wideRows()
+		local create = CreateFrame
+		CreateFrame = function(kind, name, parent, template)
+			local f = create(kind, name, parent, template)
+			if kind == "Button" then
+				function f.GetTextWidth(self)
+					return 6 * #(self.text or "")
+				end
+			end
+			return f
+		end
+		SW.AddPage({ id = "wide", title = "Wide", rows = function()
+			return {
+				{ kind = "choice", label = "Counts", width = 190, tip = "What the row does.", get = function() return "auto" end,
+					choices = { { value = "auto", text = "Shown (not twice with Syndicator)", tip = "The default." },
+						{ value = "on", text = "Always shown" }, { value = "off", text = "Hidden" } },
+					apply = function() return "done" end },
+				{ kind = "note", label = "Below" },
+			}
+		end })
+		SW.Show("wide")
+	end
+
+	local function topLeft(region)
+		local p = region.points[#region.points]
+		return { p[4], p[5] }
+	end
+
+	-- Week 6, D19. Mutations: size every button to the row's width only (no text width); drop the
+	-- out-of-room line break.
+	it("a button is as wide as its text plus padding; one that does not fit starts the next line", function()
+		wideRows()
+		local b1, b2, b3 = button("Shown (not twice with Syndicator)"), button("Always shown"), button("Hidden")
+		assert.equal(6 * 33 + SW.TEXT_PAD, b1.w, "the long text fits its button")
+		assert.equal(190, b2.w, "never narrower than the row's width")
+		assert.same({ 12, -22 }, topLeft(b1))
+		assert.same({ 12 + b1.w + 4, -22 }, topLeft(b2))
+		assert.same({ 12, -22 - SW.ROW - SW.LINE_GAP }, topLeft(b3), "out of room: the next line")
+		assert.same({ 4, -22 - SW.ROW - SW.LINE_GAP - SW.ROW - SW.GAP }, topLeft(SW.labels[2]),
+			"the row grew: the note below moved down")
+		assert.truthy(b2.w + topLeft(b2)[1] <= SW.child:GetWidth(), "nothing runs past the page")
+	end)
+
+	-- Week 6, D18. Mutations: in ShowTip, skip the item's own tip; in OnLeave, always Hide.
+	it("a row's tip shows on its buttons with the button's own tip after it; leaving hides it", function()
+		wideRows()
+		local lines = {}
+		GameTooltip = Fake.New("GameTooltip")
+		function GameTooltip.SetText(_, t) lines[#lines + 1] = t end
+		function GameTooltip.AddLine(_, t) lines[#lines + 1] = t end
+		function GameTooltip.IsOwned(t, owner) return t.calls.SetOwner ~= nil and t.calls.SetOwner[1] == owner end
+		Fake.Fire(button("Shown (not twice with Syndicator)"), "OnEnter")
+		assert.same({ "Counts", "What the row does.", "The default." }, lines)
+		GameTooltip:Show()
+		Fake.Fire(button("Hidden"), "OnLeave")
+		assert.truthy(GameTooltip.shown, "another button's leave leaves the tooltip alone")
+		Fake.Fire(button("Shown (not twice with Syndicator)"), "OnLeave")
+		assert.falsy(GameTooltip.shown)
+		SW.Show("bags")
+		lines = {}
+		Fake.Fire(button("Categories"), "OnEnter")
+		assert.same({}, lines, "a row without a tip shows none")
+	end)
+end)
+```
+
+- [ ] **Step 2: Run the tests to see them fail**
+
+Run: `luajit spec/runner.lua spec/*_spec.lua`
+
+Expected: the last line is `1262 passed, 6 failed`, and the failures are exactly:
+```text
+FAIL spec/bagswindow_sections_spec.lua :: BagsWindow focus modes (spec 6) > the Pause tooltip says in plain words what a click does now, and names the right-click
+FAIL spec/quicksetup_spec.lua :: Quick setup > explains the bags' Pause button in one line
+FAIL spec/settings_focus_spec.lua :: Settings: focus modes page > starts with a plain-words intro, and every row with buttons explains itself on hover
+FAIL spec/settings_focus_spec.lua :: Settings: focus modes page > the layer is named while "This character" is on: the sections note and the mode labels
+FAIL spec/settings_spec.lua :: Settings window > a button is as wide as its text plus padding; one that does not fit starts the next line
+FAIL spec/settings_spec.lua :: Settings window > a row's tip shows on its buttons with the button's own tip after it; leaving hides it
+```
+"the layer is named …" fails only because its row numbers already count the intro row that Step 3 adds.
+
+Critical tests and the mutation each must catch (applied to the finished Task 8 code):
+- "a button is as wide as its text plus padding …": `textWidth` returns `0`; separately, replace `if x > 12 and x + w > room then` with `if false then`.
+- "a row's tip shows on its buttons …": in `SW.ShowTip`, replace `if tip.extra then` with `if false then`; separately, in the pooled button's `OnLeave`, replace the `IsOwned` test with `if GameTooltip then`.
+- "starts with a plain-words intro …": delete the `{ kind = "note", label = L.SET_FOCUS_INTRO }` row; separately, drop `tip = L.SET_FOCUS_STYLE_TIP,` from the style row.
+- "the Pause tooltip says in plain words …": delete `GameTooltip:AddLine(L.MODE_TIP_RIGHT, 1, 1, 1)`; separately, `local paused = false`.
+- "explains the bags' Pause button in one line": delete `frame.pauseNote:SetText(L.QS_PAUSE_NOTE)`.
+
+- [ ] **Step 3: Write the implementation**
+
+In `SwagBag/Locale/enUS.lua` (edit 1 of 2), find:
+
+```lua
+L.SET_GATHERING_NOTE = "Gathering opens only the materials of the gathering professions this character has."
+L.MODE_TIP_TITLE = "Focus modes"
+L.MODE_TIP_LEFT = "Left-click: pause or resume for this session"
+L.MODE_TIP_RIGHT = "Right-click: choose the sections this mode opens"
+```
+
+and replace it with:
+
+```lua
+L.SET_GATHERING_NOTE = "Gathering opens only the materials of the gathering professions this character has."
+-- Settings > Focus modes in plain words (week 6, D18): the page's first line, and each row's tooltip.
+L.SET_FOCUS_INTRO = "Focus modes open the sections you need for what you're doing (a key, the vendor, fishing) and tidy"
+	.. " the rest. They switch by themselves. Rest the mouse on a button to see what it does."
+L.SET_FOCUS_AUTO_TIP = "Switch by themselves: SwagBag sees what you are doing (a key, a raid, a vendor, fishing...) and"
+	.. " switches the matching mode on and off for you. Off: no mode ever changes your sections."
+L.SET_FOCUS_STYLE_TIP = "Move to the top: the mode's sections come first, right under New, and nothing is collapsed."
+	.. " Collapse the rest: only the mode's sections stay open; every other section collapses until the mode ends."
+L.SET_FOCUS_RESOLVE_TIP = "Sometimes two modes apply at once, like fishing while a vendor is open. Open both sets: the"
+	.. " sections of both modes count. Strict priority: only the stronger mode's (a dungeon or an activity before the vendor)."
+L.SET_FOCUS_PEEK_TIP = "Only used with Collapse the rest. Peeks: a collapsed section you click opens until you close your"
+	.. " bags. Keeps it open: it stays open until the mode changes."
+L.SET_FOCUS_ANNOUNCE_TIP = "Announce: one chat line each time the mode changes. Quiet: no chat line; the bags' title"
+	.. " still names the mode."
+L.SET_FOCUS_SCOPE_TIP = "All characters: one set of focus settings for every character. This character: this"
+	.. " character gets its own copy to change; the others keep theirs."
+L.SET_MODE_TIP = "On: this mode switches on by itself %s. Off: it never does; the other modes still work."
+L.SET_MODE_WHEN_MPLUS = "while a Mythic+ key runs"
+L.SET_MODE_WHEN_RAID = "inside a raid"
+L.SET_MODE_WHEN_DELVES = "inside a delve"
+L.SET_MODE_WHEN_GATHERING = "while you gather herbs, ore or leather"
+L.SET_MODE_WHEN_FISHING = "while you fish"
+L.SET_MODE_WHEN_MARKET = "while a vendor, the auction house or your bank is open"
+L.SET_EDIT_MODE_TIP = "Pick a mode to see and change its sections in the rows below."
+L.SET_SECTION_TIP = "Open: the %s mode uses this section (moves it up, or keeps it open with Collapse the rest)."
+	.. " Collapsed: the mode leaves it where it is (or collapses it with Collapse the rest)."
+L.SET_SECTIONS_DEFAULT_TIP = "Puts this mode's sections back to SwagBag's choice. Your other modes keep theirs."
+L.MODE_TIP_TITLE = "Pause focus modes"
+L.MODE_TIP_BODY = "Sections stop opening, closing and moving by themselves until you click Resume (or log in again)."
+L.MODE_TIP_TITLE_PAUSED = "Resume focus modes"
+L.MODE_TIP_BODY_PAUSED = "Focus modes are paused: your sections stay as you set them. Click to let modes switch by"
+	.. " themselves again."
+L.MODE_TIP_RIGHT = "Right-click: choose the sections this mode opens"
+```
+
+In `SwagBag/Locale/enUS.lua` (edit 2 of 2), find:
+
+```lua
+L.QS_HINT = "Apply sets SwagBag up for what you picked. Skip keeps SwagBag's defaults."
+L.QS_MPLUS = "M+"
+```
+
+and replace it with:
+
+```lua
+L.QS_HINT = "Apply sets SwagBag up for what you picked. Skip keeps SwagBag's defaults."
+L.QS_PAUSE_NOTE = "Focus modes bring up the sections you need (a key, the vendor, fishing) by themselves. The Pause"
+	.. " button at the top of your bags stops them until you click Resume."
+L.QS_MPLUS = "M+"
+```
+
+In `SwagBag/UI/BagsWindow.lua` (edit 1 of 2), find:
+
+```lua
+-- sections (AC8.5). The settings open under ErrorTrap "none": a settings glitch flashes
+-- L.SETTINGS_FAILED here and never puts the bags into Safe Mode (W4-5). The tooltip says both.
+W.modeButton = titleButton(L.BTN_PAUSE, "bags.modeButton", function(_, mouseButton)
+```
+
+and replace it with:
+
+```lua
+-- sections (AC8.5). The settings open under ErrorTrap "none": a settings glitch flashes
+-- L.SETTINGS_FAILED here and never puts the bags into Safe Mode (W4-5). The tooltip says what a
+-- click does now, in plain words (week 6, D18), and names the right-click.
+W.modeButton = titleButton(L.BTN_PAUSE, "bags.modeButton", function(_, mouseButton)
+```
+
+In `SwagBag/UI/BagsWindow.lua` (edit 2 of 2), find:
+
+```lua
+W.modeButton:SetScript("OnEnter", Guard("bags.modeTip", function(self)
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:SetText(L.MODE_TIP_TITLE)
+	GameTooltip:AddLine(L.MODE_TIP_LEFT, 1, 1, 1)
+	GameTooltip:AddLine(L.MODE_TIP_RIGHT, 1, 1, 1)
+```
+
+and replace it with:
+
+```lua
+W.modeButton:SetScript("OnEnter", Guard("bags.modeTip", function(self)
+	local paused = SB.Focus and SB.Focus.IsPaused()
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:SetText(paused and L.MODE_TIP_TITLE_PAUSED or L.MODE_TIP_TITLE)
+	GameTooltip:AddLine(paused and L.MODE_TIP_BODY_PAUSED or L.MODE_TIP_BODY, 1, 1, 1, true)
+	GameTooltip:AddLine(L.MODE_TIP_RIGHT, 1, 1, 1)
+```
+
+In `SwagBag/UI/QuickSetup.lua` (edit 1 of 2), find:
+
+```lua
+frame.columnsLabel:SetText(L.SET_COLUMNS)
+frame.status = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+```
+
+and replace it with:
+
+```lua
+frame.columnsLabel:SetText(L.SET_COLUMNS)
+-- Week 6 (D18): what the Pause button on the bags is for, before the user meets it.
+frame.pauseNote = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+frame.pauseNote:SetPoint("TOPLEFT", 14, -160)
+frame.pauseNote:SetWidth(532)
+frame.pauseNote:SetJustifyH("LEFT")
+frame.pauseNote:SetWordWrap(true)
+frame.pauseNote:SetText(L.QS_PAUSE_NOTE)
+frame.status = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+```
+
+In `SwagBag/UI/QuickSetup.lua` (edit 2 of 2), find:
+
+```lua
+	SB.Theme.Text(frame.columnsLabel, "label")
+	SB.Theme.Text(frame.status, "small")
+```
+
+and replace it with:
+
+```lua
+	SB.Theme.Text(frame.columnsLabel, "label")
+	SB.Theme.Text(frame.pauseNote, "small")
+	SB.Theme.Text(frame.status, "small")
+```
+
+In `SwagBag/UI/SettingsFocus.lua` (edit 1 of 8), find:
+
+```lua
+--   SettingsFocus.Edit(modeId)   open the page with that mode's sections shown
+-- Every write goes through Config.Set or the Focus writers; Config emits SB_CONFIG_CHANGED and
+```
+
+and replace it with:
+
+```lua
+--   SettingsFocus.Edit(modeId)   open the page with that mode's sections shown
+-- The page starts with a plain-words note, and every row with buttons has a tooltip (row.tip, week 6).
+-- Every write goes through Config.Set or the Focus writers; Config emits SB_CONFIG_CHANGED and
+```
+
+In `SwagBag/UI/SettingsFocus.lua` (edit 2 of 8), find:
+
+```lua
+end
+
+local function setting(label, path, choices, done)
+	return { kind = "choice", label = label, choices = choices, get = function()
+		return SB.Config.Get(path)
+```
+
+and replace it with:
+
+```lua
+end
+
+local function setting(label, path, choices, done, tip)
+	return { kind = "choice", label = label, choices = choices, tip = tip, get = function()
+		return SB.Config.Get(path)
+```
+
+In `SwagBag/UI/SettingsFocus.lua` (edit 3 of 8), find:
+
+```lua
+			local name = SB.Categories.Name(sid)
+			rows[#rows + 1] = { kind = "choice", label = name, width = 96,
+				choices = { { value = true, text = L.SET_SECTION_OPEN }, { value = false, text = L.SET_SECTION_CLOSED } },
+```
+
+and replace it with:
+
+```lua
+			local name = SB.Categories.Name(sid)
+			rows[#rows + 1] = { kind = "choice", label = name, width = 96, tip = L.SET_SECTION_TIP:format(modeName(id)),
+				choices = { { value = true, text = L.SET_SECTION_OPEN }, { value = false, text = L.SET_SECTION_CLOSED } },
+```
+
+In `SwagBag/UI/SettingsFocus.lua` (edit 4 of 8), find:
+
+```lua
+	end
+	rows[#rows + 1] = { kind = "actions", label = L.SET_SECTIONS_DEFAULT_LABEL, actions = { { text = L.SET_RESET_DEFAULT,
+		run = function()
+```
+
+and replace it with:
+
+```lua
+	end
+	rows[#rows + 1] = { kind = "actions", label = L.SET_SECTIONS_DEFAULT_LABEL, tip = L.SET_SECTIONS_DEFAULT_TIP,
+		actions = { { text = L.SET_RESET_DEFAULT,
+		run = function()
+```
+
+In `SwagBag/UI/SettingsFocus.lua` (edit 5 of 8), find:
+
+```lua
+end
+
+local function rows()
+	local F = SB.Focus
+	local out = {
+		setting(L.SET_FOCUS_AUTO, "focus.auto", { { value = true, text = L.SET_FOCUS_AUTO_ON },
+			{ value = false, text = L.SET_OFF } }, function(v)
+			return v and L.SET_FOCUS_AUTO_DONE or L.SET_FOCUS_OFF_DONE
+		end),
+		-- Week 6: move the mode's sections up (default) or collapse the rest (the week-4 way). The same
+		-- writer as /swagbag mode style, so both answer alike and refuse while read-only.
+		{ kind = "choice", label = L.SET_FOCUS_STYLE, choices = { { value = "front", text = L.SET_FOCUS_STYLE_FRONT },
+			{ value = "collapse", text = L.SET_FOCUS_STYLE_COLLAPSE } },
+```
+
+and replace it with:
+
+```lua
+end
+
+-- When each mode switches on, for its row's tooltip.
+local function whenText(id)
+	return ({ mplus = L.SET_MODE_WHEN_MPLUS, raid = L.SET_MODE_WHEN_RAID, delves = L.SET_MODE_WHEN_DELVES,
+		gathering = L.SET_MODE_WHEN_GATHERING, fishing = L.SET_MODE_WHEN_FISHING, market = L.SET_MODE_WHEN_MARKET })[id]
+		or ""
+end
+
+local function rows()
+	local F = SB.Focus
+	local out = {
+		{ kind = "note", label = L.SET_FOCUS_INTRO }, -- week 6: what focus modes are, in plain words (D18)
+		setting(L.SET_FOCUS_AUTO, "focus.auto", { { value = true, text = L.SET_FOCUS_AUTO_ON },
+			{ value = false, text = L.SET_OFF } }, function(v)
+			return v and L.SET_FOCUS_AUTO_DONE or L.SET_FOCUS_OFF_DONE
+		end, L.SET_FOCUS_AUTO_TIP),
+		-- Week 6: move the mode's sections up (default) or collapse the rest (the week-4 way). The same
+		-- writer as /swagbag mode style, so both answer alike and refuse while read-only.
+		{ kind = "choice", label = L.SET_FOCUS_STYLE, tip = L.SET_FOCUS_STYLE_TIP,
+			choices = { { value = "front", text = L.SET_FOCUS_STYLE_FRONT },
+			{ value = "collapse", text = L.SET_FOCUS_STYLE_COLLAPSE } },
+```
+
+In `SwagBag/UI/SettingsFocus.lua` (edit 6 of 8), find:
+
+```lua
+			return v == "merge" and L.SET_FOCUS_MERGE_DONE or L.SET_FOCUS_PRIORITY_DONE
+		end),
+		setting(L.SET_FOCUS_PEEK, "focus.peek", { { value = "peek", text = L.SET_FOCUS_PEEK_PEEK },
+			{ value = "keep", text = L.SET_FOCUS_PEEK_KEEP } }, function(v)
+			return v == "peek" and L.SET_FOCUS_PEEK_DONE or L.SET_FOCUS_KEEP_DONE
+		end),
+		setting(L.SET_FOCUS_ANNOUNCE, "focus.announce", { { value = false, text = L.SET_FOCUS_QUIET },
+			{ value = true, text = L.SET_FOCUS_LOUD } }, function(v)
+			return v and L.SET_FOCUS_LOUD_DONE or L.SET_FOCUS_QUIET_DONE
+		end),
+		{ kind = "choice", label = L.SET_FOCUS_SCOPE, choices = { { value = false, text = L.SET_FOCUS_ACCOUNT },
+			{ value = true, text = L.SET_FOCUS_CHARACTER } },
+```
+
+and replace it with:
+
+```lua
+			return v == "merge" and L.SET_FOCUS_MERGE_DONE or L.SET_FOCUS_PRIORITY_DONE
+		end, L.SET_FOCUS_RESOLVE_TIP),
+		setting(L.SET_FOCUS_PEEK, "focus.peek", { { value = "peek", text = L.SET_FOCUS_PEEK_PEEK },
+			{ value = "keep", text = L.SET_FOCUS_PEEK_KEEP } }, function(v)
+			return v == "peek" and L.SET_FOCUS_PEEK_DONE or L.SET_FOCUS_KEEP_DONE
+		end, L.SET_FOCUS_PEEK_TIP),
+		setting(L.SET_FOCUS_ANNOUNCE, "focus.announce", { { value = false, text = L.SET_FOCUS_QUIET },
+			{ value = true, text = L.SET_FOCUS_LOUD } }, function(v)
+			return v and L.SET_FOCUS_LOUD_DONE or L.SET_FOCUS_QUIET_DONE
+		end, L.SET_FOCUS_ANNOUNCE_TIP),
+		{ kind = "choice", label = L.SET_FOCUS_SCOPE, tip = L.SET_FOCUS_SCOPE_TIP,
+			choices = { { value = false, text = L.SET_FOCUS_ACCOUNT },
+			{ value = true, text = L.SET_FOCUS_CHARACTER } },
+```
+
+In `SwagBag/UI/SettingsFocus.lua` (edit 7 of 8), find:
+
+```lua
+		out[#out + 1] = { kind = "choice", label = layered(L.SET_MODE_LABEL:format(L[m.name])),
+			choices = { { value = true, text = L.SET_ON }, { value = false, text = L.SET_OFF } },
+```
+
+and replace it with:
+
+```lua
+		out[#out + 1] = { kind = "choice", label = layered(L.SET_MODE_LABEL:format(L[m.name])),
+			tip = L.SET_MODE_TIP:format(whenText(m.id)),
+			choices = { { value = true, text = L.SET_ON }, { value = false, text = L.SET_OFF } },
+```
+
+In `SwagBag/UI/SettingsFocus.lua` (edit 8 of 8), find:
+
+```lua
+	end
+	local pick = { kind = "choice", label = L.SET_EDIT_MODE, width = 76, choices = {}, get = function()
+		return SF.editing
+```
+
+and replace it with:
+
+```lua
+	end
+	local pick = { kind = "choice", label = L.SET_EDIT_MODE, width = 76, tip = L.SET_EDIT_MODE_TIP, choices = {}, get = function()
+		return SF.editing
+```
+
+In `SwagBag/UI/SettingsWindow.lua` (edit 1 of 6), find:
+
+```lua
+--   { kind = "note", label }
+-- Pages register with SW.AddPage{ id, title, rows = function() -> list }, in TOC order, and are
+```
+
+and replace it with:
+
+```lua
+--   { kind = "note", label }
+-- Any row may carry tip: a plain-words explanation shown when the mouse rests on one of its buttons,
+-- under the row's label; a choice or action may carry its own tip, shown after the row's (week 6).
+-- A button is as wide as its text (plus TEXT_PAD), never narrower than the row's width (or
+-- BUTTON); a button that no longer fits the line starts the next one, and the rows below move down.
+-- Pages register with SW.AddPage{ id, title, rows = function() -> list }, in TOC order, and are
+```
+
+In `SwagBag/UI/SettingsWindow.lua` (edit 2 of 6), find:
+
+```lua
+local SW = { pages = {}, byId = {}, current = nil, labels = {}, buttons = {}, used = { labels = 0, buttons = 0 },
+	selected = {}, WIDTH = 640, HEIGHT = 470, NAV = 140, BUTTON = 120, ROW = 20, GAP = 8 }
+SB.SettingsWindow = SW
+```
+
+and replace it with:
+
+```lua
+local SW = { pages = {}, byId = {}, current = nil, labels = {}, buttons = {}, used = { labels = 0, buttons = 0 },
+	selected = {}, tips = {}, WIDTH = 640, HEIGHT = 470, NAV = 140, BUTTON = 120, ROW = 20, GAP = 8, LINE_GAP = 4, TEXT_PAD = 24 }
+SB.SettingsWindow = SW
+```
+
+In `SwagBag/UI/SettingsWindow.lua` (edit 3 of 6), find:
+
+```lua
+end
+
+-- Run fn (a click) inside ErrorTrap; its return value is the feedback. Then redraw the page.
+```
+
+and replace it with:
+
+```lua
+end
+
+-- The tooltip of a row's button (week 6): the row's label, its tip, then the button's own tip.
+-- SW.tips[button] = { title, text, extra } for the buttons of the page as drawn.
+function SW.ShowTip(b)
+	local tip = SW.tips[b]
+	if not (GameTooltip and tip and (tip.text or tip.extra)) then
+		return
+	end
+	GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+	GameTooltip:SetText(tip.title or "")
+	if tip.text then
+		GameTooltip:AddLine(tip.text, 1, 1, 1, true)
+	end
+	if tip.extra then
+		GameTooltip:AddLine(tip.extra, 1, 1, 1, true)
+	end
+	GameTooltip:Show()
+end
+
+-- Run fn (a click) inside ErrorTrap; its return value is the feedback. Then redraw the page.
+```
+
+In `SwagBag/UI/SettingsWindow.lua` (edit 4 of 6), find:
+
+```lua
+		end, "none"))
+		if SB.Theme then
+```
+
+and replace it with:
+
+```lua
+		end, "none"))
+		b:SetScript("OnEnter", Guard("settings.tip", function(self)
+			SW.ShowTip(self)
+		end, "none"))
+		b:SetScript("OnLeave", Guard("settings.tipHide", function(self)
+			if GameTooltip and (not GameTooltip.IsOwned or GameTooltip:IsOwned(self)) then
+				GameTooltip:Hide()
+			end
+		end, "none"))
+		if SB.Theme then
+```
+
+In `SwagBag/UI/SettingsWindow.lua` (edit 5 of 6), find:
+
+```lua
+	end
+	b.onClick, b.onDrop = nil, nil
+	b:Show()
+	return b
+end
+```
+
+and replace it with:
+
+```lua
+	end
+	b.onClick, b.onDrop, SW.tips[b] = nil, nil, nil
+	b:Show()
+	return b
+end
+
+-- The full width of a button's text (0 when the client cannot say).
+local function textWidth(b)
+	local w = b.GetTextWidth and b:GetTextWidth()
+	return type(w) == "number" and w or 0
+end
+```
+
+In `SwagBag/UI/SettingsWindow.lua` (edit 6 of 6), find:
+
+```lua
+			local current = row.get and row.get()
+			local x = 12
+			for _, item in ipairs(items) do
+				local b = button()
+				b:SetText(item.text)
+				b:SetWidth(item.width or row.width or SW.BUTTON)
+				place(b, x, y)
+				x = x + (item.width or row.width or SW.BUTTON) + 4
+				if row.kind == "choice" then
+```
+
+and replace it with:
+
+```lua
+			local current = row.get and row.get()
+			local x, room = 12, (child:GetWidth() or SW.WIDTH) - 4
+			for _, item in ipairs(items) do
+				local b = button()
+				b:SetText(item.text)
+				-- as wide as its text, never narrower than the row's width; out of room: the next line
+				local w = math.min(room - 12, math.max(item.width or row.width or SW.BUTTON, textWidth(b) + SW.TEXT_PAD))
+				if x > 12 and x + w > room then
+					x, y = 12, y - SW.ROW - SW.LINE_GAP
+				end
+				b:SetWidth(w)
+				place(b, x, y)
+				x = x + w + 4
+				if row.tip or item.tip then
+					SW.tips[b] = { title = row.label, text = row.tip, extra = item.tip }
+				end
+				if row.kind == "choice" then
+```
+
+- [ ] **Step 4: Run the tests to see them pass**
+
+Run: `luajit spec/runner.lua spec/*_spec.lua`
+Expected: `1268 passed, 0 failed`
+
+- [ ] **Step 5: Run the full checks**
+
+Run: `bash scripts/check.sh`
+Expected: `TOC OK (62 files)`, `1268 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add SwagBag/UI/SettingsWindow.lua SwagBag/UI/SettingsFocus.lua SwagBag/UI/BagsWindow.lua SwagBag/UI/QuickSetup.lua \
+  SwagBag/Locale/enUS.lua spec/settings_spec.lua spec/settings_focus_spec.lua spec/bagswindow_sections_spec.lua \
+  spec/quicksetup_spec.lua
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 6 Task 8: plain-words tips on settings rows, Focus modes intro, clearer Pause tooltip and quick setup line; choice buttons fit their text and wrap
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
+```
+
+---
+### Task 9: The bank layout reads each slot once and reports its parts; repeated stacks written once in snapshots; the footer's gold coin
+
+From the user's in-game testing of 0.5.0 (fixes 5 and 6).
+- **Bank open 72–86 ms (spec 9 budget: 80 ms) and a 40 KB snapshot for one character (aim: about 30 KB).** Reading the code found one hot spot that can be removed with no change in behaviour. The bank's `describe` (`UI/BankWindow.lua`) read every slot twice: `Adapter.GetSlot` for the paint, then `Items.Describe`, which calls `Adapter.GetSlot` again. That is two client `GetContainerItemInfo` calls per slot, 2,156 for a full 1,078-slot bank. `Items.Describe(bag, slot, s)` now takes the slot the caller already read. On the 1,078-slot fixture (`spec/fixtures/big.lua`) a bank layout makes 1,078 slot reads instead of 2,156 (counted while writing this plan). The rest of the open time cannot be split by reading the code: on the mock, every client call costs about the same. So `GroupView` now records where a full layout's time goes (tabs and their buttons, reading the slots, categories, positions, drawing), and `/swagbag report` prints it under `Last bank layout`. Session TF1 brings those numbers back, and the next step is chosen from them (D20). For snapshots, a link that an earlier slot of the same container already holds is written `slot:=thatSlot;count` instead of the full link again. A bank tab with 10 stacks each of two herbs drops from 1,591 to 358 bytes. The report splits the snapshot size into bags, banks, warband and guild banks. Every older snapshot still reads exactly as before, and the schema stays 2 (D21). The 30 KB aim is not promised: it depends on how many repeated stacks the user's banks hold, which the new report line shows.
+- **FT1, O1: the footer's gold.** It showed `GetMoneyString`'s small inline coins. The gold entry now shows a gold coin as big as the currency and crest icons (`F.ICON`, the same widget), followed by the whole gold pieces with thousands separators (`1,234,567`). Silver and copper move into the tooltip (`Gold on this character`, then `Adapter.MoneyText` of the full amount). The coin is the texture file `Interface\MoneyFrame\UI-GoldIcon`, a plain path, so it does not go through the Adapter (D22).
+
+**Files:**
+- Modify: `SwagBag/Engine/Items.lua` (`Items.Describe(bag, slot, s)`)
+- Modify: `SwagBag/UI/BankWindow.lua` (`describe`, the count-only repaint)
+- Modify: `SwagBag/UI/GroupView.lua` (header, `build` timing, new `positionTimed`, `commit` records `stats.phases`, `v.Layout`, `v.RequestLayout`)
+- Modify: `SwagBag/Engine/Snapshots.lua` (format comment, `Serialize`, `Deserialize`, new `Snap.BytesByKind`)
+- Modify: `SwagBag/Core/Report.lua` (`Bank layout parts` and `Snapshot sizes` lines)
+- Modify: `SwagBag/UI/Footer.lua` (header, `F.GOLD_ICON`, new `F.GoldText`, the gold item, the money tooltip)
+- Modify: `SwagBag/Locale/enUS.lua` (`REPORT_BANK_PHASES`, `REPORT_SNAPSHOT_KINDS`)
+- Test: `spec/bankwindow_groups_spec.lua` (two new), `spec/report_spec.lua` (two tests extended), `spec/snapshots_spec.lua` (three new), `spec/footer_spec.lua` (six `123g` expectations in five tests become `123`, one new)
+
+**Interfaces:**
+- Consumes: `SB.Adapter.GetSlot/ProfileMs/MoneyText`, `Snap.DB`, the local `snapshotBytes`.
+- Produces:
+  - `Items.Describe(bag, slot, s?)`, where `s` is a `GetSlot` result and `false` means read as empty;
+  - `v.stats.phases = { groups, read, categories, positions, drawing }` (ms) on every `GroupView`;
+  - `Snap.BytesByKind() -> { bags, bank, warband, guild }` (bytes) and the `=slot` line form;
+  - `F.GOLD_ICON`, `F.GoldText(copper) -> text`, and the gold item's tip `{ kind = "money", copper }`.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `spec/bankwindow_groups_spec.lua`, find:
+
+```lua
+	end)
+
+	it("the first visit to a full bank (1,078 slots) is laid out within 80 ms (spec 9)", function()
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	-- Week 6, D20. Mutation: describe reads the slot again for the record (Items.Describe(bag, slot)).
+	it("a bank layout reads each slot once, for the button and the record", function()
+		openBank()
+		local get, reads = A.GetSlot, {}
+		A.GetSlot = function(bag, slot)
+			local k = bag * 1000 + slot
+			reads[k] = (reads[k] or 0) + 1
+			return get(bag, slot)
+		end
+		BW.Layout("reflow")
+		local n = 0
+		for k, times in pairs(reads) do
+			n = n + 1
+			assert.equal(1, times, "slot " .. k)
+		end
+		assert.equal(16, n, "both groups' 8 slots")
+		assert.equal(5, BW.view.Record(6, 1).count, "the record still has the item")
+	end)
+
+	-- Week 6, D20: /swagbag report shows where the bank layout's time goes. Mutation: drop
+	-- `v.stats.phases = b.ms` in GroupView's commit.
+	it("a bank layout records its parts: tabs, reading, categories, positions, drawing", function()
+		local ms = 0
+		A.ProfileMs = function()
+			ms = ms + 1 -- every reading of the clock is 1 ms later
+			return ms
+		end
+		openBank()
+		local p = BW.view.stats.phases
+		local sum = 0
+		for _, part in ipairs({ "groups", "read", "categories", "positions", "drawing" }) do
+			assert.truthy(type(p[part]) == "number" and p[part] > 0, part)
+			sum = sum + p[part]
+		end
+		assert.truthy(sum <= BW.view.stats.lastLayoutMs, "the parts fit inside the whole")
+	end)
+
+	it("the first visit to a full bank (1,078 slots) is laid out within 80 ms (spec 9)", function()
+```
+
+In `spec/footer_spec.lua` (edit 1 of 5), find:
+
+```lua
+		F.Refresh()
+		assert.same({ "123g", "500", "45", "AKCE +12", "10 free" }, texts())
+		assert.equal(1, resized, "the window fits the new footer")
+```
+
+and replace it with:
+
+```lua
+		F.Refresh()
+		assert.same({ "123", "500", "45", "AKCE +12", "10 free" }, texts(), "gold: the whole gold pieces (week 6)")
+		assert.equal(1, resized, "the window fits the new footer")
+```
+
+In `spec/footer_spec.lua` (edit 2 of 5), find:
+
+```lua
+		F.Refresh()
+		assert.same({ "123g", "500", "900", "AKCE +12", "10 free" }, texts())
+	end)
+```
+
+and replace it with:
+
+```lua
+		F.Refresh()
+		assert.same({ "123", "500", "900", "AKCE +12", "10 free" }, texts())
+	end)
+```
+
+In `spec/footer_spec.lua` (edit 3 of 5), find:
+
+```lua
+		assert.equal("gold,currencies,-crests,free,keystone", SB.Config.Get("bags.footer.entries"))
+		assert.same({ "123g", "500", "10 free", "AKCE +12" }, texts())
+	end)
+```
+
+and replace it with:
+
+```lua
+		assert.equal("gold,currencies,-crests,free,keystone", SB.Config.Get("bags.footer.entries"))
+		assert.same({ "123", "500", "10 free", "AKCE +12" }, texts())
+	end)
+```
+
+In `spec/footer_spec.lua` (edit 4 of 5), find:
+
+```lua
+		F.Refresh()
+		assert.same({ "123g", "500", "45", "AKCE +12", "10 free" }, texts())
+		assert.equal("currencies", F.items[3].entry)
+```
+
+and replace it with:
+
+```lua
+		F.Refresh()
+		assert.same({ "123", "500", "45", "AKCE +12", "10 free" }, texts())
+		assert.equal("currencies", F.items[3].entry)
+```
+
+In `spec/footer_spec.lua` (edit 5 of 5), find:
+
+```lua
+		F.Refresh()
+		assert.equal("123g", texts()[1])
+		A.money = nil
+		F.Refresh()
+		assert.equal("123g", texts()[1], "the last known amount")
+	end)
+```
+
+and replace it with:
+
+```lua
+		F.Refresh()
+		assert.equal("123", texts()[1])
+		A.money = nil
+		F.Refresh()
+		assert.equal("123", texts()[1], "the last known amount")
+	end)
+
+	-- Week 6, D22 (FT1, O1: the gold needs a proper coin). Mutations: add the gold entry with no
+	-- icon; in GoldText, drop the separator loop; the money tooltip shows item.text (gold only).
+	it("gold: a full-size coin, the whole gold with thousands separators; silver and copper in its tooltip", function()
+		A.money = 12345678901 -- 1,234,567 gold 89 silver 1 copper
+		local asked
+		A.MoneyText = function(copper)
+			asked = copper
+			return "1,234,567g 89s 1c"
+		end
+		F.Refresh()
+		assert.equal("1,234,567", F.items[1].text)
+		assert.equal(F.GOLD_ICON, F.items[1].icon)
+		assert.truthy(F.widgets[1].icon.shown)
+		assert.equal(F.widgets[2].icon.w, F.widgets[1].icon.w, "the coin is as big as the currency icons")
+		Fake.Fire(F.widgets[1], "OnEnter")
+		assert.equal(SB.L.FOOTER_GOLD, GameTooltip.text)
+		assert.same({ "1,234,567g 89s 1c", 1, 1, 1 }, GameTooltip.calls.AddLine)
+		assert.equal(12345678901, asked, "the full amount, silver and copper too")
+		assert.same({ "0", "0", "1", "999", "1,000", "10,000,000" }, { F.GoldText(0), F.GoldText(9999), F.GoldText(10000),
+			F.GoldText(9990000), F.GoldText(10000000), F.GoldText(100000000000) })
+	end)
+```
+
+In `spec/report_spec.lua` (edit 1 of 2), find:
+
+```lua
+		assert.truthy(SB.Report.Build():find("\nLast bank layout: 61.3 ms (open)", 1, true), "spec 9: first bank open")
+	end)
+```
+
+and replace it with:
+
+```lua
+		assert.truthy(SB.Report.Build():find("\nLast bank layout: 61.3 ms (open)", 1, true), "spec 9: first bank open")
+		-- Week 6, D20. Mutation: drop the REPORT_BANK_PHASES line.
+		SB.BankWindow.view.stats.phases = { groups = 0.5, read = 40.04, categories = 12.3, positions = 6.1, drawing = 2 }
+		assert.truthy(SB.Report.Build():find("\nBank layout parts: tabs 0.5 ms, reading 40.0 ms, categories 12.3 ms,"
+			.. " positions 6.1 ms, drawing 2.0 ms", 1, true))
+	end)
+```
+
+In `spec/report_spec.lua` (edit 2 of 2), find:
+
+```lua
+		assert.truthy(SB.Report.Build():find("\nSnapshots: 3 characters, 1 guilds, 40 KB", 1, true))
+	end)
+```
+
+and replace it with:
+
+```lua
+		assert.truthy(SB.Report.Build():find("\nSnapshots: 3 characters, 1 guilds, 40 KB", 1, true))
+		-- Week 6, D21. Mutation: drop the REPORT_SNAPSHOT_KINDS line.
+		SB.Snapshots.BytesByKind = function() return { bags = 9216, bank = 20480, warband = 10240, guild = 512 } end
+		assert.truthy(SB.Report.Build():find("\nSnapshot sizes: bags 9.0 KB, banks 20.0 KB, warband 10.0 KB,"
+			.. " guild banks 0.5 KB", 1, true))
+	end)
+```
+
+In `spec/snapshots_spec.lua`, find:
+
+```lua
+		assert.same({ size = 4, s = "1:item:1;5\n3:" .. PET .. ";1\n" }, c)
+	end)
+```
+
+and replace it with:
+
+```lua
+		assert.same({ size = 4, s = "1:item:1;5\n3:" .. PET .. ";1\n" }, c)
+	end)
+
+	-- Week 6, D21. Mutation: in Serialize, always write the link (no "=slot" for a repeat).
+	it("a link repeated in one container is written once; later slots point back to it", function()
+		local herb = "|cffffffff|Hitem:210796::::::::80:253::::1:28:2462:::::|h[Mycobloom]|h|r"
+		local slots = { [1] = { link = herb, count = 200 }, [2] = { link = PET, count = 1 }, [4] = { link = herb, count = 200 },
+			[7] = { link = herb, count = 13 } }
+		local c = Snap.Serialize(slots, 8)
+		assert.equal("1:" .. herb .. ";200\n2:" .. PET .. ";1\n4:=1;200\n7:=1;13\n", c.s)
+		assert.same(slots, Snap.Deserialize(c))
+		local plain = 0
+		for _, s in pairs(slots) do
+			plain = plain + #s.link
+		end
+		assert.truthy(#c.s < plain, "smaller than writing every link out")
+		assert.same({ [2] = { link = PET, count = 1 } }, Snap.Deserialize({ s = "3:=9;5\n2:" .. PET .. ";1\n" }),
+			"a pointer to a slot with no link is skipped")
+	end)
+
+	-- Week 6, D21: the schema stays 2 and old snapshots read as before. Mutation: Deserialize reads
+	-- only "=slot" lines' links (drops the plain-link branch).
+	it("a snapshot written by 0.5.0 (every link written out) reads exactly as before", function()
+		local old = { size = 4, s = "1:" .. KEY .. ";1\n2:item:1;5\n3:item:1;5\n" }
+		assert.same({ [1] = { link = KEY, count = 1 }, [2] = { link = "item:1", count = 5 }, [3] = { link = "item:1", count = 5 } },
+			Snap.Deserialize(old))
+	end)
+
+	-- Week 6, D21. Mutation: BytesByKind adds the bank snapshots into bags.
+	it("BytesByKind splits the saved size into bags, banks, warband and guild banks", function()
+		SB.Inventory.ScanAll()
+		bankVisit()
+		A.Advance(0.3)
+		Snap.SaveGuild("Tidewatch-Argent Dawn", { [2] = { name = "Gear", slots = { [5] = { link = "item:1", count = 1 } } } })
+		SB.eventFrame:Fire("PLAYER_LOGOUT")
+		local k = Snap.BytesByKind()
+		assert.truthy(k.bags > 0 and k.bank > 0 and k.warband > 0 and k.guild > 0)
+		assert.equal(Snap.Bytes(), k.bags + k.bank + k.warband + k.guild)
+	end)
+```
+
+- [ ] **Step 2: Run the tests to see them fail**
+
+Run: `luajit spec/runner.lua spec/*_spec.lua`
+
+Expected: the last line is `1262 passed, 12 failed`, and the failures are exactly:
+```text
+FAIL spec/bankwindow_groups_spec.lua :: BankWindow contents > a bank layout reads each slot once, for the button and the record
+FAIL spec/bankwindow_groups_spec.lua :: BankWindow contents > a bank layout records its parts: tabs, reading, categories, positions, drawing
+FAIL spec/footer_spec.lua :: Footer (ruling W4-14) > default: every entry on, in the order gold, currencies, crests, keystone, free; only owned crests
+FAIL spec/footer_spec.lua :: Footer (ruling W4-14) > crests come from the season's confirmed currency IDs when Engine/Crests.lua has them
+FAIL spec/footer_spec.lua :: Footer (ruling W4-14) > /swagbag footer lists the entries, switches and moves one, and answers each time
+FAIL spec/footer_spec.lua :: Footer (ruling W4-14) > a crest ticked 'Show on backpack' shows once, under currencies; crests adds nothing
+FAIL spec/footer_spec.lua :: Footer (ruling W4-14) > gold the client will not tell (secret or missing) shows the last known amount, never a false 0
+FAIL spec/footer_spec.lua :: Footer (ruling W4-14) > gold: a full-size coin, the whole gold with thousands separators; silver and copper in its tooltip
+FAIL spec/report_spec.lua :: Report > shows the bank setting, the last visit and the deposit target (check V2)
+FAIL spec/report_spec.lua :: Report > shows the snapshot counts and size, for the spec 8.4 budgets (check V10)
+FAIL spec/snapshots_spec.lua :: Snapshots (spec 8.3 format, 5.7 timing, 8.4 budget) > a link repeated in one container is written once; later slots point back to it
+FAIL spec/snapshots_spec.lua :: Snapshots (spec 8.3 format, 5.7 timing, 8.4 budget) > BytesByKind splits the saved size into bags, banks, warband and guild banks
+```
+"a snapshot written by 0.5.0 (every link written out) reads exactly as before" passes at Step 2 because it pins what the reader does today, and must keep doing after Step 3.
+
+Critical tests and the mutation each must catch (applied to the finished Task 9 code):
+- "a bank layout reads each slot once …": in `describe`, `local record = SB.Items.Describe(bag, slot)` (reads again).
+- "a bank layout records its parts …": in `commit`, delete `v.stats.phases = b.ms`.
+- "shows the bank setting, the last visit …": delete the `REPORT_BANK_PHASES` line in `Report.Build`.
+- "shows the snapshot counts and size …": delete the `REPORT_SNAPSHOT_KINDS` line.
+- "a link repeated in one container is written once …": in `Serialize`, write `s.link` instead of `(ref and ("=" .. ref) or s.link)`.
+- "a snapshot written by 0.5.0 …": in `Deserialize`, replace `if slot and link then` with `if slot and ref then`.
+- "BytesByKind splits …": `out.bags = out.bags + snapshotBytes(c.bank)` in place of the bank line.
+- "gold: a full-size coin …": add the gold item with `nil` for its icon; separately, in `F.GoldText`, replace the `gsub` line with `grouped = 0`; separately, the money tooltip adds `item.text` instead of `SB.Adapter.MoneyText(tip.copper)`.
+
+- [ ] **Step 3: Write the implementation**
+
+In `SwagBag/Core/Report.lua` (edit 1 of 2), find:
+
+```lua
+			lines[#lines + 1] = L.REPORT_BANK_LAYOUT:format(bankStats.lastLayoutMs, tostring(bankStats.lastLayoutReason))
+		end
+```
+
+and replace it with:
+
+```lua
+			lines[#lines + 1] = L.REPORT_BANK_LAYOUT:format(bankStats.lastLayoutMs, tostring(bankStats.lastLayoutReason))
+			local p = bankStats.phases
+			if p then -- week 6 (D20): where the bank layout's time goes
+				lines[#lines + 1] = L.REPORT_BANK_PHASES:format(p.groups, p.read, p.categories, p.positions, p.drawing)
+			end
+		end
+```
+
+In `SwagBag/Core/Report.lua` (edit 2 of 2), find:
+
+```lua
+		lines[#lines + 1] = L.REPORT_SNAPSHOTS:format(chars, guilds, math.floor(SB.Snapshots.Bytes() / 1024 + 0.5))
+	end
+```
+
+and replace it with:
+
+```lua
+		lines[#lines + 1] = L.REPORT_SNAPSHOTS:format(chars, guilds, math.floor(SB.Snapshots.Bytes() / 1024 + 0.5))
+		if SB.Snapshots.BytesByKind then -- week 6 (D21): where the snapshot bytes are
+			local k = SB.Snapshots.BytesByKind()
+			lines[#lines + 1] = L.REPORT_SNAPSHOT_KINDS:format(k.bags / 1024, k.bank / 1024, k.warband / 1024, k.guild / 1024)
+		end
+	end
+```
+
+In `SwagBag/Engine/Items.lua` (edit 1 of 2), find:
+
+```lua
+--
+-- Items.Describe(bag, slot) -> record, or nil + "empty"
+-- record = {
+```
+
+and replace it with:
+
+```lua
+--
+-- Items.Describe(bag, slot[, s]) -> record, or nil + "empty". s: the slot as the caller already read
+--   it with Adapter.GetSlot (false: read as empty), so the slot is not read twice (week 6, D20)
+-- record = {
+```
+
+In `SwagBag/Engine/Items.lua` (edit 2 of 2), find:
+
+```lua
+SB.Items = Items
+
+function Items.Describe(bag, slot)
+	local A = SB.Adapter
+	local s = A.GetSlot(bag, slot)
+	if not s then
+```
+
+and replace it with:
+
+```lua
+SB.Items = Items
+
+function Items.Describe(bag, slot, s)
+	local A = SB.Adapter
+	if s == nil then
+		s = A.GetSlot(bag, slot)
+	end
+	if not s then
+```
+
+In `SwagBag/Engine/Snapshots.lua` (edit 1 of 5), find:
+
+```lua
+-- one string per container of "slot:link;count\n" lines in slot order, full links verbatim
+-- (caged pets, keystones and bonus IDs round-trip), no derived values.
+-- Where they live (spec 8.2): SwagBagDB.chars["Name-Realm"] = { class, level, lastSeen, guild,
+```
+
+and replace it with:
+
+```lua
+-- one string per container of "slot:link;count\n" lines in slot order, full links verbatim
+-- (caged pets, keystones and bonus IDs round-trip), no derived values. Week 6 (D21): a link that
+-- an earlier slot of the same container already has is written "slot:=thatSlot;count" (a stack of
+-- the same item written once); Deserialize reads both forms, so every older snapshot reads as before.
+-- Where they live (spec 8.2): SwagBagDB.chars["Name-Realm"] = { class, level, lastSeen, guild,
+```
+
+In `SwagBag/Engine/Snapshots.lua` (edit 2 of 5), find:
+
+```lua
+function Snap.Serialize(slots, size)
+	local parts = {}
+	for slot = 1, size do
+		local s = slots[slot]
+		if s and s.link then
+			parts[#parts + 1] = slot .. ":" .. s.link .. ";" .. (s.count or 1) .. "\n"
+		end
+```
+
+and replace it with:
+
+```lua
+function Snap.Serialize(slots, size)
+	local parts, first = {}, {}
+	for slot = 1, size do
+		local s = slots[slot]
+		if s and s.link then
+			local ref = first[s.link]
+			if not ref then
+				first[s.link] = slot
+			end
+			parts[#parts + 1] = slot .. ":" .. (ref and ("=" .. ref) or s.link) .. ";" .. (s.count or 1) .. "\n"
+		end
+```
+
+In `SwagBag/Engine/Snapshots.lua` (edit 3 of 5), find:
+
+```lua
+end
+
+-- The inverse: slots[slot] = { link, count }. A damaged line is skipped.
+function Snap.Deserialize(container)
+```
+
+and replace it with:
+
+```lua
+end
+
+-- The inverse: slots[slot] = { link, count }. A damaged line, or a "=slot" whose slot has no
+-- link above it, is skipped.
+function Snap.Deserialize(container)
+```
+
+In `SwagBag/Engine/Snapshots.lua` (edit 4 of 5), find:
+
+```lua
+		local slot, link, count = line:match("^(%d+):(.*);(%d+)$")
+		if slot then
+			slots[tonumber(slot)] = { link = link, count = tonumber(count) }
+```
+
+and replace it with:
+
+```lua
+		local slot, link, count = line:match("^(%d+):(.*);(%d+)$")
+		local ref = link and link:match("^=(%d+)$")
+		if ref then
+			local earlier = slots[tonumber(ref)]
+			link = earlier and earlier.link
+		end
+		if slot and link then
+			slots[tonumber(slot)] = { link = link, count = tonumber(count) }
+```
+
+In `SwagBag/Engine/Snapshots.lua` (edit 5 of 5), find:
+
+```lua
+		end
+	end
+	return n
+end
+
+-- Approximate saved size of every snapshot (strings plus a small per-container overhead).
+```
+
+and replace it with:
+
+```lua
+		end
+	end
+	return n
+end
+
+-- The same, split by kind (week 6, D21: /swagbag report): { bags, bank, warband, guild } in bytes.
+function Snap.BytesByKind()
+	local db = Snap.DB()
+	local out = { bags = 0, bank = 0, warband = snapshotBytes(db.warband), guild = 0 }
+	for _, c in pairs(db.chars) do
+		if type(c) == "table" then
+			out.bags = out.bags + snapshotBytes(c.bags)
+			out.bank = out.bank + snapshotBytes(c.bank)
+		end
+	end
+	for _, g in pairs(db.guilds) do
+		if type(g) == "table" then
+			out.guild = out.guild + snapshotBytes(g.snapshot)
+		end
+	end
+	return out
+end
+
+-- Approximate saved size of every snapshot (strings plus a small per-container overhead).
+```
+
+In `SwagBag/Locale/enUS.lua` (edit 1 of 2), find:
+
+```lua
+L.BANK_VIEW_SECTIONS = "SwagBag bank - category view"
+L.REPORT_BANK_LAYOUT = "Last bank layout: %.1f ms (%s)"
+
+-- Guild bank window (spec F16)
+```
+
+and replace it with:
+
+```lua
+L.BANK_VIEW_SECTIONS = "SwagBag bank - category view"
+L.REPORT_BANK_LAYOUT = "Last bank layout: %.1f ms (%s)"
+L.REPORT_BANK_PHASES = "Bank layout parts: tabs %.1f ms, reading %.1f ms, categories %.1f ms, positions %.1f ms, drawing %.1f ms"
+
+-- Guild bank window (spec F16)
+```
+
+In `SwagBag/Locale/enUS.lua` (edit 2 of 2), find:
+
+```lua
+L.AGE_DAYS = "%d days ago"
+L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
+
+-- Prices (spec F10)
+```
+
+and replace it with:
+
+```lua
+L.AGE_DAYS = "%d days ago"
+L.REPORT_SNAPSHOTS = "Snapshots: %d characters, %d guilds, %d KB"
+L.REPORT_SNAPSHOT_KINDS = "Snapshot sizes: bags %.1f KB, banks %.1f KB, warband %.1f KB, guild banks %.1f KB"
+
+-- Prices (spec F10)
+```
+
+In `SwagBag/UI/BankWindow.lua` (edit 1 of 2), find:
+
+```lua
+-- Paint the slot's button and return its item record (nil for an empty slot). A pending item
+-- has no slot icon yet; placeholders still need one.
+local function describe(bag, slot)
+	local A, B = SB.Adapter, SB.Buttons
+	local button = B.Get(bag, slot)
+	if button then
+		B.Paint(button, A.GetSlot(bag, slot))
+	end
+	local record = SB.Items.Describe(bag, slot)
+	if record and not record.icon then
+```
+
+and replace it with:
+
+```lua
+-- Paint the slot's button and return its item record (nil for an empty slot). A pending item
+-- has no slot icon yet; placeholders still need one. The slot is read once, for both (D20).
+local function describe(bag, slot)
+	local A, B = SB.Adapter, SB.Buttons
+	local s = A.GetSlot(bag, slot)
+	local button = B.Get(bag, slot)
+	if button then
+		B.Paint(button, s)
+	end
+	local record = SB.Items.Describe(bag, slot, s or false)
+	if record and not record.icon then
+```
+
+In `SwagBag/UI/BankWindow.lua` (edit 2 of 2), find:
+
+```lua
+			if not Inv.Has(c.reasons, Inv.R.ITEM) then
+				B.Paint(button, A.GetSlot(c.bag, c.slot))
+				local fresh = SB.Items.Describe(c.bag, c.slot)
+				if old and fresh and fresh.itemID == old.itemID then
+```
+
+and replace it with:
+
+```lua
+			if not Inv.Has(c.reasons, Inv.R.ITEM) then
+				local s = A.GetSlot(c.bag, c.slot)
+				B.Paint(button, s)
+				local fresh = SB.Items.Describe(c.bag, c.slot, s or false)
+				if old and fresh and fresh.itemID == old.itemID then
+```
+
+In `SwagBag/UI/Footer.lua` (edit 1 of 6), find:
+
+```lua
+-- in the user's order (setting bags.footer.entries; /swagbag footer; Settings > Footer):
+--   gold        the character's gold
+--   currencies  the currencies ticked "Show on backpack" in Blizzard's Currency tab
+```
+
+and replace it with:
+
+```lua
+-- in the user's order (setting bags.footer.entries; /swagbag footer; Settings > Footer):
+--   gold        the character's gold: a gold coin as big as the currency icons and the whole gold
+--               pieces, with thousands separators ("1,234,567"); silver and copper are in its tooltip
+--               (week 6, D22)
+--   currencies  the currencies ticked "Show on backpack" in Blizzard's Currency tab
+```
+
+In `SwagBag/UI/Footer.lua` (edit 2 of 6), find:
+
+```lua
+--   Footer.Items() -> { { entry, text, icon, tip } }  what to draw, in order (reads the game)
+--   Footer.Flow(widths, maxWidth) -> places, rows      pure: places[i] = { x, row }
+```
+
+and replace it with:
+
+```lua
+--   Footer.Items() -> { { entry, text, icon, tip } }  what to draw, in order (reads the game)
+--   Footer.GoldText(copper) -> text     pure: the whole gold pieces with thousands separators
+--   Footer.Flow(widths, maxWidth) -> places, rows      pure: places[i] = { x, row }
+```
+
+In `SwagBag/UI/Footer.lua` (edit 3 of 6), find:
+
+```lua
+	height = 0, places = {}, widths = {}, dirty = true,
+	ROW = 16, ROW_GAP = 2, GAP = 12, ICON = 14, PAD = 2, INSET = 4, DELAY = 0.1 }
+SB.Footer = F
+```
+
+and replace it with:
+
+```lua
+	height = 0, places = {}, widths = {}, dirty = true,
+	ROW = 16, ROW_GAP = 2, GAP = 12, ICON = 14, PAD = 2, INSET = 4, DELAY = 0.1,
+	GOLD_ICON = "Interface\\MoneyFrame\\UI-GoldIcon" } -- the gold coin texture file (a plain path)
+SB.Footer = F
+```
+
+In `SwagBag/UI/Footer.lua` (edit 4 of 6), find:
+
+```lua
+end
+
+function F.Items()
+```
+
+and replace it with:
+
+```lua
+end
+
+function F.GoldText(copper)
+	local text = tostring(math.floor(copper / 10000))
+	local grouped
+	repeat
+		text, grouped = text:gsub("^(%d+)(%d%d%d)", "%1,%2")
+	until grouped == 0
+	return text
+end
+
+function F.Items()
+```
+
+In `SwagBag/UI/Footer.lua` (edit 5 of 6), find:
+
+```lua
+			if F.lastMoney then
+				add("gold", A.MoneyText(F.lastMoney), nil, { kind = "money" })
+			end
+```
+
+and replace it with:
+
+```lua
+			if F.lastMoney then
+				add("gold", F.GoldText(F.lastMoney), F.GOLD_ICON, { kind = "money", copper = F.lastMoney })
+			end
+```
+
+In `SwagBag/UI/Footer.lua` (edit 6 of 6), find:
+
+```lua
+		T:SetText(L.FOOTER_GOLD)
+		T:AddLine(item.text, 1, 1, 1)
+	else
+```
+
+and replace it with:
+
+```lua
+		T:SetText(L.FOOTER_GOLD)
+		T:AddLine(SB.Adapter.MoneyText(tip.copper), 1, 1, 1) -- gold, silver and copper, with the client's coins
+	else
+```
+
+In `SwagBag/UI/GroupView.lua` (edit 1 of 7), find:
+
+```lua
+--   v.Clear()                           window closed: hide the buttons, forget the layout
+-- cfg = { key = "bank" | "guild", window = ErrorTrap window (default "bank"), child, scroll,
+```
+
+and replace it with:
+
+```lua
+--   v.Clear()                           window closed: hide the buttons, forget the layout
+--   v.stats = { lastLayoutMs, lastLayoutReason, phases = { groups, read, categories, positions,
+--     drawing } }   the last full layout's time, and where it went (ms; week 6, D20: /swagbag report)
+-- cfg = { key = "bank" | "guild", window = ErrorTrap window (default "bank"), child, scroll,
+```
+
+In `SwagBag/UI/GroupView.lua` (edit 2 of 7), find:
+
+```lua
+	-- Read every slot into a fresh candidate (groups, records, sizes); nothing is drawn.
+	local function build()
+		local b = { groups = {}, byId = {}, records = {}, sizes = {}, groupOf = {} }
+		local sections = cfg.view() ~= "grid"
+		local order = sections and SB.Categories.SectionOrder() or nil
+		for _, def in ipairs(cfg.groups()) do
+			local g = { id = def.id, bags = def.bags }
+			local slots = {}
+			for _, bag in ipairs(def.bags) do
+```
+
+and replace it with:
+
+```lua
+	-- Read every slot into a fresh candidate (groups, records, sizes); nothing is drawn.
+	-- b.ms: where the time went (the groups and their buttons, reading the slots, the categories).
+	local function build()
+		local A = SB.Adapter
+		local b = { groups = {}, byId = {}, records = {}, sizes = {}, groupOf = {},
+			ms = { groups = 0, read = 0, categories = 0, positions = 0, drawing = 0 } }
+		local sections = cfg.view() ~= "grid"
+		local order = sections and SB.Categories.SectionOrder() or nil
+		local t = A.ProfileMs()
+		local defs = cfg.groups()
+		b.ms.groups = A.ProfileMs() - t
+		for _, def in ipairs(defs) do
+			local g = { id = def.id, bags = def.bags }
+			local slots = {}
+			t = A.ProfileMs()
+			for _, bag in ipairs(def.bags) do
+```
+
+In `SwagBag/UI/GroupView.lua` (edit 3 of 7), find:
+
+```lua
+			end
+			if sections then
+				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order, { columns = cfg.columns(),
+					newRows = cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile() or nil,
+					family = SB.Adapter.BagFamily, hideEmptyNew = cfg.hideEmptyNew })
+			end
+```
+
+and replace it with:
+
+```lua
+			end
+			b.ms.read = b.ms.read + A.ProfileMs() - t
+			if sections then
+				t = A.ProfileMs()
+				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order, { columns = cfg.columns(),
+					newRows = cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile() or nil,
+					family = SB.Adapter.BagFamily, hideEmptyNew = cfg.hideEmptyNew })
+				b.ms.categories = b.ms.categories + A.ProfileMs() - t
+			end
+```
+
+In `SwagBag/UI/GroupView.lua` (edit 4 of 7), find:
+
+```lua
+	end
+
+	-- Make a candidate the view's layout and draw it at pos.
+	local function commit(b, pos, reason, t0)
+		local old = v.pos
+```
+
+and replace it with:
+
+```lua
+	end
+
+	-- A candidate's positions, timed (b.ms.positions).
+	local function positionTimed(b)
+		local t = SB.Adapter.ProfileMs()
+		local pos = positionAll(b.groups, b.records)
+		b.ms.positions = SB.Adapter.ProfileMs() - t
+		return pos
+	end
+
+	-- Make a candidate the view's layout and draw it at pos.
+	local function commit(b, pos, reason, t0)
+		local t1 = SB.Adapter.ProfileMs()
+		local old = v.pos
+```
+
+In `SwagBag/UI/GroupView.lua` (edit 5 of 7), find:
+
+```lua
+		cfg.onResize(pos.width, pos.height, reason ~= "open")
+		v.stats.lastLayoutMs = SB.Adapter.ProfileMs() - t0
+		v.stats.lastLayoutReason = reason
+		return pos.width, pos.height
+```
+
+and replace it with:
+
+```lua
+		cfg.onResize(pos.width, pos.height, reason ~= "open")
+		local now = SB.Adapter.ProfileMs()
+		v.stats.lastLayoutMs = now - t0
+		v.stats.lastLayoutReason = reason
+		b.ms.drawing = now - t1
+		v.stats.phases = b.ms
+		return pos.width, pos.height
+```
+
+In `SwagBag/UI/GroupView.lua` (edit 6 of 7), find:
+
+```lua
+		local b = build()
+		return commit(b, positionAll(b.groups, b.records), reason, t0)
+	end
+```
+
+and replace it with:
+
+```lua
+		local b = build()
+		return commit(b, positionTimed(b), reason, t0)
+	end
+```
+
+In `SwagBag/UI/GroupView.lua` (edit 7 of 7), find:
+
+```lua
+			b = build()
+			pos = positionAll(b.groups, b.records)
+			v.heldKey = nil
+```
+
+and replace it with:
+
+```lua
+			b = build()
+			pos = positionTimed(b)
+			v.heldKey = nil
+```
+
+- [ ] **Step 4: Run the tests to see them pass**
+
+Run: `luajit spec/runner.lua spec/*_spec.lua`
+Expected: `1274 passed, 0 failed`
+
+- [ ] **Step 5: Run the full checks**
+
+Run: `bash scripts/check.sh`
+Expected: `TOC OK (62 files)`, `1274 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add SwagBag/Engine/Items.lua SwagBag/UI/BankWindow.lua SwagBag/UI/GroupView.lua SwagBag/Engine/Snapshots.lua \
+  SwagBag/Core/Report.lua SwagBag/UI/Footer.lua SwagBag/Locale/enUS.lua \
+  spec/bankwindow_groups_spec.lua spec/report_spec.lua spec/snapshots_spec.lua spec/footer_spec.lua
+git -c user.email="lonezebra@protonmail.com" -c user.name="lonezebra" commit -m "Week 6 Task 9: bank layout reads each slot once and reports its parts, repeated stacks written once in snapshots, footer gold coin
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
+```
+
+---
 ## In-game sessions
 
-Three short sessions: FS1 after Task 3, OV1 after Task 4, DP1 after Task 6. Then the week-6 exit check. They never block the build: findings come back as fixes.
+Four short sessions: FS1 after Task 3, OV1 after Task 4, DP1 after Task 6, TF1 after Task 9. Then the week-6 exit check. They never block the build: findings come back as fixes.
 
 Before every session:
 - Claude installs the build first. The game currently runs an older copy, and the login line must say `v0.6.0`.
@@ -3054,17 +5417,68 @@ You need: a banker; at least one warbound item in your bags (its tooltip says `W
 19. Walk away from the banker until the bank closes. Expected: both bank windows close.
 20. Type `/swagbag report`. Expected: the line `Failed checks: none`. If it names a `C_Bank…`, `C_Item…` or `C_CVar…` check, copy that line to Claude. Close the box.
 
+### Session TF1: the fixes from your 0.5.0 testing (after Task 9, about 10 minutes)
+
+You need: a vendor and a banker. Your bags should be closed when you start.
+
+0. Claude installs the build first.
+1. Quit the game completely and start it again. Expected: the login screen.
+2. Log in. Expected: chat shows `SwagBag: v0.6.0 loaded. Type /swagbag help for commands.`
+3. Press **B**. Expected: your bags open.
+4. Right-click a vendor. Expected: the vendor window opens, your bags stay open, and the bags' title starts with `SwagBag — AH/Vendor/Bank`.
+5. Move the mouse off the bags. Walk away from the vendor with the **S** key until the vendor window closes. Expected: **your bags stay open** (this was FM1 step 8), and the title starts with `SwagBag — ilvl` again.
+6. Type `/swagbag report`. Expected: the report box shows a line that starts with `Bag hooks (last 5):`. Press Ctrl+C, paste the whole report to Claude, then press **Esc** to close the box.
+7. Press **B**. Expected: your bags close.
+8. Right-click the vendor. Expected: the vendor window opens and your bags open by themselves.
+9. Walk away from the vendor until its window closes. Expected: your bags close with it (the game opened them, so they go with the vendor).
+10. Press **B**. Rest the mouse on the `Pause` button at the top of your bags. Expected: a tooltip with three lines:
+    - `Pause focus modes`;
+    - `Sections stop opening, closing and moving by themselves until you click Resume (or log in again).`;
+    - `Right-click: choose the sections this mode opens`.
+11. Click `Pause`. Expected: chat shows `SwagBag: Focus modes are paused for this session: sections stay as you set them. Click Resume, or type /swagbag mode resume.`, and the button now reads `Resume`.
+12. Rest the mouse on `Resume`. Expected: the tooltip starts with `Resume focus modes`, then `Focus modes are paused: your sections stay as you set them. Click to let modes switch by themselves again.`
+13. Click `Resume`. Expected: chat shows `SwagBag: Focus modes are back on: sections follow what you are doing again.`
+14. Move the mouse off the bags. Type `/swagbag settings focus`. Expected: the settings window opens at `Focus modes`, and its first line reads `Focus modes open the sections you need for what you're doing (a key, the vendor, fishing) and tidy the rest. They switch by themselves. Rest the mouse on a button to see what it does.`
+15. Rest the mouse on `Move to the top`. Expected: a tooltip `While a mode is on`, then `Move to the top: the mode's sections come first, right under New, and nothing is collapsed. Collapse the rest: only the mode's sections stay open; every other section collapses until the mode ends.`
+16. Rest the mouse on `On` in the row `Mode: Fishing`. Expected: `On: this mode switches on by itself while you fish. Off: it never does; the other modes still work.` Rest the mouse on a few other buttons on this page. Tell Claude about any tooltip that is still unclear (note it).
+17. Click `Alt data` on the left. Expected: in the row `Other characters' counts on item tooltips`, the words `Shown (not twice with Syndicator)` fit inside their button, and `Always shown` and `Hidden` are whole buttons. `Hidden` may sit on a second line. Nothing overlaps, and nothing is cut off at the right edge.
+18. Close the settings window with its X.
+19. Type `/swagbag setup`. Expected: chat shows `SwagBag: Quick setup opened.`, and under the slots-per-row buttons the window reads `Focus modes bring up the sections you need (a key, the vendor, fishing) by themselves. The Pause button at the top of your bags stops them until you click Resume.`
+20. Press **Esc**. Expected: chat shows `SwagBag: Quick setup closed; your settings are unchanged. Type /swagbag setup to open it again.` (If you never pressed Apply or Skip in quick setup, it says `SwagBag: Quick setup closed without changes; it opens again at your next login, or type /swagbag setup.` instead. Both are right.)
+21. Look at the bottom of your bags (no click). Expected: your gold shows as a gold coin, as big as the currency icons next to it, and then the gold amount with commas (for example `1,234,567`), with no silver or copper.
+22. Rest the mouse on your gold. Expected: a tooltip `Gold on this character` with the full amount: gold, silver and copper, with their coins.
+23. Move the mouse off the bags. Right-click a banker. Expected: the SwagBag bank opens.
+24. Click `Blizzard bank`. Expected:
+    - Blizzard's bank shows beside SwagBag's;
+    - chat shows `SwagBag: Blizzard's bank is shown for this visit`;
+    - the bank's title shows the same words for about 3 seconds.
+25. Click `Blizzard bank` again. Expected: Blizzard's bank hides, and chat shows `SwagBag: Blizzard's bank is hidden again`.
+26. Walk away from the banker until the bank closes.
+27. Type `/swagbag report`. Expected: lines that start with:
+    - `Last bank layout:`;
+    - `Bank layout parts: tabs`;
+    - `Snapshot sizes: bags`;
+    - `Bag hooks (last 5):`.
+
+    Press Ctrl+C, paste the whole report to Claude, then press **Esc**.
+
 ## Week 6 exit check
 
-1. Claude installs the week-6 build, at the end of Task 6, and you fully restart the game.
-2. Play normally for a day, with keys, a vendor and a bank visit. Expected: no red errors; bags, bank and modes behave as in FS1 and DP1.
-3. Type `/swagbag report` and paste it to Claude. Expected: `Safe Mode: bags=off bank=off` and `Failed checks: none`.
+1. Claude installs the week-6 build, at the end of Task 9, and you fully restart the game.
+2. Play normally for a day, with keys, a vendor and a bank visit. Expected: no red errors; bags, bank and modes behave as in FS1, DP1 and TF1. Bags you opened yourself stay open when a vendor, the mailbox or the bank closes.
+3. Type `/swagbag report` and paste it to Claude. Expected:
+   - `Safe Mode: bags=off bank=off`;
+   - `Failed checks: none`;
+   - a `Bag hooks (last 5):` line;
+   - after a bank visit, a `Bank layout parts:` line.
 
 ## What week 7 builds on
 
 - `Focus.SectionOrder` and the drawn `W.order` are the hook for any later "a mode moves sections" idea, for example pinning a section to the top for a mode in the editor.
 - The deferred items (guild bank pending-item relayout, list view in the bank and guild windows, Syndicator loaded mid-session) all touch `UI/GroupView.lua` or `Providers/Syndicator.lua`; week 7 takes them together.
-- The spec text for §6.1/§6.4/AC8.2 (D15) and the new `c_wue` in §7.6 are updated at week end, recorded in the week-6 ledger.
+- The spec text for §6.1/§6.4/AC8.2 (D15) and the new `c_wue` in §7.6 are updated at week end, recorded in the week-6 ledger. So are the D16 ownership rule in §10.1, the D21 `=slot` line form in §8.3, and D22's gold entry in the footer ruling W4-14.
+- TF1's `Bank layout parts` line chooses the next bank-speed step (D20). If `reading` dominates, skip some per-item client calls for item kinds that cannot use them, each pinned by a search test. If `drawing` dominates, it moves to the GroupView rewrite above. TF1's `Bag hooks` line shows which walk-away path the game takes (D16), and if it was the frameless call, a ledger note records it.
+- `Snapshot sizes` shows whether the snapshot aim (about 30 KB for one character) needs more than D21.
 
 ## Spec coverage (week-6 scope → task)
 
@@ -3084,12 +5498,20 @@ You need: a banker; at least one warbound item in your bags (its tooltip says `W
 | Week-5 deferred: P6, no-schema-bump, BackdropTemplate wording | Global Constraints |
 | Week-5 deferred: guild bank pending-item gap ("if GroupView is touched") | Not touched (D13); week 7 |
 | Week-4 deferred M5 (no-op focus writes) | T1 (D7) |
+| Fix 1: bags the user opened stay open whenever a game frame's CloseAllBags runs, and a game-opened window still closes with its vendor. Rule for CloseAllBags() with no frame. The last five hook calls in `/swagbag report` | T7 (D16); TF1 steps 3–9 |
+| Fix 2: Focus modes intro; a tip on every Focus modes row (the style row too); a clearer Pause tooltip with the right-click line kept; one quick setup line; a generic row-level `tip` | T8 (D18); TF1 steps 10–16, 19 |
+| Fix 3: a choice button fits its text, with a minimum width, and wraps onto the next line; the rows below move down | T8 (D19); TF1 step 17 |
+| Fix 4: the Blizzard bank button's answer also goes to chat, once, and shows 3 s (`BW.Flash` duration) | T7 (D17); TF1 steps 24–25 |
+| Fix 5: one measured bank-layout change (each slot read once) and per-part timings in the report; smaller snapshots with the schema kept at 2 and old snapshots read as before (tested) | T9 (D20, D21); TF1 step 27 |
+| Fix 6: footer gold as a full-size coin and the gold with thousands separators; silver and copper in the tooltip | T9 (D22); TF1 steps 21–22 |
 
 ## How this plan was checked (while writing it)
 
 - Every task was first built on a scratch clone at `/tmp/sb6` (outside the repo), one commit per task. Every block in this file was then generated from those commits' diffs, with each find block expanded until it is unique and starts and ends on a non-blank line.
 - **Replay.** A fresh clone of `3d2421d` at `/tmp/sbr` was driven by a script that reads this file: it applies each task's Step 1 blocks, runs the suite, applies the Step 3 blocks, runs the suite and `scripts/check.sh`. Every Step 2 red line and FAIL list, every Step 4 total and every Step 5 `ALL CHECKS PASSED` above is that script's output. The replayed tree was compared file by file with the scratch build (`SwagBag/`, `spec/`, `.luacheckrc`): identical.
 - **Mutations.** Every mutation listed under a Step 2 was applied to its task's finished code with a one-off script, and the named test failed (all caught).
+- **Tasks 7–9** were built the same way, on top of the replayed Tasks 1–6 (a scratch clone at `/tmp/sbw/base`, one commit per task), and their blocks were generated from those commits' diffs. The whole file, Tasks 1–9, was then replayed on a fresh clone of `76293b0` (the code there is identical to `3d2421d`). Every Step 2 FAIL list and red total for Tasks 7–9 is the output of that task's Step 1 blocks applied to the previous task's finished tree. Every Step 4 and Step 5 line is the replay's output. All 27 mutations listed under the Step 2s of Tasks 7–9 were applied one at a time to the finished Task 9 tree, and each named test failed.
+- The bank-read count in Task 9 (2,156 → 1,078 slot reads for one layout of the 1,078-slot fixture) and the snapshot example (1,591 → 358 bytes) were measured on the scratch tree with the mock Adapter. Timings on the mock were not used: they are noisy, and the mock's calls cost nothing like the client's.
 - Greps on the final tree:
   - no `C_`/`Enum.` outside `SwagBag/Core/Adapter.lua`;
   - none of the forbidden tokens (one draft comment that named the bank frame's tab method was reworded; check.sh caught it);
@@ -3099,12 +5521,16 @@ You need: a banker; at least one warbound item in your bags (its tooltip says `W
 
 ## Self-review
 
-1. **Spec and request coverage.** Every requirement in the brief and each request line maps to a task in "Spec coverage". Request 4 needed no code, and that is stated with the test that proves it (D13). The one deferred item the brief asked about, the guild gap, is deferred because its condition ("if GroupView is touched") does not hold.
+1. **Spec and request coverage.** Every requirement in the brief and each request line maps to a task in "Spec coverage". Request 4 needed no code, and that is stated with the test that proves it (D13). The one deferred item the brief asked about, the guild gap, stays deferred: Task 9 touches GroupView only to time it (D20), not the relayout path the gap lives in. Each of the six fixes from the 0.5.0 testing maps to Task 7, 8 or 9, with a TF1 step that shows it in game. Fix 5 is honest about its limits: one change proven by reading the code, numbers for the rest (D20), and no promise of 30 KB (D21).
 2. **Placeholder scan.** No "TBD", "TODO", "similar to", or test-free step. Every code step is a complete block (the replay applies them as written). The in-game expectations quote Locale strings verbatim.
 3. **Type and name consistency.** These names are the same in every task that uses them:
    - `Focus.Style/Front/SectionOrder/Applies/SetStyle` (T1 → T2, T3);
    - `opts.order`, `W.order`, `W.EffectiveOrder` (T2);
    - `A.WarbandDepositState/RefundableForWarband/DepositWarband/DepositReagents/SetDepositReagents` and the mock fields `warband`, `warbandDeposits`, `refundChecks` (T5 → T6);
    - `BW.DepositWarband`, `BW.depositButton`, `BW.reagentsBox`, `BW.reagentsLabel`, `BW.RefreshReagents` (T6);
-   - the Locale keys quoted in FS1/OV1/DP1, checked against the T3/T4/T6 blocks.
+   - `SB.SafeModeHooks.trace/TRACE/TraceText/toggleClosedUsers` and `BW.Flash(text, seconds, toChat)`, `BW.FLASH`, `BW.VISIT_FLASH` (T7);
+   - the row field `tip`, `SW.tips`, `SW.ShowTip`, `SW.TEXT_PAD`, `SW.LINE_GAP`, `QS.frame.pauseNote` (T8). Task 3's style-row names `L.SET_FOCUS_STYLE`, `L.SET_FOCUS_STYLE_FRONT` and `L.SET_FOCUS_STYLE_COLLAPSE` are used unchanged by Task 8's tip and its test;
+   - `Items.Describe(bag, slot, s)`, `v.stats.phases`, `Snap.BytesByKind`, `F.GOLD_ICON`, `F.GoldText` (T9);
+   - the Locale keys quoted in FS1/OV1/DP1/TF1, checked against the T3/T4/T6/T7/T8/T9 blocks. TF1's chat lines that existing keys print (`MODE_PAUSED`, `MODE_RESUMED`, `QS_OPENED`, `QS_LATER_KEPT`, `QS_LATER`, `BANK_SHOWING_BLIZZARD`, `BANK_HIDING_BLIZZARD`) were checked against `SwagBag/Locale/enUS.lua`.
+5. **Global Constraints in Tasks 7–9.** No `C_`/`Enum.` or other addon's names outside the Adapter (the gold coin is a texture file path in `Footer.lua`). No forbidden token, including in comments (a draft comment that named the open-all-bags call with its parenthesis failed check.sh and was reworded). Every new script runs under `ErrorTrap.Guard` with its window: `settings.tip` and `settings.tipHide` under `"none"`; the hooks keep their `"bags"` labels; `bank.flash` keeps `"bank"`. Every user-visible string is in `enUS.lua`. Every `%s` gets a string and every `%.1f` a number (format51 runs on every spec). No new setting, no schema change, no `OnUpdate`, and no file added (the TOC stays at 62 files).
 4. **Review Focus.** Each of the five lines names its pinning tests, and each of those tests is in its owning task's Step 1. The likeliest real-world failure, a re-order under a resting mouse during a key, has two tests and FS1 steps 7–9.
