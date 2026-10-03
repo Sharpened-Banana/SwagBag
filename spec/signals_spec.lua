@@ -344,7 +344,8 @@ describe("Signals", function()
 end)
 
 describe("Report focus lines", function()
-	it("names the mode, the resolve setting, the signals and the spells cast before loot", function()
+	-- Week 6. Mutation: Report passes yes(F.Expanded()) for "collapsing" again (yes in the front style too).
+	it("names the mode, the resolve setting and style, the signals and the spells cast before loot", function()
 		local SB = Loader.New({ "SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua",
 			"SwagBag/Core/Config.lua", "SwagBag/Core/Slash.lua", "SwagBag/Core/Checks.lua", "SwagBag/Core/Blocked.lua",
 			"SwagBag/Core/Report.lua",
@@ -360,8 +361,11 @@ describe("Report focus lines", function()
 		SB.unitFrame:Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 3365)
 		SB.eventFrame:Fire("LOOT_READY")
 		local text = SB.Report.Build()
-		assert.truthy(text:find("Focus: M+ (merge); zone party, collapsing yes; M+ yes, keystone yes, delve no, fishing no, "
-			.. "gathering no", 1, true), text)
+		assert.truthy(text:find("Focus: M+ (merge, front); zone party, collapsing no; M+ yes, keystone yes, delve no, "
+			.. "fishing no, gathering no", 1, true), text)
 		assert.truthy(text:find("Spells before loot (last 5): 3365", 1, true), text)
+		SB.Config.Set("focus.style", "collapse")
+		text = SB.Report.Build()
+		assert.truthy(text:find("Focus: M+ (merge, collapse); zone party, collapsing yes;", 1, true), text)
 	end)
 end)

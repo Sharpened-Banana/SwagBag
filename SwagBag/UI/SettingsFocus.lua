@@ -1,5 +1,6 @@
 -- SwagBag settings: the Focus modes page (spec 6, AC8.1-8.5, AC15.1). Switching modes on and
--- off, merge or strict priority, peek or keep open, announce, account-wide or this character
+-- off, move to the top or collapse the rest (week 6), merge or strict priority, peek or keep open
+-- (the collapse style), announce, account-wide or this character
 -- only, and each mode's section set with "Reset to default" next to it (spec 6.3). The bags
 -- window's Pause button opens this page at the active mode with a right-click (AC8.5).
 --   SettingsFocus.Edit(modeId)   open the page with that mode's sections shown
@@ -14,7 +15,7 @@ SB.SettingsFocus = SF
 
 -- Every focus setting: "This character only" makes each one a character override (AC15.1).
 function SF.Paths()
-	local paths = { "focus.auto", "focus.resolve", "focus.peek", "focus.announce" }
+	local paths = { "focus.auto", "focus.style", "focus.resolve", "focus.peek", "focus.announce" }
 	for _, m in ipairs(SB.Focus.MODES) do
 		paths[#paths + 1] = "focus.on." .. m.id
 		paths[#paths + 1] = "focus.sections." .. m.id
@@ -112,6 +113,18 @@ local function rows()
 			{ value = false, text = L.SET_OFF } }, function(v)
 			return v and L.SET_FOCUS_AUTO_DONE or L.SET_FOCUS_OFF_DONE
 		end),
+		-- Week 6: move the mode's sections up (default) or collapse the rest (the week-4 way). The same
+		-- writer as /swagbag mode style, so both answer alike and refuse while read-only.
+		{ kind = "choice", label = L.SET_FOCUS_STYLE, choices = { { value = "front", text = L.SET_FOCUS_STYLE_FRONT },
+			{ value = "collapse", text = L.SET_FOCUS_STYLE_COLLAPSE } },
+			get = F.Style,
+			apply = function(v)
+				local ok, why = F.SetStyle(v)
+				if not ok then
+					return refusal(why)
+				end
+				return v == "front" and L.MODE_STYLE_FRONT or L.MODE_STYLE_COLLAPSE
+			end },
 		setting(L.SET_FOCUS_RESOLVE, "focus.resolve", { { value = "merge", text = L.SET_FOCUS_MERGE },
 			{ value = "priority", text = L.SET_FOCUS_PRIORITY } }, function(v)
 			return v == "merge" and L.SET_FOCUS_MERGE_DONE or L.SET_FOCUS_PRIORITY_DONE

@@ -496,7 +496,7 @@ function Focus.ResetSections(id)
 end
 
 ---------------------------------------------------------------------------
--- /swagbag mode [pause|resume|list] (spec 10.5). Every form answers (P2).
+-- /swagbag mode [pause|resume|list|style [front|collapse]] (spec 10.5). Every form answers (P2).
 ---------------------------------------------------------------------------
 local function sectionNames(id)
 	local names = {}
@@ -519,9 +519,26 @@ function Focus.ListLines()
 	return lines
 end
 
+-- /swagbag mode style [front|collapse]: the style now, or switch it. A wrong word gets the style now
+-- and how to type it; read-only settings refuse (P2).
+local function styleCommand(word)
+	local L = SB.L
+	if word == "front" or word == "collapse" then
+		if not Focus.SetStyle(word) then
+			return L.SETTINGS_READONLY
+		end
+		return word == "front" and L.MODE_STYLE_FRONT or L.MODE_STYLE_COLLAPSE
+	end
+	return L.MODE_STYLE_STATE:format(Focus.Style() == "front" and L.MODE_STYLE_NAME_FRONT or L.MODE_STYLE_NAME_COLLAPSE)
+end
+
 SB.Slash.Register("mode", SB.L.HELP_MODE, function(arg)
 	local L = SB.L
 	arg = (arg or ""):lower()
+	local word, rest = arg:match("^(%S*)%s*(.-)%s*$")
+	if word == "style" then
+		return styleCommand(rest)
+	end
 	if arg == "pause" then
 		return Focus.Pause() and L.MODE_PAUSED or L.MODE_ALREADY_PAUSED
 	elseif arg == "resume" then
