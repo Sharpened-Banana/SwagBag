@@ -24,8 +24,10 @@
 --   negative). Collapsing changes section offsets only, so expanding returns every item
 --   to the same cell (spec 6.4). New shows its header and newRows reserved rows, except while
 --   state.newShown is false (hideEmptyNew and nothing has arrived since the last Build).
---   opts: { columns, size, gap, padding, header, sectionGap, top }   top: y offset where the
+--   opts: { columns, size, gap, padding, header, sectionGap, top, order }   top: y offset where the
 --   layout starts (a window that stacks several layouts, default 0); height includes it.
+--   order: the section ids in the order to draw them (default state.order). A focus mode's "front"
+--   style passes Focus.SectionOrder(state.order): each section moves whole, with its header (W10).
 --   pos = { cells = { {bag, slot, x, y, shown} } (display order), byKey = { [key] = cell },
 --           placeholders = { {bag, slot, icon, x, y, shown} }, headers = { {id, y, count,
 --           overflow, collapsed} }, width, height }
@@ -247,7 +249,7 @@ function Layout.Position(st, opts, collapsed)
 	local step = size + gap
 	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {} }
 	local y = (opts.top or 0) + pad
-	for _, id in ipairs(st.order) do
+	for _, id in ipairs(opts.order or st.order) do
 		local sec = st.sections[id]
 		local visible
 		if id == Layout.NEW then

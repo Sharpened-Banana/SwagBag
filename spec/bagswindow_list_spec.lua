@@ -277,6 +277,18 @@ describe("BagsWindow list view", function()
 		assert.truthy(row(1).shown)
 	end)
 
+	-- Week 6, the "front" style in the list: the same re-order, and each row stays beside its button.
+	-- Mutation: in W.Restack, position(W.state, view) without the order.
+	it("a mode in the front style moves its sections up in the list too; every row follows its button", function()
+		W.Open()
+		SB.Focus.SetSignal("merchantOpen", true)
+		assert.equal("- Junk (1)", headers()[1])
+		assert.equal("- Gear (1)", headers()[5])
+		assert.truthy(row(6).shown and row(4).shown, "nothing collapses")
+		assert.equal(B.Get(0, 6).y, rowY(6), "Junk's row moved with its button")
+		assert.truthy(rowY(6) > rowY(5), "Junk is above Keystone now")
+	end)
+
 	-- AC5.1. Mutation: in W.SetDimmed, drop the W.rows.SetDimmed call.
 	it("search dims a non-matching row together with its button", function()
 		W.Open()
