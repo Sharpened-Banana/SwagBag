@@ -5,7 +5,7 @@ local Big = dofile("spec/fixtures/big.lua")
 local FILES = {
 	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
 	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
-	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Keywords.lua",
+	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Crests.lua", "SwagBag/Engine/Keywords.lua",
 	"SwagBag/Engine/CategoryDefaults.lua", "SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua",
 }
 
@@ -47,6 +47,15 @@ describe("Categorizer", function()
 		A.Put(0, 11, 400100, 1)
 		assert.same({ "c_sets", "c_gear", "c_sets", "c_sets", "c_sets", "c_junk" },
 			{ at(4), at(7), at(8), at(9), at(10), at(11) })
+	end)
+
+	-- Week 7 (user pick 2): Ascendant Venomstone is a consumable by class, an upgrade currency by use.
+	-- Mutation: SB.Crests.ids = {} in Engine/Crests.lua.
+	it("Ascendant Venomstones file under Keystone & Crests by item ID", function()
+		A.AddItem(280562, { name = "Ascendant Venomstone", classID = A.ITEM_CLASS.Consumable, subclassID = 8, quality = 4,
+			maxStack = 100, bind = "pickup" })
+		A.Put(0, 7, 280562, 10)
+		assert.equal("c_keystone", at(7))
 	end)
 
 	it("files the fixture bag into the default sections, keystones and caged pets by link", function()

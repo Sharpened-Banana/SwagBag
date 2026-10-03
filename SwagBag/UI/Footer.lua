@@ -4,7 +4,8 @@
 --               pieces, with thousands separators ("1,234,567"); silver and copper are in its tooltip
 --               (week 6, D22)
 --   currencies  the currencies ticked "Show on backpack" in Blizzard's Currency tab
---   crests      every crest currency the character owns (none owned: nothing shows)
+--   crests      every crest currency the character owns (none owned: nothing shows), then the season's
+--               bag items (Engine/Crests.lua `items`, the Venomstones) with how many the bags hold
 --   keystone    the keystone in the bags: dungeon short name and level ("AKCE +12")
 --   free        free bag slots, the number on the free tile ("10 free (+2 reagent)")
 -- A currency shows once, under the first entry that has it. Entries that do not fit the window's
@@ -21,6 +22,8 @@
 --   Footer.Move(id, delta) -> ok, why   delta -1 = left, +1 = right; why: "unknown" | "edge" | "readonly"
 --   Footer.Position(id) -> n            the entry's place in the order
 --   Footer.Items() -> { { entry, text, icon, tip } }  what to draw, in order (reads the game)
+--   Footer.SeasonItems() -> { { id, quantity, icon } }  the season's bag items the bags hold
+--   Footer.SeasonText() -> currencies, items   the report's "Season data" line (reads the game)
 --   Footer.GoldText(copper) -> text     pure: the whole gold pieces with thousands separators
 --   Footer.Flow(widths, maxWidth) -> places, rows      pure: places[i] = { x, row }
 --   Footer.Layout(width) -> height      place the items for a window this wide (0: nothing to show)
@@ -146,7 +149,7 @@ end
 ---------------------------------------------------------------------------
 local function crestName(name)
 	local lower = type(name) == "string" and name:lower() or ""
-	for _, w in ipairs(SB.Crests.words) do
+	for _, w in ipairs(SB.Crests.currencyWords or SB.Crests.words) do
 		if lower:find(w, 1, true) then
 			return true
 		end
@@ -174,6 +177,47 @@ function F.Crests()
 		end
 	end
 	return out
+end
+
+-- How many of each item the bags hold (backpack, bags, reagent bag), from the live model.
+local function bagCounts()
+	local have = {}
+	for _, _, snap in SB.Inventory.Iterate("bags") do
+		if snap then
+			have[snap.itemID] = (have[snap.itemID] or 0) + (snap.count or 1)
+		end
+	end
+	return have
+end
+
+-- The season's bag items the character carries (week 7: the Venomstones), in the data file's order.
+function F.SeasonItems()
+	local A, have, out = SB.Adapter, bagCounts(), {}
+	for _, id in ipairs(SB.Crests.items or {}) do
+		if (have[id] or 0) > 0 then
+			out[#out + 1] = { id = id, quantity = have[id], icon = (A.GetItemInstant(id) or {}).icon }
+		end
+	end
+	return out
+end
+
+-- The report's "Season data" line: every currency in the Currency tab's list whose name has a season
+-- word ("name (id) quantity"), and every season item with its count in the bags. So the user can
+-- confirm the season's IDs in game (Engine/Crests.lua).
+function F.SeasonText()
+	local A, parts, items = SB.Adapter, {}, {}
+	for _, c in ipairs(A.CurrencyList()) do
+		if crestName(c.name) then
+			parts[#parts + 1] = L.REPORT_SEASON_ENTRY:format(tostring(c.name), c.id, c.quantity)
+		end
+	end
+	local have = bagCounts()
+	for _, id in ipairs(SB.Crests.items or {}) do
+		local info = A.GetItemInfo(id)
+		items[#items + 1] = L.REPORT_SEASON_ENTRY:format(info and info.name or L.ITEM_N:format(id), id, have[id] or 0)
+	end
+	return #parts > 0 and table.concat(parts, ", ") or L.REPORT_NONE,
+		#items > 0 and table.concat(items, ", ") or L.REPORT_NONE
 end
 
 -- The keystone in the bags, read like its overlay (OverlayData.For): { link, itemID, level, dungeon }.
@@ -241,6 +285,9 @@ function F.Items()
 			currencies("currencies", A.BackpackCurrencies())
 		elseif e.on and e.id == "crests" then
 			currencies("crests", F.Crests())
+			for _, it in ipairs(F.SeasonItems()) do
+				add("crests", tostring(it.quantity), it.icon, { kind = "item", id = it.id })
+			end
 		elseif e.on and e.id == "keystone" then
 			local k = F.Keystone()
 			if k then
@@ -303,6 +350,10 @@ function F.Tooltip(owner, item)
 	local tip = item.tip
 	if tip.kind == "currency" then
 		if not pcall(T.SetCurrencyByID, T, tip.id) then
+			T:SetText(item.text)
+		end
+	elseif tip.kind == "item" then
+		if not pcall(T.SetItemByID, T, tip.id) then
 			T:SetText(item.text)
 		end
 	elseif tip.kind == "link" then
@@ -436,10 +487,25 @@ SB.On("SB_CONFIG_CHANGED", function(_, path)
 end, "bags")
 -- Bag changes, a keystone's new link (listeners run in ErrorTrap "bags"). Only an item change or a
 -- bag's size can change what the footer shows: cooldown, lock and count changes (every cast in a
--- key) start no refresh (ruling W4-26).
-SB.Inventory.OnChanged(function(mask)
+-- key) start no refresh (ruling W4-26). One exception (week 7): a count change of a season item the
+-- footer shows (a Venomstone looted onto its stack).
+local function seasonCount(changes)
+	local season, Inv = {}, SB.Inventory
+	for _, id in ipairs(SB.Crests.items or {}) do
+		season[id] = true
+	end
+	for _, c in ipairs(changes or {}) do
+		local snap = Inv.GetSlot(c.bag, c.slot)
+		if snap and season[snap.itemID] and Inv.Has(c.reasons, Inv.R.COUNT) then
+			return true
+		end
+	end
+	return false
+end
+
+SB.Inventory.OnChanged(function(mask, changes)
 	local Inv = SB.Inventory
-	if Inv.Has(mask, Inv.R.ITEM) or Inv.Has(mask, Inv.R.SIZE) then
+	if Inv.Has(mask, Inv.R.ITEM) or Inv.Has(mask, Inv.R.SIZE) or (Inv.Has(mask, Inv.R.COUNT) and seasonCount(changes)) then
 		soon()
 	end
 end)

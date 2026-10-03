@@ -41,6 +41,18 @@ describe("OverlayData (spec F9)", function()
 		assert.is_nil(O.For(gear("INVTYPE_HEAD", 280)).track)
 	end)
 
+	-- Week 7 (user pick 2, horizon research): an Ascendant Venomstone raises a fully upgraded item's level
+	-- past its track. The overlay keeps reading the client's track (never a table of item levels), so a
+	-- boosted item reads M6/6 with its new item level, and a level past the maximum still draws.
+	it("a Venomstone-boosted item keeps its track text; a level past the maximum draws as it is", function()
+		A.tracks["item:225001::boosted"] = { track = "Myth", level = 6, max = 6 }
+		A.Put(0, 7, Fixtures.BOE_RING, 1, { link = "item:225001::boosted", ilvl = 344 })
+		local d = O.For(SB.Items.Describe(0, 7))
+		assert.same({ "M6/6", 344 }, { d.track, d.ilvl })
+		A.tracks["item:225001::boosted"] = { track = "Myth", level = 7, max = 6 }
+		assert.equal("M7/6", O.For(SB.Items.Describe(0, 7)).track)
+	end)
+
 	it("the keystone's level and a short dungeon name from its link", function()
 		local r = SB.Items.Describe(0, 5)
 		assert.same({ level = 12, dungeon = "AKCE" },
