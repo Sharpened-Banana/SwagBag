@@ -557,6 +557,7 @@ describe("BagsWindow category view", function()
 	end)
 
 	it("bag items get their overlays; an empty reagent-bag slot is tinted in Free", function()
+		SB.Config.Set("overlays.bind", true) -- the badge is off by default since week 6
 		A.SetBagSize(5, 2)
 		SB.Inventory.ScanAll()
 		W.Open()
@@ -1945,7 +1946,7 @@ describe("BagsWindow focus modes (spec 6)", function()
 		SB.Slash.Dispatch("mode list")
 		lines = A.Lines()
 		assert.equal("M+: on, active now - opens Consumables, Keystone & Crests, Gear", lines[6])
-		assert.equal("AH/Vendor/Bank: on - opens Junk, Trade Goods, BoE gear", lines[11])
+		assert.equal("AH/Vendor/Bank: on - opens Junk, Trade Goods, BoE gear, Warbound until equipped", lines[11])
 	end)
 
 	it("a flash is not cut short by a mode switch, and ends on the mode title", function()

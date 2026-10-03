@@ -237,6 +237,30 @@ describe("Focus", function()
 		assert.equal("AH/Vendor/Bank", F.Label())
 	end)
 
+	-- Week 6: Warbound until equipped sits next to BoE gear, so every built-in mode opens it exactly when it
+	-- opens BoE gear (collapse and front styles read the same sets). Mutation: drop c_wue from the market set.
+	it("every built-in mode opens Warbound until equipped exactly when it opens BoE gear", function()
+		local has = function(list, id)
+			for _, v in ipairs(list) do
+				if v == id then
+					return true
+				end
+			end
+			return false
+		end
+		local n, withBoe = 0, 0
+		for mode in pairs(SB.Config.Defaults.settings.focus.sections) do
+			n = n + 1
+			local set = F.Sections(mode)
+			assert.equal(has(set, "c_boe"), has(set, "c_wue"), mode)
+			if has(set, "c_boe") then
+				withBoe = withBoe + 1
+			end
+		end
+		assert.equal(6, n)
+		assert.equal(1, withBoe, "only the market mode opens BoE gear")
+	end)
+
 	-- Mutation: make deciding() always return the strongest mode (strict) even under merge.
 	it("overlapping modes merge by default (AC8.4): the union is open and the title names both", function()
 		F.SetSignal("fishing", true)
@@ -463,7 +487,7 @@ describe("Focus front style (week 6)", function()
 	-- Mutation: in computeFront, drop the expandAll check.
 	it("the bank moves nothing; pause and switching modes off move nothing", function()
 		F.SetSignal("merchantOpen", true)
-		assert.same({ "c_junk", "c_tradegoods", "c_boe" }, F.Front())
+		assert.same({ "c_junk", "c_tradegoods", "c_boe", "c_wue" }, F.Front())
 		F.SetSignal("bankOpen", true)
 		assert.is_nil(F.Front(), "at the bank everything stays where it is")
 		F.SetSignal("bankOpen", false)

@@ -357,6 +357,7 @@ describe("GuildBankWindow (check G1)", function()
 
 	-- Mutation: delete the Apply block in the guild window's `describe`.
 	it("a reopen draws overlays on a cached tab that has not answered (describe path)", function()
+		SB.Config.Set("overlays.bind", true) -- the badge is off by default since week 6
 		openVault()
 		answerQueries()
 		closeVault()
@@ -382,6 +383,7 @@ describe("GuildBankWindow (check G1)", function()
 	end)
 
 	it("guild items get their overlays (the BoE ring's item level and badge)", function()
+		SB.Config.Set("overlays.bind", true) -- the badge is off by default since week 6
 		openVault()
 		answerQueries()
 		local r = SB.Overlays.regions[button(2, 1)]

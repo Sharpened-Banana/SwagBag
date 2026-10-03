@@ -12,7 +12,7 @@ local FILES = {
 -- c_fish (name search by design), c_other (fallback) are exempt; c_tools also has an item list.
 local EXPECTED = {
 	c_keystone = { "crest", "keystone" }, c_consumables = { "consumable" }, c_gear = { "gear" },
-	c_boe = { "boe", "gear" }, c_tradegoods = { "reagent", "tradegoods" }, c_herbs = { "herb" }, c_ore = { "ore" },
+	c_boe = { "boe", "gear" }, c_wue = { "gear", "wue" }, c_tradegoods = { "reagent", "tradegoods" }, c_herbs = { "herb" }, c_ore = { "ore" },
 	c_leathercloth = { "cloth", "leather" }, c_enchanting = { "enchanting" }, c_cooking = { "cooking" },
 	c_quest = { "questitem" }, c_housing = { "housing" }, c_collect = { "mount", "pet", "toy" },
 	c_tools = { "profession gear", "profession tool" }, c_reagents = { "reagentbag" }, c_junk = { "junk" },
@@ -36,9 +36,10 @@ describe("Categories", function()
 	end
 
 	it("ships the spec 7.6 set in display order, with New first and Free last", function()
-		assert.same({ "new", "c_keystone", "c_consumables", "c_gear", "c_boe", "c_tradegoods", "c_herbs", "c_ore",
+		assert.same({ "new", "c_keystone", "c_consumables", "c_gear", "c_boe", "c_wue", "c_tradegoods", "c_herbs", "c_ore",
 			"c_leathercloth", "c_enchanting", "c_cooking", "c_fish", "c_quest", "c_housing", "c_collect", "c_tools",
 			"c_junk", "c_other", "free" }, C.SectionOrder())
+		assert.equal("Warbound until equipped", C.Name("c_wue"))
 		assert.equal("Keystone & Crests", C.Name("c_keystone"))
 		assert.equal("New", C.Name("new"))
 		assert.equal("Free", C.Name("free"))
@@ -63,8 +64,8 @@ describe("Categories", function()
 
 	it("orders rules by priority, ties by id, never by table order", function()
 		local p = ids(C.ByPriority())
-		assert.same({ "c_reagents", "c_keystone", "c_junk", "c_quest", "c_tools", "c_boe", "c_gear", "c_consumables" },
-			{ unpack(p, 1, 8) })
+		assert.same({ "c_reagents", "c_keystone", "c_junk", "c_quest", "c_tools", "c_boe", "c_wue", "c_gear",
+			"c_consumables" }, { unpack(p, 1, 9) })
 		assert.equal("c_other", p[#p])
 		-- Five rules tie at 55; their id order is the opposite of definition order for several.
 		-- Shuffle the definition order too, so the result cannot depend on input order.
@@ -228,6 +229,32 @@ describe("Categories", function()
 		assert.same({ "new", "c_junk", "c_gear", "c_keystone" }, { unpack(C.SectionOrder(), 1, 4) })
 	end)
 
+	-- Week 6. A saved order lists every category of its day (quick setup writes the whole list), so a
+	-- built-in added later would land after Other. Mutation: delete the `def.after` loop in C.Load.
+	it("a built-in added later joins a saved order right after the one it follows (WuE after BoE gear)", function()
+		SB.Config.db.categoryOrder = { "c_keystone", "c_tradegoods", "c_boe", "c_consumables", "c_gear", "c_herbs",
+			"c_ore", "c_leathercloth", "c_enchanting", "c_cooking", "c_fish", "c_quest", "c_housing", "c_collect",
+			"c_tools", "c_reagents", "c_junk", "c_other" }
+		C.Load()
+		assert.same({ "new", "c_keystone", "c_tradegoods", "c_boe", "c_wue", "c_consumables" },
+			{ unpack(C.SectionOrder(), 1, 6) })
+		SB.Config.db.categoryOrder = { "c_junk", "c_gear" } -- BoE gear not saved: WuE follows with the rest
+		C.Load()
+		assert.same({ "new", "c_junk", "c_gear", "c_keystone" }, { unpack(C.SectionOrder(), 1, 4) })
+	end)
+
+	-- Spec 8.5: a user's edit of the new built-in is a diff, and Reset brings the built-in back.
+	-- Mutation: C.Load ignoring userEdits.c_wue (skip applying userEdits to built-ins).
+	it("Warbound until equipped keeps a user's rename as a diff; reset restores it", function()
+		SB.Config.db.userEdits.c_wue = { name = "WuE" }
+		C.Load()
+		assert.equal("WuE", C.Name("c_wue"))
+		assert.equal("gear & wue", C.Get("c_wue").query, "the rest is the built-in's")
+		C.ResetBuiltin("c_wue")
+		assert.equal("Warbound until equipped", C.Name("c_wue"))
+		assert.is_nil(SB.Config.db.userEdits.c_wue)
+	end)
+
 	it("damaged saved category data never breaks loading (Review Focus 4)", function()
 		SB.Config.db.userEdits = { c_gear = "garbage", c_ore = { priority = "high", itemList = "x" }, nope = { name = "?" } }
 		SB.Config.db.categories = { u_bad = "x", u_list = { name = "Only a list", itemList = { include = { [5] = true } } } }
@@ -249,7 +276,7 @@ describe("Categories", function()
 		assert.truthy(C.MarkFailed("c_fish", "boom"))
 		assert.falsy(C.MarkFailed("c_fish", "boom again"), "only the first failure counts")
 		local total, edited, broken = C.Counts()
-		assert.equal(19, total)
+		assert.equal(20, total)
 		assert.equal(2, edited)
 		assert.same({ "Fish & Lures", "Broken" }, broken)
 	end)
@@ -258,6 +285,6 @@ describe("Categories", function()
 		SB.Checks.last = {}
 		C.MarkFailed("c_fish", "boom")
 		local text = SB.Report.Build()
-		assert.truthy(text:find("\nCategories: 18 (0 edited)  Broken: Fish & Lures", 1, true))
+		assert.truthy(text:find("\nCategories: 19 (0 edited)  Broken: Fish & Lures", 1, true))
 	end)
 end)

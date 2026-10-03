@@ -43,8 +43,9 @@ describe("Categorizer", function()
 		A.Put(0, 11, Fixtures.QUEST, 1, { quest = true })
 		A.Put(0, 12, Fixtures.BAG, 1)
 		A.Put(0, 13, Fixtures.BOE_RING, 1, { isWUE = true })
+		-- slot 13, a warbound-until-equipped ring: its own section since week 6 (Gear before)
 		local expected = { "c_consumables", "c_consumables", "c_boe", "c_gear", "c_keystone", "c_junk", "c_herbs", "c_ore",
-			"c_collect", "c_collect", "c_quest", "c_other", "c_gear" }
+			"c_collect", "c_collect", "c_quest", "c_other", "c_wue" }
 		for slot, id in ipairs(expected) do
 			assert.equal(id, at(slot), "slot " .. slot)
 		end

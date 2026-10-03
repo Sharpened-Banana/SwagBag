@@ -7,6 +7,8 @@
 --   itemList      manual lists, keyed by itemID: include wins over every rule
 --   setting       the category only exists while that Config setting is true
 --   fallback      the category for items no rule claims ("Other")
+--   after         a built-in added in an update joins a SAVED category order right after this one
+--                 (not at the end); without a saved order displayOrder places it as usual
 -- New and Free are not categories: the layout adds them (spec 7.6, 4.3).
 -- Queries use only registered keywords except Fish & Lures, which matches item names
 -- ("fish", "lure", "bait"); users file other fish by dragging one onto the header.
@@ -19,6 +21,9 @@ SB.CategoryDefaults = {
 	{ id = "c_consumables", name = L.CAT_CONSUMABLES, query = "consumable", priority = 65, displayOrder = 20 },
 	{ id = "c_gear", name = L.CAT_GEAR, query = "gear", priority = 70, displayOrder = 30 },
 	{ id = "c_boe", name = L.CAT_BOE, query = "gear & boe", priority = 75, displayOrder = 40 },
+	-- Week 6 (user request 2): gear that is warbound until equipped, next to BoE gear. Above Gear (70)
+	-- so WuE gear lands here; "wue" and "boe" never match the same item (Engine/Keywords.lua).
+	{ id = "c_wue", name = L.CAT_WUE, query = "gear & wue", priority = 74, displayOrder = 45, after = "c_boe" },
 	{ id = "c_tradegoods", name = L.CAT_TRADEGOODS, query = "tradegoods | reagent", priority = 50, displayOrder = 50 },
 	{ id = "c_herbs", name = L.CAT_HERBS, query = "herb", priority = 55, displayOrder = 60 },
 	{ id = "c_ore", name = L.CAT_ORE, query = "ore", priority = 54, displayOrder = 70 },

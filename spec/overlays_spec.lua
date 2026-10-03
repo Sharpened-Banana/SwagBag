@@ -32,12 +32,36 @@ describe("Overlays (spec F9)", function()
 	end
 
 	it("gear: item level top left, track bottom left, BoE badge, upgrade arrow", function()
+		SB.Config.Set("overlays.bind", true) -- the badge is off by default since week 6
 		A.tracks["item:225001::upgradable"] = { track = "Champion", level = 2, max = 8 }
 		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
 		A.equipped[12] = { ilvl = 290, equipLoc = "INVTYPE_FINGER" }
 		local _, r = draw(0, 3)
 		assert.same({ "285", "C2/8", "BoE", true, false },
 			{ r.topLeft.text, r.bottomLeft.text, r.bind.text, r.arrow.shown, r.junk.shown })
+	end)
+
+	-- Week 6, user request 2: too cluttered with the item level, the track and the badge. Only a value the
+	-- user saved is stored, so the new default reaches everyone who never touched it.
+	-- Mutation: Config.Defaults overlays.bind = true.
+	it("the BoE/WuE badge is off by default; a user who saved it on keeps it", function()
+		local _, r = draw(0, 3)
+		assert.equal("", r.bind.text)
+		SB.Config.Init({ schemaVersion = SB.Config.CURRENT, settings = { overlays = { bind = true } } }, nil)
+		local _, saved = draw(0, 3)
+		assert.equal("BoE", saved.bind.text)
+	end)
+
+	-- Week 6: the badge sat between the two left corners, so with it off nothing needs the space back.
+	-- Pins the week-4 Task 11 places and sizes (no code change this week).
+	it("with the badge off, the item level and the track keep their corners and sizes", function()
+		A.tracks["item:225001::upgradable"] = { track = "Champion", level = 2, max = 8 }
+		local _, r = draw(0, 3)
+		assert.same({ "285", "C2/8", "" }, { r.topLeft.text, r.bottomLeft.text, r.bind.text })
+		local tl, bl = r.topLeft.points[1], r.bottomLeft.points[1]
+		assert.same({ "TOPLEFT", 2, -2, "BOTTOMLEFT", 2, 2 }, { tl[1], tl[4], tl[5], bl[1], bl[4], bl[5] })
+		assert.same({ 13, 11, 33 }, { Ov.FONT_SIZE, Ov.BIND_SIZE, Ov.TEXT_WIDTH })
+		assert.equal(Ov.FONT_SIZE, r.topLeft.calls.SetFont[2])
 	end)
 
 	it("a keystone shows +level and its dungeon's short name", function()
@@ -79,6 +103,7 @@ describe("Overlays (spec F9)", function()
 	end)
 
 	it("each overlay has its own switch; /swagbag overlays lists and switches them", function()
+		SB.Config.Set("overlays.bind", true) -- the badge is off by default since week 6
 		SB.Config.Set("overlays.ilvl", false)
 		local _, r = draw(0, 3)
 		assert.equal("", r.topLeft.text)

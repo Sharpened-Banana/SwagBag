@@ -45,8 +45,12 @@ Config.Defaults = {
 		guildBank = { mode = "full", withdrawAnyTab = false, view = "sections", columns = 14 },
 		-- headerTotals: each section header shows its total value (spec F10).
 		prices = { headerTotals = true },
-		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow.
-		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = true,
+		-- Overlays on item buttons (spec F9); usePawn: Pawn decides the upgrade arrow. bind: the "BoE" /
+		-- "WuE" badge, off by default since week 6 (user request: the item level, track and badge were
+		-- too cluttered; the "BoE gear" and "Warbound until equipped" sections say it instead). Only a
+		-- value the user saved is stored (Config.Get falls back to these defaults), so whoever never
+		-- touched it gets the new default and whoever saved "on" keeps it.
+		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = false,
 			usePawn = false },
 		-- Focus modes (spec 6, Engine/Focus.lua). auto: modes switch by themselves (AC8.1);
 		-- resolve: "merge" (open the union, default) | "priority" (combat > activity > location,
@@ -64,7 +68,7 @@ Config.Defaults = {
 				delves = "c_consumables,c_gear",
 				gathering = "c_herbs,c_ore,c_leathercloth,c_tools",
 				fishing = "c_fish,c_cooking",
-				market = "c_junk,c_tradegoods,c_boe",
+				market = "c_junk,c_tradegoods,c_boe,c_wue",
 			} },
 		-- The low-consumables warning (spec 6.6, F11). warn: on by default. watch: nil means the
 		-- default list (Engine/Consumables.lua); the user's edited list is stored here.
