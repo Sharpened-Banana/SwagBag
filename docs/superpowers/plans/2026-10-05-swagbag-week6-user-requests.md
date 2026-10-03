@@ -5323,7 +5323,7 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 ---
 ## In-game sessions
 
-Four short sessions: FS1 after Task 3, OV1 after Task 4, DP1 after Task 6, TF1 after Task 9. Then the week-6 exit check. They never block the build: findings come back as fixes.
+Four short sessions: FS1, OV1, DP1 and TF1. All four run on the final merged build (every task done, reviewed and fixed), not on the build at the task each one is written for; the "after Task N" in each heading only says which task's work it checks. Then the week-6 exit check. They never block the build: findings come back as fixes.
 
 Before every session:
 - Claude installs the build first. The game currently runs an older copy, and the login line must say `v0.6.0`.
@@ -5332,9 +5332,9 @@ Before every session:
 
 Chat lines start with `SwagBag: `. The bags' title shows the average item level after the mode name (for example `SwagBag — AH/Vendor/Bank — ilvl 279.4`), so the steps say what the title **starts with**.
 
-### Session FS1: modes move their sections to the top (after Task 3, about 10 minutes)
+### Session FS1: modes move their sections to the top (checks Task 3; runs on the final merged build, about 10 minutes)
 
-You need: a vendor; something in your bags that goes to Junk, Trade Goods or BoE gear (one of them is enough). Step 24 waits for your next Mythic+ key.
+You need: a vendor; something in your bags that goes to Junk, Trade Goods or BoE gear (one of them is enough). Step 25 waits for your next Mythic+ key.
 
 0. Claude installs the build first.
 1. Quit the game completely and start it again. Expected: the login screen.
@@ -5354,20 +5354,21 @@ You need: a vendor; something in your bags that goes to Junk, Trade Goods or BoE
 10. Click the `+ Junk` header. Expected: Junk opens. It is your own choice, kept as you set it.
 11. Move the mouse off the bags.
 12. Type `/swagbag mode style`. Expected: `SwagBag: Focus style: front (a mode moves its sections to the top). Type /swagbag mode style front or /swagbag mode style collapse.`
-13. Type `/swagbag mode style collapse`. Expected: `SwagBag: Focus modes now collapse every section the mode does not need. A click on a collapsed one peeks.`
+13. Type `/swagbag mode style collapse`. Expected: `SwagBag: Focus modes now collapse every section the mode does not need. A click on a collapsed one opens it.`
 14. Right-click the vendor. Expected: `Junk`, `Trade Goods` and `BoE gear` are open in their usual places, and every other section is collapsed (the week-4 way).
 15. Walk away from the vendor with the **S** key until its window closes, with the mouse **not** over the bags. Expected: the sections open again as you had set them.
-16. Type `/swagbag settings focus`. Expected: the settings window opens at `Focus modes`. The second row reads `While a mode is on`, with `Move to the top` and `Collapse the rest`; `Collapse the rest` is highlighted.
+16. Type `/swagbag settings focus`. Expected: the settings window opens at `Focus modes`. It starts with a short paragraph (`Focus modes notice what you are doing...`), then a row `Focus modes` with `Switch by themselves` highlighted, then the row under it, `While a mode is on`, with `Move to the top` and `Collapse the rest`; `Collapse the rest` is highlighted.
 17. Click `Move to the top`. Expected: the status line at the bottom reads `Focus modes now move their sections to the top and leave every section open or collapsed as you set it.`
-18. Close the settings window with its X.
-19. Type `/swagbag view list`. Expected: `SwagBag: SwagBag - list view`, and the bags show rows.
-20. Right-click the vendor. Expected: in the list too, `Junk`, `Trade Goods` and `BoE gear` move right under New, and nothing collapses.
-21. Walk away from the vendor with the **S** key until its window closes, with the mouse not over the bags. Expected: the usual order again.
-22. Type `/swagbag view sections`. Expected: `SwagBag: SwagBag - category view`.
-23. Type `/swagbag report`. Expected: the report box shows a line that starts `Focus: no mode (merge, front);` and contains `collapsing no`. Close the box.
-24. At your next Mythic+ key: when the key starts, press **B** once. Expected: `Consumables`, `Keystone & Crests` and `Gear` come right under New, in that order, and nothing is collapsed that you had open. Tell Claude "FS1 step 24 ok" (or what you saw) with the session reply, or later.
+18. Rest the mouse on `Move to the top`. Expected: a tooltip `While a mode is on`, then `Move to the top: the mode's sections come first, right under New. The mode collapses nothing; sections you collapsed yourself stay collapsed. Collapse the rest: only the mode's sections stay open (New always does); every other section collapses until the mode ends.`
+19. Close the settings window with its X.
+20. Type `/swagbag view list`. Expected: `SwagBag: SwagBag - list view`, and the bags show rows.
+21. Right-click the vendor. Expected: in the list too, `Junk`, `Trade Goods` and `BoE gear` move right under New, and nothing collapses.
+22. Walk away from the vendor with the **S** key until its window closes, with the mouse not over the bags. Expected: the usual order again.
+23. Type `/swagbag view sections`. Expected: `SwagBag: SwagBag - category view`.
+24. Type `/swagbag report`. Expected: the report box shows a line that starts `Focus: no mode (merge, front);` and contains `collapsing no`. Close the box.
+25. Before your next Mythic+ key, press **B** and click the `Consumables` header yourself. Expected: it collapses to `+ Consumables (…)`. Move the mouse off the bags. When the key starts, press **B** once. Expected: `Consumables`, `Keystone & Crests` and `Gear` come right under New, in that order. `Consumables` is **still collapsed** (`+ Consumables`), because you collapsed it yourself, and nothing else is collapsed that you had open. (The same check works with the vendor, as in steps 4 to 6: your collapsed `Junk` moved up and stayed collapsed.) Tell Claude "FS1 step 25 ok" (or what you saw) with the session reply, or later.
 
-### Session OV1: a cleaner item, and Warbound until equipped (after Task 4, about 5 minutes)
+### Session OV1: a cleaner item, and Warbound until equipped (checks Task 4; runs on the final merged build, about 5 minutes)
 
 You need: a BoE or warbound-until-equipped gear item, if you have one; gear with an upgrade track (like `H1/8`).
 
@@ -5383,7 +5384,7 @@ You need: a BoE or warbound-until-equipped gear item, if you have one; gear with
 7. Click the bags' search box and type `wue`. Expected: only warbound-until-equipped items stay bright; everything else dims.
 8. Press **Esc** once to leave the search box, then clear the box with its small x. Expected: everything is bright again.
 
-### Session DP1: Deposit warbound, and the bank's free tile (after Task 6, about 10 minutes)
+### Session DP1: Deposit warbound, and the bank's free tile (checks Task 6; runs on the final merged build, about 10 minutes)
 
 You need: a banker; at least one warbound item in your bags (its tooltip says `Warbound` or `Warbound until equipped`); a stack of an ordinary item (a trade good) for step 12.
 
@@ -5405,7 +5406,7 @@ You need: a banker; at least one warbound item in your bags (its tooltip says `W
     - within a second your warbound items leave the bags and appear under `New` in the `Warband bank` group;
     - no red `Interface action failed because of an AddOn` and nothing about "blocked".
 
-    If the title or chat instead says `SwagBag can't tell whether a deposit would end an item's refund, …` or `The warband bank can't take items right now: nothing was deposited.`, tell Claude the exact line.
+    If the title or chat instead says `SwagBag can't tell whether a deposit would end an item's refund, …` or `The warband bank can't take items right now: nothing was deposited.` or `The warband bank is locked right now (another character of your account may be using it): nothing was deposited.`, tell Claude the exact line.
 11. Move the mouse off the button.
 12. Right-click the ordinary item stack in your bags. Expected: it moves into the bank group that says `deposits go here`. No red "Interface action failed" or "blocked" message.
 13. Move the mouse off the bags, then click the `With reagents` box. Expected: the title flashes `Deposit warbound now takes reagents too (Blizzard's own setting)` (or `… now leaves reagents in your bags …` if it was ticked).
@@ -5417,7 +5418,7 @@ You need: a banker; at least one warbound item in your bags (its tooltip says `W
 19. Walk away from the banker until the bank closes. Expected: both bank windows close.
 20. Type `/swagbag report`. Expected: the line `Failed checks: none`. If it names a `C_Bank…`, `C_Item…` or `C_CVar…` check, copy that line to Claude. Close the box.
 
-### Session TF1: the fixes from your 0.5.0 testing (after Task 9, about 10 minutes)
+### Session TF1: the fixes from your 0.5.0 testing (checks Tasks 7 to 9; runs on the final merged build, about 10 minutes)
 
 You need: a vendor and a banker. Your bags should be closed when you start.
 
@@ -5434,13 +5435,13 @@ You need: a vendor and a banker. Your bags should be closed when you start.
 10. Press **B**. Rest the mouse on the `Pause` button at the top of your bags. Expected: a tooltip with three lines:
     - `Pause focus modes`;
     - `Sections stop opening, closing and moving by themselves until you click Resume (or log in again).`;
-    - `Right-click: choose the sections this mode opens`.
+    - `Right-click: choose the sections this mode uses`.
 11. Click `Pause`. Expected: chat shows `SwagBag: Focus modes are paused for this session: sections stay as you set them. Click Resume, or type /swagbag mode resume.`, and the button now reads `Resume`.
 12. Rest the mouse on `Resume`. Expected: the tooltip starts with `Resume focus modes`, then `Focus modes are paused: your sections stay as you set them. Click to let modes switch by themselves again.`
 13. Click `Resume`. Expected: chat shows `SwagBag: Focus modes are back on: sections follow what you are doing again.`
-14. Move the mouse off the bags. Type `/swagbag settings focus`. Expected: the settings window opens at `Focus modes`, and its first line reads `Focus modes open the sections you need for what you're doing (a key, the vendor, fishing) and tidy the rest. They switch by themselves. Rest the mouse on a button to see what it does.`
-15. Rest the mouse on `Move to the top`. Expected: a tooltip `While a mode is on`, then `Move to the top: the mode's sections come first, right under New, and nothing is collapsed. Collapse the rest: only the mode's sections stay open; every other section collapses until the mode ends.`
-16. Rest the mouse on `On` in the row `Mode: Fishing`. Expected: `On: this mode switches on by itself while you fish. Off: it never does; the other modes still work.` Rest the mouse on a few other buttons on this page. Tell Claude about any tooltip that is still unclear (note it).
+14. Move the mouse off the bags. Type `/swagbag settings focus`. Expected: the settings window opens at `Focus modes`, and its first line reads `Focus modes notice what you are doing - a key, the vendor, fishing - and bring the sections you need to the top. They switch by themselves; the "While a mode is on" row below chooses whether the other sections also close. Rest the mouse on a button to see what it does.`
+15. Rest the mouse on `Move to the top`. Expected: a tooltip `While a mode is on`, then `Move to the top: the mode's sections come first, right under New. The mode collapses nothing; sections you collapsed yourself stay collapsed. Collapse the rest: only the mode's sections stay open (New always does); every other section collapses until the mode ends.`
+16. Rest the mouse on `On` in the row `Mode: Fishing`. Expected: `On: this mode switches on by itself while you fish, as long as Switch by themselves is on. Off: it never does; the other modes still work.` Rest the mouse on a few other buttons on this page. Tell Claude about any tooltip that is still unclear (note it).
 17. Click `Alt data` on the left. Expected: in the row `Other characters' counts on item tooltips`, the words `Shown (not twice with Syndicator)` fit inside their button, and `Always shown` and `Hidden` are whole buttons. `Hidden` may sit on a second line. Nothing overlaps, and nothing is cut off at the right edge.
 18. Close the settings window with its X.
 19. Type `/swagbag setup`. Expected: chat shows `SwagBag: Quick setup opened.`, and under the slots-per-row buttons the window reads `Focus modes bring up the sections you need (a key, the vendor, fishing) by themselves. The Pause button at the top of your bags stops them until you click Resume.`
