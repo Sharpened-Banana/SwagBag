@@ -1936,6 +1936,23 @@ describe("BagsWindow focus modes (spec 6)", function()
 			"Resume focus modes", SB.L.MODE_TIP_BODY_PAUSED, SB.L.MODE_TIP_RIGHT }, lines)
 	end)
 
+	-- Week 6 fix round 1. Mutation: delete the ShowModeTip call after TogglePause in the click handler.
+	it("clicking Pause while hovering swaps the tooltip to the Resume version without a new hover", function()
+		local lines, owner = {}, nil
+		GameTooltip = { SetOwner = function(_, o) owner = o; lines = {} end,
+			SetText = function(_, t) lines[#lines + 1] = t end,
+			AddLine = function(_, t) lines[#lines + 1] = t end, Show = function() end, Hide = function() end,
+			IsOwned = function(_, o) return owner == o end }
+		W.Open()
+		W.modeButton.scripts.OnEnter(W.modeButton)
+		assert.equal("Pause focus modes", lines[1])
+		W.modeButton.scripts.OnClick(W.modeButton, "LeftButton")
+		assert.same({ "Resume focus modes", SB.L.MODE_TIP_BODY_PAUSED, SB.L.MODE_TIP_RIGHT }, lines)
+		W.modeButton.scripts.OnClick(W.modeButton, "LeftButton")
+		assert.equal("Pause focus modes", lines[1])
+		GameTooltip = nil
+	end)
+
 	it("/swagbag mode answers every form (P2)", function()
 		SB.Categories.Load()
 		F.SetSignal("challengeMode", true)
