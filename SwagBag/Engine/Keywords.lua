@@ -262,6 +262,10 @@ function K.RegisterAll()
 		return SB.Locks ~= nil and SB.Locks.Has(r.itemID)
 	end)
 	kw("inuse", "volatile", flag("isLocked"))
+	-- Week 7 (user pick 9, spec 7.3 "uncollected"): an appearance, toy, mount or pet the account lacks.
+	kw("uncollected", "volatile", function(r)
+		return SB.Collections ~= nil and SB.Collections.Uncollected(r) ~= nil
+	end)
 	kw("cooldown", "volatile", flag("onCooldown"))
 	kw("usable", "volatile", flag("isUsable"))
 	kw("equipped", "volatile", flag("inEquipmentSet"))

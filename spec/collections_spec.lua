@@ -71,6 +71,40 @@ describe("Collections (week 7)", function()
 		assert.is_nil(Coll.Learn(saved))
 	end)
 
+	-- Week 7 (user pick 9). Mutations: in Coll.Uncollected, `== false` -> `~= true` for looks (a silent
+	-- client would star every piece); or drop TRANSMOG_COLLECTION_UPDATED from the events.
+	it("Uncollected: gear whose look is missing, toys, mounts and pets not yet collected; cached per link", function()
+		local link = "item:225001::upgradable" -- the fixture's BoE ring, slot 3
+		A.collected.looks[link] = false
+		A.collected.toys[Fixtures.TOY] = false
+		A.collected.mounts[500002] = true
+		local function kind(slot)
+			return Coll.Uncollected(SB.Items.Describe(0, slot))
+		end
+		assert.same({ "appearance", "toy" }, { kind(3), kind(12) })
+		assert.is_nil(kind(8), "a mount already collected")
+		assert.is_nil(kind(4), "the client gives no answer for the helm's look: no star")
+		assert.is_nil(kind(10), "decor: the learn glow only")
+		local calls = A.collectionCalls
+		kind(3)
+		assert.equal(calls, A.collectionCalls, "cached")
+		A.collected.looks[link] = true
+		SB.Overlays = { RefreshAll = function() end }
+		SB.eventFrame:Fire("TRANSMOG_COLLECTION_UPDATED")
+		assert.is_nil(kind(3), "collected now")
+	end)
+
+	-- Week 7: the `uncollected` keyword (spec 7.3). Mutation: register it as always false.
+	it("the search keyword `uncollected` finds the same items", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Query/Lexer.lua")
+		Loader.LoadFile(SB, "SwagBag/Engine/Query/Parser.lua")
+		Loader.LoadFile(SB, "SwagBag/Engine/Query/Query.lua")
+		Loader.LoadFile(SB, "SwagBag/Engine/Keywords.lua")
+		A.collected.toys[Fixtures.TOY] = false
+		local q = SB.Query.Compile("uncollected")
+		assert.same({ true, false }, { SB.Query.Eval(q, SB.Items.Describe(0, 12)), SB.Query.Eval(q, SB.Items.Describe(0, 1)) })
+	end)
+
 	-- Mutations: drop the Inventory listener's Invalidate; or register no NEW_TOY_ADDED handler.
 	it("answers are cached per item; a toy learned or an item leaving asks again, and the windows re-draw", function()
 		A.collected.toys[Fixtures.TOY] = false

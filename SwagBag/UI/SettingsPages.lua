@@ -169,6 +169,7 @@ local OVERLAYS = {
 	{ "upgrade", "overlays.upgrade", L.SET_OV_UPGRADE }, { "keystone", "overlays.keystone", L.SET_OV_KEYSTONE },
 	{ "junk", "overlays.junk", L.SET_OV_JUNK }, { "bind", "overlays.bind", L.SET_OV_BIND },
 	{ "learn", "overlays.learn", L.SET_OV_LEARN }, { "lock", "overlays.lock", L.SET_OV_LOCK },
+	{ "uncollected", "overlays.uncollected", L.SET_OV_UNCOLLECTED },
 }
 
 local function overlayRows()

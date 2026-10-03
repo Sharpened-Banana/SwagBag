@@ -2,7 +2,9 @@
 --   Vendor.Protected(record) -> bool   never sold by SwagBag (ruling R19): in an equipment set, locked by the
 --                                      user (Engine/Locks.lua, Task 5), an item to open or learn
 --                                      (Collections.Learn: caches, unlearned toys, mounts, pets, decor,
---                                      knowledge), or a gray BoE item Auctionator prices above twice the vendor
+--                                      knowledge), gear whose look the account has not collected
+--                                      (Collections.Uncollected, Task 8), or a gray BoE item Auctionator prices
+--                                      above twice the vendor
 --   Vendor.Junk() -> { item }          gray items a vendor pays for, not protected, not held by the client
 --                                      (being moved or traded), loaded; bags order. item = { bag, slot,
 --                                      itemID, link, count, price } (price: copper per unit)
@@ -58,7 +60,8 @@ end
 
 function V.Protected(r)
 	return r.inEquipmentSet == true or (SB.Locks ~= nil and SB.Locks.Has(r.itemID))
-		or (SB.Collections ~= nil and SB.Collections.Learn(r) ~= nil) or worthMoreAtAuction(r)
+		or (SB.Collections ~= nil and (SB.Collections.Learn(r) ~= nil or SB.Collections.Uncollected(r) ~= nil))
+		or worthMoreAtAuction(r)
 end
 
 function V.Junk()

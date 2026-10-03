@@ -9,11 +9,13 @@
 --     bind      "BoE" | "WuE" | nil   bind on equip / warbound until equipped, not yet bound
 --     upgrade   boolean         the arrow (AC9.3, see IsUpgrade)
 --     learn     "open" | "learn" | nil   an item to click: open it, or learn it (ctx.learn, week 7)
---     locked    boolean         the user locked it (ctx.locked, week 7; then no junk coin) }
+--     locked    boolean         the user locked it (ctx.locked, week 7; then no junk coin)
+--     uncollected "appearance" | "toy" | "mount" | "pet" | nil   (ctx.uncollected, week 7) }
 --   ctx = { equipped = { [invSlot] = { ilvl, equipLoc } }, canUse = fn(itemID) -> bool,
 --           dungeonName = fn(mapID) -> name | nil, pawn = fn(record) -> true | false | nil,
 --           learn = fn(record) -> "open" | "learn" | nil (Engine/Collections.lua),
---           locked = fn(itemID) -> bool (Engine/Locks.lua) }
+--           locked = fn(itemID) -> bool (Engine/Locks.lua),
+--           uncollected = fn(record) -> kind | nil (Engine/Collections.lua) }
 --   OverlayData.IsUpgrade(record, equipped, canUse) -> boolean
 --   OverlayData.Short(name) -> short dungeon name ("Darkflame Cleft" -> "DC")
 local _, SB = ...
@@ -167,6 +169,9 @@ function O.For(record, ctx)
 	end
 	if ctx.learn then
 		out.learn = ctx.learn(record)
+	end
+	if ctx.uncollected then
+		out.uncollected = ctx.uncollected(record)
 	end
 	if ctx.locked then
 		out.locked = ctx.locked(record.itemID) == true

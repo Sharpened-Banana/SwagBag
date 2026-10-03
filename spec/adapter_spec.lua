@@ -1,7 +1,7 @@
 -- luacheck: globals IsInGuild
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
 -- luacheck: globals Auctionator ColorManager ITEM_QUALITY_COLORS
--- luacheck: globals PlayerHasToy C_MountJournal C_PetJournal C_HousingCatalog
+-- luacheck: globals PlayerHasToy C_MountJournal C_PetJournal C_HousingCatalog C_TransmogCollection
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
 -- F1: spec/runner.lua installs format51 before any spec loads, so this first-sorting spec (no loader,
 -- no single-file escape) is as strict as WoW too. Mutation: delete the require from spec/runner.lua.
@@ -235,6 +235,7 @@ describe("Adapter collections (week 7)", function()
 
 	after_each(function()
 		PlayerHasToy, C_MountJournal, C_PetJournal, C_HousingCatalog, issecretvalue = nil, nil, nil, nil, nil
+		C_TransmogCollection = nil
 	end)
 
 	-- Mutation: in A.ToyKnown, return `ok and v` (a secret or a non-boolean passes through).
@@ -274,5 +275,20 @@ describe("Adapter collections (week 7)", function()
 		assert.same({ true, false }, { A.DecorKnown(9), A.DecorKnown(10) })
 		assert.is_nil(A.DecorKnown(11), "no counts: the client cannot say")
 		assert.is_nil(A.DecorKnown(12), "not decor")
+	end)
+
+	-- Week 7 (user pick 9). Mutation: in A.AppearanceKnown, drop the AccountCanCollectSource check.
+	it("appearances: collected or not; nil with no source, one the account cannot collect, or a secret", function()
+		assert.is_nil(A.AppearanceKnown("item:1"))
+		C_TransmogCollection = {
+			GetItemInfo = function(link) return 7, ({ ["item:1"] = 101, ["item:2"] = 102, ["item:3"] = 103 })[link] end,
+			AccountCanCollectSource = function(source) return true, source ~= 103 end,
+			PlayerHasTransmogItemModifiedAppearance = function(source) return source == 101 end,
+		}
+		assert.same({ true, false }, { A.AppearanceKnown("item:1"), A.AppearanceKnown("item:2") })
+		assert.is_nil(A.AppearanceKnown("item:3"), "the account cannot collect it")
+		assert.is_nil(A.AppearanceKnown("item:4"), "no appearance (a ring)")
+		issecretvalue = function(v) return v == false end
+		assert.is_nil(A.AppearanceKnown("item:2"), "a secret answer")
 	end)
 end)

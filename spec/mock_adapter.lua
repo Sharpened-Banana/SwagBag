@@ -608,6 +608,13 @@ function M.AddContainers(m)
 		return m.collected.pets[species or itemID]
 	end
 
+	-- Appearances: m.collected.looks[link] = true | false (no entry: no appearance, or the client cannot say).
+	m.collected.looks = {}
+	function m.AppearanceKnown(link)
+		m.collectionCalls = m.collectionCalls + 1
+		return m.collected.looks[link]
+	end
+
 	function m.DecorKnown(itemID)
 		m.collectionCalls = m.collectionCalls + 1
 		return m.collected.decor[itemID]

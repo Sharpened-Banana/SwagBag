@@ -27,8 +27,10 @@ done
 if grep -rnE '\.bankType[[:space:]]*=([^=]|$)' SwagBag; then fail "forbidden: writing .bankType"; fi
 if grep -rnE '^[[:space:]]*_[[:space:]]*=([^=]|$)' SwagBag; then fail "forbidden: assignment to global _"; fi
 if grep -rnE '(^|[^[:alnum:]_])goto[[:space:]]' SwagBag; then fail "forbidden: goto (not Lua 5.1)"; fi
-if grep -rnE '(^|[^[:alnum:]_])(C_[A-Z][A-Za-z]*|Enum)\.' SwagBag | grep -v '^SwagBag/Core/Adapter.lua:'; then
-	fail "C_* or Enum used outside SwagBag/Core/Adapter.lua"
+# A C_* namespace is named only in the Adapter, comments included: a bare name with no dot after it counts too
+# (week 7, ruling R5: a comment once named one). Enum is matched where it is used (Enum.).
+if grep -rnE '(^|[^[:alnum:]_])(C_[A-Z][A-Za-z]*|Enum\.)' SwagBag | grep -v '^SwagBag/Core/Adapter.lua:'; then
+	fail "C_* or Enum named outside SwagBag/Core/Adapter.lua (comments included)"
 fi
 
 echo "== 4/5 TOC"

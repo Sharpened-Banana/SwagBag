@@ -278,12 +278,12 @@ L.OVERLAY_KEYSTONE = "+%d"
 L.OVERLAY_ON = "on"
 L.OVERLAY_OFF = "off"
 L.HELP_OVERLAYS = "overlays [name on|off]: list or switch item overlays (ilvl, track, upgrade, keystone, junk, bind, learn,"
-	.. " lock, pawn)"
+	.. " lock, uncollected, pawn)"
 	.. " and the item level in the bags title (title)"
 L.OVERLAYS_STATE = "Overlays: %s"
 L.OVERLAYS_SET = "Overlay %s is now %s."
 L.OVERLAYS_USAGE = "Use /swagbag overlays, or /swagbag overlays"
-	.. " <ilvl|track|upgrade|keystone|junk|bind|learn|lock|pawn|title> <on|off>."
+	.. " <ilvl|track|upgrade|keystone|junk|bind|learn|lock|uncollected|pawn|title> <on|off>."
 L.OVERLAYS_NO_PAWN = "Pawn is not loaded or not ready yet, so the item-level rule decides the upgrade arrow."
 
 -- Free tile (plan D19)
@@ -690,8 +690,8 @@ L.V1_COMBAT = "Open the V1 strip out of combat; it can only be filled then."
 
 -- At a vendor (week 7, user pick 4): auto-sell junk, auto-repair (Engine/Vendor.lua), and the mover.
 -- VENDOR_KEEPS: what SwagBag never sells (Vendor.Protected, ruling R19), in every line that says so.
-L.VENDOR_KEEPS = "locked items, equipment-set items, items to open or learn, and gray BoE items worth more at"
-	.. " auction"
+L.VENDOR_KEEPS = "locked items, equipment-set items, gear whose look you have not collected, items to open or learn,"
+	.. " and gray BoE items worth more at auction"
 L.HELP_SELL = "sell [on|off|junk]: sell gray junk by itself at every vendor (on), never (off), or now (junk)"
 L.HELP_REPAIR = "repair [own|guild|off]: repair at vendors with your gold, the guild bank first, or not at all"
 L.VENDOR_MONEY_G = "%dg %ds %dc"
@@ -808,3 +808,6 @@ L.SET_WORTH_TOP = "Your top %d%%"
 L.SET_WORTH_TIP = "While a bank is open, items worth that much (a whole stack, by Auctionator's price, else the"
 	.. " vendor's) glow gold in your bags and the bank. Your top: the most valuable part of what you carry and"
 	.. " store. /swagbag worth sets any amount or percent."
+
+-- Uncollected marker (week 7, user pick 9)
+L.SET_OV_UNCOLLECTED = "Star on gear whose look you have not collected (and new toys, mounts, pets)"
