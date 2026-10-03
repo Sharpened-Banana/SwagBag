@@ -4,7 +4,7 @@
 --                 (Adapter.MoveToBank gives the bank type to the call, so Blizzard's selected tab is
 --                 never changed); items the warband bank does not take are left out
 --   at a vendor   "Sell all (N)", after a confirmation: items a vendor pays for, never what SwagBag protects
---                 (Vendor.Protected: locked, in an equipment set, to open or learn, worth more at auction) or
+--                 (Vendor.Protected: locked, in an equipment set, to open or learn, uncollected, worth more at auction) or
 --                 what the client holds; within the visit's 12 (Blizzard's buyback keeps 12; the auto-sell and
 --                 /swagbag sell junk share them, ruling R1). The question names the Auction House value when
 --                 it is higher (R19), and past the 12 it says the earlier sales leave the Buyback tab.

@@ -159,7 +159,8 @@ function Report.Build()
 		lines[#lines + 1] = L.TIP_HOOK_UNAVAILABLE
 	end
 	if SB.Footer and SB.Footer.SeasonText then -- week 7: the season's currencies and items, to confirm their IDs
-		lines[#lines + 1] = L.REPORT_SEASON:format(SB.Footer.SeasonText())
+		local ok, currencies, items = pcall(SB.Footer.SeasonText) -- a failure here must not blank the report
+		lines[#lines + 1] = ok and L.REPORT_SEASON:format(tostring(currencies), tostring(items)) or L.REPORT_SEASON_FAILED
 	end
 	if SB.Theme and SB.Config.db then
 		lines[#lines + 1] = L.REPORT_LOOK:format(SB.Theme.Current(), tostring(SB.Config.Get("theme.name")))

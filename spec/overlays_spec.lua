@@ -269,6 +269,45 @@ describe("Overlays (spec F9)", function()
 		assert.truthy(lock[1] >= 0 and lock[3] <= W and lock[2] >= 0 and lock[4] <= W, "inside the button")
 	end)
 
+	-- Final review fix 3. Mutation: in Overlays, STAR_SIZE back to 18 and STAR_Y to 0 (the star then sits across
+	-- the upgrade arrow and the stack count).
+	it("the star sits where no other overlay is: not on the upgrade arrow, the stack count, the lock or the corner texts", function()
+		SB.Collections = { Uncollected = function() return "appearance" end }
+		SB.Locks = { Has = function() return true end }
+		local _, r = draw(0, 3)
+		local W = 37
+		local function rect(region, w, h)
+			local pt, _, _, x, y = unpack(region.points[1])
+			local x1 = ({ LEFT = 0, TOPLEFT = 0, BOTTOMLEFT = 0, RIGHT = W - w, TOPRIGHT = W - w, BOTTOMRIGHT = W - w })[pt] + x
+			local y1 = ({ LEFT = (W - h) / 2, RIGHT = (W - h) / 2, TOPLEFT = 0, TOPRIGHT = 0, BOTTOMLEFT = W - h,
+				BOTTOMRIGHT = W - h })[pt] - y
+			return { x1, y1, x1 + w, y1 + h }
+		end
+		local function hit(a, b)
+			return a[1] < b[3] and b[1] < a[3] and a[2] < b[4] and b[2] < a[4]
+		end
+		-- The star glyph: about as wide as its font size and 0.6 of it high (an asterisk fills the top of its line).
+		local star = rect(r.star, Ov.STAR_SIZE, Ov.STAR_SIZE * 0.6)
+		local others = {
+			ilvl = rect(r.topLeft, 22, 11), track = rect(r.bottomLeft, 22, 11), arrow = rect(r.arrow, r.arrow.w, r.arrow.h),
+			count = { W - 2 - 14, W - 2 - 11, W - 2, W - 2 },
+			lock = rect(r.lock, r.lock.w, r.lock.h),
+		}
+		for name, o in pairs(others) do
+			assert.falsy(hit(star, o), "the star overlaps the " .. name)
+		end
+		assert.truthy(star[1] >= 0 and star[3] <= W and star[2] >= 0 and star[4] <= W, "inside the button")
+	end)
+
+	-- Final review fix 4 (wiring). Mutation: in Overlays.Context, `protected` always returns false.
+	it("the junk coin follows the vendor's rule: hidden while Vendor.Protected says yes", function()
+		local _, shown = draw(0, 6)
+		assert.truthy(shown.junk.shown, "the Broken Tooth is gray junk")
+		SB.Vendor = { Protected = function() return true end }
+		local _, hidden = draw(0, 6)
+		assert.falsy(hidden.junk.shown)
+	end)
+
 	it("a gear change re-draws the arrows of the open windows, once after the last slot event", function()
 		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
 		local b, r = draw(0, 3)

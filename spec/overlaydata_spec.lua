@@ -96,6 +96,17 @@ describe("OverlayData (spec F9)", function()
 			O.For(robe, { locked = function() return true end }).junk })
 	end)
 
+	-- Final review fix 4. Mutation: in OverlayData.For, drop the `ctx.protected` clause (the coin shows on gray
+	-- items SwagBag will never sell).
+	it("no junk coin on a gray item SwagBag will never sell (Vendor.Protected says yes)", function()
+		A.AddItem(400100, { name = "Frayed Robe", classID = A.ITEM_CLASS.Armor, subclassID = 1, equipLoc = "INVTYPE_CHEST",
+			quality = 0, ilvl = 5, maxStack = 1, bind = "none", sellPrice = 12 })
+		A.Put(0, 7, 400100, 1)
+		local robe = SB.Items.Describe(0, 7)
+		assert.same({ true, false, true }, { O.For(robe, { protected = function() return false end }).junk,
+			O.For(robe, { protected = function() return true end }).junk, O.For(robe, {}).junk })
+	end)
+
 	it("BoE and WuE badges until the item is bound", function()
 		assert.equal("BoE", O.For(SB.Items.Describe(0, 3)).bind)
 		assert.equal("WuE", O.For(gear("INVTYPE_HEAD", 1, { bind = "equip", isWUE = true })).bind)

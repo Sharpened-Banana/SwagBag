@@ -85,6 +85,12 @@ describe("Collections (week 7)", function()
 		assert.is_nil(kind(8), "a mount already collected")
 		assert.is_nil(kind(4), "the client gives no answer for the helm's look: no star")
 		assert.is_nil(kind(10), "decor: the learn glow only")
+		A.collected.looks[link] = "cannot"
+		Coll.Invalidate()
+		assert.is_nil(kind(3), "an account that cannot collect the look: no star")
+		A.collected.looks[link] = false
+		Coll.Invalidate()
+		kind(3)
 		local calls = A.collectionCalls
 		kind(3)
 		assert.equal(calls, A.collectionCalls, "cached")

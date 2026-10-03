@@ -177,6 +177,9 @@ function O.For(record, ctx)
 		out.locked = ctx.locked(record.itemID) == true
 		out.junk = out.junk and not out.locked -- a locked item is never sold: no "sell me" coin (ruling R11)
 	end
+	if ctx.protected and out.junk and ctx.protected(record) then
+		out.junk = false -- SwagBag will never sell it (set, lock, to open or learn, an uncollected or unknown look, worth more at auction)
+	end
 	-- Pawn replaces only the item-level rule: eligibility (loading, unusable, not worn gear) comes first.
 	if O.CanCompare(record, ctx.canUse) then
 		local verdict = ctx.pawn and ctx.pawn(record)

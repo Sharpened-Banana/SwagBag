@@ -26,6 +26,7 @@ describe("Vendor (week 7)", function()
 		A.AddItem(GRAY, { name = "Frayed Robe", classID = A.ITEM_CLASS.Armor, subclassID = 1, equipLoc = "INVTYPE_CHEST",
 			quality = 0, ilvl = 5, maxStack = 1, bind = "none", sellPrice = 50 })
 		A.money = 1000000
+		A.collected.defaultLook = true -- gray gear here has a collected look unless a test says otherwise
 		SB.Inventory.ScanAll()
 	end)
 
@@ -319,6 +320,31 @@ describe("Vendor (week 7)", function()
 		assert.same({ 6, 8 }, sold())
 	end)
 
+	-- Final review fix 1. Mutations: Collections.LookUnknown always false (an unknown look sells); or the
+	-- Vendor.Protected clause for it is dropped; or LookUnknown caches its answer.
+	it("gray gear whose look the client cannot say is kept; 'cannot collect' and a collected look sell; never cached", function()
+		A.Put(0, 7, GRAY, 1, { link = "item:400200::a" })
+		A.Put(0, 8, GRAY, 1, { link = "item:400200::b" })
+		A.Put(0, 9, GRAY, 1, { link = "item:400200::c" })
+		A.Put(0, 10, GRAY, 1, { link = "item:400200::d" })
+		A.collected.looks["item:400200::a"] = "unknown"
+		A.collected.looks["item:400200::b"] = "cannot"
+		A.collected.looks["item:400200::c"] = true
+		A.collected.looks["item:400200::d"] = false
+		SB.Inventory.ScanAll()
+		local function protected(slot)
+			return SB.Vendor.Protected(SB.Items.Describe(0, slot))
+		end
+		assert.same({ true, false, false, true }, { protected(7), protected(8), protected(9), protected(10) })
+		assert.is_nil(SB.Collections.Uncollected(SB.Items.Describe(0, 7)), "unknown: no star")
+		A.collected.looks["item:400200::a"] = true -- the client learns the answer: asked again
+		assert.falsy(protected(7))
+		A.collected.looks["item:400200::a"] = "unknown"
+		assert.truthy(protected(7), "an unknown answer is not remembered either way")
+		visit()
+		assert.same({ 6, 8, 9 }, sold())
+	end)
+
 	-- Week 7 (user pick 5). Mutation: Vendor.Protected ignores SB.Locks.
 	it("a locked junk item is never sold, by auto-sell or by /swagbag sell junk", function()
 		A.Put(0, 7, GRAY, 1)
@@ -451,6 +477,23 @@ describe("Settings: vendor page (week 7)", function()
 		A.Advance(1)
 		Fake.Fire(drop, "OnClick")
 		assert.equal(SB.L.SET_WATCH_DROP_EMPTY, SW.lastStatus)
+	end)
+
+	-- Final review fix 2. Mutation: the page's Unlock all button runs "lock clear" straight to Locks.Clear.
+	it("Unlock all asks first; the second press within 10 seconds unlocks; each press answers once", function()
+		local A = SB.Adapter
+		Fixtures.Install(A)
+		SB.Locks.Toggle(Fixtures.FLASK)
+		local unlock
+		for i = 1, SW.used.buttons do
+			if SW.buttons[i].text == SB.L.SET_LOCK_CLEAR then
+				unlock = SW.buttons[i]
+			end
+		end
+		Fake.Fire(unlock, "OnClick")
+		assert.same({ true, SB.L.LOCK_CLEAR_ASK:format(1) }, { SB.Locks.Has(Fixtures.FLASK), SW.lastStatus })
+		Fake.Fire(unlock, "OnClick")
+		assert.same({ false, SB.L.LOCK_CLEARED:format(1) }, { SB.Locks.Has(Fixtures.FLASK), SW.lastStatus })
 	end)
 
 	-- Ruling R17. Mutation: the page's SB_LOCKS_CHANGED listener never re-draws (`if SW.IsOpen() then` ->

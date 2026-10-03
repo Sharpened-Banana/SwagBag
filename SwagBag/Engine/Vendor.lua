@@ -60,7 +60,8 @@ end
 
 function V.Protected(r)
 	return r.inEquipmentSet == true or (SB.Locks ~= nil and SB.Locks.Has(r.itemID))
-		or (SB.Collections ~= nil and (SB.Collections.Learn(r) ~= nil or SB.Collections.Uncollected(r) ~= nil))
+		or (SB.Collections ~= nil and (SB.Collections.Learn(r) ~= nil or SB.Collections.Uncollected(r) ~= nil
+			or SB.Collections.LookUnknown(r)))
 		or worthMoreAtAuction(r)
 end
 
