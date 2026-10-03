@@ -112,7 +112,7 @@ describe("Overlays (spec F9)", function()
 		SB.Slash.Dispatch("overlays")
 		SB.Slash.Dispatch("overlays sparkles on")
 		assert.same({ "Overlay bind is now off.",
-			"Overlays: ilvl off, track on, upgrade on, keystone on, junk on, bind off, learn on, pawn off, title on",
+			"Overlays: ilvl off, track on, upgrade on, keystone on, junk on, bind off, learn on, lock on, pawn off, title on",
 			SB.L.OVERLAYS_USAGE }, A.Lines())
 		assert.equal(false, SB.Config.Get("overlays.bind"))
 	end)
@@ -136,6 +136,18 @@ describe("Overlays (spec F9)", function()
 		Ov.Apply(b, SB.Items.Describe(0, 1), 0)
 		Ov.Apply(b, nil, 0)
 		assert.falsy(Ov.regions[b].glow.shown, "the slot emptied: no glow")
+	end)
+
+	-- Week 7 (user pick 5). Mutation: in Overlays.Apply, `show(r.lock, on("lock") and d.locked)` -> `d.locked`.
+	it("a small lock on an item the user locked; overlays lock off hides it", function()
+		SB.Locks = { Has = function(id) return id == Fixtures.FLASK end }
+		local _, flask = draw(0, 2)
+		local _, potion = draw(0, 1)
+		assert.same({ true, false }, { flask.lock.shown, potion.lock.shown })
+		assert.same({ "TOP", 14 }, { flask.lock.points[1][1], flask.lock.w })
+		SB.Slash.Dispatch("overlays lock off")
+		local _, off = draw(0, 2)
+		assert.falsy(off.lock.shown)
 	end)
 
 	it("a gear change re-draws the arrows of the open windows, once after the last slot event", function()

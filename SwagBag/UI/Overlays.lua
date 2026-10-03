@@ -6,6 +6,7 @@
 --   top left      junk coin on gray items a vendor pays for       (overlays.junk)
 --                 (bottom left on gray gear, under its item level)
 --   whole button  a soft green glow on an item to open or learn  (overlays.learn, week 7)
+--   top middle    a small padlock on an item the user locked      (overlays.lock, week 7)
 -- The stack count is Blizzard's own (SetItemButtonCount); nothing is drawn bottom right. Sizes
 -- are the constants below (W4-15: larger, thick outline), so a check in game can tune them.
 -- overlays.usePawn hands the arrow to Pawn (Adapter.PawnUpgrade) for bag and bank items; where
@@ -22,13 +23,15 @@
 local _, SB = ...
 
 local L = SB.L
-local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind", "learn" },
+local Ov = { context = nil, NAMES = { "ilvl", "track", "upgrade", "keystone", "junk", "bind", "learn", "lock" },
 	-- Sizes in pixels on a 37 px button (W4-15, O1 steps 3-5 and 10). FONT is the fallback when the
 	-- template font has no file; TEXT_WIDTH clips a text inside the button.
 	FONT = "Fonts\\ARIALN.TTF", FONT_SIZE = 13, BIND_SIZE = 11, FONT_FLAGS = "THICKOUTLINE", TEXT_WIDTH = 33,
 	ARROW_SIZE = 16, JUNK_SIZE = 16, JUNK_OUTLINE = 3, JUNK_TINT = { 1, 0.9, 0.35 },
 	-- Week 7: the whole-button glow, Blizzard's white bag glow tinted (green: open or learn).
-	GLOW_ATLAS = "bags-glow-white", LEARN_TINT = { 0.35, 1, 0.35 } }
+	GLOW_ATLAS = "bags-glow-white", LEARN_TINT = { 0.35, 1, 0.35 },
+	-- The lock mark (week 7): Blizzard's pet-battle padlock, a plain texture file.
+	LOCK_TEXTURE = "Interface\\PetBattles\\PetBattle-LockIcon", LOCK_SIZE = 14 }
 SB.Overlays = Ov
 
 local regions = setmetatable({}, { __mode = "k" }) -- [button] = its overlay regions
@@ -68,8 +71,13 @@ local function regionsFor(button)
 			junk = texture(button, 7, "bags-junkcoin", 1, 0.85, 0.1, 0.9),
 			reagent = button:CreateTexture(nil, "OVERLAY", nil, 6),
 			glow = texture(button, 5, Ov.GLOW_ATLAS, 1, 1, 1, 0.25),
+			lock = button:CreateTexture(nil, "OVERLAY", nil, 7),
 		}
 		r.glow:SetAllPoints(button)
+		r.lock:SetTexture(Ov.LOCK_TEXTURE)
+		r.lock:SetSize(Ov.LOCK_SIZE, Ov.LOCK_SIZE)
+		r.lock:SetPoint("TOP", button, "TOP", 0, -1)
+		r.lock:Hide()
 		r.arrow:SetSize(Ov.ARROW_SIZE, Ov.ARROW_SIZE)
 		r.arrow:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
 		r.junk:SetSize(Ov.JUNK_SIZE, Ov.JUNK_SIZE)
@@ -109,7 +117,7 @@ function Ov.Context()
 	if not Ov.context then
 		local A = SB.Adapter
 		local ctx = { equipped = A.EquippedItems(), canUse = A.CanUse, dungeonName = A.DungeonName,
-			learn = SB.Collections and SB.Collections.Learn }
+			learn = SB.Collections and SB.Collections.Learn, locked = SB.Locks and SB.Locks.Has }
 		if SB.Config.Get("overlays.usePawn") then
 			ctx.pawn = function(record)
 				if record.bag and A.BagKind(record.bag) then -- bag and bank slots; not the guild bank
@@ -183,6 +191,7 @@ function Ov.Apply(button, record, bag)
 		r.glow:SetVertexColor(unpack(Ov.LEARN_TINT))
 	end
 	show(r.glow, glow)
+	show(r.lock, on("lock") and d.locked)
 end
 
 -- Re-draw the buttons of every open window (equipment or settings changed).

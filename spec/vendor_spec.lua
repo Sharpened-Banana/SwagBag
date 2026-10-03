@@ -14,6 +14,7 @@ describe("Vendor (week 7)", function()
 	local SB, A, Mover
 	before_each(function()
 		local files = { unpack(Env.ENGINE) }
+		files[#files + 1] = "SwagBag/Engine/Locks.lua"
 		files[#files + 1] = "SwagBag/Engine/Collections.lua"
 		files[#files + 1] = "SwagBag/Engine/Mover.lua"
 		files[#files + 1] = "SwagBag/Engine/Vendor.lua"
@@ -306,6 +307,61 @@ describe("Vendor (week 7)", function()
 		assert.same({ 6, 9 }, sold())
 	end)
 
+	-- Week 7 (user pick 5). Mutation: Vendor.Protected ignores SB.Locks.
+	it("a locked junk item is never sold, by auto-sell or by /swagbag sell junk", function()
+		A.Put(0, 7, GRAY, 1)
+		SB.Inventory.ScanAll()
+		SB.Locks.Toggle(Fixtures.JUNK)
+		visit()
+		assert.same({ 7 }, sold())
+		SB.Slash.Dispatch("sell junk")
+		assert.same({ 7 }, sold())
+		assert.equal(SB.L.VENDOR_NO_JUNK, A.Lines()[2])
+	end)
+
+	-- Week 7: SwagBag cannot stop Blizzard's own right-click sale, so it says so at once. Mutations: drop
+	-- the inBuyback check (an item merely moved would warn); or skip V.WatchLocked on MERCHANT_SHOW.
+	it("a locked item sold by hand (it left the bags and is in the buyback tab) gets one warning", function()
+		SB.Slash.Dispatch("sell off")
+		SB.Locks.Toggle(Fixtures.BOE_RING)
+		SB.Locks.Toggle(Fixtures.FLASK)
+		visit()
+		A.printed = {}
+		A.Clear(0, 2) -- the flask moved elsewhere (not in the buyback)
+		A.Clear(0, 3) -- the ring was sold by right-click
+		A.buyback = { "item:225001::upgradable" }
+		SB.Inventory.MarkDirty(0)
+		SB.Inventory.Flush("test")
+		assert.same({ "You sold Band of the Fallen, which you locked. Buy it back from the vendor's Buyback tab if that"
+			.. " was a mistake." }, A.Lines())
+	end)
+
+	-- Ruling R2: a lock set while the item waits its turn stops its sale. Mutation: Vendor.Protected ignores
+	-- SB.Locks.
+	it("an item locked during the run (dropped on Lock while it waits its turn) is never sold", function()
+		A.Put(0, 7, GRAY, 1)
+		SB.Inventory.ScanAll()
+		SB.eventFrame:Fire("MERCHANT_SHOW") -- slot 6 sells at once; the robe waits its turn
+		SB.Locks.Toggle(GRAY)
+		A.Advance(Mover.DELAY * 10)
+		assert.same({ 6 }, sold())
+		assert.same({ "Sold 1 junk item for 37s 2c." }, A.Lines())
+	end)
+
+	-- P6 (ruling R15). Mutation: the locked-item listener's trap window `end, "none"))` -> `end, "bags"))`.
+	it("a failure in the locked-item watch is recorded under none, never Safe Mode", function()
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		local real = SB.Vendor.WatchLocked
+		SB.Vendor.WatchLocked = function()
+			error("boom")
+		end
+		SB.Inventory.Notify(SB.Inventory.R.ITEM, {})
+		SB.Vendor.WatchLocked = real
+		local e = SB.ErrorTrap.Recent()[1]
+		assert.same({ "vendor.inventory", "none" }, { e.label, e.window })
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
 	-- P2, ruling R18 (the state names the choice as the settings window does). Mutations: /swagbag repair accepts
 	-- any word; or the state line prints the stored word (`L[REPAIR_NAMES[mode] or REPAIR_NAMES.own]` ->
 	-- `tostring(mode)`).
@@ -331,7 +387,7 @@ describe("Settings: vendor page (week 7)", function()
 		SB.Config.Init(nil, nil)
 		Fake.Install()
 		ran = {}
-		for _, name in ipairs({ "sell", "repair" }) do
+		for _, name in ipairs({ "sell", "repair", "lock" }) do
 			SB.Slash.Register(name, "test", function(arg)
 				ran[#ran + 1] = name .. " " .. arg
 				return "ran " .. name .. " " .. arg
@@ -339,6 +395,7 @@ describe("Settings: vendor page (week 7)", function()
 		end
 		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
 		Loader.LoadFile(SB, "SwagBag/UI/SettingsPages.lua")
+		Loader.LoadFile(SB, "SwagBag/Engine/Locks.lua")
 		Loader.LoadFile(SB, "SwagBag/UI/SettingsVendor.lua")
 		SW = SB.SettingsWindow
 		SW.Show("vendor")
@@ -355,10 +412,48 @@ describe("Settings: vendor page (week 7)", function()
 			shown[i] = { SW.buttons[i].text, SW.selected[SW.buttons[i]] == true }
 		end
 		assert.same({ { "On", true }, { "Off", false }, { "Your gold", true }, { "Guild bank first", false },
-			{ "Off", false } }, shown)
+			{ "Off", false }, { "Drop an item here", false }, { "List them", false }, { "Unlock all", false } }, shown)
 		Fake.Fire(SW.buttons[2], "OnClick")
 		Fake.Fire(SW.buttons[4], "OnClick")
 		assert.same({ "sell off", "repair guild" }, ran)
 		assert.equal("ran repair guild", SW.lastStatus)
+	end)
+
+	-- Week 7 (user pick 5). Mutation: in lockDrop, drop the DROP_ECHO check (the click half of the press
+	-- would replace the answer with "Pick up an item first").
+	it("the lock drop row locks the item on the cursor; the click half of the same press keeps the answer", function()
+		local A = SB.Adapter
+		Fixtures.Install(A)
+		Loader.LoadFile(SB, "SwagBag/UI/LockButton.lua")
+		local drop
+		for i = 1, SW.used.buttons do
+			if SW.buttons[i].text == SB.L.SET_LOCK_DROP then
+				drop = SW.buttons[i]
+			end
+		end
+		A.cursor = { itemID = Fixtures.FLASK, link = "item:212283" }
+		Fake.Fire(drop, "OnReceiveDrag")
+		Fake.Fire(drop, "OnClick")
+		assert.truthy(SB.Locks.Has(Fixtures.FLASK))
+		assert.equal(SB.L.LOCK_ADDED:format("Flask of Alchemical Chaos"), SW.lastStatus)
+		A.Advance(1)
+		Fake.Fire(drop, "OnClick")
+		assert.equal(SB.L.SET_WATCH_DROP_EMPTY, SW.lastStatus)
+	end)
+
+	-- Ruling R17. Mutation: the page's SB_LOCKS_CHANGED listener never re-draws (`if SW.IsOpen() then` ->
+	-- `if false then`).
+	it("Locked items: N follows a lock made anywhere while the page is open", function()
+		local function count()
+			for i = 1, SW.used.labels do
+				local n = (SW.labels[i].text or ""):match("^Locked items: (%d+)$")
+				if n then
+					return tonumber(n)
+				end
+			end
+		end
+		assert.equal(0, count())
+		SB.Locks.Toggle(Fixtures.FLASK)
+		assert.equal(1, count())
 	end)
 end)

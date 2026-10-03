@@ -8,10 +8,12 @@
 --     junk      boolean         poor quality, a vendor pays for it, and not in an equipment set
 --     bind      "BoE" | "WuE" | nil   bind on equip / warbound until equipped, not yet bound
 --     upgrade   boolean         the arrow (AC9.3, see IsUpgrade)
---     learn     "open" | "learn" | nil   an item to click: open it, or learn it (ctx.learn, week 7) }
+--     learn     "open" | "learn" | nil   an item to click: open it, or learn it (ctx.learn, week 7)
+--     locked    boolean         the user locked it (ctx.locked, week 7; then no junk coin) }
 --   ctx = { equipped = { [invSlot] = { ilvl, equipLoc } }, canUse = fn(itemID) -> bool,
 --           dungeonName = fn(mapID) -> name | nil, pawn = fn(record) -> true | false | nil,
---           learn = fn(record) -> "open" | "learn" | nil (Engine/Collections.lua) }
+--           learn = fn(record) -> "open" | "learn" | nil (Engine/Collections.lua),
+--           locked = fn(itemID) -> bool (Engine/Locks.lua) }
 --   OverlayData.IsUpgrade(record, equipped, canUse) -> boolean
 --   OverlayData.Short(name) -> short dungeon name ("Darkflame Cleft" -> "DC")
 local _, SB = ...
@@ -134,7 +136,7 @@ local function isGear(r)
 end
 
 function O.For(record, ctx)
-	local out = { junk = false, upgrade = false }
+	local out = { junk = false, upgrade = false, locked = false }
 	if not record then
 		return out
 	end
@@ -165,6 +167,10 @@ function O.For(record, ctx)
 	end
 	if ctx.learn then
 		out.learn = ctx.learn(record)
+	end
+	if ctx.locked then
+		out.locked = ctx.locked(record.itemID) == true
+		out.junk = out.junk and not out.locked -- a locked item is never sold: no "sell me" coin (ruling R11)
 	end
 	-- Pawn replaces only the item-level rule: eligibility (loading, unusable, not worn gear) comes first.
 	if O.CanCompare(record, ctx.canUse) then

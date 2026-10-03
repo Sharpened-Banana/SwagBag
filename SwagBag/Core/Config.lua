@@ -51,8 +51,9 @@ Config.Defaults = {
 		-- value the user saved is stored (Config.Get falls back to these defaults), so whoever never
 		-- touched it gets the new default and whoever saved "on" keeps it.
 		-- learn (week 7): a green glow on items to open or learn (caches, toys, mounts, pets, decor, knowledge).
+		-- lock (week 7): a small padlock on items the user locked (Engine/Locks.lua).
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = false,
-			learn = true, usePawn = false },
+			learn = true, lock = true, usePawn = false },
 		-- Focus modes (spec 6, Engine/Focus.lua). auto: modes switch by themselves (AC8.1);
 		-- resolve: "merge" (open the union, default) | "priority" (combat > activity > location,
 		-- AC8.4); peek: a click on a collapsed header opens it until the bag closes ("peek") or

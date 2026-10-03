@@ -47,6 +47,7 @@ Engine/Focus.lua
 Engine/FocusData.lua
 Engine/Signals.lua
 Engine/Consumables.lua
+Engine/Locks.lua
 Engine/Mover.lua
 Engine/Vendor.lua
 
@@ -63,6 +64,7 @@ UI/ListRows.lua
 UI/BagsWindow.lua
 UI/SafeModeHooks.lua
 UI/SearchBox.lua
+UI/LockButton.lua
 UI/TinyHost.lua
 UI/GroupView.lua
 UI/BankWindow.lua

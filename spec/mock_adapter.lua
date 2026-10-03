@@ -662,6 +662,16 @@ function M.AddContainers(m)
 		return m.guildRepair
 	end
 
+	-- The vendor's buyback tab: m.buyback = { link, ... } (week 7, the locked-item warning).
+	m.buyback = {}
+	function m.BuybackLinks()
+		local out = {}
+		for i, l in ipairs(m.buyback) do
+			out[i] = l
+		end
+		return out
+	end
+
 	function m.IsQuestItem(bag, slot)
 		local s = slotOf(bag, slot)
 		return s ~= nil and s.quest == true

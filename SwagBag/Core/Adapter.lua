@@ -744,6 +744,25 @@ function A.RepairCost()
 	return copperIf("CanMerchantRepair", "GetRepairAllCost")
 end
 
+-- The links in the vendor's buyback tab (the last 12 items sold), oldest first; empty without the API.
+function A.BuybackLinks()
+	local num, link, out = _G.GetNumBuybackItems, _G.GetBuybackItemLink, {}
+	if type(num) ~= "function" or type(link) ~= "function" then
+		return out
+	end
+	local ok, n = pcall(num)
+	if not ok or type(n) ~= "number" or isSecret(n) then
+		return out
+	end
+	for i = 1, math.min(n, 12) do
+		local okL, l = pcall(link, i)
+		if okL and type(l) == "string" and not isSecret(l) then
+			out[#out + 1] = l
+		end
+	end
+	return out
+end
+
 -- Repair everything; guild = true pays from the guild bank. true when the call went through.
 function A.Repair(guild)
 	local fn = _G.RepairAllItems
@@ -1494,6 +1513,8 @@ A.CHECKS = {
 	{ path = "RepairAllItems", window = "bags", required = false },
 	{ path = "CanGuildBankRepair", window = "bags", required = false },
 	{ path = "GetGuildBankWithdrawMoney", window = "bags", required = false },
+	{ path = "GetNumBuybackItems", window = "bags", required = false },
+	{ path = "GetBuybackItemLink", window = "bags", required = false },
 	{ path = "GetGuildBankMoney", window = "bags", required = false },
 	{ path = "GetCursorInfo", window = "bags", required = false },
 	{ path = "ClearCursor", window = "bags", required = false },

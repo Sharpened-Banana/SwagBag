@@ -127,6 +127,17 @@ describe("SearchBox", function()
 		assert.truthy(dimCount() > 0)
 	end)
 
+	-- Week 7 (ruling R21): a `locked` search follows a lock or unlock at once. Mutation: SearchBox listens to
+	-- `SB_LOCKS_CHANGED_X` instead of `SB_LOCKS_CHANGED`.
+	it("re-applies when a lock changes (a locked search follows the lock at once)", function()
+		open()
+		Box.editBox:SetText("potion")
+		SB.Adapter.Advance(0.2)
+		dimmed = {}
+		SB.Emit("SB_LOCKS_CHANGED")
+		assert.truthy(dimCount() > 0)
+	end)
+
 	it("a parse error keeps the previous search applied and shows the error inline", function()
 		open()
 		Box.editBox:SetText("potion")
@@ -268,7 +279,7 @@ describe("SearchBox", function()
 		end
 		assert.equal(2, #errorLine.points)
 		assert.same({ "TOPLEFT", Box.editBox, "TOPRIGHT", 8, 4 }, errorLine.points[1])
-		assert.same({ "TOPRIGHT", window.frame, "TOPRIGHT", -8, -26 }, errorLine.points[2])
+		assert.same({ "TOPRIGHT", window.frame, "TOPRIGHT", -62, -26 }, errorLine.points[2], "clear of the Lock button (week 7)")
 		assert.equal("TOP", errorLine.calls.SetJustifyV[1])
 	end)
 end)
