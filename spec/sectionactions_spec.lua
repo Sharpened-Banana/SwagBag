@@ -1,4 +1,4 @@
--- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip StaticPopupDialogs StaticPopup_Show YES NO
+-- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip StaticPopupDialogs StaticPopup_Show StaticPopup_Hide YES NO
 -- Week 7 (user pick 6): Shift+right-click a section header for Sell all (at a vendor, asks first) or
 -- Send all to the bank / warband bank (at a bank). Moves go through the mover: out of combat, one at a
 -- time, never under the mouse; one chat line when an action ends.
@@ -10,7 +10,7 @@ local Fixtures = dofile("spec/fixtures/items.lua")
 local GRAY = 400200
 
 describe("Section actions (week 7)", function()
-	local SB, A, SA, Mover, sections, shown
+	local SB, A, SA, Mover, sections, shown, shownData
 	before_each(function()
 		local files = { unpack(Env.ENGINE) }
 		for _, f in ipairs({ "SwagBag/Engine/Locks.lua", "SwagBag/Engine/Mover.lua", "SwagBag/Engine/Vendor.lua" }) do
@@ -30,10 +30,21 @@ describe("Section actions (week 7)", function()
 		end
 		SB.Inventory.ScanAll()
 		Fake.Install()
-		shown = nil
+		shown, shownData = nil, nil
 		StaticPopupDialogs, YES, NO = {}, "Yes", "No"
-		StaticPopup_Show = function(which)
-			shown = which
+		-- As Blizzard does: a dialog already up is cancelled (OnCancel) when the same one is shown again,
+		-- unless noCancelOnReuse; the data given to Show reaches OnAccept as its second argument.
+		StaticPopup_Show = function(which, _, _, data)
+			local d = StaticPopupDialogs[which]
+			if shown == which and d.OnCancel and not d.noCancelOnReuse then
+				d.OnCancel(nil, shownData, "override")
+			end
+			shown, shownData = which, data
+		end
+		StaticPopup_Hide = function(which)
+			if shown == which then
+				shown, shownData = nil, nil
+			end
 		end
 		-- The bags window as the actions read it: the Trade Goods section holds bag 1's herbs.
 		sections = { c_tradegoods = { 1, 2, 3, 4, 5 } }
@@ -53,8 +64,13 @@ describe("Section actions (week 7)", function()
 
 	after_each(function()
 		Fake.Uninstall()
-		StaticPopupDialogs, StaticPopup_Show, YES, NO = nil, nil, nil, nil
+		StaticPopupDialogs, StaticPopup_Show, StaticPopup_Hide, YES, NO = nil, nil, nil, nil, nil
 	end)
+
+	-- Yes, as Blizzard presses it: the dialog's OnAccept with the data the question was shown with.
+	local function accept()
+		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept(nil, shownData)
+	end
 
 	local function used(kind)
 		local out = {}
@@ -87,7 +103,7 @@ describe("Section actions (week 7)", function()
 		assert.equal("Sell 3 items from Trade Goods for about 6s 0c? " .. SB.L.SECTION_SELL_KEEPS,
 			StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
 		assert.same({}, used("sell"), "nothing before the answer")
-		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept()
+		accept()
 		A.Advance(Mover.DELAY * 5)
 		assert.same({ 1, 4, 5 }, used("sell"))
 		assert.same({ "Sold 3 items for 6s 0c." }, A.Lines())
@@ -102,13 +118,13 @@ describe("Section actions (week 7)", function()
 		SA.Entries("c_tradegoods")[1].run()
 		assert.equal("Sell 2 items from Trade Goods for about 4s 0c? " .. SB.L.SECTION_SELL_KEEPS,
 			StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
-		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept()
+		accept()
 		A.Advance(Mover.DELAY * 5)
 		assert.same({ 1, 2 }, used("sell"))
 		SA.Entries("c_tradegoods")[1].run()
 		assert.equal("Sell 3 items from Trade Goods for about 6s 0c? " .. SB.L.SECTION_SELL_PAST .. " "
 			.. SB.L.SECTION_SELL_KEEPS, StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
-		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept()
+		accept()
 		A.Advance(Mover.DELAY * 5)
 		assert.same({ 1, 2, 3, 4, 5 }, used("sell"))
 		assert.same({ "Sold 2 items for 4s 0c. " .. SB.L.VENDOR_MORE:format(3), "Sold 3 items for 6s 0c." }, A.Lines())
@@ -124,18 +140,43 @@ describe("Section actions (week 7)", function()
 			.. " 0c. " .. SB.L.SECTION_SELL_KEEPS, StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
 	end)
 
-	-- Mutation: SA.SellConfirmed skips the atVendor() check.
-	it("No sells nothing; a vendor closed before Yes sells nothing and says so", function()
+	-- Mutations: SA.SellConfirmed skips the atVendor() check; MERCHANT_CLOSED stops hiding the question.
+	it("a vendor that closes takes the question down; a Yes that still arrives sells nothing and says so", function()
 		SB.eventFrame:Fire("MERCHANT_SHOW")
 		SA.Entries("c_tradegoods")[1].run()
-		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnCancel()
-		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept()
-		SA.Entries("c_tradegoods")[1].run()
+		local data = shownData
 		SB.eventFrame:Fire("MERCHANT_CLOSED")
-		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept()
+		assert.is_nil(shown, "the question is gone with the vendor")
+		StaticPopupDialogs.SWAGBAG_SELL_ALL.OnAccept(nil, data)
 		A.Advance(Mover.DELAY * 5)
 		assert.same({}, used("sell"))
 		assert.same({ SB.L.VENDOR_NOT_OPEN }, A.Lines())
+	end)
+
+	-- Mutation: ConfirmSell drops the data argument of StaticPopup_Show (and OnAccept reads SA.pending again).
+	it("a second question while the first is up (Blizzard cancels the first on reuse): Yes sells the second", function()
+		sections.c_other = { 6, 7 }
+		A.Put(1, 6, Fixtures.HERB, 20)
+		A.Put(1, 7, Fixtures.HERB, 20)
+		SB.Inventory.ScanAll()
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SA.Entries("c_tradegoods")[1].run()
+		SA.Entries("c_other")[1].run()
+		accept()
+		A.Advance(Mover.DELAY * 5)
+		assert.same({ 6, 7 }, used("sell"))
+		assert.equal(1, #A.Lines(), "answers once")
+	end)
+
+	-- Mutation: ConfirmSell does not escape %.
+	it("the question survives a % in a category name and says '1 item' for one", function()
+		SB.Categories.Name = function() return "100% Herbs" end
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		sections.c_tradegoods = { 1 }
+		SA.Entries("c_tradegoods")[1].run()
+		local text = StaticPopupDialogs.SWAGBAG_SELL_ALL.text
+		assert.truthy(text:find("Sell 1 item from 100%% Herbs for about", 1, true))
+		assert.truthy(pcall(string.format, text), "Blizzard formats the text again: a bare % would error")
 	end)
 
 	-- Mutations: SA.Bankable ignores AllowedInBank; or send() passes "bank" whatever the kind.

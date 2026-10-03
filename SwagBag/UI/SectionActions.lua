@@ -100,7 +100,6 @@ end
 -- House value too when it is higher (R19). Within the visit's room it sells what fits; with no room left
 -- (R1) it sells up to 12 more only after this question, which then says the earlier sales leave the
 -- Buyback tab: that Yes is the explicit second confirmation.
-SA.pending = nil
 function SA.ConfirmSell(id, list)
 	if SB.Adapter.InCombat() then -- nothing would sell: say so now rather than after a question
 		SB.Print(L.SECTION_COMBAT)
@@ -113,8 +112,9 @@ function SA.ConfirmSell(id, list)
 		copper = copper + list[i].price * list[i].count
 		worth = worth + (list[i].value or list[i].price) * list[i].count
 	end
-	SA.pending = { id = id, list = list, past = past }
-	local text = L.SECTION_SELL_CONFIRM:format(n, SB.Categories.Name(id), V.Money(copper))
+	-- Blizzard formats the dialog text again (SetFormattedText): a % in a user's category name is doubled.
+	local name = SB.Categories.Name(id):gsub("%%", "%%%%")
+	local text = (n == 1 and L.SECTION_SELL_CONFIRM_ONE or L.SECTION_SELL_CONFIRM):format(n, name, V.Money(copper))
 	if worth > copper then
 		text = text .. " " .. L.SECTION_SELL_AH:format(V.Money(worth))
 	end
@@ -123,13 +123,13 @@ function SA.ConfirmSell(id, list)
 	end
 	if StaticPopupDialogs and StaticPopup_Show then
 		StaticPopupDialogs.SWAGBAG_SELL_ALL.text = text .. " " .. L.SECTION_SELL_KEEPS
-		StaticPopup_Show("SWAGBAG_SELL_ALL")
+		-- The job travels as the dialog's data: showing the question again while it is up makes Blizzard
+		-- cancel the first, which must not take the new job with it.
+		StaticPopup_Show("SWAGBAG_SELL_ALL", nil, nil, { id = id, list = list, past = past })
 	end
 end
 
-function SA.SellConfirmed()
-	local p = SA.pending
-	SA.pending = nil
+function SA.SellConfirmed(_, p)
 	if not p then
 		return
 	end
@@ -149,9 +149,7 @@ if StaticPopupDialogs then
 		button1 = YES,
 		button2 = NO,
 		OnAccept = Guard("sections.sellAll", SA.SellConfirmed, "bags"),
-		OnCancel = function()
-			SA.pending = nil
-		end,
+		noCancelOnReuse = true,
 		timeout = 0,
 		whileDead = true,
 		hideOnEscape = true,
@@ -271,5 +269,10 @@ local function hideMenu()
 	end
 end
 SB.On("SB_BAGS_CLOSED", hideMenu, "bags")
-SB.On("MERCHANT_CLOSED", hideMenu, "bags")
+SB.On("MERCHANT_CLOSED", function()
+	hideMenu()
+	if StaticPopup_Hide then
+		StaticPopup_Hide("SWAGBAG_SELL_ALL") -- the vendor is gone: its question goes with it
+	end
+end, "bags")
 SB.On("BANKFRAME_CLOSED", hideMenu, "bags")

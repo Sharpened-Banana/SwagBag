@@ -17,7 +17,7 @@ read_globals = {
 	"InCombatLockdown", "issecretvalue", "hooksecurefunc", "IsControlKeyDown", "ToggleBag",
 	"NUM_CONTAINER_FRAMES", "ContainerFrameCombinedBags",
 	"SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated",
-	"StaticPopup_Show", "YES", "NO",
+	"StaticPopup_Show", "StaticPopup_Hide", "YES", "NO",
 	"GetCursorInfo", "ClearCursor", "GameTooltip",
 	"GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink", "QueryGuildBankTab",
 	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "IsInGuild", "GetRealmName",
