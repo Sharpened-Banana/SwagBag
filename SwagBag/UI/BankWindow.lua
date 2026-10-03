@@ -17,6 +17,8 @@
 -- New or Free while the window is open (spec 4.3). Sort buttons call Blizzard's bank sort
 -- and regroup after the bank settles; in combat they refuse with feedback and nothing runs
 -- later (spec 5.5, ruling W11). The window has its own search box.
+-- "Deposit warbound" (week 6, user request 3) runs the game's own warband deposit through the
+-- Adapter, beside a "With reagents" box that is Blizzard's own include-reagents choice.
 local _, SB = ...
 
 local L = SB.L
@@ -102,10 +104,15 @@ end
 -- Title feedback and position
 ---------------------------------------------------------------------------
 local titleToken = 0
+-- A flash cut short by the title's room (W3-26 bounds it) also goes to chat, so a long answer is
+-- never lost (P2; the bags window's D27, week 5).
 function BW.Flash(text)
 	titleToken = titleToken + 1
 	local token = titleToken
 	frame.title:SetText(text)
+	if frame.title.IsTruncated and frame.title:IsTruncated() then
+		SB.Print(text)
+	end
 	SB.Adapter.After(1.5, Guard("bank.flash", function()
 		if token == titleToken then
 			frame.title:SetText(L.BANK_TITLE)
@@ -457,6 +464,94 @@ frame.title:SetPoint("RIGHT", BW.sortBankButton, "LEFT", -6, 0)
 frame.title:SetJustifyH("LEFT")
 frame.title:SetWordWrap(false)
 
+---------------------------------------------------------------------------
+-- Deposit all warbound items (week 6, user request 3)
+---------------------------------------------------------------------------
+-- SwagBag's own plain button makes the game call Blizzard's "Deposit All Warbound Items" makes
+-- (Adapter.DepositWarband, the warband bank by type: Blizzard's selected bank type is never read
+-- for it nor set). It sits on this window under the title, so it shows in tiny and beside mode alike
+-- and hides with the window: never invisible but clickable. Every click answers in the title (P2).
+-- It refuses in combat (nothing is queued, like Sort), while the warband bank is locked, and when a
+-- deposit would end an item's refund or that cannot be told: Blizzard's own button asks first, and
+-- the "Blizzard bank" button shows it. SwagBag only reads the result: the items arrive in the
+-- warband group's New like any deposit (spec 4.3).
+local function carried()
+	local A, list = SB.Adapter, {}
+	for _, bag in ipairs(A.GetBagIDs("bags")) do
+		local n = A.NumSlots(bag)
+		if n > 0 then
+			list[#list + 1] = { bag = bag, size = n }
+		end
+	end
+	return list
+end
+
+function BW.DepositWarband()
+	local A = SB.Adapter
+	if A.InCombat() then
+		BW.Flash(L.DEPOSIT_AFTER_COMBAT)
+		return false
+	end
+	local usable, why = A.WarbandDepositState()
+	if not usable then
+		BW.Flash(why == "locked" and L.DEPOSIT_LOCKED or L.DEPOSIT_UNAVAILABLE)
+		return false
+	end
+	local refundable = A.RefundableForWarband(carried())
+	if refundable ~= false then -- true, or nil: it cannot be told
+		BW.Flash(refundable and L.DEPOSIT_REFUNDABLE or L.DEPOSIT_UNSURE)
+		return false
+	end
+	local ok, err = A.DepositWarband()
+	if not ok then
+		if err ~= nil then
+			SB.ErrorTrap.OnError("bank.deposit", "none", tostring(err), A.Stack())
+		end
+		BW.Flash(L.DEPOSIT_UNAVAILABLE)
+		return false
+	end
+	BW.Flash(A.DepositReagents() and L.DEPOSIT_STARTED_REAGENTS or L.DEPOSIT_STARTED)
+	return true
+end
+
+BW.depositButton = titleButton(L.BTN_DEPOSIT_WARBAND, "bank.depositWarband", function()
+	BW.DepositWarband()
+end, 128)
+BW.depositButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -54)
+
+-- "With reagents": Blizzard's include-reagents choice for that deposit (its own setting, which its own
+-- box writes too). Shown ticked as the game has it; hidden when the game cannot say.
+BW.reagentsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+BW.reagentsLabel:SetPoint("RIGHT", BW.depositButton, "LEFT", -6, 0)
+BW.reagentsLabel:SetText(L.DEPOSIT_REAGENTS_LABEL)
+BW.reagentsBox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+BW.reagentsBox:SetSize(22, 22)
+BW.reagentsBox:SetPoint("RIGHT", BW.reagentsLabel, "LEFT", -2, 0)
+if SB.Theme then
+	SB.Theme.Text(BW.reagentsLabel, "small")
+end
+
+function BW.RefreshReagents()
+	local on = SB.Adapter.DepositReagents()
+	BW.reagentsBox:SetShown(on ~= nil)
+	BW.reagentsLabel:SetShown(on ~= nil)
+	BW.reagentsBox:SetChecked(on == true)
+end
+
+BW.reagentsBox:SetScript("OnClick", Guard("bank.depositReagents", function()
+	local want = SB.Adapter.DepositReagents() ~= true
+	if SB.Adapter.SetDepositReagents(want) then
+		BW.Flash(want and L.DEPOSIT_REAGENTS_ON or L.DEPOSIT_REAGENTS_OFF)
+	else
+		BW.Flash(L.DEPOSIT_REAGENTS_FAILED)
+	end
+	BW.RefreshReagents()
+end, "bank"))
+
+-- The deposit line ends left of the box, on one line.
+frame.deposit:SetPoint("RIGHT", BW.reagentsBox, "LEFT", -6, 0)
+frame.deposit:SetWordWrap(false)
+
 -- Live updates while open (spec 4.3), for the bank tabs only: count, lock and loaded data
 -- repaint in place; an emptied slot or a different item goes to GroupView.Changes; a tab
 -- that appears or changes size lays the bank out again (held back like any full layout).
@@ -572,6 +667,7 @@ function BW.Open()
 	BW.viewButton:SetText(BW.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
 	frame:Show()
 	BW.ApplyMode()
+	BW.RefreshReagents()
 	BW.Layout("open")
 	SB.Emit("SB_BANK_OPENED")
 	BW.RefreshStillOpen()
