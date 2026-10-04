@@ -11,7 +11,8 @@
 -- guildBank.mode (/swagbag guild full|view). SwagBag never selects a tab and never writes
 -- Blizzard's guild bank frame state (spec AC16.7): it reads the selected tab only.
 -- Contents (UI/GroupView.lua): every viewable tab is a group, top to bottom, with its daily
--- withdrawals left in the header (AC16.2) and its own category sections or grid; the window
+-- withdrawals left in the header (AC16.2) and its own category sections, list (week 8: one row per
+-- slot, the bags window's columns and order, each tab's empty slots as one free row) or grid; the window
 -- has its own search box (AC16.1). Tab contents load on demand (QueryGuildBankTab, one tab
 -- after another) and are kept for the session, so a reopen shows them at once; a snapshot is
 -- saved per guild (AC16.4). Guild slot keys use bag 100 + tab.
@@ -50,6 +51,8 @@ local GW = {
 	QUERY_GAP = 0.3, -- seconds between two tab queries (and the wait if no answer comes)
 	SNAPSHOT_DELAY = 1,
 	HEADER = 80,
+	COLUMNS_H = 18, -- the list's column bar under the deposit line (week 8), shown while a list is drawn
+	scaleWarned = false, -- the list's F6 fallback was said this opening
 	FOOTER = 6,
 	MAX_HEIGHT_FRACTION = 0.75,
 }
@@ -426,14 +429,42 @@ function GW.TabLabel(tab, collapsed, count)
 	return text
 end
 
+-- The view button's order, as in the bags and bank windows: each click shows the next one.
+local VIEW_NEXT, VIEW_BUTTON = SB.GroupView.VIEW_NEXT, SB.GroupView.VIEW_BUTTON
+local VIEW_FLASH = { sections = L.GUILD_VIEW_SECTIONS, list = L.GUILD_VIEW_LIST, grid = L.GUILD_VIEW_GRID }
+
 function GW.View()
-	return SB.Config.Get("guildBank.view") == "grid" and "grid" or "sections"
+	local v = SB.Config.Get("guildBank.view")
+	if v == "grid" or v == "list" then
+		return v
+	end
+	return "sections"
 end
 
+-- The title, search and deposit rows, plus the column bar while a list is drawn (the drawn view, W4-1).
+function GW.HeaderHeight()
+	return GW.HEADER + ((GW.view and GW.view.drawn == "list") and GW.COLUMNS_H or 0)
+end
+
+-- The list's rows (week 8). Guild slots are not bag slots: a row's tooltip is the guild slot's, and its
+-- texts say what the guild bank's icons do.
+GW.rows = SB.ListRows and SB.ListRows.New(child, "bank", function(text)
+	GW.Flash(text)
+end, { click = L.LIST_GUILD_ROW_CLICK, emptyTip = L.LIST_GUILD_EMPTY_TIP, gone = L.LIST_GUILD_GONE, goneTip = L.LIST_GUILD_GONE_TIP,
+	tip = function(row, bag, slot)
+		SB.Adapter.GuildTooltip(row, tabOf(bag), slot)
+	end }) or nil
+
 local function sizeFrame(width, height)
+	local header = GW.HeaderHeight()
+	if GW.columnsBar then -- the bar shows above a drawn list only (an F6 fallback draws none)
+		GW.columnsBar.frame:SetShown(GW.view.drawn == "list")
+		GW.columnsBar.Refresh()
+	end
+	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -header)
 	child:SetSize(width, height)
 	local maxHeight = UIParent:GetHeight() * GW.MAX_HEIGHT_FRACTION / frame:GetScale()
-	frame:SetSize(width + 8, math.min(height, maxHeight - GW.HEADER - GW.FOOTER) + GW.HEADER + GW.FOOTER)
+	frame:SetSize(width + 8, math.min(height, maxHeight - header - GW.FOOTER) + header + GW.FOOTER)
 	clampScroll()
 end
 
@@ -482,11 +513,36 @@ GW.view = SB.GroupView.New({
 	newRows = function()
 		return SB.Config.Get("bags.newRows")
 	end,
+	-- The list shows each tab's empty slots as one free row (a 98-slot tab would be 98 rows); categories
+	-- and the grid show every empty slot, as before. Guild tabs have no bag family.
+	freeTile = function(view)
+		return view == "list"
+	end,
+	family = function()
+		return "any"
+	end,
 	onResize = sizeFrame,
 	onUpdated = function()
 		searchBox.Apply()
 	end,
+	rows = GW.rows,
+	goneTip = L.LIST_GUILD_GONE_TIP, -- a placeholder's tooltip (the rows' ghosts say it through GW.rows)
+	onListFailed = function() -- F6: said once per opening; the guild bank shows categories
+		if not GW.scaleWarned then
+			GW.scaleWarned = true
+			SB.Print(L.LIST_SCALE_FALLBACK_GUILD)
+		end
+	end,
 })
+
+-- The list's column bar, as the bank window's: a click sorts every list (one shared order).
+if SB.ListRows then
+	local GV = SB.GroupView
+	GW.columnsBar = SB.ListRows.ColumnBar(frame, GW.view.RowWidth(), GW.COLUMNS_H, function(id)
+		GW.SortList(id)
+	end, "bank", "guild.listColumn")
+	GW.columnsBar.frame:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + GV.PAD + GV.LIST_ROW + GV.ROW_TEXT_GAP, -GW.HEADER)
+end
 
 searchBox = SB.SearchBox.New({
 	parent = frame,
@@ -500,8 +556,8 @@ searchBox = SB.SearchBox.New({
 	forEachSlot = function(fn)
 		return GW.view.ForEachSlot(fn)
 	end,
-	setDimmed = function(button, dimmed)
-		return SB.Buttons.SetDimmed(button, dimmed)
+	setDimmed = function(button, dimmed) -- the button, and in the list its row
+		return GW.view.SetDimmed(button, dimmed)
 	end,
 })
 GW.searchBox = searchBox
@@ -520,18 +576,25 @@ function GW.Reflow(reason)
 	return done
 end
 
+-- Categories -> list -> grid -> categories, like the bags and bank windows.
 function GW.ToggleView()
-	local view = GW.View() == "grid" and "sections" or "grid"
+	local view = VIEW_NEXT[GW.View()]
 	if not SB.Config.Set("guildBank.view", view) then -- read-only settings: nothing changes
 		GW.Flash(L.SETTINGS_READONLY)
 		return
 	end
-	GW.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
-	GW.Flash(view == "grid" and L.GUILD_VIEW_GRID or L.GUILD_VIEW_SECTIONS)
+	GW.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[view]])
+	GW.Flash(VIEW_FLASH[view])
 	GW.view.RequestLayout("view")
 end
 
-GW.viewButton = titleButton(L.VIEW_TO_GRID, "guild.viewButton", function()
+-- A click on a column of the list: sort every list by it, answered in the title (P2). The drawn lists
+-- regroup through SB_LIST_SORTED (below), held while the mouse is over the items.
+function GW.SortList(by)
+	return SB.GroupView.SortList(by, GW.Flash)
+end
+
+GW.viewButton = titleButton(L.VIEW_TO_LIST, "guild.viewButton", function()
 	GW.ToggleView()
 end)
 GW.viewButton:SetPoint("RIGHT", GW.blizzardButton, "LEFT", -4, 0)
@@ -707,7 +770,7 @@ function GW.Open()
 	if key ~= GW.cacheKey then -- another guild's contents are never shown (W3-32)
 		GW.ClearCache(key)
 	end
-	GW.viewButton:SetText(GW.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	GW.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[GW.View()]])
 	frame:Show()
 	GW.ApplyMode()
 	GW.Layout("open")
@@ -723,7 +786,7 @@ frame:SetScript("OnHide", Guard("guild.hide", function(self)
 	if self:IsShown() then
 		return
 	end
-	GW.queue, GW.querying = {}, nil
+	GW.queue, GW.querying, GW.scaleWarned = {}, nil, false
 	if GW.interaction then -- the vault is still open: make Blizzard's guild bank visible again
 		host.Restore()
 	end
@@ -773,10 +836,22 @@ SB.On("SB_LOGIN", function()
 	GW.HookFrame()
 end, "bank")
 
--- Auctionator reported new prices: the section totals follow, in place.
+-- Auctionator reported new prices: the section totals and the list's Value column follow, in place.
 SB.On("SB_PRICES_CHANGED", function()
 	if GW.view.IsOpen() then
 		GW.view.RefreshTotals()
+		GW.view.RefreshRows()
+	end
+end, "bank")
+
+-- The list's order changed (a column click in any window, /swagbag list): the bar's marker follows
+-- and a drawn list regroups, held while the mouse is over the items (P5).
+SB.On("SB_LIST_SORTED", function()
+	if GW.columnsBar then
+		GW.columnsBar.Refresh()
+	end
+	if frame:IsShown() and GW.view.IsOpen() and GW.view.drawn == "list" then
+		GW.view.RequestLayout("listsort")
 	end
 end, "bank")
 

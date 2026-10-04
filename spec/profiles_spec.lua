@@ -140,6 +140,13 @@ describe("Profiles (week 7)", function()
 		assert.equal("list", data.settings["bank.view"])
 	end)
 
+	-- Week 8. Mutation: drop "list" from guildBank.view's words in VALID.
+	it("the guild bank's list view travels in a share string", function()
+		C.Set("guildBank.view", "list")
+		local data = assert(Pr.Parse(Pr.Export(false)))
+		assert.equal("list", data.settings["guildBank.view"])
+	end)
+
 	-- Final review fix 5. Mutation: drop `["vendor.repair"] = true` from NEVER (the guild-funded repair choice
 	-- would travel in a share string).
 	it("vendor.repair never travels: not exported, ignored on import and named in the preview", function()
