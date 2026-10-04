@@ -204,6 +204,9 @@ function LR.New(parent, _window, flash, opts)
 	local function itemTip(row)
 		local s = slotOf[row]
 		if s and s.filled then
+			if SB.Inventory then -- final review item 6: a hovered row's item is seen (it leaves New next open)
+				SB.Inventory.Seen(s.bag, s.slot)
+			end
 			if opts.tip then
 				opts.tip(row, s.bag, s.slot)
 			else

@@ -731,12 +731,26 @@ end
 
 -- Week 9 (P5): anything at all on the cursor: an item (even one whose ID is secret), a merchant's item, money,
 -- a spell, a macro. CursorItem above sees only an item with a readable ID; moves wait while this is true.
-function A.CursorBusy()
+local function cursorHeld()
 	if not GetCursorInfo then
 		return false
 	end
 	local ok, kind = pcall(GetCursorInfo)
 	return ok and kind ~= nil
+end
+
+-- Final review (item 2): a spell waiting for its target (the targeting hand: GetCursorInfo says nothing) counts
+-- too, since a click on a slot would cast it on that item.
+local function spellTargeting()
+	if not SpellIsTargeting then
+		return false
+	end
+	local ok, yes = pcall(SpellIsTargeting)
+	return ok and yes == true
+end
+
+function A.CursorBusy()
+	return cursorHeld() or spellTargeting()
 end
 
 -- Puts a picked-up item back where it came from.
@@ -767,10 +781,10 @@ function A.MoveStack(fromBag, fromSlot, toBag, toSlot)
 	if ok then
 		ok, err = pcall(C_Container.PickupContainerItem, toBag, toSlot)
 	end
-	if A.CursorBusy() then
+	if cursorHeld() then
 		pcall(C_Container.PickupContainerItem, fromBag, fromSlot)
 	end
-	if A.CursorBusy() then
+	if cursorHeld() then
 		A.ClearCursor()
 	end
 	return ok, err

@@ -353,6 +353,37 @@ describe("Vendor (week 7)", function()
 		assert.same({ 6 }, sold())
 	end)
 
+	-- Final review (item 1): the sell path never trusts a cached auction "no price" (TSM's data may arrive after
+	-- the junk coin asked). Mutation: in worthMoreAtAuction, `AuctionValue(r.link, r.itemID, not fast)` ->
+	-- `AuctionValue(r.link, r.itemID, nil)` (the cached miss is trusted and the BoE is sold).
+	it("a cached TSM 'no price' is asked again before a sale: TSM now prices the gray BoE high, it stays", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		A.AddItem(GRAY_BOE, { name = "Rusted Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
+		A.Put(0, 8, GRAY_BOE, 1)
+		A.tsm = { prices = { DBMarket = {} } }
+		SB.Inventory.ScanAll()
+		assert.falsy(SB.Vendor.Protected(SB.Items.Describe(0, 8), true), "the draw path caches TSM's miss")
+		A.tsm.prices.DBMarket["item:" .. GRAY_BOE] = 900
+		assert.falsy(SB.Vendor.Protected(SB.Items.Describe(0, 8), true), "a draw still uses the cached miss")
+		visit()
+		assert.same({ 6 }, sold())
+	end)
+
+	-- TSM loaded after the first lookup (auction sources worked out without it) is asked on the sell path too.
+	-- Mutation: in P.AuctionValue, drop `P.auction = nil` under `if recheck` (the old source list is kept).
+	it("an auction source loaded after the first lookup is asked before a sale", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		A.AddItem(GRAY_BOE, { name = "Rusted Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
+		A.Put(0, 8, GRAY_BOE, 1)
+		SB.Inventory.ScanAll()
+		assert.falsy(SB.Vendor.Protected(SB.Items.Describe(0, 8), true))
+		A.tsm = { prices = { DBMarket = { ["item:" .. GRAY_BOE] = 900 } } }
+		visit()
+		assert.same({ 6 }, sold())
+	end)
+
 	-- Ruling R0 (gold-maker safety): the protection does not follow the price source. Mutation: in
 	-- worthMoreAtAuction, `SB.Prices.AuctionValue(r.link, r.itemID)` -> `SB.Prices.Value(r.link, r.itemID, false)`.
 	it("with Vendor chosen, a gray BoE Auctionator prices above twice its vendor price stays; with no auction addon it sells", function()

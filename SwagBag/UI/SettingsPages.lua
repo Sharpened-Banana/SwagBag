@@ -138,13 +138,15 @@ local function tsmChoices()
 end
 
 -- The gold glow's amounts; one typed with /swagbag worth (say 250) gets its own button, selected (week 7 deferred).
+-- Built again each time the page is drawn (SW.Render calls rows()), so it shows the stored amount; only while
+-- the glow is in that fixed mode (final review item 5: never an unselected stray next to "top" or "Off").
 local function worthChoices()
 	local list = {}
 	for _, gold in ipairs({ 100, 500, 1000 }) do
 		list[#list + 1] = { value = gold, text = L.SET_WORTH_GOLD:format(gold) }
 	end
 	local own = SB.Config.Get("prices.worthGold")
-	if own ~= 100 and own ~= 500 and own ~= 1000 then
+	if SB.Config.Get("prices.worth") == "fixed" and own ~= 100 and own ~= 500 and own ~= 1000 then
 		list[#list + 1] = { value = own, text = L.SET_WORTH_GOLD:format(own) }
 	end
 	list[#list + 1] = { value = "top", text = L.SET_WORTH_TOP:format(SB.Config.Get("prices.worthTop")) }

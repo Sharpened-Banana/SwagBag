@@ -7,6 +7,17 @@
 --   ITEM_DATA_LOAD_RESULT / GET_ITEM_INFO_RECEIVED -> LOADED for slots holding a pending item
 -- Listeners: Inventory.OnChanged(fn) with fn(mask, changes); changes = { {bag, slot, reasons} }.
 -- Reasons are bit flags combined with plain arithmetic (Lua 5.1 has no bit operators).
+-- Unseen (final review item 6, the user's rule; spec AC3.3): a bags item (Adapter.GetBagIDs("bags"): the bags and
+-- the reagent bag; never the banks) is UNSEEN from the flush that brings it in until its button (or its list
+-- row) is hovered (Inv.Seen), whether the window is open or closed, in combat too (data only: nothing is drawn
+-- here). It arrives when a slot gains an item stack AND the bags hold more of that item than before the flush
+-- (loot, a purchase, mail, a trade, a bank withdrawal, crafting); a move or a split inside the bags, and Blizzard's
+-- sort, add nothing, and an unseen item moved inside the bags stays unseen in its new slot. An item whose ID
+-- was secret when it came (the Adapter reads that slot as empty) arrives when it becomes readable. Session only:
+-- the login scan and a /reload mark nothing. The bags window puts unseen items in New at every full layout,
+-- whatever the focus mode (UI/BagsWindow.lua). Blizzard's own new-item flag is not used: SwagBag clears it
+-- when the bags close (W4-15), so it cannot carry an item to the next open.
+--   Inv.IsUnseen(bag, slot) -> bool;  Inv.Seen(bag, slot)
 local _, SB = ...
 
 local Inv = {
@@ -15,6 +26,7 @@ local Inv = {
 	dirty = {}, -- [bag] = true
 	listeners = {},
 	newSet = {}, -- ["bag:slot"] = true for items that arrived this session
+	unseen = {}, -- ["bag:slot"] = itemID: bags items that arrived and were not hovered yet (see the header)
 	pending = {}, -- [itemID] = true while waiting for item data
 	scanned = false,
 	failsafeArmed = false,
@@ -77,8 +89,13 @@ function Inv.ScanBag(bag)
 		new[slot] = snap
 		local r = Inv.DiffSlot(old[slot], snap)
 		if r ~= 0 then
-			changes[#changes + 1] = { bag = bag, slot = slot, reasons = r }
+			local change = { bag = bag, slot = slot, reasons = r }
+			changes[#changes + 1] = change
 			mask = Inv.Or(mask, r)
+			if r == Inv.R.ITEM then -- whatever was unseen here left (Flush carries it if it only moved)
+				change.wasUnseen = Inv.unseen[key(bag, slot)]
+				Inv.unseen[key(bag, slot)] = nil
+			end
 			if r == Inv.R.ITEM and Inv.scanned then
 				Inv.newSet[key(bag, slot)] = snap ~= nil or nil
 				if snap == nil then -- the item left: the client's own flag for the slot goes too (W4-15)
@@ -103,6 +120,51 @@ end
 
 local failsafeGen = 0
 
+-- The bags' bag IDs as a set, and how many of each item they hold now.
+local function bagsSet()
+	local set = {}
+	for _, bag in ipairs(SB.Adapter.GetBagIDs("bags")) do
+		set[bag] = true
+	end
+	return set
+end
+
+local function totals(set)
+	local out = {}
+	for bag in pairs(set) do
+		for slot = 1, Inv.Size(bag) do
+			local s = Inv.slots[bag] and Inv.slots[bag][slot]
+			if s then
+				out[s.itemID] = (out[s.itemID] or 0) + (s.count or 1)
+			end
+		end
+	end
+	return out
+end
+
+-- After a flush: a bags slot that gained a stack is unseen when the bags now hold more of the item than before
+-- (it came from outside), or when an unseen stack of the item left a slot in the same flush (it only moved).
+local function markUnseen(changes, set, before)
+	local after, carried = totals(set), {}
+	for _, c in ipairs(changes) do
+		if c.wasUnseen then
+			carried[c.wasUnseen] = (carried[c.wasUnseen] or 0) + 1
+		end
+	end
+	for _, c in ipairs(changes) do
+		local s = c.reasons == Inv.R.ITEM and set[c.bag] and Inv.GetSlot(c.bag, c.slot)
+		if s then
+			local id = s.itemID
+			if (after[id] or 0) > (before[id] or 0) then
+				Inv.unseen[key(c.bag, c.slot)] = id
+			elseif (carried[id] or 0) > 0 then
+				carried[id] = carried[id] - 1
+				Inv.unseen[key(c.bag, c.slot)] = id
+			end
+		end
+	end
+end
+
 function Inv.Flush(source)
 	local bags = {}
 	for bag in pairs(Inv.dirty) do
@@ -113,12 +175,17 @@ function Inv.Flush(source)
 	Inv.failsafeArmed = false
 	failsafeGen = failsafeGen + 1
 	local mask, all = 0, {}
+	local set = bagsSet()
+	local before = Inv.scanned and totals(set)
 	for _, bag in ipairs(bags) do
 		local m, changes = Inv.ScanBag(bag)
 		mask = Inv.Or(mask, m)
 		for _, c in ipairs(changes) do
 			all[#all + 1] = c
 		end
+	end
+	if before then
+		markUnseen(all, set, before)
 	end
 	if mask ~= 0 then
 		Inv.lastFlush = source
@@ -223,6 +290,7 @@ function Inv.ScanAll()
 		Inv.ScanBag(bag)
 	end
 	Inv.dirty = {}
+	Inv.unseen = {} -- what is in the bags at login is not new (session only)
 	Inv.scanned = true
 end
 
@@ -236,6 +304,18 @@ end
 
 function Inv.IsNew(bag, slot)
 	return Inv.newSet[key(bag, slot)] == true
+end
+
+function Inv.IsUnseen(bag, slot)
+	return Inv.unseen[key(bag, slot)] ~= nil
+end
+
+-- The item's button or list row was hovered: it joins its category at the next full layout (open, Reflow);
+-- nothing moves now.
+function Inv.Seen(bag, slot)
+	if type(bag) == "number" and type(slot) == "number" then
+		Inv.unseen[key(bag, slot)] = nil
+	end
 end
 
 function Inv.MarkPending(itemID)

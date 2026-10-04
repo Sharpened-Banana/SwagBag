@@ -18,7 +18,7 @@ read_globals = {
 	"NUM_CONTAINER_FRAMES", "ContainerFrameCombinedBags",
 	"SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated",
 	"StaticPopup_Show", "StaticPopup_Hide", "YES", "NO",
-	"GetCursorInfo", "ClearCursor", "GameTooltip",
+	"GetCursorInfo", "ClearCursor", "SpellIsTargeting", "GameTooltip",
 	"GetNumGuildBankTabs", "GetGuildBankTabInfo", "GetGuildBankItemInfo", "GetGuildBankItemLink", "QueryGuildBankTab",
 	"GetCurrentGuildBankTab", "AutoStoreGuildBankItem", "PickupGuildBankItem", "GetGuildInfo", "IsInGuild", "GetRealmName",
 	"IsModifiedClick", "HandleModifiedItemClick", "time", "UnitName", "UnitClass", "UnitLevel",

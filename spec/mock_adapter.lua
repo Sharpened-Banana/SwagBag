@@ -130,8 +130,9 @@ function M.New(SB)
 		return nil
 	end
 
-	-- Week 9: m.cursorOther = "money" (or "spell", "merchant"...): something on the cursor that is not an item
-	-- CursorItem can name. CursorBusy is true for it and for m.cursor.
+	-- Week 9: m.cursorOther = "money" (or "spell", "merchant", "targeting" for a spell waiting for its target,
+	-- final review item 2): something on the cursor that is not an item CursorItem can name. CursorBusy is true
+	-- for it and for m.cursor.
 	m.cursorOther = nil
 	function m.CursorBusy()
 		return m.cursor ~= nil or m.cursorOther ~= nil
@@ -439,9 +440,11 @@ function M.AddContainers(m)
 		return m.sizes[bag] or 0
 	end
 
+	-- A slot put with { secretID = true } reads as empty, as the real Adapter reads an item whose ID is a secret
+	-- value (final review item 6: in an instance).
 	function m.GetSlot(bag, slot)
 		local s = slotOf(bag, slot)
-		if not s then
+		if not s or s.secretID then
 			return nil
 		end
 		local it = itemOf(s.itemID)

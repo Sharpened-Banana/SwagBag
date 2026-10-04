@@ -259,6 +259,25 @@ describe("Settings window", function()
 		assert.falsy(SW.selected[button("100g or more")])
 	end)
 
+	-- Final review (item 5; Task 6 minor): the typed amount's button follows the stored amount each time the page
+	-- is drawn, and shows only while the glow is in that fixed mode (no unselected 250g next to "top" or "Off").
+	-- Mutation: in worthChoices, drop `SB.Config.Get("prices.worth") == "fixed" and`.
+	it("bank page: the typed amount's button shows the stored amount, only in the fixed mode", function()
+		SB.Config.Set("prices.worthGold", 250)
+		SB.Config.Set("prices.worth", "top")
+		SW.Show("bank")
+		assert.has_error(function() button("250g or more") end)
+		SB.Config.Set("prices.worth", "off")
+		SW.Show("bank")
+		assert.has_error(function() button("250g or more") end)
+		SB.Config.Set("prices.worth", "fixed")
+		SB.Config.Set("prices.worthGold", 300)
+		SW.Hide()
+		SW.Show("bank")
+		assert.truthy(SW.selected[button("300g or more")], "the stored amount, drawn again on show")
+		assert.has_error(function() button("250g or more") end)
+	end)
+
 	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
 	it("an error in a change is recorded without Safe Mode, and the status line says so", function()
 		SW.Show("bags")

@@ -774,6 +774,9 @@ describe("BagsWindow category view", function()
 			equipLoc = "INVTYPE_CHEST", ilvl = 280, maxStack = 1, bind = "equip" }
 		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
 		assert.same({ 4, -24 }, at(0, 10), "loaded: still in New while open")
+		-- Final review item 6: an item that came in stays in New until hovered (it used to join its section at
+		-- the next open, hovered or not); the hover is what lets it go now.
+		SB.Inventory.Seen(0, 10)
 		W.Close()
 		W.Open()
 		assert.equal("- BoE gear (2)", header("c_boe").text.text)
@@ -2392,3 +2395,115 @@ describe("BagsWindow load order", function()
 		assert.truthy(ok, tostring(err))
 	end)
 end)
+
+-- Final review item 6 (the user's request): an item looted inside a Mythic+ key, with the bags closed, skipped
+-- New and showed straight in its category. Cause: a full layout (open, Reflow) asked only the categorizer, so
+-- New held just what arrived while the window was open (Layout.Apply) or was not loaded yet. Now an item stays
+-- in New, at the top, in every mode and both focus styles, until its button is hovered (Inventory.Seen); after
+-- that it joins its category at the next open or Reflow, never while the window is open.
+for _, style in ipairs({ "front", "collapse" }) do
+	describe("BagsWindow: new items stay in New until hovered (" .. style .. " style)", function()
+		local SB, A, W, B, F
+		before_each(function()
+			local files = { unpack(FILES) }
+			files[#files + 1] = "SwagBag/Engine/Focus.lua"
+			SB = Loader.New(files)
+			A = SB.Adapter
+			SB.Config.Init(nil, nil)
+			Fixtures.SmallBags(A)
+			SB.Config.Set("focus.style", style)
+			CreateFrame = function(kind) return newFake(kind) end
+			UIParent = newFake("Frame")
+			UIParent.h = 2000
+			UISpecialFrames = {}
+			IsControlKeyDown = function() return false end
+			B = fakeButtons()
+			SB.Buttons = B
+			Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+			Loader.LoadFile(SB, "SwagBag/UI/ListRows.lua")
+			Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+			W, F = SB.BagsWindow, SB.Focus
+			SB.Emit("SB_LOGIN")
+		end)
+
+		after_each(function()
+			UIParent, UISpecialFrames, IsControlKeyDown = nil, nil, nil
+		end)
+
+		local function headers()
+			local out = {}
+			for i, h in ipairs(SB.SectionHeaders.inUse) do
+				out[i] = h.text.text
+			end
+			return out
+		end
+
+		local function sectionOf(bag, slot)
+			local w = W.state.where[SB.Layout.Key(bag, slot)]
+			return w and w.section
+		end
+
+		local function bagUpdate()
+			SB.eventFrame:Fire("BAG_UPDATE", 0)
+			SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+			A.Advance(0.06)
+		end
+
+		-- Mutation: in layoutSections, Build with SB.Categorizer.Assign again instead of assignOf (unseen
+		-- items join their category at once: the user's report).
+		it("looted in combat with M+ on and the bags closed: on open it is first in New; hovered, it stays; reopened, it joins its category",
+			function()
+				F.SetSignal("challengeMode", true)
+				A.combat = true
+				A.Put(0, 10, Fixtures.HERB, 20)
+				bagUpdate()
+				A.combat = false
+				W.Open()
+				assert.equal("- New (1)", headers()[1])
+				assert.equal("new", sectionOf(0, 10))
+				assert.truthy(B.Get(0, 10).shown)
+				assert.same({ 4, -24 }, { B.Get(0, 10).x, B.Get(0, 10).y }, "the first cell, at the top")
+				local placed = B.Get(0, 10).placed
+				SB.Inventory.Seen(0, 10) -- the mouse over its button
+				A.Advance(1)
+				assert.equal("new", sectionOf(0, 10), "still in New while the window is open")
+				assert.equal(placed, B.Get(0, 10).placed, "nothing moved under the mouse")
+				W.Close()
+				W.Open()
+				assert.truthy(headers()[1] ~= "- New (0)" and headers()[1] ~= "- New (1)",
+					"New is empty again: hidden (bags.newAlways is off by default)")
+				assert.truthy(sectionOf(0, 10) ~= "new" and sectionOf(0, 10) ~= nil, "in its category now")
+			end)
+
+		-- Mutation: in Inventory.Seen, do nothing (a hovered item would stay in New for ever).
+		it("not hovered, it stays in New across opens; an item that arrives while open is unseen too", function()
+			F.SetSignal("challengeMode", true)
+			A.Put(0, 10, Fixtures.HERB, 20)
+			bagUpdate()
+			W.Open()
+			A.Put(0, 11, Fixtures.BOE_RING, 1)
+			bagUpdate()
+			assert.equal("new", sectionOf(0, 11))
+			W.Close()
+			W.Open()
+			assert.same({ "new", "new" }, { sectionOf(0, 10), sectionOf(0, 11) })
+			assert.equal("- New (2)", headers()[1])
+			SB.Inventory.Seen(0, 11)
+			W.Reflow()
+			assert.same({ "new", "c_boe" }, { sectionOf(0, 10), sectionOf(0, 11) })
+		end)
+
+		-- Midnight: a secret link (an instance) is no reason to skip New. Mutation: as the first test.
+		it("an item with a secret link that came while the bags were closed is in New", function()
+			F.SetSignal("challengeMode", true)
+			A.IsSecret = function(v)
+				return v == "secret-link"
+			end
+			A.Put(0, 10, Fixtures.HERB, 20, { link = "secret-link" })
+			bagUpdate()
+			W.Open()
+			assert.equal("new", sectionOf(0, 10))
+			assert.equal("- New (1)", headers()[1])
+		end)
+	end)
+end

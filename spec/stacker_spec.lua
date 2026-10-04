@@ -199,6 +199,23 @@ describe("Stacker (week 9)", function()
 		assert.equal(2, #A.stackMoves, "no third try")
 	end)
 
+	-- Final review (item 4): a lock the server never lifts does not hold the run for ever. Mutation: in step,
+	-- `run.pending < St.MAX_PENDING` -> `true` (the run waits for ever, never ends).
+	it("a moved slot still locked after MAX_PENDING checks stops the run as stuck", function()
+		A.Put(0, 1, POTION, 5)
+		A.Put(0, 2, POTION, 5)
+		A.onMoveStack = function(fb, fs, tb, ts)
+			A.slots[fb][fs].isLocked, A.slots[tb][ts].isLocked = true, true -- never answered, nothing changes
+		end
+		start()
+		A.Advance(St.DELAY * (St.MAX_PENDING - 1))
+		assert.is_nil(result, "still waiting for the server")
+		A.Advance(St.DELAY * 3)
+		assert.same({ "stuck", 0 }, { result and result.why, result and result.merged })
+		assert.equal(1, #A.stackMoves, "no second try")
+		assert.falsy(St.Busy())
+	end)
+
 	-- Mutation: in St.Start, drop the SB.Mover.Busy() check; or in Mover.Start drop the Stacker check.
 	it("refuses in combat, while the mover runs, and with nothing to do; the mover waits for a run too", function()
 		A.Put(0, 1, POTION, 5)
@@ -258,7 +275,7 @@ describe("Stacker (week 9)", function()
 			function(text) flashes[#flashes + 1] = text end, function() regrouped = regrouped + 1 end)
 		assert.truthy(ok)
 		assert.same({}, flashes, "the run already answered in chat")
-		assert.same({ SB.L.STACK_STOP_STUCK:format(0, 0) }, A.Lines())
+		assert.same({ SB.L.STACK_STOP_ERROR:format(0, 0) }, A.Lines())
 		assert.equal(1, regrouped)
 	end)
 
@@ -270,6 +287,13 @@ describe("Stacker (week 9)", function()
 		assert.equal(L.STACK_STOP_COMBAT:format(1, 0), St.ResultText({ merged = 1, ordered = 0, kept = 0, why = "combat" }))
 		assert.equal(L.STACK_STOP_CLOSED:format(0, 0), St.ResultText({ merged = 0, ordered = 0, kept = 0, why = "closed" }))
 		assert.equal(L.STACK_STOP_STUCK:format(3, 0), St.ResultText({ merged = 3, ordered = 0, kept = 0, why = "stuck" }))
-		assert.equal(L.STACK_STOP_STUCK:format(0, 0), St.ResultText({ merged = 0, ordered = 0, kept = 0, why = "error" }))
+	end)
+
+	-- Final review (item 3): an error is not "did not move as expected"; it has its own line. Mutation: in
+	-- St.ResultText, drop the `r.why == "error"` branch (the stuck line again).
+	it("an error stop has its own line, naming the report", function()
+		local L = SB.L
+		assert.equal(L.STACK_STOP_ERROR:format(0, 2), St.ResultText({ merged = 0, ordered = 2, kept = 0, why = "error" }))
+		assert.truthy(L.STACK_STOP_ERROR ~= L.STACK_STOP_STUCK)
 	end)
 end)

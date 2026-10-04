@@ -93,8 +93,12 @@ local function createButton(bag, slot)
 	-- Blizzard's blue "new item" glow (W4-15, newglow-diagnosis.md): hovering a slot clears the
 	-- client's flag for it, as Blizzard's bags do. A post-hook, so the template's own OnEnter, its
 	-- tooltip and item use are untouched; legal in combat. Window "none": a glow is cosmetic and
-	-- never takes the bags away.
+	-- never takes the bags away. Final review item 6: the hover also marks the item seen (first, so nothing
+	-- after it can skip it): it leaves New at the next open or Reflow, never now (Engine/Inventory.lua).
 	b:HookScript("OnEnter", SB.ErrorTrap.Guard("buttons.newGlow", function(self)
+		if SB.Inventory then
+			SB.Inventory.Seen(self:GetParent():GetID(), self:GetID())
+		end
 		Buttons.ClearGlow(self)
 		SB.Adapter.ClearNewItem(self:GetParent():GetID(), self:GetID())
 	end, "none"))

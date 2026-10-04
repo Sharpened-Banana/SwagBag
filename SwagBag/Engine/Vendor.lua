@@ -52,11 +52,12 @@ end
 -- a gold-maker sells those at the Auction House, not to a vendor). Week 9 ruling R0: every loaded auction
 -- source is asked (Auctionator, TSM; the highest answer counts), even when the price source is "Vendor". No
 -- auction addon loaded, or none knows the item: no such protection.
-local function worthMoreAtAuction(r)
+-- fast ~= true (the sell path): a cached auction "no price" is asked again (TSM's data may have arrived since).
+local function worthMoreAtAuction(r, fast)
 	if r.quality ~= 0 or r.bind ~= "equip" or r.isBound or not SB.Prices then
 		return false
 	end
-	local ah = SB.Prices.AuctionValue(r.link, r.itemID)
+	local ah = SB.Prices.AuctionValue(r.link, r.itemID, not fast)
 	local info = SB.Adapter.GetItemInfo(r.itemID)
 	return type(ah) == "number" and ah > 2 * (info and info.sellPrice or 0)
 end
@@ -67,7 +68,7 @@ function V.Protected(r, fast)
 	return r.inEquipmentSet == true or (SB.Locks ~= nil and SB.Locks.Has(r.itemID))
 		or (SB.Collections ~= nil and (SB.Collections.Learn(r) ~= nil or SB.Collections.Uncollected(r) ~= nil
 			or SB.Collections.LookUnknown(r, fast)))
-		or worthMoreAtAuction(r)
+		or worthMoreAtAuction(r, fast == true)
 end
 
 function V.Junk()

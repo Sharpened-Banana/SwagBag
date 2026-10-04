@@ -209,4 +209,72 @@ describe("Inventory", function()
 		assert.truthy(tostring(err):find("scan broke", 1, true))
 		assert.equal(true, Inv.scanned)
 	end)
+
+	-- Final review item 6 (the user's rule, spec AC3.3): what came into the bags stays unseen until hovered.
+	local function flush(bag)
+		fire("BAG_UPDATE", bag or 0)
+		fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.1)
+	end
+
+	-- Mutation: in markUnseen, `(after[id] or 0) > (before[id] or 0)` -> `true` (a move or split is unseen too).
+	it("an item that comes into the bags is unseen until Seen; a move or a split inside the bags is not", function()
+		A.Put(0, 12, Fixtures.HERB, 10) -- looted
+		flush()
+		assert.truthy(Inv.IsUnseen(0, 12))
+		A.Clear(0, 3) -- the ring dragged to another slot
+		A.Put(0, 13, Fixtures.BOE_RING, 1)
+		A.Put(0, 1, Fixtures.HEALING_POTION, 3) -- two potions split off
+		A.Put(0, 14, Fixtures.HEALING_POTION, 2)
+		flush()
+		assert.falsy(Inv.IsUnseen(0, 13), "a move")
+		assert.falsy(Inv.IsUnseen(0, 14), "a split")
+		Inv.Seen(0, 12)
+		assert.falsy(Inv.IsUnseen(0, 12), "hovered")
+		assert.truthy(Inv.IsNew(0, 12), "the `new` search keyword keeps its own session rule")
+	end)
+
+	-- Mutation: in markUnseen, drop the `carried` branch (an unseen item moved by Blizzard's sort is seen).
+	it("an unseen item moved inside the bags stays unseen in its new slot; one that leaves is no longer unseen", function()
+		A.Put(0, 12, Fixtures.HERB, 10)
+		flush()
+		A.Clear(0, 12)
+		A.Put(0, 15, Fixtures.HERB, 10)
+		flush()
+		assert.falsy(Inv.IsUnseen(0, 12))
+		assert.truthy(Inv.IsUnseen(0, 15))
+		A.Clear(0, 15)
+		flush()
+		assert.falsy(Inv.IsUnseen(0, 15))
+		A.Put(0, 15, Fixtures.JUNK, 3) -- the same slot gets a stack of junk the bags already hold more of
+		flush()
+		assert.truthy(Inv.IsUnseen(0, 15))
+	end)
+
+	-- Mutation: in markUnseen, drop `set[c.bag] and` (a bank deposit or a bank item would be unseen).
+	it("only the bags count: a bank slot never holds an unseen item; the login scan marks nothing", function()
+		A.bagIDs.bank = { 6 }
+		A.SetBagSize(6, 4)
+		A.Put(6, 1, Fixtures.HERB, 5) -- in one flush: herbs into the bank and into the bags
+		A.Put(0, 12, Fixtures.HERB, 1)
+		fire("BAG_UPDATE", 6)
+		flush()
+		assert.truthy(Inv.IsUnseen(0, 12))
+		assert.falsy(Inv.IsUnseen(6, 1), "the bank's slot")
+		Inv.ScanAll()
+		assert.falsy(Inv.IsUnseen(0, 12), "a new session (login or /reload) starts with nothing unseen")
+	end)
+
+	-- Midnight's secret values (the user's report: looted inside a Mythic+ key). An item whose ID reads secret
+	-- reads as an empty slot; once readable it arrives, unseen. Mutation: in Inventory.Flush, drop the
+	-- `markUnseen(all, set, before)` call (the item would skip New, as before this fix).
+	it("an item whose ID was secret when it came is unseen once it becomes readable, in combat too", function()
+		A.combat = true
+		A.Put(0, 12, Fixtures.HERB, 4, { secretID = true })
+		flush()
+		assert.falsy(Inv.IsUnseen(0, 12), "nothing readable yet")
+		A.slots[0][12].secretID = nil
+		flush()
+		assert.truthy(Inv.IsUnseen(0, 12))
+	end)
 end)
