@@ -160,6 +160,81 @@ describe("BankWindow contents", function()
 		assert.equal(stats, BW.view.pos, "no layout ran, no redraw: the position table is the same")
 	end)
 
+	-- Week 8 (week-7 deferred: the top-% line was worked out before the bank's contents arrived). Mutations:
+	-- delete the SB.Emit("SB_BANK_CHANGED") in the bank's BAG_UPDATE handler; or delete the Overlays'
+	-- SB_BANK_CHANGED listener.
+	it("'your top X %' is worked out again when the bank's contents change during the visit", function()
+		SB.Config.Set("prices.worth", "top")
+		SB.Config.Set("prices.worthTop", 10) -- three stacks: the most valuable one
+		A.items[Fixtures.HERB].sellPrice = 1000 -- 20: 20000
+		A.items[Fixtures.ORE].sellPrice = 100 -- 10: 1000
+		A.items[Fixtures.HEALING_POTION].sellPrice = 100 -- 5: 500
+		A.items[Fixtures.FLASK].sellPrice = 900000
+		openBank()
+		A.Advance(SB.Overlays.WORTH_DELAY)
+		assert.equal(20000, SB.Overlays.worthMin, "the herbs")
+		A.Put(6, 2, Fixtures.HERB, 40) -- a stack grows: nothing moves
+		bankUpdate(6)
+		A.Advance(SB.Overlays.WORTH_DELAY)
+		assert.equal(40000, SB.Overlays.worthMin, "the bigger herb stack")
+		A.Put(6, 5, Fixtures.FLASK, 1) -- a deposit
+		bankUpdate(6)
+		A.Advance(SB.Overlays.WORTH_DELAY)
+		assert.equal(900000, SB.Overlays.worthMin, "the flask")
+		assert.truthy(SB.Overlays.regions[B.Get(6, 5)].glow.shown)
+	end)
+
+	-- Controller ruling Q11. Mutation: in Overlays.RefreshWorth delete the
+	-- `if onlyIfMoved and Ov.worthMin == before then return end` early return.
+	it("a bank change that leaves the top-% line where it was does not redraw the windows; one that moves it does once", function()
+		SB.Config.Set("prices.worth", "top")
+		SB.Config.Set("prices.worthTop", 10)
+		A.items[Fixtures.HERB].sellPrice = 1000 -- 20: 20000
+		A.items[Fixtures.ORE].sellPrice = 100
+		A.items[Fixtures.HEALING_POTION].sellPrice = 100
+		A.items[Fixtures.FLASK].sellPrice = 900000
+		openBank()
+		A.Advance(SB.Overlays.WORTH_DELAY)
+		assert.equal(20000, SB.Overlays.worthMin)
+		local redraws = 0
+		local refreshAll = SB.Overlays.RefreshAll
+		SB.Overlays.RefreshAll = function(...)
+			redraws = redraws + 1
+			return refreshAll(...)
+		end
+		A.Put(6, 5, Fixtures.ORE, 1) -- a cheap deposit: the line stays
+		bankUpdate(6)
+		A.Advance(SB.Overlays.WORTH_DELAY)
+		assert.equal(20000, SB.Overlays.worthMin, "the line did not move")
+		assert.equal(0, redraws, "so no window was redrawn")
+		A.Put(6, 6, Fixtures.FLASK, 1) -- a dear deposit: the line moves
+		bankUpdate(6)
+		A.Advance(SB.Overlays.WORTH_DELAY)
+		assert.equal(900000, SB.Overlays.worthMin)
+		assert.equal(1, redraws, "the windows were redrawn once")
+		SB.Overlays.RefreshAll = refreshAll
+	end)
+
+	-- Controller ruling Q5. Mutation: in Overlays' SB_BANK_CHANGED listener delete
+	-- `and SB.Config.Get("prices.worth") == "top"`.
+	it("a fixed amount does not depend on the bank's contents: a bank change works nothing out again", function()
+		SB.Config.Set("prices.worth", "gold")
+		SB.Config.Set("prices.worthGold", 5)
+		openBank()
+		A.Advance(SB.Overlays.WORTH_DELAY)
+		local calls = 0
+		local refreshWorth = SB.Overlays.RefreshWorth
+		SB.Overlays.RefreshWorth = function(...)
+			calls = calls + 1
+			return refreshWorth(...)
+		end
+		A.Put(6, 5, Fixtures.FLASK, 1)
+		bankUpdate(6)
+		A.Advance(SB.Overlays.WORTH_DELAY)
+		assert.equal(0, calls, "no recomputation in fixed-gold mode")
+		SB.Overlays.RefreshWorth = refreshWorth
+	end)
+
 	it("a deposit shows in that group's New; nothing else moves", function()
 		openBank()
 		local before = { at(6, 1), at(6, 2), at(12, 1), at(12, 2) }

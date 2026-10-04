@@ -393,6 +393,7 @@ BW.view = SB.GroupView.New({
 	onResize = sizeFrame,
 	onUpdated = function()
 		searchBox.Apply()
+		SB.Emit("SB_BANK_CHANGED") -- a held layout landed: what the bank shows changed
 	end,
 	onDrop = function(sectionId)
 		SB.BagsWindow.DropOnSection(sectionId)
@@ -436,10 +437,13 @@ searchBox = SB.SearchBox.New({
 })
 BW.searchBox = searchBox
 
--- Full layout of both groups, then the search dimming.
+-- Full layout of both groups, then the search dimming. SB_BANK_CHANGED (week 8): the bank's contents as
+-- drawn changed (a layout, or items that arrived, left or changed while open); the worth glow's "your top
+-- X %" line follows it (UI/Overlays.lua).
 function BW.Layout(reason)
 	BW.view.Layout(reason)
 	searchBox.Apply()
+	SB.Emit("SB_BANK_CHANGED")
 end
 
 -- Sort (spec 5.5): Blizzard's bank sort for one bank type, only from a click and never in
@@ -689,6 +693,7 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 	if touched then
 		v.RefreshTotals()
 		searchBox.Apply()
+		SB.Emit("SB_BANK_CHANGED")
 	end
 end, "bank"))
 
