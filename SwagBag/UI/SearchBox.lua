@@ -16,7 +16,7 @@ local Guard = SB.ErrorTrap.Guard
 local function new(o)
 	local Box = { search = o.search }
 
-	local box = CreateFrame("EditBox", o.name, o.parent, "SearchBoxTemplate")
+	local box = SB.TextBox(CreateFrame("EditBox", o.name, o.parent, "SearchBoxTemplate")) -- combat: lets keys go (week 11)
 	box:SetSize(200, 20)
 	box:SetPoint("TOPLEFT", 14, -30)
 	box:SetAutoFocus(false)

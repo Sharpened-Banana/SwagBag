@@ -17,6 +17,7 @@
 --   Rows.KindOf(word) -> "flag" | "number" | "both" | nil (not a keyword: an item-name match)
 --   Rows.NewRow(word, asNumber) -> row  a keyword row, a number row (asNumber), or an empty name row (word nil)
 --   Rows.Problem(row) -> nil | "EMPTY" | "QUOTE" | "NUMBER" | "WORD"   what keeps a row from being saved
+--   Rows.Nearest(word) -> keyword | nil  a keyword one letter away (spec 7.2's "did you mean"; week 11 Task 3)
 local _, SB = ...
 
 local Rows = { MAX_ROWS = 40, MAX_BLOCKS = 10, MAX_TEXT = SB.Query.MAX_QUERY }
@@ -212,4 +213,38 @@ function Rows.Problem(row)
 		return "WORD" -- a bare 536 or 400-450 is an item level, not a word
 	end
 	return nil
+end
+
+-- One letter changed, added, dropped, or two neighbours swapped.
+local function close(a, b)
+	local la, lb = #a, #b
+	if la > lb then
+		a, b, la, lb = b, a, lb, la
+	end
+	if lb - la > 1 then
+		return false
+	end
+	local i = 1
+	while i <= la and a:sub(i, i) == b:sub(i, i) do
+		i = i + 1
+	end
+	if la == lb then
+		return a:sub(i + 1) == b:sub(i + 1)
+			or (a:sub(i, i) == b:sub(i + 1, i + 1) and a:sub(i + 1, i + 1) == b:sub(i, i) and a:sub(i + 2) == b:sub(i + 2))
+	end
+	return a:sub(i) == b:sub(i + 1)
+end
+
+function Rows.Nearest(word)
+	if type(word) ~= "string" then
+		return nil
+	end
+	word = word:lower()
+	local best
+	for name, kw in pairs(SB.Query.keywords) do
+		if kw.name == name and name ~= word and close(word, name) and (best == nil or name < best) then
+			best = name
+		end
+	end
+	return best
 end

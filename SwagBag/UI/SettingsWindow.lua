@@ -10,6 +10,11 @@
 --   { kind = "drop", label, text, onDrop() -> feedback }   a button that takes the item on the
 --       cursor (dragged onto it, or clicked while holding it)
 --   { kind = "note", label }
+--   { kind = "input", label, get() -> text, set(text), commit(text) -> feedback, button, maxLetters, boxWidth }
+--       a one-line text box (week 11, the category editor): every keystroke goes to set (no answer, no redraw, so
+--       nothing typed is lost when another button is clicked); Enter or the button after the box (button, default
+--       L.SET_APPLY) runs commit, which answers in the status line like any click
+-- An action may carry selected = true: its button is shown selected, as a choice's (week 11).
 -- Any row may carry tip: a plain-words explanation shown when the mouse rests on one of its buttons,
 -- under the row's label; a choice or action may carry its own tip, shown after the row's (week 6).
 -- A button is as wide as its text (plus TEXT_PAD), never narrower than the row's width (or
@@ -23,7 +28,8 @@ local _, SB = ...
 
 local L = SB.L
 local Guard = SB.ErrorTrap.Guard
-local SW = { pages = {}, byId = {}, current = nil, labels = {}, buttons = {}, used = { labels = 0, buttons = 0 },
+local SW = { pages = {}, byId = {}, current = nil, labels = {}, buttons = {}, inputs = {},
+	used = { labels = 0, buttons = 0, inputs = 0 },
 	selected = {}, tips = {}, WIDTH = 640, HEIGHT = 470, NAV = 140, BUTTON = 120, ROW = 20, GAP = 8, LINE_GAP = 4, TEXT_PAD = 24 }
 SB.SettingsWindow = SW
 
@@ -172,6 +178,35 @@ local function button()
 	return b
 end
 
+-- A one-line text box (week 11): InputBoxTemplate is a plain, non-secure template.
+local function input()
+	SW.used.inputs = SW.used.inputs + 1
+	local e = SW.inputs[SW.used.inputs]
+	if not e then
+		e = SB.TextBox(CreateFrame("EditBox", nil, child, "InputBoxTemplate")) -- lets the keyboard go in combat
+		e:SetHeight(SW.ROW)
+		e:SetAutoFocus(false)
+		e:SetScript("OnEnterPressed", Guard("settings.inputEnter", function(self)
+			self:ClearFocus()
+			if self.onCommit then
+				self.onCommit()
+			end
+		end, "none"))
+		e:SetScript("OnEscapePressed", Guard("settings.inputEscape", function(self)
+			self:ClearFocus()
+		end, "none"))
+		e:SetScript("OnTextChanged", Guard("settings.inputText", function(self, userInput)
+			if userInput and self.onChange then
+				self.onChange(self:GetText() or "")
+			end
+		end, "none"))
+		SW.inputs[SW.used.inputs] = e
+	end
+	e.onCommit, e.onChange = nil, nil
+	e:Show()
+	return e
+end
+
 -- The full width of a button's text (0 when the client cannot say).
 local function textWidth(b)
 	local w = b.GetTextWidth and b:GetTextWidth()
@@ -224,7 +259,10 @@ function SW.Render()
 		setSelected(b, false)
 		b:Hide()
 	end
-	SW.used.labels, SW.used.buttons = 0, 0
+	for i = 1, SW.used.inputs do
+		SW.inputs[i]:Hide()
+	end
+	SW.used.labels, SW.used.buttons, SW.used.inputs = 0, 0, 0
 	local page = SW.byId[SW.current]
 	if not page then
 		return
@@ -232,7 +270,7 @@ function SW.Render()
 	for id, b in pairs(SW.nav) do
 		setSelected(b, id == SW.current)
 	end
-	local y = -4
+	local y, x0 = -4, nil
 	for _, row in ipairs(page.rows()) do
 		local fs = label()
 		fs:SetText(row.label)
@@ -251,10 +289,24 @@ function SW.Render()
 		local items = row.choices or row.actions
 		if row.kind == "drop" then
 			items = { { text = row.text } }
+		elseif row.kind == "input" then
+			local e, width = input(), (child:GetWidth() or SW.WIDTH) - 4 - 12 - SW.BUTTON - 8
+			e:SetMaxLetters(row.maxLetters or 255)
+			e:SetText(row.get() or "")
+			e:SetWidth(row.boxWidth or width)
+			place(e, 18, y) -- InputBoxTemplate draws its frame a little left of the box
+			e.onChange = row.set
+			local function commit()
+				act("settings.input", row.commit, e:GetText() or "")
+			end
+			e.onCommit = commit
+			x0 = 18 + (row.boxWidth or width) + 8
+			items = { { text = row.button or L.SET_APPLY, commit = commit } }
 		end
 		if items then
 			local current = row.get and row.get()
-			local x, room = 12, (child:GetWidth() or SW.WIDTH) - 4
+			local x, room = x0 or 12, (child:GetWidth() or SW.WIDTH) - 4
+			x0 = nil
 			for _, item in ipairs(items) do
 				local b = button()
 				b:SetText(item.text)
@@ -275,9 +327,12 @@ function SW.Render()
 						act("settings.choice", row.apply, item.value)
 					end
 				elseif row.kind == "actions" then
+					setSelected(b, item.selected)
 					b.onClick = function()
 						act("settings.action", item.run)
 					end
+				elseif row.kind == "input" then
+					b.onClick = item.commit
 				else
 					b.onClick = function()
 						act("settings.drop", row.onDrop)
