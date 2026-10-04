@@ -3,7 +3,12 @@
 -- is a stack of GROUPS in one scroll child. Each group has a header (name, item count,
 -- collapse, a tint for "deposits go here") and under it either its own category sections
 -- (New, categories, Free: one Engine/Layout.lua state per group) or, in the grid view, its
--- slots in physical order.
+-- slots in physical order. In the list view (week 8, spec 2.2 v1.3, like the bags window's) each
+-- group's sections show one row per slot: the slot's own button scaled to the row's height
+-- (SetScale only: a button is never made, reparented or re-ID'd for it), then its name, count,
+-- item level and value (UI/ListRows.lua, cfg.rows), each section in Engine/Sort.lua's order. A
+-- button whose scale does not take is never drawn in a row (F6): that layout draws as categories
+-- instead, recorded under "none" and said once per opening (cfg.onListFailed).
 -- While the window is open the bags window's rules hold (spec 4.2, 4.3): a button moves only
 -- into New or Free, never while it is under the mouse and never while an item is on the
 -- cursor. A group that grows (Free gains a row) pushes the groups below it down; that push
@@ -23,18 +28,23 @@
 --   v.ForEachSlot(fn)                   fn(button, record, bag, slot) for every slot (search)
 --   v.Record(bag, slot), v.SetRecord(bag, slot, record), v.GroupOf(bag), v.Size(bag), v.IsOpen()
 --   v.Clear()                           window closed: hide the buttons, forget the layout
+--   v.drawn                             the view the current layout was drawn in ("sections" |
+--                                       "list" | "grid"); the setting may differ while a layout waits
 --   v.stats = { lastLayoutMs, lastLayoutReason, phases = { groups, read, categories, positions,
 --     drawing } }   the last full layout's time, and where it went (ms; week 6, D20: /swagbag report)
 -- cfg = { key = "bank" | "guild", window = ErrorTrap window (default "bank"), child, scroll,
 --   button(bag, slot) -> button | nil;  describe(bag, slot) -> record | nil (paints the button),
 --   groups() -> { { id, bags = { { bag, size } } } } in display order,
 --   groupLabel(groupId, collapsed, count) -> text;  groupTint(groupId) -> true to tint,
---   view() -> "sections" | "grid";  columns() -> n;  newRows() -> n,
+--   view() -> "sections" | "list" | "grid";  columns() -> n;  newRows() -> n,
+--   rows optional: a ListRows object (UI/ListRows.lua) over cfg.child; without it "list" draws as
+--   "sections";  onListFailed() optional: a list fell back to categories (F6),
+--   family(bag) optional -> a bag family for the free tile (default Adapter.BagFamily),
 --   onResize(width, height, keepTop);  onUpdated() optional, after a redraw while open,
 --   onDrop(sectionId) optional: an item dropped on a section header,
 --   sectionLabel(groupId, header) optional: header = { id, count, collapsed, overflow },
---   freeTile() optional -> true: each group's Free shows one tile per bag family with its
---   number of free slots (Engine/Layout.lua, plan D19; families from Adapter.BagFamily),
+--   freeTile(view) optional -> true: each group's Free shows one tile per bag family with its
+--   number of free slots (Engine/Layout.lua, plan D19; families from cfg.family),
 --   hideEmptyNew optional: true hides each group's New while it is empty (the alt viewer, where
 --   nothing ever arrives) }
 -- Collapse state is saved per character in ui.collapsed[key .. ":" .. groupId] (sections)
@@ -42,7 +52,9 @@
 local _, SB = ...
 
 local GV = { SLOT = 37, GAP = 4, PAD = 4, SECTION_HEADER = 20, SECTION_GAP = 6, GROUP_HEADER = 22, GROUP_GAP = 8,
-	RETRY = 0.3, DROP_GUARD = 0.3 }
+	RETRY = 0.3, DROP_GUARD = 0.3,
+	-- the list view (week 8): the bags window's sizes (UI/BagsWindow.lua), so every list looks the same
+	LIST_ROW = 24, LIST_GAP = 2, LIST_WIDTH = 480, LIST_NEW_ROWS = 8, ROW_TEXT_GAP = 4, SCALE_EPSILON = 0.001 }
 SB.GroupView = GV
 
 local function keyOf(bag, slot)
@@ -54,7 +66,29 @@ function GV.New(cfg)
 	local Guard = SB.ErrorTrap.Guard
 	local window = cfg.window or "bank" -- the ErrorTrap window of every entry point (spec P6)
 	local v = { groups = {}, byId = {}, records = {}, cells = {}, placed = {}, sizes = {}, groupOf = {}, pos = nil,
-		redrawPending = false, stats = {}, tiled = {} }
+		redrawPending = false, stats = {}, tiled = {}, drawn = "sections", listFailed = false }
+	local rows = cfg.rows
+
+	-- The view a layout is built for: the setting, with "list" only when there are rows to draw it.
+	-- (v.listFailed: a list's scale did not take this visit - F6 - so later layouts draw categories at once
+	-- instead of scaling every button again and recording another error each time; v.Clear forgets it.)
+	local function wanted()
+		local view = cfg.view()
+		if view == "list" and (not rows or v.listFailed) then
+			return "sections"
+		end
+		return view
+	end
+
+	local function isList()
+		return v.drawn == "list"
+	end
+
+	-- A row's texts start right of its icon and end at the list's right edge.
+	local function rowWidth()
+		return GV.LIST_WIDTH - 2 * GV.PAD - GV.LIST_ROW - GV.ROW_TEXT_GAP
+	end
+	v.RowWidth = rowWidth
 
 	-- Collapse sets, saved per character.
 	local function collapsedFor(id)
@@ -70,7 +104,11 @@ function GV.New(cfg)
 		return collapsedFor("#")[gid] == true
 	end
 
-	local function positionOpts(top)
+	local function positionOpts(top, list)
+		if list then -- one column of rows, each as tall as its (scaled) button
+			return { columns = 1, size = GV.LIST_ROW, gap = GV.LIST_GAP, padding = GV.PAD, header = GV.SECTION_HEADER,
+				sectionGap = GV.SECTION_GAP, top = top }
+		end
 		return { columns = cfg.columns(), size = GV.SLOT, gap = GV.GAP, padding = GV.PAD, header = GV.SECTION_HEADER,
 			sectionGap = GV.SECTION_GAP, top = top }
 	end
@@ -88,12 +126,13 @@ function GV.New(cfg)
 	-- Pixel positions of every group, stacked top to bottom. Combined result:
 	-- { cells, byKey, placeholders, headers = { { group, id, y, count, overflow, collapsed } },
 	--   groupHeaders = { { id, y, count, collapsed } }, tiles = { free tile cells }, width, height }
-	-- groups/records default to the view's own (a full layout positions a candidate first).
-	local function positionAll(groups, records)
-		groups, records = groups or v.groups, records or v.records
+	-- groups/records/view default to the view's own (a full layout positions a candidate first).
+	local function positionAll(groups, records, view)
+		groups, records, view = groups or v.groups, records or v.records, view or v.drawn
+		local list = view == "list"
 		local cols = cfg.columns()
 		local all = { cells = {}, byKey = {}, placeholders = {}, headers = {}, groupHeaders = {}, tiles = {},
-			width = GV.PAD * 2 + cols * GV.SLOT + (cols - 1) * GV.GAP }
+			width = list and GV.LIST_WIDTH or (GV.PAD * 2 + cols * GV.SLOT + (cols - 1) * GV.GAP) }
 		local y = 0
 		for _, g in ipairs(groups) do
 			local closed = groupClosed(g.id)
@@ -109,7 +148,7 @@ function GV.New(cfg)
 						col[sid] = true
 					end
 				end
-				pos = SB.Layout.Position(g.state, positionOpts(y), col)
+				pos = SB.Layout.Position(g.state, positionOpts(y, list), col)
 			else
 				pos = gridPos(g, y)
 			end
@@ -144,13 +183,34 @@ function GV.New(cfg)
 	---------------------------------------------------------------------------
 	-- Drawing
 	---------------------------------------------------------------------------
+	-- A point's offsets are in the button's own scale, so a button drawn smaller (the list) is
+	-- offset by x / scale, y / scale to land on the same spot of the scroll child (as Buttons.Place).
 	local function place(button, x, y)
 		local at = x .. "," .. y
 		if v.placed[button] ~= at then
+			local scale = button:GetScale() or 1
 			button:ClearAllPoints()
-			button:SetPoint("TOPLEFT", button:GetParent(), "TOPLEFT", x, y)
+			button:SetPoint("TOPLEFT", button:GetParent(), "TOPLEFT", x / scale, y / scale)
 			v.placed[button] = at
 		end
+	end
+
+	local function scaleIs(button, scale)
+		return math.abs((button:GetScale() or 1) - scale) < GV.SCALE_EPSILON
+	end
+
+	-- Buttons are drawn at row size in the list and at full size elsewhere (not protected, spec 4.1:
+	-- legal in combat). A button whose scale changes is placed again. False when the scale did not take.
+	local function setScale(button, scale)
+		if not scaleIs(button, scale) then
+			button:SetScale(scale)
+			v.placed[button] = nil
+		end
+		return scaleIs(button, scale)
+	end
+
+	local function listScale()
+		return GV.LIST_ROW / GV.SLOT
 	end
 
 	-- A cell past its bag's current size (a removal still held back) is never shown.
@@ -158,12 +218,24 @@ function GV.New(cfg)
 		return c.slot <= (v.sizes[c.bag] or 0)
 	end
 
+	-- Ruling W5-1 for the bank and guild lists (F6): a list row never shows a full-size button. One whose
+	-- scale is not the row's stays hidden, row and all, and a full layout follows when the mouse allows.
 	local function showAt(button, c)
-		if c.shown and inSize(c) then
+		local shown = c.shown and inSize(c)
+		if shown and isList() and not scaleIs(button, listScale()) then
+			shown = false
+			SB.Debounce(cfg.key .. ".scale", GV.RETRY, function()
+				v.RequestLayout("scale")
+			end, window)
+		end
+		if shown then
 			place(button, c.x, c.y)
 			button:Show()
 		else
 			button:Hide()
+		end
+		if isList() then -- a spare (hidden, no position) has no row either
+			rows.Place(button, shown and c.x + GV.LIST_ROW + GV.ROW_TEXT_GAP, c.y, rowWidth(), GV.LIST_ROW, shown)
 		end
 	end
 
@@ -252,10 +324,15 @@ function GV.New(cfg)
 		local B, H, child = SB.Buttons, SB.SectionHeaders, cfg.child
 		local width = pos.width - 2 * GV.PAD
 		B.ReleasePlaceholders(child)
+		local ghosts = {}
 		for _, p in ipairs(pos.placeholders) do
 			if p.shown then
-				B.AcquirePlaceholder(child, p.icon, GV.SLOT, p.x, p.y, window)
+				B.AcquirePlaceholder(child, p.icon, isList() and GV.LIST_ROW or GV.SLOT, p.x, p.y, window)
+				ghosts[#ghosts + 1] = { x = p.x + GV.LIST_ROW + GV.ROW_TEXT_GAP, y = p.y }
 			end
+		end
+		if isList() then -- a placeholder's row says the item moved or was used
+			rows.Ghosts(ghosts, rowWidth(), GV.LIST_ROW)
 		end
 		H.ReleaseAll(child)
 		for _, g in ipairs(pos.groupHeaders) do
@@ -282,18 +359,26 @@ function GV.New(cfg)
 
 	-- The free tiles' numbers (plan D19): a tile shows its family's free-slot count while it
 	-- really is empty (a drop held under the mouse shows the item); other numbers are cleared.
+	-- In the list a tile's row says how many are free (and for what); a button that stops being a tile
+	-- gets its row's texts back from its record.
 	local function paintTiles(pos)
 		local now = {}
 		for _, t in ipairs(pos.tiles) do
 			local button = cfg.button(t.bag, t.slot)
 			if button and t.shown and not v.records[keyOf(t.bag, t.slot)] then
 				SB.Buttons.SetFreeCount(button, t.count)
-				now[button] = true
+				now[button] = t
+				if isList() then
+					rows.Paint(button, t.bag, t.slot, nil, t.count, t.tile)
+				end
 			end
 		end
-		for button in pairs(v.tiled) do
+		for button, t in pairs(v.tiled) do
 			if not now[button] then
 				SB.Buttons.SetFreeCount(button, nil)
+				if isList() then
+					rows.Paint(button, t.bag, t.slot, v.records[keyOf(t.bag, t.slot)])
+				end
 			end
 		end
 		v.tiled = now
@@ -318,6 +403,9 @@ function GV.New(cfg)
 				local button = cfg.button(c.bag, c.slot)
 				if button then
 					button:Hide()
+					if rows then
+						rows.Place(button, 0, 0, 0, 0, false)
+					end
 				end
 			end
 		end
@@ -348,7 +436,8 @@ function GV.New(cfg)
 				return true
 			end
 			local b = cfg.button(bag, slot)
-			return b ~= nil and b:IsShown() and b:IsMouseOver()
+			-- in the list a row under the mouse holds its button too (P5: its text would move with it)
+			return b ~= nil and b:IsShown() and (b:IsMouseOver() or (isList() and rows.IsMouseOver(b)))
 		end, cursor
 	end
 
@@ -370,11 +459,14 @@ function GV.New(cfg)
 	---------------------------------------------------------------------------
 	-- Read every slot into a fresh candidate (groups, records, sizes); nothing is drawn.
 	-- b.ms: where the time went (the groups and their buttons, reading the slots, the categories).
-	local function build()
+	-- view: the view to build (default: the setting's, wanted()); b.view says which.
+	local function build(view)
 		local A = SB.Adapter
-		local b = { groups = {}, byId = {}, records = {}, sizes = {}, groupOf = {},
+		view = view or wanted()
+		local b = { groups = {}, byId = {}, records = {}, sizes = {}, groupOf = {}, view = view,
 			ms = { groups = 0, read = 0, categories = 0, positions = 0, drawing = 0 } }
-		local sections = cfg.view() ~= "grid"
+		local sections = view ~= "grid"
+		local list = view == "list"
 		local order = sections and SB.Categories.SectionOrder() or nil
 		local t = A.ProfileMs()
 		local defs = cfg.groups()
@@ -386,19 +478,26 @@ function GV.New(cfg)
 			for _, bag in ipairs(def.bags) do
 				b.sizes[bag.bag], b.groupOf[bag.bag] = bag.size, def.id
 				for slot = 1, bag.size do
-					if cfg.button(bag.bag, slot) then
+					local button = cfg.button(bag.bag, slot)
+					if button then
 						local record = cfg.describe(bag.bag, slot)
 						b.records[keyOf(bag.bag, slot)] = record
 						slots[#slots + 1] = { bag = bag.bag, slot = slot, record = record }
+						if list then
+							rows.Paint(button, bag.bag, slot, record)
+						end
 					end
 				end
 			end
 			b.ms.read = b.ms.read + A.ProfileMs() - t
 			if sections then
 				t = A.ProfileMs()
-				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order, { columns = cfg.columns(),
-					newRows = cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile() or nil,
-					family = SB.Adapter.BagFamily, hideEmptyNew = cfg.hideEmptyNew })
+				if list then -- each section lists its items in the list's order (Engine/Sort.lua)
+					slots = SB.Sort.DisplayOrder(slots, SB.Sort.Spec(), SB.Sort.Value)
+				end
+				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order, { columns = list and 1 or cfg.columns(),
+					newRows = list and GV.LIST_NEW_ROWS or cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile(view) or nil,
+					family = cfg.family or SB.Adapter.BagFamily, hideEmptyNew = cfg.hideEmptyNew })
 				b.ms.categories = b.ms.categories + A.ProfileMs() - t
 			end
 			b.groups[#b.groups + 1] = g
@@ -410,20 +509,60 @@ function GV.New(cfg)
 	-- A candidate's positions, timed (b.ms.positions).
 	local function positionTimed(b)
 		local t = SB.Adapter.ProfileMs()
-		local pos = positionAll(b.groups, b.records)
+		local pos = positionAll(b.groups, b.records, b.view)
 		b.ms.positions = SB.Adapter.ProfileMs() - t
 		return pos
+	end
+
+	-- Every button of a candidate at one scale (F6: sized before the list is drawn). False when a
+	-- scale did not take for any button.
+	local function scaleAll(b, scale)
+		local ok = true
+		for _, g in ipairs(b.groups) do
+			for _, bag in ipairs(g.bags) do
+				for slot = 1, bag.size do
+					local button = cfg.button(bag.bag, slot)
+					if button and not setScale(button, scale) then
+						ok = false
+					end
+				end
+			end
+		end
+		return ok
+	end
+
+	-- F6: a full-size button in a 24 px row would cover the next row, so a click there could take or
+	-- deposit the wrong item. That layout draws as categories instead: recorded (never Safe Mode), and
+	-- the window says it once per opening (cfg.onListFailed).
+	local function listFailed(b)
+		scaleAll(b, 1)
+		v.listFailed = true
+		SB.ErrorTrap.OnError(cfg.key .. ".listScale", "none", "a slot button's SetScale did not take", nil)
+		if cfg.onListFailed then
+			cfg.onListFailed()
+		end
 	end
 
 	-- Make a candidate the view's layout and draw it at pos.
 	local function commit(b, pos, reason, t0)
 		local t1 = SB.Adapter.ProfileMs()
+		if b.view == "list" and not scaleAll(b, listScale()) then
+			listFailed(b)
+			b = build("sections")
+			pos = positionTimed(b)
+		elseif b.view ~= "list" then
+			scaleAll(b, 1)
+		end
 		local old = v.pos
 		v.groups, v.byId, v.records, v.sizes, v.groupOf, v.redrawPending = b.groups, b.byId, b.records, b.sizes,
 			b.groupOf, false
+		v.drawn = b.view
 		v.heldKey = nil -- any layout that lands (v.Layout too) ends a held RequestLayout's reason
 		if old then
 			hideGone(old, pos)
+		end
+		if rows then -- the rows drawn now are placed again by render (a list), or stay hidden
+			rows.HideAll()
 		end
 		render(pos)
 		cfg.onResize(pos.width, pos.height, reason ~= "open")
@@ -638,8 +777,36 @@ function GV.New(cfg)
 		return v.records[keyOf(bag, slot)]
 	end
 
+	-- A live repaint (count, lock, loaded data, an item that arrived or left): in the list the row's texts
+	-- follow, in place (nothing moves).
 	function v.SetRecord(bag, slot, record)
 		v.records[keyOf(bag, slot)] = record
+		if isList() and v.pos then
+			local button = cfg.button(bag, slot)
+			if button and not v.tiled[button] then
+				rows.Paint(button, bag, slot, record)
+			end
+		end
+	end
+
+	-- Prices changed (F8): each row's Value follows, texts only; nothing moves and nothing re-sorts.
+	function v.RefreshRows()
+		if not (isList() and v.pos) then
+			return
+		end
+		v.ForEachSlot(function(button, record, bag, slot)
+			if record then
+				rows.Paint(button, bag, slot, record)
+			end
+		end)
+	end
+
+	-- Search dimming: the button, and in the list its row (AC5.1).
+	function v.SetDimmed(button, dimmed)
+		SB.Buttons.SetDimmed(button, dimmed)
+		if rows then
+			rows.SetDimmed(button, dimmed)
+		end
 	end
 
 	function v.GroupOf(bag)
@@ -664,8 +831,12 @@ function GV.New(cfg)
 			end
 		end
 		v.groups, v.byId, v.pos, v.cells, v.redrawPending, v.heldKey = {}, {}, nil, {}, false, nil
+		v.listFailed = false
 		SB.Buttons.ReleasePlaceholders(cfg.child)
 		SB.SectionHeaders.ReleaseAll(cfg.child)
+		if rows then
+			rows.HideAll()
+		end
 	end
 
 	return v

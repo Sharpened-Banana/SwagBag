@@ -133,6 +133,13 @@ describe("Profiles (week 7)", function()
 			{ Pr.Parse("SWAGBAG:1:cu.u_x.inc=s" .. ("1%2C"):rep(Pr.MAX_LIST) .. "1") })
 	end)
 
+	-- Week 8. Mutation: drop "list" from bank.view's words in VALID (Engine/Profiles.lua).
+	it("the bank's list view travels in a share string", function()
+		C.Set("bank.view", "list")
+		local data = assert(Pr.Parse(Pr.Export(false)))
+		assert.equal("list", data.settings["bank.view"])
+	end)
+
 	-- Final review fix 5. Mutation: drop `["vendor.repair"] = true` from NEVER (the guild-funded repair choice
 	-- would travel in a share string).
 	it("vendor.repair never travels: not exported, ignored on import and named in the preview", function()

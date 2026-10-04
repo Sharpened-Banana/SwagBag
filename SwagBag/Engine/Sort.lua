@@ -4,7 +4,9 @@
 -- Blizzard's own (the Sort button, Adapter.SortBags).
 --   Sort.COLUMNS                     { "name", "count", "ilvl", "value" }: the list view's columns
 --   Sort.Spec() -> { by, desc }      the saved order (bags.list.sort, bags.list.desc), checked
---   Sort.Save(by, desc) -> ok        false (nothing written) while the settings are read-only
+--   Sort.Save(by, desc) -> ok        false (nothing written) while the settings are read-only; saved:
+--                                    SB_LIST_SORTED(by, desc), so every list (the bags, the bank and the
+--                                    guild bank: one shared order, week 8) redraws its bar and regroups
 --   Sort.Next(spec, by) -> spec      a click on a column: the same column flips the direction;
 --                                    another column starts at its natural one (names A to Z,
 --                                    numbers highest first)
@@ -40,7 +42,11 @@ function Sort.Save(by, desc)
 	if not KNOWN[by] then
 		return false
 	end
-	return SB.Config.Set("bags.list.sort", by) and SB.Config.Set("bags.list.desc", desc == true)
+	if not (SB.Config.Set("bags.list.sort", by) and SB.Config.Set("bags.list.desc", desc == true)) then
+		return false
+	end
+	SB.Emit("SB_LIST_SORTED", by, desc == true)
+	return true
 end
 
 function Sort.Next(spec, by)
