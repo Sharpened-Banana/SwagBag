@@ -1342,6 +1342,12 @@ local SYNDICATOR_NEEDS = { "IsReady", "GetAllCharacters", "GetByCharacterFullNam
 A.SYNDICATOR_EVENTS = { "BagCacheUpdate", "WarbandBankCacheUpdate", "GuildCacheUpdate", "Ready", "MailCacheUpdate",
 	"EquippedCacheUpdate", "AuctionsCacheUpdate", "VoidCacheUpdate", "CharacterDeleted", "GuildDeleted" }
 
+-- The folder name Syndicator loads under (ADDON_LOADED's argument): it may load mid-session (week 8).
+A.SYNDICATOR_ADDON = "Syndicator"
+function A.IsSyndicatorAddon(name)
+	return name == A.SYNDICATOR_ADDON
+end
+
 -- Syndicator's API table while Syndicator is loaded, has every function above and says it is
 -- ready; nil otherwise (then SwagBag's own snapshots answer). Never errors.
 function A.SyndicatorAPI()

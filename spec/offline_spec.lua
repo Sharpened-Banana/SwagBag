@@ -576,6 +576,76 @@ describe("Alt viewer: the character picker and the ways in", function()
 		assert.same({ "Zed (Argent Dawn)" }, menuTexts())
 	end)
 
+	-- Week 8: Syndicator loaded mid-session. Mutations: drop the alt viewer's SB_ALTDATA_CHANGED registration;
+	-- in followSource, drop the scroll:IsMouseOver() hold.
+	it("an open alt viewer reads its character again when the answering provider switches; held under the mouse",
+		function()
+			OW.Open("Abby-ArgentDawn")
+			assert.equal("Own", OW.source)
+			local available = false
+			SB.AltData.RegisterProvider({ name = "Syndicator", priority = 10, available = function() return available end,
+				characters = function() return { { key = "Abby-ArgentDawn", name = "Abby", realm = "Argent Dawn" } } end,
+				container = function(_, kind)
+					if kind == "bags" then
+						return { containers = { [0] = { size = 16, slots = { [1] = { link = "item:210796", count = 9 } } } } }
+					end
+				end })
+			SB.Emit("SB_ALTDATA_CHANGED", "Syndicator")
+			assert.equal("open", OW.view.stats.lastLayoutReason, "the same provider answers: nothing is read again")
+			available = true
+			OW.scroll.mouseOver = true
+			SB.Emit("SB_ALTDATA_CHANGED", "Syndicator")
+			assert.equal("open", OW.view.stats.lastLayoutReason, "held while the mouse is over the items")
+			OW.scroll.mouseOver = false
+			A.Advance(SB.GroupView.RETRY)
+			assert.same({ "source", "Syndicator" }, { OW.view.stats.lastLayoutReason, OW.source })
+			assert.equal(SB.L.OFFLINE_SOURCE:format("Syndicator"), OW.frame.source.text)
+			assert.equal(9, SB.DisplayButtons.Get(0, 1).count)
+		end)
+
+	-- Week 8 ruling Q5. Mutation: in followSource, drop `SB.Adapter.CursorItem() or` from the hold.
+	it("the alt viewer waits to follow a provider switch while an item is on the cursor", function()
+		OW.Open("Abby-ArgentDawn")
+		SB.AltData.RegisterProvider({ name = "Syndicator", priority = 10, available = function() return true end,
+			characters = function() return { { key = "Abby-ArgentDawn", name = "Abby", realm = "Argent Dawn" } } end })
+		A.cursor = { itemID = 211880, link = "item:211880" }
+		SB.Emit("SB_ALTDATA_CHANGED", "Syndicator")
+		A.Advance(SB.GroupView.RETRY)
+		assert.same({ "open", "Own" }, { OW.view.stats.lastLayoutReason, OW.source }, "held while an item is on the cursor")
+		A.cursor = nil
+		A.Advance(SB.GroupView.RETRY)
+		assert.same({ "source", "Syndicator" }, { OW.view.stats.lastLayoutReason, OW.source })
+	end)
+
+	-- Week 8 ruling Q10. Mutation: in followSource, compare with SB.AltData.Source() instead of the provider
+	-- Characters() answered with.
+	it("a provider that is first but does not answer Characters() does not re-read the alt viewer on every save",
+		function()
+			OW.Open("Abby-ArgentDawn")
+			local answers = false
+			local layouts, layout = 0, OW.Layout
+			OW.Layout = function(...)
+				layouts = layouts + 1
+				return layout(...)
+			end
+			SB.AltData.RegisterProvider({ name = "Syndicator", priority = 10, available = function() return true end,
+				characters = function()
+					if answers then
+						return { { key = "Abby-ArgentDawn", name = "Abby", realm = "Argent Dawn" } }
+					end
+				end })
+			assert.equal("Syndicator", SB.AltData.Source(), "first in line, yet Own answers the list")
+			for _ = 1, 3 do
+				SB.Emit("SB_ALTDATA_CHANGED", "Syndicator")
+			end
+			assert.same({ 0, "Own" }, { layouts, OW.source }, "repeated saves: no re-read")
+			answers = true
+			SB.Emit("SB_ALTDATA_CHANGED", "Syndicator")
+			assert.same({ 1, "Syndicator" }, { layouts, OW.source }, "a real change: read once")
+			SB.Emit("SB_ALTDATA_CHANGED", "Syndicator")
+			assert.equal(1, layouts, "and not again")
+		end)
+
 	-- Task 9 deferred minor. Mutation: in GroupView.RequestLayout, drop the onUpdated call after commit.
 	it("a held loaded relayout re-applies the search when its retry lands", function()
 		local bags = SB.Snapshots.DB().chars["Abby-Argent Dawn"].bags.containers[0]

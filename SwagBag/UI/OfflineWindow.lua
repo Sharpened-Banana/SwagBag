@@ -316,6 +316,7 @@ function OW.Layout(reason)
 	OW.pickButton:SetText(L.OFFLINE_PICK:format(OW.name or ""))
 	-- nothing of the character's own saved (the warband bank is the account's): say how to get it
 	local _, source = SB.AltData.Characters()
+	OW.source = source -- the provider this layout was read from (a switch re-reads it, week 8)
 	if OW.info.bags or OW.info.bank or OW.info.guild then
 		frame.source:SetText(L.OFFLINE_SOURCE:format(source == "Own" and L.ALTS_OWN or tostring(source)))
 	else
@@ -497,6 +498,26 @@ local function onItemLoaded(_, itemID, success)
 	OW.pending[itemID] = nil
 	SB.Debounce("offline.loaded", OW.LOADED_DELAY, relayoutLoaded, "none")
 end
+
+-- Week 8: Syndicator became available (or stopped answering) while the window is open: the window reads
+-- the same character again from the provider that answers now. Saves alone never re-read it (see
+-- OW.Layout). P5: it waits while the mouse is over the items or an item is on the cursor.
+-- Compared with the provider that answered Characters() (what OW.source holds), not AltData.Source().
+local function followSource()
+	if not (frame:IsShown() and OW.key) then
+		return
+	end
+	local _, now = SB.AltData.Characters()
+	if now == OW.source then
+		return
+	end
+	if SB.Adapter.CursorItem() or scroll:IsMouseOver() then
+		SB.Debounce("offline.source", SB.GroupView.RETRY, followSource, "none")
+		return
+	end
+	OW.Layout("source")
+end
+SB.On("SB_ALTDATA_CHANGED", followSource, "none")
 
 SB.On("ITEM_DATA_LOAD_RESULT", onItemLoaded, "none")
 SB.On("GET_ITEM_INFO_RECEIVED", onItemLoaded, "none")

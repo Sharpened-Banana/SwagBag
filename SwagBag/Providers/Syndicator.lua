@@ -215,10 +215,34 @@ AD.RegisterProvider(P)
 -- Syndicator's data changed: one SB_ALTDATA_CHANGED after the burst (AltData drops the provider's
 -- cache and moves its generation; the alt viewer and tooltip memos follow it). The callback is
 -- Syndicator's call into SwagBag, so it runs under ErrorTrap ("none": record only, never Safe Mode).
+local function announce()
+	SB.Debounce("altdata.changed", P.DEBOUNCE, function()
+		SB.Emit("SB_ALTDATA_CHANGED", "Syndicator")
+	end, "none")
+end
+
+-- Register Syndicator's callbacks once (P.hooked): at login, or when Syndicator loads later in the
+-- session (week 8: another addon loads it, or it is enabled and loaded without a /reload). A late hook
+-- also announces at once: the answering provider may have switched, so the tooltip counts and an open
+-- alt viewer follow without waiting for Syndicator's next update.
+P.hooked = false
+function P.Hook(late)
+	if P.hooked then
+		return true
+	end
+	P.hooked = SB.Adapter.SyndicatorOnUpdate(SB.ErrorTrap.Guard("altdata.syndicator", announce, "none")) == true
+	if P.hooked and late then
+		announce()
+	end
+	return P.hooked
+end
+
 SB.On("SB_LOGIN", function()
-	SB.Adapter.SyndicatorOnUpdate(SB.ErrorTrap.Guard("altdata.syndicator", function()
-		SB.Debounce("altdata.changed", P.DEBOUNCE, function()
-			SB.Emit("SB_ALTDATA_CHANGED", "Syndicator")
-		end, "none")
-	end, "none"))
+	P.Hook(false)
+end, "none")
+
+SB.On("ADDON_LOADED", function(_, name)
+	if SB.Adapter.IsSyndicatorAddon(name) then
+		P.Hook(true)
+	end
 end, "none")

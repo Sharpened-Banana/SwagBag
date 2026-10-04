@@ -166,6 +166,42 @@ describe("Syndicator provider", function()
 		assert.equal(1, n)
 	end)
 
+	-- Week 8 (week-5 deferred). Mutation: delete the provider's SB.On("ADDON_LOADED", ...) registration.
+	it("Syndicator loaded after login: its callbacks are registered then, and the switch is announced at once",
+		function()
+			A.globals.Syndicator = nil
+			local n = 0
+			SB.On("SB_ALTDATA_CHANGED", function() n = n + 1 end)
+			SB.Emit("SB_LOGIN")
+			assert.equal("Own", AD.Source())
+			A.globals.Syndicator = { API = api, CallbackRegistry = reg }
+			SB.eventFrame:Fire("ADDON_LOADED", "SomethingElse")
+			assert.is_nil(reg.events.BagCacheUpdate)
+			SB.eventFrame:Fire("ADDON_LOADED", "Syndicator")
+			assert.truthy(reg.events.BagCacheUpdate and reg.events.Ready)
+			assert.equal("Syndicator", AD.Source())
+			A.Advance(0.6)
+			assert.equal(1, n, "tooltip counts and the alt viewer hear of the switch without waiting")
+			reg.events.BagCacheUpdate("x")
+			A.Advance(0.6)
+			assert.equal(2, n, "and of Syndicator's later updates")
+		end)
+
+	-- Mutation: in P.Hook, drop `if P.hooked then return true end` (every ADDON_LOADED would register again).
+	it("Syndicator's callbacks are registered once: at login, never again on a later ADDON_LOADED", function()
+		local registered = 0
+		local register = reg.RegisterCallback
+		reg.RegisterCallback = function(...)
+			registered = registered + 1
+			return register(...)
+		end
+		SB.Emit("SB_LOGIN")
+		local once = registered
+		assert.truthy(once > 0)
+		SB.eventFrame:Fire("ADDON_LOADED", "Syndicator")
+		assert.equal(once, registered)
+	end)
+
 	-- F18. Mutation: drop the AltData.OwnGuildCounts append in P.counts.
 	it("counts: guilds only SwagBag has seen are appended; a guild Syndicator reported is not counted twice", function()
 		local G = SB.Snapshots.DB().guilds
