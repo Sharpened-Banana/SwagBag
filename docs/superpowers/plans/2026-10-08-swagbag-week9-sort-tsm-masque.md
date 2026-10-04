@@ -4294,7 +4294,7 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ## In-game sessions
 
-Three short sessions: ST1, TS1 and MQ1. All three run on the **final merged build** (every task done, reviewed and fixed), as week 6's ruling P1 set; the "checks Task N" in each heading only says which task's work it checks. Then the week-9 exit check. They never block the build: findings come back as fixes.
+Four short sessions: ST1, TS1, MQ1 and NW1 (added by the final review: the user's New request). All four run on the **final merged build** (every task done, reviewed and fixed), as week 6's ruling P1 set; the "checks Task N" in each heading only says which task's work it checks. Then the week-9 exit check. They never block the build: findings come back as fixes.
 
 Before every session:
 - Claude installs the build first. The game currently runs an older copy, and the login line must say `v0.9.0`.
@@ -4372,6 +4372,20 @@ You need: Masque installed and enabled (it comes with a few skins of its own); B
 15. Type `/swagbag safe off`. Expected: `SwagBag: Safe Mode is OFF for bags: SwagBag handles them again.` and `SwagBag: Safe Mode is OFF for bank: SwagBag handles them again.` Log out, **disable** Baganator again, and log in. Expected: no line about another bag addon.
 16. (Only with ElvUI.) With ElvUI's own bags turned **on** in ElvUI's options, log in. Expected: the warning names `ElvUI`. With ElvUI's bags **off**, no warning.
 
+### Session NW1: new items stay in New (checks the final review's item 6; about 5 minutes)
+
+You need: a vendor that sells something cheap (a drink, a reagent) that is **not** in your bags yet, and a few silver. Use the category view (`/swagbag view sections` if you use another).
+
+0. Claude installs the build first.
+1. Quit the game completely and start it again. Expected: the login screen.
+2. Log in. Expected: chat shows `SwagBag: v0.9.0 loaded. Type /swagbag help for commands.`
+3. Right-click the vendor. If your bags opened with the vendor, press **B** to close them. Expected: the vendor's window is open and your bags are closed.
+4. Right-click the cheap item in the vendor's window to buy one. Expected: you paid for it; your bags stay closed.
+5. Press **B**. Expected: the title starts with `SwagBag — AH/Vendor/Bank` (the vendor's focus mode is on), and the item you bought is in the `New` section at the very top, its header counting it (`New (1)`), not in its own category.
+6. Rest the mouse on the item you bought. Expected: its tooltip shows; nothing moves; it is still in `New`.
+7. Move the mouse off the bags. Press **B** to close them, then **B** again to open them. Expected: `New` is gone (or empty), and the item is now in its own category (for a drink, `Consumables`).
+8. (Optional, inside a key or a dungeon.) Loot something new while your bags are closed, then open them. Expected: it is at the top in `New` until you rest the mouse on it, and it joins its category the next time you open your bags.
+
 ## Week 9 exit check
 
 1. Claude installs the week-9 build, at the end of Task 6 (after review and fixes), and you fully restart the game.
@@ -4401,6 +4415,7 @@ Recorded in the week-9 ledger and applied to `docs/superpowers/specs/2026-09-30-
 - **§4.2 rule 5 (nothing moves under the mouse), a recorded exception:** that held F6 fallback rescales the drawn categories' buttons to full size at once even while the mouse may rest on one (leaving them small is worse: a shrunk button slides under the mouse anyway and its click target stays small).
 - **§10.5 (commands):** `/swagbag sort [stacks|blizzard]`, `/swagbag price [auto|auctionator|tsm [<price>]|vendor|string <price>]`, `/swagbag otherbags [on|off]`.
 - **§11 / §12 (the Adapter rule):** `TSM_API` and `LibStub` are named only in the Adapter (check.sh).
+- **Final review (applied with the list above):** the sell path asks the auction sources again (`Prices.AuctionValue(..., recheck)`; a cached "no price" is trusted only by the junk coin); `Adapter.CursorBusy()` is also true while a spell waits for its target (`SpellIsTargeting()`); a stacking run that hits an error ends with its own line (`STACK_STOP_ERROR`); **AC3.3 (the user's New rule):** an item that came into the bags stays in New, at the top, in every mode and both focus styles, until hovered, then joins its category at the next open or Reflow (§4.3 gains a "hovered" row).
 
 ## Spec coverage (week-9 scope → task)
 

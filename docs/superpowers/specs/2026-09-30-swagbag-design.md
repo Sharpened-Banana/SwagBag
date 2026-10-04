@@ -28,8 +28,7 @@
 
 ### 1.3 Non-goals (explicit)
 
-- No auction-house or mailbox scanning of our own. Prices come from Auctionator, else vendor price.
-- No TSM integration in v1.x.
+- No auction-house or mailbox scanning of our own. Prices come from Auctionator, TSM or the vendor (a user choice; F10).
 - No guild bank *money* management UI (deposit/withdraw gold stays in Blizzard's frame) and no guild bank tab purchase/permission editing. One accepted exception (week 7, ruling R22): the optional "Guild bank first" repair (F17) spends guild money through Blizzard's own repair call; it is not a money UI, it is off by default (the default is your own gold), only the user chooses it, and it is never exported or imported in a share string.
 - No "send to alt" feature (scrapped in the grilling).
 - No sandboxed Lua rule language. The visual rule builder plus the query grammar is the ceiling.
@@ -46,8 +45,8 @@
 | P1 | **Opinionated default + easy-to-find alternative** | Every setting ships with a chosen default. The alternative is one click away in the same place, never buried. Options are phrased as choices ("Peek / Keep open"), not as abstract toggles. |
 | P2 | **Every command and button gives feedback** | Every slash command and every button prints or shows a confirmation or an explanation of why it did nothing. Silence is a bug. It answers exactly once: a run that takes time (a sale, a send) answers when it ends; an automatic action with nothing to do says nothing. |
 | P3 | **Ease of setup over power** | When power and simplicity conflict, simplicity wins in v1.x. Power features go behind an "Advanced" disclosure or into a later tier. |
-| P4 | **No hard dependencies** | Syndicator (alt data) and Auctionator (prices) are detected at load and used through internal provider interfaces. Absence degrades a feature, never errors. |
-| P5 | **Layout never moves under the cursor** | Placeholders hold spots; new items go to a "New" section; reflow happens on close. |
+| P4 | **No hard dependencies** | Syndicator (alt data), Auctionator and TradeSkillMaster (prices; TSM read only through its public `TSM_API`, week 9) are detected at load and used through internal provider interfaces; Masque (skins) gets each item button through `AddButton` only. Absence degrades a feature, never errors. Other bag addons are detected and named (one login line, the report), never disabled (week 9). |
+| P5 | **Layout never moves under the cursor** | Placeholders hold spots; new items go to a "New" section and stay there until hovered (AC3.3); reflow happens on close. |
 | P6 | **Fail to Blizzard, loudly once** | One Lua error in our refresh path → Safe Mode → one chat line → `/swagbag report`. |
 | P7 | **Real APIs over tooltip parsing** | `C_Item.IsBound`, `C_Item.GetCurrentItemLevel`, `C_Item.IsBoundToAccountUntilEquip`, `C_TooltipInfo` with secret-value guards only as a last resort. |
 | P8 | **All UI strings live in one table** | `Locale/enUS.lua` defines `L["..."]`. No literal UI strings elsewhere. Keyword matching is registered English + (later) localized; nothing depends on `string.lower` of non-ASCII. |
@@ -88,13 +87,13 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC2.4 ESC or walking away closes the bank interaction; subsequent item use (e.g. Hearthstone) works.
 - AC2.5 SwagBag never calls `BankFrame:SetTab`, writes `BankPanel.bankType`, or calls `C_Bank.CloseBankFrame()` from any OnHide. (A luacheck rule and a grep in CI enforce this.)
 - AC2.6 If the first in-dev check "deposit lands correctly while Blizzard's bank is in tiny mode" fails, the fallback "Blizzard bank visible beside ours" setting becomes the default without code changes elsewhere.
-- AC2.7 Sort buttons for bags, character bank and warband bank call `C_Container.SortBags()` / `C_Container.SortBank(bankType)` and reflow the view afterwards.
+- AC2.7 Sort buttons for bags, character bank and warband bank call `C_Container.SortBags()` / `C_Container.SortBank(bankType)` and reflow the view afterwards. Week 9: with `sort.mode = "stacks"` ("Partial stacks first"; Blizzard's sort stays the default) they run SwagBag's stacker instead (§5.5).
 - AC2.8 A "Deposit warbound" button on SwagBag's bank window runs the game's own warband-bank deposit, with the warband bank type chosen on the user's click (it never sets Blizzard's selected bank type), refuses in combat, while the warband bank is locked, and when a refund could be lost, and answers once each time (P2). A "With reagents" box beside it mirrors and writes Blizzard's own include-reagents option (`bankAutoDepositReagents`), the one game setting SwagBag writes (accepted, week 6: the user asked for the button); it re-reads the option when the button is used. Both stay on SwagBag's window in tiny and beside mode. See §5.2.
 
 #### F3. Category view (default) and grid view
 - AC3.1 A header toggle switches between category sections and a flat grid without /reload, in and out of combat.
 - AC3.2 Every section header is collapsible; collapse state persists per section per window.
-- AC3.3 A "New" section at the top holds items that arrived while the window was open or that are not yet loaded. New items join their real category on the next open (or on explicit Reflow).
+- AC3.3 A "New" section at the top holds items that came into the bags and were not hovered yet, and items not yet loaded. Final week-9 rule (the user's): an item that comes into the bags (loot, a purchase, mail, a trade, a bank withdrawal, crafting: a slot gains a stack and the bags hold more of that item than before), whether the window is open or closed and in combat too, stays in New, at the top, in every focus mode and both focus styles (a mode never collapses New), until its button (or its list row) is hovered; after that it joins its real category on the next open (or explicit Reflow), never while the window is open. A move or split inside the bags and Blizzard's sort add nothing to New; an unseen item moved inside the bags stays unseen. An item whose ID was secret when it came (an instance) counts from when it becomes readable; a secret link or name never keeps an item out of New. Session only (a login or /reload starts empty); the bags and the reagent bag only, never the banks. SwagBag keeps its own "unseen" set: Blizzard's new-item flag is cleared when the bags close (W4-15), so it cannot carry an item to the next open. New grows past its reserved rows at a full layout; arrivals while open keep the "+N more below" cap (§4.3).
 - AC3.4 While a window is open, no item button changes position except into "New" or "Free". A removed item leaves a dimmed placeholder. (Busted test on the layout engine plus the spike's `noWrongItemInSection` invariant re-run as an in-game check.)
 - AC3.5 Empty slots render in a "Free" section of real slot buttons, which is a valid drop target.
 - AC3.6 The grid view is the physical slot order of the bags (bag 0, 1–4, 5; then bank tabs) in a single scrolling grid.
@@ -138,9 +137,10 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC9.4 (week 7) Three more marks, each with its switch: a soft green glow on an item to open or learn (`overlays.learn`: caches, toys, mounts, pets, decor not yet owned, profession knowledge items); a small padlock on an item the user locked (`overlays.lock`); a purple `*` on gear whose look the account has not collected, and on a toy, mount or pet while the green glow is not drawn (`overlays.uncollected`). The `*` sits at the right edge between the upgrade arrow and the stack count, and the padlock at the left edge between the item-level and track texts: no mark covers another. The junk coin is never drawn on an item SwagBag will not sell (locked, in an equipment set, to open or learn, an uncollected or unknown look, worth more at auction).
 - AC9.3 Upgrade arrow: shown on equippable gear the character can use whose item level (`C_Item.GetCurrentItemLevel`) is higher than the lowest-ilvl item currently equipped in the matching slot(s) (both rings/trinkets compared; two-hand vs main+off-hand compared by summed ilvl). If Pawn is installed, an optional "Use Pawn" setting replaces the ilvl rule with `PawnIsContainerItemAnUpgrade`. Re-evaluated on `PLAYER_EQUIPMENT_CHANGED`.
 
-#### F10. Auctionator integration (prices + per-category totals)
+#### F10. Price sources (Auctionator, TSM, vendor) (prices + per-category totals)
 - AC10.1 With Auctionator loaded, each section header shows the category's total AH value ("Trade Goods — 1,240g"); items show AH value on hover and optionally as an overlay.
-- AC10.2 Without Auctionator, totals use vendor price and the header says "vendor".
+- AC10.2 Without an auction price source loaded (or with Vendor chosen), totals use the vendor price and the header says "vendor".
+- AC10.5 (week 9) Providers: Auctionator (priority 10), TSM (5: TradeSkillMaster's public addon API, price strings DBMarket, DBMinBuyout, DBRegionMarketAvg, DBRegionSaleAvg only, an answer above 0 counts) and the vendor (0). `prices.source` "auto" (the default: by priority) or one of them (the vendor fills in what it has no price for); `prices.tsm` picks TSM's string (DBMarket default). TSM refreshes by the cache age (no callback); a TSM "no price" is kept 30 s only. `/swagbag price [auto|auctionator|tsm [<price>]|vendor|string <price>]`; Settings > Bank & guild. Header totals, the Value column and the gold glow follow the choice.
 - AC10.3 Price lookups are cached per link for the session, invalidated on Auctionator's price-update callbacks or every 10 min.
 - AC10.4 (week 7) At the bank, an item whose stack is worth money glows gold: 100 g a stack by default, a gold amount, or your top 10% (`prices.worth`, `prices.worthGold`, `prices.worthTop`; `/swagbag worth`). A missing or secret price never glows. "Your top X %" is worked out again when the bank's contents change during a visit. A secret item link prices by its item ID (never used as a cache key).
 
@@ -178,7 +178,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 
 #### F17. Auto-sell junk and auto-repair (week 7)
 - AC17.1 At a vendor, SwagBag sells gray items a vendor pays for, one at a time, never more than 12 per vendor visit (Blizzard's Buyback tab keeps 12; the auto-sell, `/swagbag sell junk` and Sell all share the count); selling past 12 needs a second, explicit yes that says the earlier sales leave the Buyback tab. Default on (`vendor.autoSell`); one chat line says what was sold.
-- AC17.2 Never sold: a locked item, a piece of an equipment set, an item to open or learn, a gray BoE worth more than twice its vendor price at auction, gray gear whose look the account has not collected, and gray gear whose look the client cannot tell (no appearance source, no data yet, a secret answer: asked again at every sale, never remembered). Gear the account can never collect (the client says so) is ordinary junk and sells; rings, necklaces and trinkets have no appearance at all (the NO_LOOK slots) and always sell as junk unless another protection applies. The junk coin on a gray piece may use the look answer cached for its link; a sale check never does. Nothing is sold or repaired in combat.
+- AC17.2 Never sold: a locked item, a piece of an equipment set, an item to open or learn, a gray BoE worth more than twice its vendor price at auction, gray gear whose look the account has not collected, and gray gear whose look the client cannot tell (no appearance source, no data yet, a secret answer: asked again at every sale, never remembered). Gear the account can never collect (the client says so) is ordinary junk and sells; rings, necklaces and trinkets have no appearance at all (the NO_LOOK slots) and always sell as junk unless another protection applies. The junk coin on a gray piece may use the look answer cached for its link; a sale check never does. Nothing is sold or repaired in combat. Week 9, ruling R0: "worth more than twice at auction" asks every loaded auction source (Auctionator, TSM) whatever `prices.source` says, and any one above twice keeps the item; Sell all's Auction House sentence uses the same value. Right before a sale the auction sources are asked again (a cached "no price" is never trusted on the sell path; the junk coin may use it). A vendor opened during a stacking run sells and repairs when the run ends, if still open (D19).
 - AC17.3 Repair (`vendor.repair`: `own` default, `guild`, `off`) runs after the sale, out of combat; `guild` pays from the guild bank only when its limit and balance cover the cost, else falls back to own gold and says so. The setting never travels in a share string (F20).
 
 #### F18. Item locks (week 7)
@@ -202,7 +202,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 
 ### 2.3 Later (demand-driven)
 
-Per-bag view; freeform drag layout; i18n (localized keywords and UI strings); Wago distribution; TSM price source.
+Per-bag view; freeform drag layout; i18n (localized keywords and UI strings); Wago distribution. (TSM price source and Masque skins shipped in week 9.)
 
 ### 2.4 Publish bar
 
@@ -269,6 +269,10 @@ provider = { name = "Auctionator", priority = 10,
   value = function(link) return copper or nil end,        -- nil = unknown
   onUpdate = function(cb) end }                           -- optional invalidation hook
 -- Built-in fallback provider "Vendor" (priority 0) uses sell price from `C_Item.GetItemInfo` (the global `GetItemInfo` was removed in 12.1.5).
+-- Week 9: "TSM" (priority 5, missAge = 30: its "no price" is kept 30 s) through Adapter.TSMAvailable / TSMPrice.
+-- Prices.AuctionValue(link, itemID, recheck) (ruling R0): the highest answer of every loaded auction source,
+-- whatever prices.source says; recheck = true (the sell path) never trusts a cached "no price" and works the
+-- sources out again.
 
 -- AltData
 provider = { name = "Syndicator", priority = 10,
@@ -300,7 +304,7 @@ This page resolves critique Issue 1 using the construction proven in spikes A, A
 | **Placeholder** | plain `Frame` with desaturated icon texture, `EnableMouse(true)` | pooled, created on demand | out of combat preferred; allowed in combat (plain frame) | window scroll child | `SetPoint` |
 | **Section header** | plain `Button` | pooled | on demand | window scroll child | `SetPoint` |
 
-Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation. `GetBagID()` resolves through the parent's ID (verified). Buttons report `IsProtected() == false` (verified), so `SetPoint`, `Show`, `Hide`, `SetAlpha` are legal in combat (verified across three combat batteries). We nevertheless defer `CreateFrame` and `EnsureCapacity` growth to `PLAYER_REGEN_ENABLED` by policy.
+Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation. Week 9, Masque: each button joins a Masque group (Bags, Bank, Guild bank, Alt viewer) once, through `group:AddButton(button, nil, "Item")`, out of combat only; there is no SwagBag setting (Masque's own options switch each group off). The hover post-hook on each slot button (`HookScript("OnEnter")`, never a click script or hook) clears Blizzard's glow flag and marks the item seen (AC3.3). `GetBagID()` resolves through the parent's ID (verified). Buttons report `IsProtected() == false` (verified), so `SetPoint`, `Show`, `Hide`, `SetAlpha` are legal in combat (verified across three combat batteries). We nevertheless defer `CreateFrame` and `EnsureCapacity` growth to `PLAYER_REGEN_ENABLED` by policy.
 
 ### 4.2 Invariants
 
@@ -308,7 +312,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 2. **Section truth:** every slot button drawn inside a category section shows the item that section was built for, or it is not in that section. (The spike asserted this after every incremental update with zero violations.)
 3. **Placeholder honesty:** a placeholder never responds to item interaction. Its click shows a tooltip "This item moved or was used — items regroup when you close the bag" and does nothing else. (Spike check `placeholderClickIsHarmless` is the first in-dev verification; see §11.3.)
 4. **Free is real:** empty slots are drawn as their real buttons in the "Free" section, so dropping an item onto Free is a real drop into that slot.
-5. **No motion under the cursor:** a button is never moved while `IsMouseOver()`, while `GetCursorInfo()` holds an item, or while a modifier key relevant to the button is down. Deferred moves retry 300 ms later. SwagBag's own item moves (the mover, week 7) follow it too: an item on the cursor holds every step while the vendor or bank is open; an item whose button is under the mouse holds up to 20 retries, then stays; a moved item leaves a placeholder (§4.3). In a list a row under the mouse holds its button too, and a list that falls back to categories (below) waits like any layout. Week 8, all windows: a list row never shows a full-size button, so every button is scaled before a list is drawn; if a scale does not take, that layout draws as categories instead, said once per opening, recorded under "none" (never Safe Mode).
+5. **No motion under the cursor:** a button is never moved while `IsMouseOver()`, while `GetCursorInfo()` holds an item, or while a modifier key relevant to the button is down. Deferred moves retry 300 ms later. SwagBag's own item moves (the mover, week 7) follow it too: an item on the cursor holds every step while the vendor or bank is open; an item whose button is under the mouse holds up to 20 retries, then stays; a moved item leaves a placeholder (§4.3). In a list a row under the mouse holds its button too, and a list that falls back to categories (below) waits like any layout. Week 8, all windows: a list row never shows a full-size button, so every button is scaled before a list is drawn; if a scale does not take, that layout draws as categories instead, said once per opening, recorded under "none" (never Safe Mode). Week 9: "anything on the cursor" means any `GetCursorInfo()` answer (an item, even one with a secret ID, money, a spell, a merchant's item) **or a spell waiting for its target** (`SpellIsTargeting()`), all through `Adapter.CursorBusy()`; it holds every move of the stacker, `Adapter.MoveStack` and the week-7 mover. **Recorded exception (week 9, F6 / ruling W5-1):** a held F6 fallback rescales the drawn categories' buttons to full size at once, even while the mouse may rest on one (leaving them small is worse: a shrunk button slides under the mouse anyway and its click target stays small).
 
 ### 4.3 State transitions while a window is open
 
@@ -318,6 +322,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 | **Item leaves** and the button is in Free or New | Repaint only. With the free tile on (default, D19 / W3-13), a button emptied in New joins Free instead (as its family's hidden spare, or as the tile when the family had none), so the tile's number is always the real free count. | Same. |
 | **Different item arrives** in a slot whose button is in a section | Placeholder at old position; button moves to the next cell of **New**. | Same. |
 | **Item arrives** in a Free slot | Button moves to New. | Same. |
+| **Item hovered** (its button or list row; week 9, AC3.3) | Nothing moves: it stays in New while the window is open and joins its category at the next open or Reflow. An item never hovered stays in New at every open, whatever the focus mode. | Same. |
 | **Count changes** | Repaint (`COUNT` reason). | Same. |
 | **Same item, changed link** (keystone level, enchant, gem) | Repaint only; re-categorized at the next open or Reflow. | Same. |
 | **Lock/cooldown changes** | Repaint only. | Same. |
@@ -370,6 +375,8 @@ The first in-dev check V2 (§11.3) is "deposit lands in the active bank type whi
 ### 5.5 Sorting at the bank
 
 Sort buttons call `C_Container.SortBank(Enum.BankType.Character)` / `(Enum.BankType.Account)` (verified 46 ms, from addon click) and then schedule a full reflow after the next `BAG_UPDATE_DELAYED`, respecting the hover guard.
+
+Week 9, optional SwagBag sort mode (`sort.mode = "stacks"`, "Partial stacks first"; "Blizzard's sort" stays the default; `/swagbag sort [stacks|blizzard]`, Settings > Bags): the stacker merges each item's partial stacks, then puts the item's one partial stack in front of its full ones; nothing else moves. One scope per button (the bags with the reagent bag, the character bank, the warband bank), never across, so no item changes bank type. Locked, equipment-set, single, not-loaded and secret-link items stay put; a stack the game holds locked for another reason (an auction, a letter, a trade) is left out. Out of combat only, one move per 0.2 s through the game's own pickup calls (`Adapter.MoveStack`, which never starts while `Adapter.CursorBusy()` and puts back what did not fit), P5 (anything on the cursor waits however long; a slot under the mouse up to 20 retries, then that item stays). A move that changes nothing, or a moved slot still locked after 10 checks, stops the run ("stuck"); combat or a closed window stops it before the next move, nothing queued; an error stops it with its own line (recorded under "none", never Safe Mode). The stacker and the week-7 mover never run at once. The click answers once in the window's title; the outcome is one chat line.
 
 ### 5.6 ESC
 
@@ -622,6 +629,9 @@ SwagBagDB = {
 --   backups = { profile = one step of undo, locks = the set the last Unlock all removed }, notes = { lockedKeyword = true }
 -- and the settings vendor.autoSell, vendor.repair, prices.worth, prices.worthGold, prices.worthTop,
 -- overlays.learn, overlays.lock, overlays.uncollected.
+-- Week 9 (schema stays 2, only explicit values stored, share-string words in Profiles.VALID):
+--   sort.mode = "blizzard" | "stacks", prices.source = "auto" | "auctionator" | "tsm" | "vendor",
+--   prices.tsm = "DBMarket" | "DBMinBuyout" | "DBRegionMarketAvg" | "DBRegionSaleAvg", bags.warnOtherAddons = true.
 SwagBagCharDB = { schemaVersion = 1, overrides = { ["modes.enabled.mplus"] = false, ... },
                   ui = { positions = {}, collapsed = {}, wizardDone = true } }
 ```
@@ -689,7 +699,7 @@ Event policy:
 - `PLAYER_EQUIPMENT_CHANGED` → invalidate `equipped`/`upgrade` memos.
 - `BANKFRAME_OPENED/CLOSED`, `PLAYERBANKSLOTS_CHANGED`, `PLAYERBANKBAGSLOTS_CHANGED`, `BANK_TAB_SETTINGS_UPDATED` (feature-detected; registered via `pcall(frame.RegisterEvent)`) → bank model.
 - `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE` are logged for diagnostics only (the manager still exists in 12.1, verified).
-- Secret values: every read from `C_TooltipInfo` is wrapped; `issecretvalue()` → `nil`. The collections' draw path treats a secret link or name as no answer (no glow, no star, no error); a secret link is never a table key (week 8).
+- Secret values: every read from `C_TooltipInfo` is wrapped; `issecretvalue()` → `nil`. The collections' draw path treats a secret link or name as no answer (no glow, no star, no error); a secret link is never a table key (week 8); nor is a secret item ID: it has no price, nothing is cached under it (week 9).
 - Combat: no `CreateFrame`, no `EnsureCapacity` growth, no physical sort, no snapshot writes; everything else proceeds (verified legal).
 
 `/swagbag perf` prints last open/layout/search timings and memo hit rates (P2: always prints something).
@@ -728,11 +738,13 @@ Settings hash: 7f3a…  Categories: 21 (3 user)  Modes: 6 on
 Season data: crest currencies ...; season items in bags ...   (week 7: confirms the season's IDs; a failure reading it prints "unavailable" and never blanks the report)
 ```
 
+Week 9 adds `Other bag addons on: <names> | none`, `Masque: N buttons skinned` and `Prices:` naming TSM's string (`TSM (DBMarket), N cached`). Another bag addon on at login gives one chat line (silent in Safe Mode or with `bags.warnOtherAddons` off; `/swagbag otherbags [on|off]`); it is never disabled; UI suites' bag modules are not detected (ElvUI only while its own bags are on).
+
 This is what the user pastes into Claude Code. BugGrabber/BugSack compatibility: if present, we do not install our own `seterrorhandler`; we read errors through our own `Guard` wrappers only.
 
 ### 10.5 Slash commands (all with feedback, P2)
 
-`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo]` (clear asks first; one lock is answered in the singular), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added).
+`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo]` (clear asks first; one lock is answered in the singular), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added); week 9: `sort [stacks|blizzard]`, `price [auto|auctionator|tsm [<price>]|vendor|string <price>]`, `otherbags [on|off]`.
 
 ---
 
@@ -750,7 +762,7 @@ This is what the user pastes into Claude Code. BugGrabber/BugSack compatibility:
 
 ### 11.2 Static checks
 
-luacheck with a WoW globals `std` (read-only list of API globals) and `globals = {"SwagBagDB", "SwagBagCharDB"}`; custom CI grep failing on the forbidden tokens from §5.3 (and, from week 7, on a bare `C_*` name outside `SwagBag/Core/Adapter.lua`, the only file that may name a `C_*` namespace, `Enum` or another addon's globals); `luac -p` on every file; a TOC/file-list consistency check.
+luacheck with a WoW globals `std` (read-only list of API globals) and `globals = {"SwagBagDB", "SwagBagCharDB"}`; custom CI grep failing on the forbidden tokens from §5.3 (and, from week 7, on a bare `C_*` name outside `SwagBag/Core/Adapter.lua`, the only file that may name a `C_*` namespace, `Enum` or another addon's globals; from week 9 also `TSM_API` and `LibStub` as a word, comments included); `luac -p` on every file; a TOC/file-list consistency check.
 
 ### 11.3 In-game verification checklist (first in-dev checks, in this order)
 
@@ -882,6 +894,8 @@ M7 rule builder + full wizard + tour (≈2 weeks) · M8 offline alt view + toolt
 | Bank: both banks stacked, Blizzard tiny mode, real tab buttons re-hosted, deposit follows Blizzard, highlight target, never SetTab; fallback beside | §5 |
 | Breakage: auto Safe Mode + one line + `/swagbag report` | §10 |
 | New section on top; join real category on next open; layout never moves under cursor | §4.3; §2.1 AC3.3–3.4 |
+| (Week 9) A new item stays in New in every mode until hovered, then joins its category at the next open | §2.1 AC3.3; §4.3 |
+| (Week 9) TSM as a price source, user's choice of source; Masque skins; stack partial stacks first | §2.1 F10, AC2.7; §5.5; §4.1 |
 | Reagent bag mixed by default, option separate | §2.1 AC1.4 |
 | Release tiers v1.0 / v1.1–1.3 / later; publish bar | §2 |
 | Spike GO/NO-GO results drive the design; untested items are first checks with fallbacks | §4, §5, §11.3 |
