@@ -559,7 +559,9 @@ function GV.New(cfg)
 	-- deposit the wrong item. That layout draws as categories instead: recorded (never Safe Mode), and
 	-- the window says it once per opening (cfg.onListFailed).
 	local function listFailed(b, held)
-		if not held then -- a held fallback leaves the buttons as drawn until the retry lands it
+		-- A held fallback leaves a drawn list as it is until the retry lands it; drawn categories or grid get their
+		-- buttons back at full size at once (week 8 deferred: some were shrunk already, smaller click targets).
+		if not held or v.drawn ~= "list" then
 			scaleAll(b, 1)
 		end
 		v.listFailed = true

@@ -151,6 +151,9 @@ function P.Value(link, itemID, bound)
 	if SB.Adapter.IsSecret(link) then
 		link = nil -- a secret value is never a table key: price by itemID
 	end
+	if SB.Adapter.IsSecret(itemID) then
+		itemID = nil -- nor a secret item ID (week 8 deferred): no key, no price
+	end
 	local now = fresh()
 	local key = link or itemID
 	local store = bound and P.boundCache or P.cache

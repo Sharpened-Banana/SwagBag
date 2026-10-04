@@ -279,6 +279,28 @@ describe("BankWindow list view (week 8)", function()
 		assert.equal(1, #SB.ErrorTrap.Recent(), "recorded once")
 	end)
 
+	-- Week 8 deferred (final re-review): a held fallback left the buttons it had already shrunk small until the
+	-- retry landed, under categories still drawn at full size (smaller click targets meanwhile). Mutation: in
+	-- GroupView's listFailed(), `if not held or v.drawn ~= "list" then` -> `if not held then`.
+	it("F6: a fallback held under the mouse puts the drawn categories' buttons back at full size at once", function()
+		openBank()
+		A.Clear(6, 1) -- a withdrawal: the full layout that follows regroups the potion's neighbours
+		bankUpdate(6)
+		B.Get(12, 2).SetScale = function() end
+		B.Get(6, 3).IsMouseOver = function(self) return self.scale ~= 1 end -- shrunk, the flask slides under the mouse
+		Fake.Fire(BW.viewButton, "OnClick")
+		assert.equal("sections", BW.view.drawn, "held: the categories stay drawn")
+		assert.equal(1, #B.placeholdersInUse, "nothing regrouped yet")
+		for _, bag in ipairs({ 6, 12 }) do
+			for slot = 1, 8 do
+				assert.equal(1, B.Get(bag, slot).scale, bag .. ":" .. slot)
+			end
+		end
+		A.Advance(GV.RETRY)
+		assert.equal("sections", BW.view.drawn)
+		assert.equal(0, #B.placeholdersInUse, "the retry landed the fallback")
+	end)
+
 	-- Week 8 (final review). The title says what is drawn. Mutation: in BW.ToggleView, flash
 	-- VIEW_FLASH[view] (the list's title) whatever the layout drew.
 	it("F6: the view button's title says categories when the list could not be drawn", function()
