@@ -6,8 +6,11 @@
 --   Collections.Uncollected(record) -> "appearance" | "toy" | "mount" | "pet" | nil   (user pick 9)
 --     appearance  gear whose look the account has not collected (Adapter.AppearanceKnown)
 --     toy / mount / pet   an item that teaches one the account does not have yet
---   Collections.LookUnknown(record) -> bool   gray gear whose look the client cannot say (the sell path:
---     such a piece is protected; the answer is never cached, so the next sale asks again)
+--   Collections.LookUnknown(record, cached) -> bool   gray gear whose look the client cannot say (the sell
+--     path: such a piece is protected; the answer is never cached there, so the next sale asks again).
+--     Rings, necklaces and trinkets have no look at all: "cannot collect", never unknown (week 8). cached =
+--     true (the overlays' junk coin, week 8): the answer Uncollected already cached for the link, so a
+--     draw costs a table lookup, never a collection call
 --   Collections.Invalidate()   drop the cached answers (something was learned, or an item left the bags)
 -- Every answer comes from the client's collection APIs through the Adapter (spec P7: no tooltip
 -- reading); one the client cannot give (nil, or secret) means "nothing to do", so an item never glows
@@ -45,6 +48,15 @@ local function isGear(r)
 	return r.classID == C.Armor or r.classID == C.Weapon
 end
 
+-- Equipment slots with no appearance (week 8): a gray ring, necklace or trinket has no look to collect.
+Coll.NO_LOOK = { INVTYPE_FINGER = true, INVTYPE_NECK = true, INVTYPE_TRINKET = true }
+
+-- A text the draw path may use: a string the client did not make secret (it may in M+ and raids;
+-- spec 9); a secret is no answer, never an error (week 8, the week-7 final review's T3 item).
+local function plain(v)
+	return type(v) == "string" and not SB.Adapter.IsSecret(v) and v or nil
+end
+
 local function knowledge(r)
 	local K = SB.Crests and SB.Crests.knowledge
 	if not K then
@@ -53,10 +65,11 @@ local function knowledge(r)
 	if K.ids[r.itemID] then
 		return true
 	end
-	if r.name == nil or isGear(r) then
+	local name = plain(r.name)
+	if name == nil or isGear(r) then
 		return false
 	end
-	local name = r.name:lower()
+	name = name:lower()
 	for _, word in ipairs(K.words) do
 		if name:find(word, 1, true) then
 			return true
@@ -78,9 +91,10 @@ local function teaches(r)
 			return A.MountKnown(id)
 		end)
 	elseif r.isCagedPet or r.classID == C.Battlepet or (r.classID == C.Miscellaneous and r.subclassID == MS.CompanionPet) then
-		local species = type(r.link) == "string" and r.link:match("battlepet:(%d+)")
+		local link = plain(r.link)
+		local species = link and link:match("battlepet:(%d+)")
 		return "pet", cached("pet:" .. (species and ("s" .. species) or id), function()
-			return A.PetKnown(id, r.link)
+			return A.PetKnown(id, link)
 		end)
 	elseif r.classID == C.Housing then
 		return "decor", cached("decor:" .. id, function()
@@ -95,8 +109,8 @@ function Coll.Uncollected(r)
 		return nil
 	end
 	if isGear(r) then
-		local link = r.link
-		if type(link) == "string" and cached("look:" .. link, function()
+		local link = plain(r.link)
+		if link and cached("look:" .. link, function()
 			return SB.Adapter.AppearanceKnown(link)
 		end) == false then
 			return "appearance"
@@ -113,11 +127,20 @@ end
 -- For SELLING only (Vendor.Protected): a gray piece of gear whose look the client cannot say (no source,
 -- no data yet, a secret) might be an uncollected look, so it stays. "Cannot collect" is an answer
 -- ("cannot"), not an unknown. Asked fresh each time: an unknown is never cached on this path.
-function Coll.LookUnknown(r)
-	if not r or r.offline or r.pending or r.quality ~= 0 or not isGear(r) then
+function Coll.LookUnknown(r, fast)
+	if not r or r.offline or r.pending or r.quality ~= 0 or not isGear(r) or Coll.NO_LOOK[r.equipLoc or ""] then
 		return false
 	end
-	return type(r.link) ~= "string" or SB.Adapter.AppearanceKnown(r.link) == nil
+	local link = plain(r.link)
+	if not link then
+		return true
+	end
+	if fast then -- the draw path: the answer Uncollected cached for this link (asked once per link)
+		return cached("look:" .. link, function()
+			return SB.Adapter.AppearanceKnown(link)
+		end) == nil
+	end
+	return SB.Adapter.AppearanceKnown(link) == nil
 end
 
 function Coll.Learn(r)

@@ -1,5 +1,5 @@
 -- SwagBag at a vendor (week 7, user pick 4): sell gray junk and repair, by themselves, on MERCHANT_SHOW.
---   Vendor.Protected(record) -> bool   never sold by SwagBag (ruling R19): in an equipment set, locked by the
+--   Vendor.Protected(record, fast) -> bool   never sold by SwagBag (ruling R19): in an equipment set, locked by the
 --                                      user (Engine/Locks.lua, Task 5), an item to open or learn
 --                                      (Collections.Learn: caches, unlearned toys, mounts, pets, decor,
 --                                      knowledge), gear whose look the account has not collected
@@ -58,10 +58,12 @@ local function worthMoreAtAuction(r)
 	return source ~= nil and source ~= "Vendor" and type(ah) == "number" and ah > 2 * (info and info.sellPrice or 0)
 end
 
-function V.Protected(r)
+-- fast = true: a draw (the overlays' junk coin, week 8) may use cached look answers; the sell path never
+-- passes it, so an unknown look is asked again right before each sale.
+function V.Protected(r, fast)
 	return r.inEquipmentSet == true or (SB.Locks ~= nil and SB.Locks.Has(r.itemID))
 		or (SB.Collections ~= nil and (SB.Collections.Learn(r) ~= nil or SB.Collections.Uncollected(r) ~= nil
-			or SB.Collections.LookUnknown(r)))
+			or SB.Collections.LookUnknown(r, fast)))
 		or worthMoreAtAuction(r)
 end
 

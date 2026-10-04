@@ -308,6 +308,14 @@ describe("Overlays (spec F9)", function()
 		assert.falsy(hidden.junk.shown)
 	end)
 
+	-- Week 8. Mutation: in Overlays.Context, call SB.Vendor.Protected(record) without `true`.
+	it("the junk coin asks the vendor's rule in its cached form (no collection call per draw)", function()
+		local fast
+		SB.Vendor = { Protected = function(_, f) fast = f return false end }
+		draw(0, 6)
+		assert.equal(true, fast)
+	end)
+
 	it("a gear change re-draws the arrows of the open windows, once after the last slot event", function()
 		A.equipped[11] = { ilvl = 270, equipLoc = "INVTYPE_FINGER" }
 		local b, r = draw(0, 3)

@@ -71,6 +71,39 @@ describe("Collections (week 7)", function()
 		assert.is_nil(Coll.Learn(saved))
 	end)
 
+	-- Week 8 (week-7 final review, T3: the draw path runs under "bags", so an error there would mean Safe Mode).
+	-- A text the client made secret is no answer. Here a secret is a string the Adapter calls secret whose reads
+	-- error, as the client's do. Mutations: in teaches(), `local link = plain(r.link)` -> `local link = r.link`;
+	-- in knowledge(), `local name = plain(r.name)` -> `local name = r.name`.
+	it("a secret link or name is no answer: no glow, no star, never an error", function()
+		local link = "|cff0070dd|Hbattlepet:1387:25:3:1546:276:276:0|h[Hatespark]|h|r"
+		local name = "Thalassian Treatise on Alchemy"
+		A.Put(0, 13, Fixtures.PET_CAGE, 1, { link = link })
+		local cage, treatise = SB.Items.Describe(0, 13), SB.Items.Describe(0, 11)
+		A.collected.pets[1387] = false
+		A.IsSecret = function(v) return v == link or v == name end
+		local match, lower = string.match, string.lower
+		rawset(string, "match", function(s, ...)
+			if s == link then
+				error("attempt to read a secret value")
+			end
+			return match(s, ...)
+		end)
+		rawset(string, "lower", function(s)
+			if s == name then
+				error("attempt to read a secret value")
+			end
+			return lower(s)
+		end)
+		local ok, a, b, c = pcall(function()
+			return Coll.Learn(cage), Coll.Learn(treatise), Coll.Uncollected(cage)
+		end)
+		rawset(string, "match", match)
+		rawset(string, "lower", lower)
+		assert.truthy(ok, tostring(a))
+		assert.same({ nil, nil, nil }, { a, b, c })
+	end)
+
 	-- Week 7 (user pick 9). Mutations: in Coll.Uncollected, `== false` -> `~= true` for looks (a silent
 	-- client would star every piece); or drop TRANSMOG_COLLECTION_UPDATED from the events.
 	it("Uncollected: gear whose look is missing, toys, mounts and pets not yet collected; cached per link", function()
