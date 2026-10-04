@@ -282,4 +282,12 @@ describe("SearchBox", function()
 		assert.same({ "TOPRIGHT", window.frame, "TOPRIGHT", -62, -26 }, errorLine.points[2], "clear of the Lock button (week 7)")
 		assert.equal("TOP", errorLine.calls.SetJustifyV[1])
 	end)
+
+	-- Week 11. Mutation: in SearchBox.lua's new(), `local box = SB.TextBox(CreateFrame("EditBox", o.name, o.parent,
+	-- "SearchBoxTemplate"))` -> `local box = CreateFrame("EditBox", o.name, o.parent, "SearchBoxTemplate")`.
+	it("combat start makes the search box let the keyboard go, so ability keys work in a pull (week 11)", function()
+		Box.editBox.calls.ClearFocus = nil
+		SB.Emit("PLAYER_REGEN_DISABLED")
+		assert.truthy(Box.editBox.calls.ClearFocus)
+	end)
 end)

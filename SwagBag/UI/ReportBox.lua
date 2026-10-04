@@ -35,7 +35,7 @@ local function build()
 	scroll:SetPoint("TOPLEFT", 10, -30)
 	scroll:SetPoint("BOTTOMRIGHT", -30, 10)
 
-	local edit = CreateFrame("EditBox", nil, scroll)
+	local edit = SB.TextBox(CreateFrame("EditBox", nil, scroll)) -- lets the keyboard go in combat (week 11)
 	edit:SetMultiLine(true)
 	edit:SetAutoFocus(false)
 	edit:SetFontObject(ChatFontNormal)

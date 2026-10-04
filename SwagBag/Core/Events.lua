@@ -4,6 +4,7 @@
 --   SB.Emit(event, ...)        dispatch now (used for internal "SB_*" messages)
 --   SB.OutOfCombat(fn, label, window)  run now, or once combat ends (deduped by label)
 --   SB.Debounce(key, delay, fn, window) run fn once, `delay` s after the LAST call
+--   SB.TextBox(box) -> box      a SwagBag text box: when combat starts it lets the keyboard go (week 11)
 -- Events whose names start with "SB_" are internal and never registered with WoW.
 local _, SB = ...
 
@@ -109,6 +110,22 @@ SB.On("PLAYER_REGEN_ENABLED", function()
 	queue = {}
 	for i = 1, #q do
 		SB.ErrorTrap.Run(q[i].label, q[i].window, q[i].fn)
+	end
+end, "none")
+
+-- Week 11: a text box with the cursor in it takes every key, so in a pull the ability keys would type into it until
+-- Esc. Every SwagBag text box is listed here when it is made (the settings window's, the search boxes, the share and
+-- report boxes), and when combat starts each one lets the keyboard go. ClearFocus is allowed in combat.
+local textBoxes = {}
+
+function SB.TextBox(box)
+	textBoxes[#textBoxes + 1] = box
+	return box
+end
+
+SB.On("PLAYER_REGEN_DISABLED", function()
+	for i = 1, #textBoxes do
+		textBoxes[i]:ClearFocus()
 	end
 end, "none")
 

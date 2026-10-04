@@ -90,6 +90,7 @@ UI/ShareBox.lua
 UI/Footer.lua
 UI/Themes.lua
 UI/TooltipCounts.lua
+UI/SettingsCategories.lua
 UI/QuickSetup.lua
 UI/DebugV1.lua
 
