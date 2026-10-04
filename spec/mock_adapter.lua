@@ -138,6 +138,11 @@ function M.New(SB)
 		return m.cursor ~= nil or m.cursorOther ~= nil
 	end
 
+	-- Week 10: a spell waiting for its target is m.cursorOther = "targeting" (as above).
+	function m.SpellTargeting()
+		return m.cursorOther == "targeting"
+	end
+
 	function m.ClearCursor()
 		m.cursor = nil
 		m.cleared = m.cleared + 1

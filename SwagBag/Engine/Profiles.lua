@@ -110,7 +110,7 @@ local LABELS = {
 	["focus.style"] = "PROFILE_LABEL_FOCUS_STYLE",
 	["vendor.autoSell"] = "SET_VENDOR_SELL", ["vendor.repair"] = "SET_VENDOR_REPAIR",
 	["consumables.warn"] = "SET_WATCH_WARN", ["theme.name"] = "SET_LOOK", ["tooltip.counts"] = "SET_TIP",
-	["sort.mode"] = "SET_SORT",
+	["sort.mode"] = "SET_SORT", ["locks.warn"] = "SET_LOCK_WARN",
 }
 local MODES = { mplus = "MODE_MPLUS", raid = "MODE_RAID", delves = "MODE_DELVES", gathering = "MODE_GATHERING",
 	fishing = "MODE_FISHING", market = "MODE_MARKET" }

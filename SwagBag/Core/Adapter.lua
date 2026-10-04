@@ -753,6 +753,12 @@ function A.CursorBusy()
 	return cursorHeld() or spellTargeting()
 end
 
+-- Week 10 (UI/LockWarnings.lua): a spell waits for its target (Disenchant, Milling, Prospecting, an enchant...), so
+-- the next click on an item casts it there. Read only, to warn: SwagBag never cancels or changes the spell.
+function A.SpellTargeting()
+	return spellTargeting()
+end
+
 -- Puts a picked-up item back where it came from.
 function A.ClearCursor()
 	if ClearCursor then
@@ -1276,6 +1282,11 @@ function A.TooltipLine(tooltip, left, right)
 	end
 end
 
+-- Week 10: one red warning line, wrapped (UI/LockWarnings.lua). Errors are not caught here either.
+function A.TooltipWarning(tooltip, text)
+	tooltip:AddLine(text, 1, 0.27, 0.27, true)
+end
+
 -- "|cffRRGGBB" for a class file name ("MAGE") from the client's class colours, or nil.
 function A.ClassColour(class)
 	local colours = _G.RAID_CLASS_COLORS
@@ -1758,6 +1769,7 @@ A.CHECKS = {
 	{ path = "GetGuildBankMoney", window = "bags", required = false },
 	{ path = "GetCursorInfo", window = "bags", required = false },
 	{ path = "ClearCursor", window = "bags", required = false },
+	{ path = "SpellIsTargeting", window = "bags", required = false },
 	{ path = "GameTooltip", window = "bags", required = false },
 	{ path = "C_Item.GetItemInfoInstant", window = "bags", required = true },
 	{ path = "C_Item.GetItemInfo", window = "bags", required = true },
