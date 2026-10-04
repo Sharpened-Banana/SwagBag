@@ -186,7 +186,8 @@ SB.On("SB_LOCKS_CHANGED", function()
 	Locks.asked = nil
 end, "none")
 
--- /swagbag lock [list|clear|undo]: how to lock, the locked items, or unlock them all (P2).
+-- /swagbag lock [list|clear|undo|warn [on|off]]: how to lock, the locked items, unlock them all, or the warnings
+-- before a locked item is destroyed (week 10) (P2).
 SB.Slash.Register("lock", L.HELP_LOCK, function(arg)
 	arg = (arg or ""):lower()
 	local list = Locks.List()
@@ -215,6 +216,17 @@ SB.Slash.Register("lock", L.HELP_LOCK, function(arg)
 			return why == "readonly" and L.SETTINGS_READONLY or L.LOCK_UNDO_NONE
 		end
 		return n == 1 and L.LOCK_UNDONE_ONE or L.LOCK_UNDONE:format(n)
+	elseif arg == "warn" or arg:match("^warn%s") then -- week 10: the warnings before a locked item is destroyed
+		local word = arg == "warn" and "" or arg:match("^warn%s+(%a*)$")
+		if word == "" then
+			return L.LOCK_WARN_STATE:format(SB.Config.Get("locks.warn") and L.OVERLAY_ON or L.OVERLAY_OFF)
+		elseif word ~= "on" and word ~= "off" then
+			return L.LOCK_WARN_USAGE
+		end
+		if not SB.Config.Set("locks.warn", word == "on") then
+			return L.SETTINGS_READONLY
+		end
+		return word == "on" and L.LOCK_WARN_ON or L.LOCK_WARN_OFF
 	end
 	return L.LOCK_USAGE
 end)

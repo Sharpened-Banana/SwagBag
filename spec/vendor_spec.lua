@@ -612,7 +612,8 @@ describe("Settings: vendor page (week 7)", function()
 			shown[i] = { SW.buttons[i].text, SW.selected[SW.buttons[i]] == true }
 		end
 		assert.same({ { "On", true }, { "Off", false }, { "Your gold", true }, { "Guild bank first", false },
-			{ "Off", false }, { "Drop an item here", false }, { "List them", false }, { "Unlock all", false } }, shown)
+			{ "Off", false }, { "Drop an item here", false }, { "List them", false }, { "Unlock all", false },
+			{ "On", true }, { "Off", false } }, shown)
 		Fake.Fire(SW.buttons[2], "OnClick")
 		Fake.Fire(SW.buttons[4], "OnClick")
 		assert.same({ "sell off", "repair guild" }, ran)
@@ -656,6 +657,23 @@ describe("Settings: vendor page (week 7)", function()
 		assert.same({ true, SB.L.LOCK_CLEAR_ASK_ONE }, { SB.Locks.Has(Fixtures.FLASK), SW.lastStatus })
 		Fake.Fire(unlock, "OnClick")
 		assert.same({ false, SB.L.LOCK_CLEARED_ONE }, { SB.Locks.Has(Fixtures.FLASK), SW.lastStatus })
+	end)
+
+	-- Week 10. Mutation: in the warning row's apply, always run "lock warn on".
+	it("the destroy-warning row: On first and selected; Off runs /swagbag lock warn off and says so", function()
+		local row, on
+		for i = 1, SW.used.buttons do
+			if SW.buttons[i].text == SB.L.SET_OFF then
+				row = SW.buttons[i] -- the last Off on the page: the warning row's
+				on = SW.buttons[i - 1] -- and its On, just before it
+			end
+		end
+		assert.equal(SB.L.SET_ON, on.text)
+		assert.truthy(SW.selected[on], "On is first and selected")
+		assert.falsy(SW.selected[row])
+		Fake.Fire(row, "OnClick")
+		assert.equal(false, SB.Config.Get("locks.warn"))
+		assert.equal(SB.L.LOCK_WARN_OFF, SW.lastStatus)
 	end)
 
 	-- Ruling R17. Mutation: the page's SB_LOCKS_CHANGED listener never re-draws (`if SW.IsOpen() then` ->
