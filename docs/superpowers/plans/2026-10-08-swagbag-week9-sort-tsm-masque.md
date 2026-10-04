@@ -4,24 +4,26 @@
 
 **Goal:** the user's remaining research picks, in this order of priority, so the earlier ones ship first if time runs out:
 1. **Pick 8: Sort with partial stacks first, for TSM posting** (research `2026-10-03-feature-gaps.md` gap 9, `2026-10-03-community-asks.md` ask 5, Bagnon #2200). An optional mode for the Sort buttons (Settings and `/swagbag sort`): SwagBag merges the partial stacks of each item, then puts each item's one partial stack in front of its full ones. Blizzard's sort stays the default. Out of combat only, never under the mouse, small timed steps with identity checks, in the bags and in each bank type apart; it stops cleanly on combat or when the window closes (Tasks 1 and 2).
-2. **Pick 10: TSM prices** (gap 22). When TradeSkillMaster is loaded it is a price source (Settings and `/swagbag price`: auto = Auctionator, else TSM, else the vendor; or one of them), with a TSM price string (DBMarket by default; DBMinBuyout, DBRegionMarketAvg, DBRegionSaleAvg). Through the Adapter only, secret-safe, cached like Auctionator. Header totals, the list's Value column, the gold glow and the vendor protection all follow the choice (Task 3).
-3. **Pick 11: Masque skins and the double bag-addon warning** (gap 14, community ask 10 / theme P). (a) With Masque loaded, SwagBag's item buttons (bags, bank, guild bank, alt viewer; the list rows use the same buttons) join Masque groups; never in combat, nothing secure touched, nothing without Masque (Task 4). (b) At login, if another bag replacement is also on, one chat line names it and suggests `/swagbag safe on` or disabling one; never disables anything; `/swagbag report` names it (Task 5).
+2. **Pick 10: TSM prices** (gap 22). When TradeSkillMaster is loaded it is a price source (Settings and `/swagbag price`: auto = Auctionator, else TSM, else the vendor; or one of them), with a TSM price string (DBMarket by default; DBMinBuyout, DBRegionMarketAvg, DBRegionSaleAvg). Through the Adapter only, secret-safe, cached like Auctionator. Header totals, the list's Value column and the gold glow follow the choice; the vendor's gray-BoE protection asks every loaded auction source whatever the choice (controller ruling R0) (Task 3).
+3. **Pick 11: Masque skins and the double bag-addon warning** (gap 14, community ask 10 / theme P). (a) With Masque loaded, SwagBag's item buttons (bags, bank, guild bank, alt viewer; the list rows use the same buttons) join Masque groups; never in combat, nothing secure touched, nothing without Masque (Task 4). (b) At login, if another bag replacement is also on, one chat line names it and suggests `/swagbag safe on` or disabling one; never disables anything; a setting silences it (Settings > Bags, `/swagbag otherbags off`); `/swagbag report` names it (Task 5).
 4. **Week-8 deferred polish, user-visible only:** the held F6 fallback restores full-size buttons at once; `Prices.Value` guards a secret item ID; and (week 7) a gold amount typed with `/swagbag worth` shows on the Settings row (Task 6). The rest stays deferred (see "Carry-overs").
 
-Tests go from 1452 to **1491**.
+Tests go from 1452 to **1503**.
+
+**Amended before execution** (preflight `.superpowers/sdd/2026-10-08-swagbag-week9-sort-tsm-masque/preflight.md`, controller rulings R0 and S1–S20 in that folder's `progress.md`): the gray-BoE protection and Sell all's Auction House sentence ask every loaded auction source whatever the price source (R0, S1; `Prices.AuctionValue`); a TSM "no price" is kept 30 s only (S2); the stacker leaves stacks the game holds locked for something else out of the run and waits only on its own move's two slots (S3), stops on combat or a closed window before judging the last move (S4), waits on anything on the cursor (`Adapter.CursorBusy`, also the mover's and `MoveStack`'s guard, S5) and runs its first step in its own trap (S8); a vendor opened during a stacking run sells when the run ends (S6); the Settings "TSM price" row changes TSM's price only (`/swagbag price string`, S7); TSM prices must be above 0 (S11) and TSM's API is found lazily (S12); the TSM price list and the Sort-button run each live in one place (S13); the Skins "without Masque" test can fail (S14); a setting silences the other-bag-addon warning (S16); session texts (S15, S17, S19), the Stacker header (S18), the spec-update list (S9, S10); S20 is ledger only (see Self-review 6).
 
 **Architecture:**
-- (1) `Engine/Stacker.lua` (new): a mover-style run (week 7's `Engine/Mover.lua` pattern: one step at a time through `Adapter.After`, `ErrorTrap.Guard`, P5 waits, a check after each move) that plans each move from the slots as they are now. One game call, `Adapter.MoveStack` (`C_Container.PickupContainerItem` on the stack, then on the target; the rest goes back). `Mover` and `Stacker` never run at once. (2) `sort.mode` (`"blizzard"` | `"stacks"`) decides what `W.Sort` (`UI/BagsWindow.lua`) and `BW.Sort(kind)` (`UI/BankWindow.lua`) run; `UI/GroupView.lua` gains `v.Busy` for the bank's P5 check; `/swagbag sort` lives in the stacker's file; one Settings > Bags row.
-- (3) `Providers/TSM.lua` (new) registers "TSM" with `Engine/Prices.lua`; `Adapter.TSMAvailable/TSMPrice` read `TSM_API`. `Prices` learns `prices.source` and `prices.tsm` (`Prices.Choice`, `TSMString`, `SourceText`, a `SB_CONFIG_CHANGED` listener) and `/swagbag price`; two Settings > Bank & guild rows; the report names TSM's string. `scripts/check.sh` keeps `TSM_API` and `LibStub` in the Adapter.
+- (1) `Engine/Stacker.lua` (new): a mover-style run (week 7's `Engine/Mover.lua` pattern: one step at a time through `Adapter.After`, each step in its own `ErrorTrap.Run` trap, P5 waits, a check after each move) that plans each move from the slots as they are now. One game call, `Adapter.MoveStack` (`C_Container.PickupContainerItem` on the stack, then on the target; the rest goes back). `Adapter.CursorBusy` (anything on the cursor) holds the stacker, `MoveStack` and the mover. `Mover` and `Stacker` never run at once; a vendor visit during a run waits for its end (`SB_STACKER_DONE`). (2) `sort.mode` (`"blizzard"` | `"stacks"`) decides what `W.Sort` (`UI/BagsWindow.lua`) and `BW.Sort(kind)` (`UI/BankWindow.lua`) run (both through `Stacker.SortButton`); `UI/GroupView.lua` gains `v.Busy` for the bank's P5 check; `/swagbag sort` lives in the stacker's file; one Settings > Bags row.
+- (3) `Providers/TSM.lua` (new) registers "TSM" with `Engine/Prices.lua`; `Adapter.TSMAvailable/TSMPrice` read `TSM_API`. `Prices` learns `prices.source` and `prices.tsm` (`Prices.Choice`, `TSMString`, `SourceText`, a `SB_CONFIG_CHANGED` listener), `Prices.AuctionValue` (ruling R0: `Engine/Vendor.lua` and `UI/SectionActions.lua` ask it) and `/swagbag price`; two Settings > Bank & guild rows; the report names TSM's string. `scripts/check.sh` keeps `TSM_API` and `LibStub` in the Adapter.
 - (4) `UI/Skins.lua` (new): `Skins.Add(kind, button)` from the three button factories (`UI/Buttons.lua`, `UI/GuildButtons.lua`, `UI/DisplayButtons.lua`); `Adapter.MasqueAvailable/MasqueAdd` read `LibStub("Masque", true)`.
-- (5) `Adapter.OtherBagAddons` (`A.OTHER_BAG_ADDONS` through `A.AddOnState`, plus ElvUI's bags module); `Core/Report.lua` says it at `SB_LOGIN` and in the report.
+- (5) `Adapter.OtherBagAddons` (`A.OTHER_BAG_ADDONS` through `A.AddOnState`, plus ElvUI's bags module); `Core/Report.lua` says it at `SB_LOGIN` (unless `bags.warnOtherAddons` is off: `/swagbag otherbags` in `Core/Commands.lua`, a Settings > Bags row) and in the report.
 - (6) `UI/GroupView.lua` (`listFailed`), `Engine/Prices.lua` (`Value`), `UI/SettingsPages.lua` (the worth row's choices).
 
 **Tech Stack:** Lua 5.1 (WoW Retail 12.1.x, Interface 120100/120105; 12.1.5 goes live 2026-10-13). LuaJIT 2.1 for tests. The in-repo runner `spec/runner.lua`. luacheck. bash `scripts/check.sh`. git.
 
 **Spec:** `docs/superpowers/specs/2026-09-30-swagbag-design.md`. Executors read the spec alongside this plan. This plan implements:
 - spec §5.5 (Sort) gains an optional SwagBag sort mode, under §4.2 rule 5 (nothing moves under the mouse) and the week-7 mover rules (out of combat, small timed steps, identity checks, stop on close);
-- §3.3 and F10 (price providers): TSM joins Auctionator and the vendor, with a user choice; AC17.2 (the vendor's protections) follows that choice;
+- §3.3 and F10 (price providers): TSM joins Auctionator and the vendor, with a user choice; AC17.2 (the vendor's "worth more at auction" protection) asks every loaded auction source whatever that choice (ruling R0);
 - §4.1 (the button contract) for Masque: the buttons are handed to Masque, never reparented, re-ID'd or given attributes, never in combat;
 - §10.4 (`/swagbag report`) and P4 (other addons: detect, never take over) for the second bag addon;
 - §9 (secret values) for a secret item ID, and the week-5 F6 rule for a held fallback.
@@ -42,9 +44,9 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 - `SB.Config.Get/Set/readOnly/db/Init`; `Config.Set` emits `SB_CONFIG_CHANGED(path)` and returns false while read-only; `Config.Init` emits it with `nil`.
 - `SB.Mover` (`Start`, `Busy`, `IsBusy`, `run`, `DELAY`, `RETRY`, `MAX_WAITS`, `MAX_PENDING`), `SB.Locks.Has/Toggle`, `L.MOVER_BUSY`.
 - `SB.BagsWindow` (`W.Sort`, `W.sortButton`, `W.Flash`, `W.RequestLayout`, `W.ButtonBusy`, `W.stats`, `W.SORT_SETTLE`), `SB.BankWindow` (`BW.Sort(kind)`, `BW.sortBankButton`, `BW.sortWarbandButton`, `BW.Flash`, `BW.interaction`, `BW.view`), `SB.GroupView` views (`RequestLayout`, `IsOpen`, `drawn`, `listFailed`, `stats`), `GV.RETRY`.
-- `SB.Prices` (`RegisterProvider`, `Value`, `Source`, `Invalidate`, `cache`, `REFRESH_DELAY`, `MAX_AGE`), `Providers/Auctionator.lua`, `SB_PRICES_CHANGED`, `Vendor`'s `worthMoreAtAuction`.
+- `SB.Prices` (`RegisterProvider`, `Value`, `Source`, `Invalidate`, `cache`, `REFRESH_DELAY`, `MAX_AGE`), `Providers/Auctionator.lua`, `SB_PRICES_CHANGED`, `Vendor`'s `worthMoreAtAuction`, `V.Visit`, `V.open`, `SectionActions.Sellable`.
 - `SB.Buttons` (`createButton` via `EnsureCapacity`, `CreateAll`, `EnsureBankTabs`, `Get`, `KindOf`), `SB.GuildButtons` (`Ensure`, `SetParent`), `SB.DisplayButtons` (`Get`, `SetParent`).
-- `SB.Report.Build`, `Report.ADDONS_IF_LOADED`, `SB.SafeMode.IsOn/Enable`, `SB.Profiles` (`VALID`, `LABELS`, `Parse`, `Export`), `SB.SettingsWindow` (`AddPage`, rows `kind = "choice"`).
+- `SB.Report.Build`, `Report.ADDONS_IF_LOADED`, `Core/Commands.lua` (`Slash.Register` beside `safe`), `SB.SafeMode.IsOn/Enable`, `SB.Profiles` (`VALID`, `LABELS`, `Parse`, `Export`), `SB.SettingsWindow` (`AddPage`, rows `kind = "choice"`).
 - Adapter: `A.Resolve`, `A.AddOnState`, `A.GetBagIDs/NumSlots/GetSlot/GetItemInfo/InEquipmentSet/IsSecret/CursorItem/ClearCursor/InCombat/After/SortBags/SortBank`, `A.CHECKS`.
 - Test helpers: `spec/helpers/loader.lua`, `fakeframe.lua` (`Fake.New`, `Fake.Fire`, `Fake.Strict`, `Fake.Install/Uninstall`), `uienv.lua` (`Env.ENGINE`, `Env.LoadBank`, `Env.PaintGlobals`), `spec/fixtures/items.lua` (potions and flasks stack to 20, junk to 200), `spec/mock_adapter.lua` (its fakes replace the Adapter's WoW calls; the Adapter's own logic that only calls other Adapter functions, like `A.OtherBagAddons`, runs for real over them), and `format51` (installed by the runner).
 
@@ -59,18 +61,18 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 - `SwagBag/Core/Adapter.lua` is the only file that may name a `C_*` namespace, `Enum`, ElvUI, Syndicator, TSM or Masque globals, **comments included**. `scripts/check.sh` fails on `C_X.`/`Enum.` and on a bare `C_X` name outside the Adapter (week 7, ruling R5), and from Task 3 on `TSM_API` or `LibStub` as a word outside the Adapter (the product names "TSM" and "Masque" in strings and comments are fine; their globals are not). ElvUI and Syndicator globals stay review-enforced. Every other file calls `SB.Adapter.*`.
 - Forbidden anywhere in `SwagBag/`, comments included (spec §5.3, `scripts/check.sh`): `BankFrame:SetTab`, `BankFrame.SetTab`, `.bankType =`, `C_Bank.CloseBankFrame`, `CloseBankFrame(`, `OpenAllBags(`, `PurchaseBankTab`, assignments to global `_`, `PreClick`, `PostClick`. `SetCurrentGuildBankTab` is never called.
 - **Secure item buttons** (`ContainerFrameItemButtonTemplate`, the bags' and the bank's) are never reparented, never created in combat, never re-`SetID`'d, and get **no** click script or click hook of any kind. This week: the stacker never touches a button at all (it moves items through the game's own pickup calls on bag slots, out of combat); Masque gets each button once through `group:AddButton(button, nil, "Item")`, out of combat only. **F6 / ruling W5-1** stands: a list row never shows a full-size button; Task 6 makes a held fallback restore full size at once under drawn categories.
-- **Item safety (this week's moves):** a stacking move only ever lands on a stack of the same item (same link) in the same scope: the bags (bags and reagent bag), the character bank or the warband bank, never across, so no item changes bank type. Items the user locked, equipment-set items, single items, items whose data has not loaded and secret links stay put. Nothing is ever left on the cursor (`Adapter.MoveStack` puts back what did not fit). The stacker and the week-7 mover (auto-sell, Sell all, bank all) never run at once.
-- P1: every setting ships with a chosen default, and its alternative sits next to it in the same place. Options are phrased as choices. This week: `sort.mode` "Blizzard's sort" first, "Partial stacks first" next (Settings > Bags, `/swagbag sort`); `prices.source` "Auto" first, then Auctionator, TSM, Vendor; `prices.tsm` "DBMarket" first (Settings > Bank & guild, `/swagbag price`). Masque has no SwagBag setting: Masque's own options switch each SwagBag group off (D14).
-- P2: every command, button and settings choice answers **exactly once**: a Sort click in its window's title (`Stacking...`, or why it cannot start); the stacking run's outcome is the run's own single chat line (as the auto-sell line since week 7, D8); `/swagbag sort` and `/swagbag price` in chat; a Settings click in the status line (through the command).
-- P5 / spec §4.2 rule 5: nothing moves under the mouse or while an item is on the cursor. The stacker waits `RETRY` (0.3 s) while an item is on the cursor (however long), and while a slot it would touch is under the mouse (in a list its row too) up to `MAX_WAITS` (20) times, then leaves that item. Held moves and layouts retry through `Adapter.After` / `SB.Debounce`, never `OnUpdate`.
+- **Item safety (this week's moves):** a stacking move only ever lands on a stack of the same item (same link) in the same scope: the bags (bags and reagent bag), the character bank or the warband bank, never across, so no item changes bank type. Items the user locked, equipment-set items, single items, items whose data has not loaded and secret links stay put. Nothing is ever left on the cursor (`Adapter.MoveStack` puts back what did not fit). The stacker and the week-7 mover (auto-sell, Sell all, bank all) never run at once. A stack the game holds locked for another reason (an auction being posted, a letter, a trade) is left out of a run.
+- P1: every setting ships with a chosen default, and its alternative sits next to it in the same place. Options are phrased as choices. This week: `sort.mode` "Blizzard's sort" first, "Partial stacks first" next (Settings > Bags, `/swagbag sort`); `prices.source` "Auto" first, then Auctionator, TSM, Vendor; `prices.tsm` "DBMarket" first (Settings > Bank & guild, `/swagbag price` and `/swagbag price string`); `bags.warnOtherAddons` "Warn at login" first, "Don't warn" next (Settings > Bags, `/swagbag otherbags`). Masque has no SwagBag setting: Masque's own options switch each SwagBag group off (D14).
+- P2: every command, button and settings choice answers **exactly once**: a Sort click in its window's title (`Stacking...`, or why it cannot start); the stacking run's outcome is the run's own single chat line (as the auto-sell line since week 7, D8); `/swagbag sort`, `/swagbag price` and `/swagbag otherbags` in chat; a Settings click in the status line (through the command). A vendor opened during a stacking run is never skipped in silence: its auto-sell and repair run when the run ends, if it is still open (D19).
+- P5 / spec §4.2 rule 5: nothing moves under the mouse or while anything is on the cursor. `Adapter.CursorBusy()` is true for any `GetCursorInfo()` answer (an item, even one with a secret ID, a merchant's item, money, a spell); the stacker, `Adapter.MoveStack` and the week-7 mover's step wait on it. The stacker waits `RETRY` (0.3 s) while anything is on the cursor (however long), and while a slot it would touch is under the mouse (in a list its row too) up to `MAX_WAITS` (20) times, then leaves that item. Held moves and layouts retry through `Adapter.After` / `SB.Debounce`, never `OnUpdate`.
 - **P6.** Every WoW entry point runs inside `SB.ErrorTrap.Run` or `Guard`. The labels this week:
   - unchanged: the Sort buttons' clicks (`bags.sortButton` under `"bags"`, `bank.sortBank` / `bank.sortWarband` under `"bank"`);
-  - `"none"` (recorded, never Safe Mode): the stacker's steps (`stacker.step`), its result callback (`stacker.done`, which also prints the line and asks the window to regroup), a refused move (`stacker.move`), the Skins' out-of-combat flush (`skins.add`), the Prices `SB_CONFIG_CHANGED` listener, the Report's `SB_LOGIN` warning, and the `sort` and `price` commands (`Slash.Register`'s default window).
+  - `"none"` (recorded, never Safe Mode): the stacker's steps (`stacker.step`, every one through `ErrorTrap.Run`, the first one too, so it never runs under the Sort click's `"bags"`/`"bank"` trap; an error ends the run with its line), its result callback (`stacker.done`, which also prints the line and asks the window to regroup), a refused move (`stacker.move`), the Vendor's `SB_STACKER_DONE` listener, the Skins' out-of-combat flush (`skins.add`), the Prices `SB_CONFIG_CHANGED` listener, the Report's `SB_LOGIN` warning, and the `sort`, `price` and `otherbags` commands (`Slash.Register`'s default window).
 - P8: every user-visible string lives in `SwagBag/Locale/enUS.lua`. `spec/locale_spec.lua` fails on an undefined `L.KEY`. Product and price-string names (`Auctionator`, `TSM`, `DBMarket`, an addon's folder name) are shown as they are.
 - **Plain frames only, may be created in combat:** nothing new is a frame this week except what Masque itself adds to a button (Masque's business, out of combat).
-- **Settings and saved data (schema stays 2):** new keys with explicit defaults in `Config.Defaults`: `sort.mode = "blizzard"` (Task 2), `prices.source = "auto"` and `prices.tsm = "DBMarket"` (Task 3). Only values somebody wrote are stored, so no migration. `Engine/Profiles.lua`'s `VALID` lists their words (a share string with another word is refused whole) and `LABELS` names them (the week-7 test "every known setting has a label" covers them). Every writer refuses while `Config.readOnly` and says `L.SETTINGS_READONLY`.
+- **Settings and saved data (schema stays 2):** new keys with explicit defaults in `Config.Defaults`: `sort.mode = "blizzard"` (Task 2), `prices.source = "auto"` and `prices.tsm = "DBMarket"` (Task 3), `bags.warnOtherAddons = true` (Task 5). Only values somebody wrote are stored, so no migration. `Engine/Profiles.lua`'s `VALID` lists their words (a share string with another word is refused whole; `prices.tsm`'s words come from `Adapter.TSM_PRICES`; the boolean is checked by its type) and `LABELS` names them (the week-7 test "every known setting has a label" covers them). Every writer refuses while `Config.readOnly` and says `L.SETTINGS_READONLY`.
 - No file calls `Config` at load time (the load-order tests stay green). Every `OnHide` handler starts with `if self:IsShown() then return end` (none is added this week).
-- No `OnUpdate` anywhere. Idle CPU with every window closed is 0: the stacker runs only after a Sort click and stops when done; TSM is never polled (its prices are read on lookup and cached 10 minutes); Masque is asked once per session.
+- No `OnUpdate` anywhere. Idle CPU with every window closed is 0: the stacker runs only after a Sort click and stops when done; TSM is never polled (its prices are read on lookup and cached 10 minutes, a "no price" 30 seconds); Masque is asked once per session.
 - Every critical test names the mutation that must make it fail. Each task lists its mutations under Step 2.
 - **Tooling (binding, as in weeks 1–8):** tests run with `luajit spec/runner.lua spec/*_spec.lua` on the in-repo runner (`describe`, `it`, `before_each`, `after_each`, `assert.equal/same/truthy/falsy/is_nil/has_error`). Where a test fakes a frame method or another addon's API, it fakes it the way the real one behaves (`TSM_API` raises an error on an unknown name; `LibStub` is a callable table; a shrunk button's hit area moves with it). CI is the local `scripts/check.sh`. Every task ends with `scripts/check.sh` printing `ALL CHECKS PASSED`.
 - Test totals are cumulative from 1452 (see "Schedule").
@@ -91,13 +93,13 @@ cd "/Users/lonezebra/Local Documents/AI-Projects/SwagBag"
 These are the failure modes most likely to bite the user that the spec implies but the feature tests would not naturally hit, most likely first. Each is pinned by tests in the task that owns the code.
 
 1. **An item moved into the wrong bank type, or between the bags and a bank, by stacking.** Expected: a run reads only its own scope and only ever drops onto a stack of the same item there. Pinned by Task 1: "never pairs stacks across scopes: the bags, the character bank and the warband bank are stacked apart" and Task 2: "with sort stacks, Sort bank stacks the character bank only; the warband bank is never touched".
-2. **Stacking under the mouse, with an item on the cursor, or leaving an item on the cursor.** Expected: every step waits (P5); a pair the mouse never leaves is left; whatever does not fit goes back to its slot. Pinned by Task 1: "waits while an item is on the cursor or a slot it would touch is under the mouse, then moves", "a pair the mouse never leaves is left as it is; the run carries on with the next item", "picks up and drops with the game's own call, puts back what is left, never starts with an item held", "a throwing pickup is reported and the cursor is cleared"; Task 2: "stacking waits while the slot it would touch is under the mouse".
-3. **A run that keeps going after combat starts or the window closes, or that never ends.** Expected: combat or a closed window stops it before the next move, nothing is queued; a move that changed nothing stops it. Pinned by Task 1: "combat or a closed window stops the run before the next move; nothing is queued", "waits while the game holds a moved slot locked; a move that changes nothing stops the run"; Task 2: "closing the bank stops stacking before the next move".
+2. **Stacking under the mouse, with anything on the cursor, or leaving an item on the cursor.** Expected: every step waits (P5), for money, a spell or a merchant's item too; a pair the mouse never leaves is left; whatever does not fit goes back to its slot. Pinned by Task 1: "waits while an item is on the cursor or a slot it would touch is under the mouse, then moves", "waits while something other than an item is on the cursor (money, a spell, a merchant's item)", "CursorBusy sees anything on the cursor (money, a spell, a merchant's item, a secret item ID); no move starts", "waits while anything else is on the cursor too (money, a spell, a merchant's item), however long" (the mover), "a pair the mouse never leaves is left as it is; the run carries on with the next item", "picks up and drops with the game's own call, puts back what is left, never starts with an item held", "a throwing pickup is reported and the cursor is cleared"; Task 2: "stacking waits while the slot it would touch is under the mouse".
+3. **A run that keeps going after combat starts or the window closes, that never ends, or that stops for the wrong reason.** Expected: combat or a closed window stops it before the next move and says so (even when the closed bank's slots read empty), nothing is queued; a move that changed nothing stops it; a stack locked by the game for something else (an auction being posted) neither holds nor stops it; an error ends it with its line, never Safe Mode, never left busy. Pinned by Task 1: "combat or a closed window stops the run before the next move; nothing is queued", "waits while the game holds a moved slot locked; a move that changes nothing stops the run", "a stack the game holds locked for something else is left out; it never holds or stops the run", "the first step runs in the stacker's own trap: an error is recorded, never Safe Mode, and the run ends"; Task 2: "closing the bank stops stacking before the next move".
 4. **A locked or equipment-set item moved.** Expected: never touched by stacking. Pinned by Task 1: "leaves locked items, equipment-set items, single items and items not loaded yet where they are".
-5. **Selling a gray BoE that TSM says is valuable, or prices from a source the user did not pick.** Expected: the protection and every total ask the chosen source. Pinned by Task 3: "a gray BoE worth more than twice its vendor price by TSM's price stays when TSM is the source" and "by default Auctionator answers, else TSM, else the vendor; prices.source picks one, the vendor fills in".
-6. **A TSM error or a secret value on the draw path** (header totals and the list run under `"bags"`: an error there means Safe Mode). Expected: no price, never an error. Pinned by Task 3: "prices through ToItemString and GetCustomPriceValue, only for the price strings SwagBag offers", "an error, a negative or a non-number from TSM is no price"; Task 6: "a secret item ID is no key either: no price, nothing cached under it, never an error".
-7. **Masque restyling a secure button in combat, or anything happening without Masque.** Expected: out of combat only, once per button; without Masque nothing is asked. Pinned by Task 4: "a button made in combat joins only once combat ends" and "without Masque nothing is asked, and SwagBag calls nothing more on a button than before".
-8. **A second bag addon switched off, or a warning that will not go away.** Expected: one line per login, silent in Safe Mode, nothing disabled. Pinned by Task 5: "at login one line names them and suggests /swagbag safe on; silent when none, or in Safe Mode".
+5. **Selling a gray BoE that Auctionator or TSM says is valuable, or totals from a source the user did not pick.** Expected: every total asks the chosen source; the gray-BoE protection asks every loaded auction source whatever the choice, and any one above twice the vendor price keeps the item (ruling R0); a vendor visit during a stacking run is not skipped. Pinned by Task 3: "a gray BoE stays when TSM prices it above twice its vendor price, even while Auctionator answers less", "with Vendor chosen, a gray BoE Auctionator prices above twice its vendor price stays; with no auction addon it sells", "AuctionValue asks every loaded auction source whatever prices.source says; the highest answers", "with Vendor chosen as the price source, Sell all's question still names the Auction House value", "a TSM 'no price' is kept 30 seconds only, so TSM data that arrives after login is used" and "by default Auctionator answers, else TSM, else the vendor; prices.source picks one, the vendor fills in"; Task 1: "a vendor opened during a stacking run sells the junk and repairs once the run ends, if still open".
+6. **A TSM error or a secret value on the draw path** (header totals and the list run under `"bags"`: an error there means Safe Mode). Expected: no price, never an error. Pinned by Task 3: "prices through ToItemString and GetCustomPriceValue, only for the price strings SwagBag offers", "TSM is found at the first price asked; an error, zero, a negative or a non-number from TSM is no price"; Task 6: "a secret item ID is no key either: no price, nothing cached under it, never an error".
+7. **Masque restyling a secure button in combat, or anything happening without Masque.** Expected: out of combat only, once per button; without Masque nothing is asked. Pinned by Task 4: "a button made in combat joins only once combat ends" and "without Masque nothing is asked, and whether Masque is there is asked once per session".
+8. **A second bag addon switched off, or a warning that will not go away.** Expected: one line per login, silent in Safe Mode or once switched off, nothing disabled. Pinned by Task 5: "at login one line names them and suggests /swagbag safe on; silent when none, when switched off, or in Safe Mode", "otherbags says whether the login warning is on, switches it, and refuses while read-only" and "bags page: the other bag addons row, Warn at login first and selected; each choice runs /swagbag otherbags".
 9. **Shrunk buttons under drawn categories (smaller click targets).** Expected: a held F6 fallback restores full size at once. Pinned by Task 6: "F6: a fallback held under the mouse puts the drawn categories' buttons back at full size at once".
 
 
@@ -112,25 +114,26 @@ These are the failure modes most likely to bite the user that the spec implies b
 | D4 | Which stack goes where | **"First" is slot order:** bag IDs in the game's order, then slot number (the grid view's order). Merge: the item's last partial stack goes onto its first partial stack (what does not fit stays in the last). Order: the one partial stack swaps with the item's first stack when that one is full. "The same item" means the same item link, so two stacks the game would not stack are never paired. | — | Fewest moves; the partial lands where TSM and the eye look first. |
 | D5 | Where a run works | **One scope per press, never across:** the bags' Sort stacks the bags (backpack, bags and the reagent bag); "Sort bank" the character bank's tabs; "Sort warband" the warband bank's tabs. | — | Item safety: an item never changes bank type or leaves the bags. |
 | D6 | What stacking leaves alone | **Items you locked** (every stack of a locked item, `/swagbag lock`), **equipment-set items**, items that do not stack, items whose data has not loaded, a secret link. | Merging locked items too: rejected (the brief: never touch locked items' positions). | Locks mean "leave it alone" to a gold-maker; a set piece is gear. |
-| D7 | Pace and patience | One move every **0.2 s** (`DELAY`). An item on the cursor: wait 0.3 s and look again, however long. A slot under the mouse: wait 0.3 s up to **20** times (6 s), then that item is left and the line says `Left alone under your mouse: N.` After a move, while the game holds either slot locked (the server has not answered), wait 0.2 s up to 10 times; then a move that did not do what it should (the target did not gain, or the partial did not arrive first) **stops the run** with `Stacking stopped: an item did not move as expected (...)`. | — | The mover's tested timings (week 7); a run never loops on a move the game refuses. |
+| D7 | Pace and patience | One move every **0.2 s** (`DELAY`). An item on the cursor: wait 0.3 s and look again, however long. A slot under the mouse: wait 0.3 s up to **20** times (6 s), then that item is left and the line says `Left alone under your mouse: N.` After a move, while the game holds either of that move's two slots locked (the server has not answered), wait 0.2 s up to 10 times; then a move that did not do what it should (the target did not gain, or the partial did not arrive first) **stops the run** with `Stacking stopped: an item did not move as expected (...)`. Anything on the cursor counts (`Adapter.CursorBusy`: money, a spell, a merchant's item too). A stack the game holds locked for something else (an auction being posted, a letter, a trade) is left out of the run: never waited on, never a reason to stop (preflight S3). | — | The mover's tested timings (week 7); a run never loops on a move the game refuses. |
 | D8 | How a run answers | The click answers in the window's title: `Stacking...`, or `Nothing to stack: ...`, `SwagBag is still moving items: ...` (the mover runs) or `Sort after combat ends`. The **outcome is one chat line** (`Stacking done. Stacks merged: N. Partial stacks moved first: N.`, or why it stopped), then the window regroups (held while the mouse is over the items, P5). | The outcome in the title: rejected. | A run can outlast the title's 1.5 s answer, and the window may be closed by then; the auto-sell's line works the same way. |
-| D9 | Combat and closing | Combat or the window closing (the bags window for the bags; the bank visit for the bank) **stops the run before its next move**; nothing is queued; what moved stays moved. Press Sort again to finish. | — | Spec §5.5 / ruling W11: nothing runs later by itself. |
+| D9 | Combat and closing | Combat or the window closing (the bags window for the bags; the bank visit for the bank) **stops the run before its next move**, checked first in every step, before the last move is judged, so the line says why even when a closed bank's slots read empty (preflight S4); nothing is queued; what moved stays moved. Press Sort again to finish. | — | Spec §5.5 / ruling W11: nothing runs later by itself. |
 | D10 | Where prices come from | **Auto:** Auctionator if loaded, else TSM if loaded, else what a vendor pays. Or one of them: Auctionator, TSM or Vendor (that one; the vendor for what it has no price for). A chosen source that is not loaded leaves the vendor answering, and `/swagbag price` says so. | Settings > Bank & guild > "Item prices come from"; `/swagbag price auto|auctionator|tsm|vendor`. | The brief's default; "auto" is exactly the providers' priority order (Auctionator 10, TSM 5, vendor 0). |
-| D11 | Which TSM price | **DBMarket** (TSM's realm market value). The others offered: **DBMinBuyout**, **DBRegionMarketAvg**, **DBRegionSaleAvg**. Only these four are ever asked; no custom TSM formulas. | Settings > Bank & guild > "TSM price (when TSM answers)"; `/swagbag price tsm dbminbuyout` (any case). | A share string must never make SwagBag evaluate an arbitrary formula; the four cover the brief. |
-| D12 | When TSM prices refresh | TSM's public addon API has **no "prices changed" callback**, so TSM prices refresh through the existing 10-minute cache age (`Prices.MAX_AGE`) and whenever the source or the TSM price changes (one refresh of the open windows' totals). Auctionator keeps its own callback. | `/reload` refreshes at once. | Researched (TSM's addon API documentation and adapters built on it): the API is pull-only (`ToItemString`, `GetCustomPriceValue` and lookups); no price-update callback is documented. |
-| D13 | The vendor's "gray BoE worth more than twice at auction" rule | **Follows the chosen source**, like everything else. With "Vendor" chosen there is no auction price, so a gray BoE is judged by what a vendor pays and can be sold as junk (the Settings tip says so). | **Flag for the user:** the protection could keep asking Auctionator/TSM even when "Vendor" is chosen (one line in `Engine/Vendor.lua`). | The brief: the protections use the chosen source. |
+| D11 | Which TSM price | **DBMarket** (TSM's realm market value). The others offered: **DBMinBuyout**, **DBRegionMarketAvg**, **DBRegionSaleAvg**. Only these four are ever asked (`Adapter.TSM_PRICES`, the one list: Profiles and Settings are built from it); no custom TSM formulas. TSM's answer must be above 0. | Settings > Bank & guild > "TSM price (when TSM answers)", which changes TSM's price only and never where prices come from (`/swagbag price string dbminbuyout`, preflight S7); `/swagbag price tsm dbminbuyout` (any case) also switches to TSM. | A share string must never make SwagBag evaluate an arbitrary formula; the four cover the brief. |
+| D12 | When TSM prices refresh | TSM's public addon API has **no "prices changed" callback**, so TSM prices refresh through the existing 10-minute cache age (`Prices.MAX_AGE`) and whenever the source or the TSM price changes (one refresh of the open windows' totals). A TSM **"no price" is kept 30 seconds only** (`Prices.MISS_AGE`), so TSM data that loads after login is used within half a minute (preflight S2). Auctionator keeps its own callback. | `/reload` refreshes at once. | Researched (TSM's addon API documentation and adapters built on it): the API is pull-only (`ToItemString`, `GetCustomPriceValue` and lookups); no price-update callback is documented. |
+| D13 | The vendor's "gray BoE worth more than twice at auction" rule | **Always asks every loaded auction source** (controller ruling R0): `Prices.AuctionValue` asks Auctionator and TSM, whichever are loaded, whatever `prices.source` says, and the item stays when **any** of them prices it above twice what a vendor pays. With "Vendor" chosen the windows show vendor prices, yet such an item is still never sold as junk (the Settings tip says so). Sell all's question names the same Auction House value. No auction addon loaded: no such protection. | — (the protection is not a display choice). | Gold-maker safety: a display choice must not sell valuables. Cost: the protection may use a price the windows do not show. |
 | D14 | Masque | **On whenever Masque is loaded:** SwagBag's groups "Bags", "Bank", "Guild bank" and "Alt viewer" appear under SwagBag in Masque's options, which pick the skin and can switch each group off. No SwagBag setting. | Masque's own options (`/masque`). | One switch, where Masque users already look. |
 | D15 | Masque and the secure buttons | SwagBag's only call is `group:AddButton(button, nil, "Item")`, **once per button, out of combat** (a button made in combat joins when combat ends). Nothing else about a button changes; SwagBag's slot background (week 1) stays under the skin. | — | Spec §4.1; Masque restyles textures only, never secure attributes. |
-| D16 | A second bag addon | **One chat line at every login** while another bag addon is on and SwagBag's bags are not in Safe Mode, naming it and suggesting `/swagbag safe on` or disabling one in the AddOns list. `/swagbag report` always says `Other bag addons on: ...`. Nothing is ever switched off. ElvUI counts only while its own bags module is on. | `/swagbag safe on` silences it (SwagBag steps aside). | The conflict persists until one is chosen; P4: never take over another addon. |
+| D16 | A second bag addon | **One chat line at every login** (and `/reload`) while another bag addon is on, SwagBag's bags are not in Safe Mode and `bags.warnOtherAddons` is on (the default), naming it and suggesting `/swagbag safe on` or disabling one in the AddOns list (and how to stop the line). `/swagbag report` always says `Other bag addons on: ...`. Nothing is ever switched off. ElvUI counts only while its own bags module is on. **Not detected:** bag modules inside UI suites (KkthnxUI, NDui, GW2_UI, Tukui); the setting's tip says so. | Settings > Bags > "Other bag addons": Don't warn; `/swagbag otherbags off` (preflight S16). `/swagbag safe on` also silences it (SwagBag steps aside). | The conflict persists until one is chosen; P4: never take over another addon; a warning the user cannot silence becomes noise. |
 | D17 | Week-8 (and one week-7) deferred items | **This week:** the held F6 fallback restores full size at once (week-8 final re-review); `Prices.Value` guards a secret item ID (week-8 final re-review); an amount typed with `/swagbag worth` gets its own selected button (week 7, Task 7). The rest stays deferred ("Carry-overs"). | — | Cheap and user-visible (the brief). |
 | D18 | Version | `0.9.0` (Task 1). | — | — |
+| D19 | A vendor opened while the stacker runs | The visit (auto-sell, then repair) **waits for the run** and goes ahead when it ends (`SB_STACKER_DONE`), if the vendor is still open; closing the vendor first drops it. | — | One run moves items at a time; skipping the sale in silence broke P2 (preflight S6). |
 
 
 ## What the week relies on
 
 | What | Name | Since | Confidence |
 |---|---|---|---|
-| Picking up and dropping a bag item | `C_Container.PickupContainerItem(bag, slot)` (Adapter `A.MoveStack`; `GetCursorInfo` and `ClearCursor` as since week 2) | new (the game's own click; every stacking addon uses it) | Out of combat only. The merge/swap answer of the game is checked in session ST1 (G1, G2). |
+| Picking up and dropping a bag item | `C_Container.PickupContainerItem(bag, slot)` (Adapter `A.MoveStack`; `GetCursorInfo` and `ClearCursor` as since week 2; `A.CursorBusy` reads `GetCursorInfo`'s first answer, the cursor's kind) | new (the game's own click; every stacking addon uses it) | Out of combat only. The merge/swap answer of the game is checked in session ST1 (G1, G2). |
 | Blizzard's sort has no options | `C_Container.SortBags()`, `C_Container.SortBank(bankType)` | week 2 / week 3 | Research for D3. |
 | TSM prices | `TSM_API.ToItemString(item)`, `TSM_API.GetCustomPriceValue(customPriceStr, itemStr)` (TSM's public addon API, `api.tradeskillmaster.com/addon`; `TSM_API` raises an error on an unknown key, so every read is pcall'd) | new | The db* sources are nil without TSM's desktop app feeding them (the TSM answer then is "no price": the vendor answers). Session TS1 (G5). |
 | Masque | `LibStub("Masque", true)`, `Masque:Group(addon, group)`, `Group:AddButton(button [, regions [, type [, strict]]])` (Masque's Group API wiki) | new | The `"Item"` type and the skins on SwagBag's buttons, in tiny and list views, are checked in MQ1 (G6, G7). |
@@ -185,18 +188,22 @@ New and changed files only. Everything else is as on `ae00814`.
 SwagBag/Engine/Stacker.lua             NEW  (T1) the stacking run; (T2) /swagbag sort
 SwagBag/Providers/TSM.lua              NEW  (T3) the "TSM" price provider
 SwagBag/UI/Skins.lua                   NEW  (T4) Masque groups for SwagBag's item buttons
-SwagBag/Core/Adapter.lua               MOD  (T1) MoveStack, the PickupContainerItem check; (T3) TSM_PRICES, TSMAvailable,
+SwagBag/Core/Adapter.lua               MOD  (T1) CursorBusy, MoveStack, the PickupContainerItem check; (T3) TSM_PRICES, TSMAvailable,
                                             TSMPrice; (T4) MasqueAvailable, MasqueAdd; (T5) OTHER_BAG_ADDONS,
                                             ElvUIBagsOn, OtherBagAddons
-SwagBag/Engine/Mover.lua               MOD  (T1) waits for a stacking run
-SwagBag/Engine/Prices.lua              MOD  (T3) the source choice, TSMString, SourceText, /swagbag price;
-                                            (T6) a secret item ID
-SwagBag/Core/Config.lua                MOD  (T2) sort.mode; (T3) prices.source, prices.tsm
-SwagBag/Engine/Profiles.lua            MOD  (T2, T3) VALID and LABELS for the new settings
-SwagBag/UI/BagsWindow.lua              MOD  (T2) Sort stacks in "stacks" mode
-SwagBag/UI/BankWindow.lua              MOD  (T2) Sort bank / Sort warband stack in "stacks" mode
+SwagBag/Engine/Mover.lua               MOD  (T1) waits for a stacking run; CursorBusy
+SwagBag/Engine/Vendor.lua              MOD  (T1) a visit waits for a stacking run; (T3) the gray-BoE rule asks AuctionValue
+SwagBag/Engine/Prices.lua              MOD  (T3) the source choice, TSMString, SourceText, AuctionValue, MISS_AGE,
+                                            /swagbag price; (T6) a secret item ID
+SwagBag/UI/SectionActions.lua          MOD  (T3) Sell all's Auction House value asks AuctionValue
+SwagBag/Core/Config.lua                MOD  (T2) sort.mode; (T3) prices.source, prices.tsm; (T5) bags.warnOtherAddons
+SwagBag/Core/Commands.lua              MOD  (T5) /swagbag otherbags
+SwagBag/Engine/Profiles.lua            MOD  (T2, T3, T5) VALID and LABELS for the new settings
+SwagBag/UI/BagsWindow.lua              MOD  (T2) Sort stacks in "stacks" mode (Stacker.SortButton)
+SwagBag/UI/BankWindow.lua              MOD  (T2) Sort bank / Sort warband stack in "stacks" mode (Stacker.SortButton)
 SwagBag/UI/GroupView.lua               MOD  (T2) v.Busy; (T6) a held F6 fallback restores full size
-SwagBag/UI/SettingsPages.lua           MOD  (T2) the Sort row; (T3) the price rows; (T6) a typed gold amount
+SwagBag/UI/SettingsPages.lua           MOD  (T2) the Sort row; (T3) the price rows; (T5) the other-bag-addons row;
+                                            (T6) a typed gold amount
 SwagBag/UI/Buttons.lua, GuildButtons.lua, DisplayButtons.lua   MOD  (T4) Skins.Add when a button is made
 SwagBag/Core/Report.lua                MOD  (T3) TSM's price string; (T4) the Masque line; (T5) the other-bag-addon line
                                             and login warning
@@ -206,9 +213,10 @@ SwagBag/Core/Init.lua                  MOD  (T1) 0.9.0
 scripts/check.sh                       MOD  (T3) TSM_API / LibStub only in the Adapter
 scripts/toc_check.lua                  MOD  (T3, T4) the OptionalDeps line
 spec/stacker_spec.lua (T1), spec/skins_spec.lua (T4)                                                         NEW
-spec/mock_adapter.lua (T1, T3, T4), adapter_spec.lua (T1, T3, T4), bagswindow_sections_spec.lua (T2),
-spec/bankwindow_groups_spec.lua (T2), settings_spec.lua (T2, T3, T6), profiles_spec.lua (T2, T3),
-spec/prices_spec.lua (T3, T6), vendor_spec.lua (T3), report_spec.lua (T3, T4, T5), bankwindow_list_spec.lua (T6)  MOD
+spec/mock_adapter.lua (T1, T3, T4), adapter_spec.lua (T1, T3, T4), mover_spec.lua (T1), bagswindow_sections_spec.lua (T2),
+spec/bankwindow_groups_spec.lua (T2), settings_spec.lua (T2, T3, T5, T6), profiles_spec.lua (T2, T3),
+spec/prices_spec.lua (T3, T6), vendor_spec.lua (T1, T3), sectionactions_spec.lua (T3), report_spec.lua (T3, T4, T5),
+spec/commands_spec.lua (T5), bankwindow_list_spec.lua (T6)                                                  MOD
 ```
 
 `TOC OK (73 files)` after Task 1 and 2, `(74 files)` after Task 3, `(75 files)` after Tasks 4 to 6.
@@ -226,12 +234,12 @@ In priority order, so the earlier items ship first if time runs out. 12.1.5 goes
 | 3 | final review, fixes | **Week 9 exit check** |
 
 Cumulative `scripts/check.sh` test totals (from 1452 on `ae00814`). Each was produced by replaying this file's blocks in order on a fresh clone of `ae00814`:
-- T1 1463 passed, 0 failed (+11)
-- T2 1470 passed, 0 failed (+7)
-- T3 1479 passed, 0 failed (+9)
-- T4 1486 passed, 0 failed (+7)
-- T5 1488 passed, 0 failed (+2; one existing test gains a line)
-- T6 1491 passed, 0 failed (+3)
+- T1 1469 passed, 0 failed (+17)
+- T2 1476 passed, 0 failed (+7)
+- T3 1489 passed, 0 failed (+13)
+- T4 1496 passed, 0 failed (+7)
+- T5 1500 passed, 0 failed (+4; one existing test gains a line)
+- T6 1503 passed, 0 failed (+3)
 
 ## How to read the code steps
 
@@ -247,17 +255,17 @@ Cumulative `scripts/check.sh` test totals (from 1452 on `ae00814`). Each was pro
 
 ### Task 1: The stacker: merge partial stacks, then the partial stack first (Engine/Stacker.lua); v0.9.0
 
-The user's first pick this week (pick 8, "partial stacks first, for TSM posting"). Research first: Blizzard's sort (`C_Container.SortBags`, `C_Container.SortBank`) takes no options at all; the only sort-related client settings are "sort right to left", "insert left to right" and the per-bag "ignore this bag when cleaning up" flags, and none of them orders partial stacks (D3). So SwagBag gets its own small run, built like the week-7 mover: `Engine/Stacker.lua` plans one move at a time from the slots as they are now: first it merges an item's last partial stack onto its first one, then it swaps an item's one partial stack with the item's first full stack, so the partial comes first (D2, D4). One scope per run, never across (D5): the bags, the character bank or the warband bank, from `Adapter.GetBagIDs(kind)`; a move only ever lands on a stack of the same item in the same scope. Locked, equipment-set, single, not-loaded and secret-link items stay put (D6). Every step is out of combat, never with an item on the cursor, never on a slot under the mouse (P5, with the mover's `MAX_WAITS` rule), waits while the game holds a moved slot locked, and checks the move did what it should; one that did not stops the run (D7, D9). The one game call is `Adapter.MoveStack`: the game's own pickup on the stack and on the target, and whatever is left on the cursor goes back where it came from. The mover and the stacker never run at once. Nothing calls the stacker yet (Task 2 wires the Sort buttons). The version goes to 0.9.0.
+The user's first pick this week (pick 8, "partial stacks first, for TSM posting"). Research first: Blizzard's sort (`C_Container.SortBags`, `C_Container.SortBank`) takes no options at all; the only sort-related client settings are "sort right to left", "insert left to right" and the per-bag "ignore this bag when cleaning up" flags, and none of them orders partial stacks (D3). So SwagBag gets its own small run, built like the week-7 mover: `Engine/Stacker.lua` plans one move at a time from the slots as they are now: first it merges an item's last partial stack onto its first one, then it swaps an item's one partial stack with the item's first full stack, so the partial comes first (D2, D4). One scope per run, never across (D5): the bags, the character bank or the warband bank, from `Adapter.GetBagIDs(kind)`; a move only ever lands on a stack of the same item in the same scope. Locked, equipment-set, single, not-loaded and secret-link items stay put (D6). Every step first stops the run on combat or a closed window, before it judges the last move, so a bank whose slots read empty after closing still says "the window closed" (D9, preflight S4); then it never moves while anything is on the cursor (the new `Adapter.CursorBusy`: an item, money, a spell, a merchant's item or an item with a secret ID, preflight S5) or on a slot under the mouse (P5, with the mover's `MAX_WAITS` rule), waits while the game holds one of the last move's two slots locked, and checks the move did what it should; one that did not stops the run (D7). A stack the game holds locked for something else (an auction being posted, a letter, a trade) is simply left out of the run, never waited on (preflight S3). Every step, the first one included, runs in the stacker's own `"none"` trap (`stacker.step`), never the Sort click's: an error is recorded, the run ends with its line and the stacker is never left busy (P6, preflight S8). The one game call is `Adapter.MoveStack`: the game's own pickup on the stack and on the target, and whatever is left on the cursor goes back where it came from. The mover and the stacker never run at once; the week-7 mover's cursor wait uses `Adapter.CursorBusy` too, and a vendor opened during a stacking run sells its junk and repairs when the run ends, if it is still open, instead of skipping the sale in silence (D19, preflight S6). Nothing calls the stacker yet (Task 2 wires the Sort buttons). The version goes to 0.9.0.
 
 **Files:**
 - Create: `SwagBag/Engine/Stacker.lua`, `spec/stacker_spec.lua`
-- Modify: `SwagBag/Core/Adapter.lua` (`A.MoveStack`, the `C_Container.PickupContainerItem` check), `SwagBag/Engine/Mover.lua` (waits for a stacking run), `SwagBag/Locale/enUS.lua`
+- Modify: `SwagBag/Core/Adapter.lua` (`A.CursorBusy`, `A.MoveStack`, the `C_Container.PickupContainerItem` check), `SwagBag/Engine/Mover.lua` (waits for a stacking run; `CursorBusy`), `SwagBag/Engine/Vendor.lua` (a visit waits for a stacking run), `SwagBag/Locale/enUS.lua`
 - Modify: `SwagBag/SwagBag.toc` (the new file; 0.9.0), `SwagBag/Core/Init.lua` (0.9.0)
-- Test: `spec/adapter_spec.lua`, `spec/mock_adapter.lua` (`m.MoveStack`, `m.stackMoves`, `m.onMoveStack`, `m.moveFails`)
+- Test: `spec/adapter_spec.lua`, `spec/mock_adapter.lua` (`m.MoveStack`, `m.stackMoves`, `m.onMoveStack`, `m.moveFails`, `m.cursorOther`, `m.CursorBusy`), `spec/mover_spec.lua`, `spec/vendor_spec.lua`
 
 **Interfaces:**
-- Consumes: `Adapter.GetBagIDs/NumSlots/GetSlot/GetItemInfo/InEquipmentSet/IsSecret/CursorItem/InCombat/After`, `Locks.Has`, `Mover.Busy`, `ErrorTrap.Run/Guard/OnError`.
-- Produces: `Adapter.MoveStack(fromBag, fromSlot, toBag, toSlot) -> ok, err`; `SB.Stacker` with `Start(job) -> true | false, why` (`job = { kind, still, busy, done }`, why `"busy" | "combat" | "nothing"`), `Busy()`, `Stop(why)`, `Plan(kind, skip, maxOf)`, `ResultText(result)`, `DELAY` 0.2, `RETRY` 0.3, `MAX_WAITS` 20, `MAX_PENDING` 10; result `{ merged, ordered, kept, why }`; `L.STACK_DONE/KEPT/STOP_COMBAT/STOP_CLOSED/STOP_STUCK`; `SB.VERSION = "0.9.0"`.
+- Consumes: `Adapter.GetBagIDs/NumSlots/GetSlot/GetItemInfo/InEquipmentSet/IsSecret/CursorBusy/InCombat/After/Stack`, `Locks.Has`, `Mover.Busy`, `ErrorTrap.Run/OnError`, `SB.Emit`, `Vendor.Visit`.
+- Produces: `Adapter.CursorBusy() -> bool` (any `GetCursorInfo()` answer); `Adapter.MoveStack(fromBag, fromSlot, toBag, toSlot) -> ok, err`; `SB.Stacker` with `Start(job) -> true | false, why` (`job = { kind, still, busy, done }`, why `"busy" | "combat" | "nothing"`), `Busy()`, `Stop(why)`, `Plan(kind, skip, maxOf)`, `ResultText(result)`, `DELAY` 0.2, `RETRY` 0.3, `MAX_WAITS` 20, `MAX_PENDING` 10; result `{ merged, ordered, kept, why }`; the internal event `SB_STACKER_DONE(result)`; `Vendor.visitWaiting`; `L.STACK_DONE/KEPT/STOP_COMBAT/STOP_CLOSED/STOP_STUCK`; `SB.VERSION = "0.9.0"`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -292,7 +300,7 @@ describe("Adapter.MoveStack (real adapter, stubbed globals)", function()
 	end)
 
 	after_each(function()
-		GetCursorInfo, ClearCursor, C_Container = nil, nil, nil
+		GetCursorInfo, ClearCursor, C_Container, issecretvalue = nil, nil, nil, nil
 	end)
 
 	-- keep: what the drop leaves on the cursor (true: the rest that did not fit).
@@ -338,10 +346,56 @@ describe("Adapter.MoveStack (real adapter, stubbed globals)", function()
 		assert.truthy(err)
 		assert.equal(1, cleared, "nothing stays on the cursor")
 	end)
+
+	-- P5 (preflight S5): GetCursorInfo answers more than items. Mutation: in A.MoveStack, guard with
+	-- `A.CursorItem() ~= nil` instead of `A.CursorBusy()`.
+	it("CursorBusy sees anything on the cursor (money, a spell, a merchant's item, a secret item ID); no move starts", function()
+		assert.falsy(A.CursorBusy(), "no API")
+		game(false)
+		issecretvalue = function(v) return v == 999 end
+		for _, held in ipairs({ { "money", 500 }, { "spell", 1 }, { "merchant", 3 }, { "item", 999 } }) do
+			GetCursorInfo = function() return held[1], held[2] end
+			assert.is_nil(A.CursorItem(), held[1])
+			assert.truthy(A.CursorBusy(), held[1])
+			assert.falsy(A.MoveStack(0, 2, 0, 1), held[1])
+		end
+		assert.same({}, calls)
+		GetCursorInfo = function() return nil end
+		assert.falsy(A.CursorBusy(), "nothing held")
+		GetCursorInfo = function() error("broken") end
+		assert.falsy(A.CursorBusy(), "an error is no answer")
+	end)
 end)
 ```
 
-In `spec/mock_adapter.lua`, find:
+In `spec/mock_adapter.lua` (edit 1 of 2), find:
+
+```lua
+		end
+		return nil
+	end
+
+	function m.ClearCursor()
+```
+
+and replace it with:
+
+```lua
+		end
+		return nil
+	end
+
+	-- Week 9: m.cursorOther = "money" (or "spell", "merchant"...): something on the cursor that is not an item
+	-- CursorItem can name. CursorBusy is true for it and for m.cursor.
+	m.cursorOther = nil
+	function m.CursorBusy()
+		return m.cursor ~= nil or m.cursorOther ~= nil
+	end
+
+	function m.ClearCursor()
+```
+
+In `spec/mock_adapter.lua` (edit 2 of 2), find:
 
 ```lua
 	end
@@ -386,6 +440,34 @@ and replace it with:
 	end
 
 	-- Repairs: m.repairCost (nil: this vendor does not repair), m.guildRepair (nil: the guild does not pay;
+```
+
+In `spec/mover_spec.lua`, find:
+
+```lua
+		assert.same({}, usedSlots(), "an item on the cursor holds every step")
+		A.cursor = nil
+		A.Advance(Mover.RETRY)
+```
+
+and replace it with:
+
+```lua
+		assert.same({}, usedSlots(), "an item on the cursor holds every step")
+		A.cursor = nil
+		A.Advance(Mover.RETRY)
+		assert.same({ 1 }, usedSlots())
+	end)
+
+	-- Week 9 (preflight S5): GetCursorInfo answers more than items. Mutation: in step, `if A.CursorBusy() then`
+	-- -> `if A.CursorItem() ~= nil then`.
+	it("waits while anything else is on the cursor too (money, a spell, a merchant's item), however long", function()
+		A.cursorOther = "merchant"
+		start(items(1))
+		A.Advance(Mover.RETRY * (Mover.MAX_WAITS + 5))
+		assert.same({}, usedSlots(), "waited")
+		A.cursorOther = nil
+		A.Advance(Mover.RETRY)
 ```
 
 Create `spec/stacker_spec.lua`:
@@ -501,6 +583,19 @@ describe("Stacker (week 9)", function()
 		assert.same({ { 0, 2, 0, 1 } }, A.stackMoves)
 	end)
 
+	-- P5 (preflight S5). Mutation: in step, `if A.CursorBusy() then` -> `if A.CursorItem() ~= nil then`.
+	it("waits while something other than an item is on the cursor (money, a spell, a merchant's item)", function()
+		A.Put(0, 1, POTION, 5)
+		A.Put(0, 2, POTION, 5)
+		A.cursorOther = "money"
+		assert.truthy(start())
+		A.Advance(St.RETRY * (St.MAX_WAITS + 5))
+		assert.same({}, A.stackMoves, "waited, however long")
+		A.cursorOther = nil
+		A.Advance(St.RETRY)
+		assert.same({ { 0, 2, 0, 1 } }, A.stackMoves)
+	end)
+
 	-- Mutation: in step, `if run.waits <= St.MAX_WAITS` -> `if true` (the run never ends).
 	it("a pair the mouse never leaves is left as it is; the run carries on with the next item", function()
 		A.Put(0, 1, POTION, 5)
@@ -531,11 +626,29 @@ describe("Stacker (week 9)", function()
 		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
 		A.Advance(5)
 		assert.equal(1, #A.stackMoves, "nothing runs after combat")
+		assert.equal(1, result.merged, "the move made before combat counts")
+		A.onMoveStack = function() end -- a closed bank: the move in flight shows nothing
 		start()
 		open = false
 		A.Advance(St.DELAY)
-		assert.equal("closed", result.why)
+		assert.equal("closed", result.why, "said as closed, not as a move that went wrong")
 		assert.equal(2, #A.stackMoves)
+	end)
+
+	-- Preflight S3: a stack the game holds locked for something else (posted at the Auction House, in the mail,
+	-- in a trade) is no reason to wait or to stop. Mutation: in read(), drop `not s.isLocked and`.
+	it("a stack the game holds locked for something else is left out; it never holds or stops the run", function()
+		A.Put(0, 1, POTION, 5)
+		A.Put(0, 2, POTION, 5)
+		A.Put(0, 3, JUNK, 3)
+		A.Put(0, 4, JUNK, 4)
+		A.slots[0][3].isLocked = true -- being posted at the Auction House
+		assert.truthy(start())
+		A.Advance(St.DELAY * 3)
+		assert.same({ { 0, 2, 0, 1 } }, A.stackMoves, "the potions merge; the locked junk is left out")
+		assert.same({ 1, 0 }, { result.merged, result.ordered })
+		assert.is_nil(result.why)
+		assert.same({ false, "nothing" }, { start() }, "only the locked junk would stack: nothing to do")
 	end)
 
 	-- Mutations: in step, drop the pending wait (a locked slot is read at once); or drop the progressed() check.
@@ -581,6 +694,22 @@ describe("Stacker (week 9)", function()
 		assert.same({ false, "nothing" }, { start() })
 	end)
 
+	-- P6 (preflight S8): the first step runs at the Sort click, inside the window's own trap. Mutation: in
+	-- St.Start, `trapped(run)` -> `step(run)`.
+	it("the first step runs in the stacker's own trap: an error is recorded, never Safe Mode, and the run ends", function()
+		A.Put(0, 1, POTION, 5)
+		A.Put(0, 2, POTION, 5)
+		local started
+		SB.ErrorTrap.Run("bags.sortButton", "bags", function()
+			started = St.Start({ kind = "bags", busy = function() error("broken") end, done = function(r) result = r end })
+		end)
+		assert.truthy(started)
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.equal("stacker.step", SB.ErrorTrap.Recent()[1].label)
+		assert.equal("error", result.why)
+		assert.falsy(St.Busy(), "never left busy")
+	end)
+
 	it("the result line says what was merged and moved first, and why a run stopped", function()
 		local L = SB.L
 		assert.equal(L.STACK_DONE:format(2, 1), St.ResultText({ merged = 2, ordered = 1, kept = 0 }))
@@ -594,6 +723,48 @@ describe("Stacker (week 9)", function()
 end)
 ```
 
+In `spec/vendor_spec.lua`, find:
+
+```lua
+		assert.same({ "own" }, A.repairs, "closed vendor: no repair")
+```
+
+and replace it with:
+
+```lua
+		assert.same({ "own" }, A.repairs, "closed vendor: no repair")
+	end)
+
+	-- Week 9 (preflight S6): the stacker and the mover never run at once, so a vendor opened during a stacking
+	-- run waits for it instead of skipping the sale in silence (P2). Mutations: drop the Stacker.Busy() check in
+	-- V.Visit; or the SB_STACKER_DONE listener's V.Visit() call.
+	it("a vendor opened during a stacking run sells the junk and repairs once the run ends, if still open", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Stacker.lua")
+		A.Put(0, 7, Fixtures.HEALING_POTION, 2) -- slot 1 holds 5: one merge to make
+		SB.Inventory.ScanAll()
+		A.repairCost = 52000
+		assert.truthy(SB.Stacker.Start({ kind = "bags" }))
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		assert.same({}, sold(), "the stacker is moving items: the visit waits")
+		assert.same({}, A.repairs)
+		A.Advance(SB.Stacker.DELAY)
+		A.Advance(Mover.DELAY * 5)
+		assert.same({ 6 }, sold())
+		assert.same({ "own" }, A.repairs)
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		-- the vendor closes before the run ends: nothing happens later
+		A.Put(0, 8, Fixtures.HEALING_POTION, 2)
+		A.Put(0, 9, GRAY, 1)
+		SB.Inventory.ScanAll()
+		assert.truthy(SB.Stacker.Start({ kind = "bags" }))
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.Advance(SB.Stacker.DELAY * 3)
+		A.Advance(Mover.DELAY * 5)
+		assert.same({ 6 }, sold())
+		assert.same({ "own" }, A.repairs)
+```
+
 
 - [ ] **Step 2: Run the tests and see them fail**
 
@@ -601,21 +772,27 @@ end)
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1452 passed, 11 failed`. The failures, exactly:
+Expected: `1452 passed, 17 failed`. The failures, exactly:
 
 - `spec/adapter_spec.lua :: Adapter.MoveStack (real adapter, stubbed globals) > picks up and drops with the game's own call, puts back what is left, never starts with an item held`
 - `spec/adapter_spec.lua :: Adapter.MoveStack (real adapter, stubbed globals) > a throwing pickup is reported and the cursor is cleared`
+- `spec/adapter_spec.lua :: Adapter.MoveStack (real adapter, stubbed globals) > CursorBusy sees anything on the cursor (money, a spell, a merchant's item, a secret item ID); no move starts`
+- `spec/mover_spec.lua :: Mover (week 7) > waits while anything else is on the cursor too (money, a spell, a merchant's item), however long`
 - `spec/stacker_spec.lua :: Stacker (week 9) > merges an item's partial stacks one move at a time, then moves the partial in front of the full ones`
 - `spec/stacker_spec.lua :: Stacker (week 9) > never pairs stacks across scopes: the bags, the character bank and the warband bank are stacked apart`
 - `spec/stacker_spec.lua :: Stacker (week 9) > leaves locked items, equipment-set items, single items and items not loaded yet where they are`
 - `spec/stacker_spec.lua :: Stacker (week 9) > waits while an item is on the cursor or a slot it would touch is under the mouse, then moves`
+- `spec/stacker_spec.lua :: Stacker (week 9) > waits while something other than an item is on the cursor (money, a spell, a merchant's item)`
 - `spec/stacker_spec.lua :: Stacker (week 9) > a pair the mouse never leaves is left as it is; the run carries on with the next item`
 - `spec/stacker_spec.lua :: Stacker (week 9) > combat or a closed window stops the run before the next move; nothing is queued`
+- `spec/stacker_spec.lua :: Stacker (week 9) > a stack the game holds locked for something else is left out; it never holds or stops the run`
 - `spec/stacker_spec.lua :: Stacker (week 9) > waits while the game holds a moved slot locked; a move that changes nothing stops the run`
 - `spec/stacker_spec.lua :: Stacker (week 9) > refuses in combat, while the mover runs, and with nothing to do; the mover waits for a run too`
+- `spec/stacker_spec.lua :: Stacker (week 9) > the first step runs in the stacker's own trap: an error is recorded, never Safe Mode, and the run ends`
 - `spec/stacker_spec.lua :: Stacker (week 9) > the result line says what was merged and moved first, and why a run stopped`
+- `spec/vendor_spec.lua :: Vendor (week 7) > a vendor opened during a stacking run sells the junk and repairs once the run ends, if still open`
 
-The whole of `spec/stacker_spec.lua` fails at Step 2 because `Engine/Stacker.lua` does not exist yet; the new mock functions change nothing for the existing tests.
+The whole of `spec/stacker_spec.lua` fails at Step 2 because `Engine/Stacker.lua` does not exist yet, and so does the new vendor test (it loads it); the new mover test fails because the mover still looks only for an item on the cursor; the new mock functions change nothing for the existing tests.
 
 Critical tests and the mutation that must make each fail (each was applied to this task's finished code; the named test failed):
 
@@ -624,18 +801,52 @@ Critical tests and the mutation that must make each fail (each was applied to th
 - "never pairs stacks across scopes: the bags, the character bank and the warband bank are stacked apart": in `SwagBag/Engine/Stacker.lua`, `for _, bag in ipairs(A.GetBagIDs(kind)) do` → `local all = A.GetBagIDs("bags") ⏎ for _, k in ipairs({ "bank", "warband" }) do ⏎ for _, b in ipairs(A.GetBagIDs(k)) do ⏎ all[#all + 1] = b ⏎ end ⏎ end ⏎ for _, bag in ipairs(all) do`.
 - "leaves locked items, equipment-set items, single items and items not loaded yet where they are": in `SwagBag/Engine/Stacker.lua`, `if type(s.link) ~= "string" or A.IsSecret(s.link) or leftAlone(s) then` → `if type(s.link) ~= "string" or A.IsSecret(s.link) then`.
 - "waits while an item is on the cursor or a slot it would touch is under the mouse, then moves": in `SwagBag/Engine/Stacker.lua`, `if busy and (busy(nextMove.from.bag, nextMove.from.slot) or busy(nextMove.to.bag, nextMove.to.slot)) then` → `if false then`.
+- "waits while something other than an item is on the cursor (money, a spell, a merchant's item)": in `SwagBag/Engine/Stacker.lua`, `if A.CursorBusy() then ⏎ return later(run, St.RETRY)` → `if A.CursorItem() ~= nil then ⏎ return later(run, St.RETRY)`.
 - "a pair the mouse never leaves is left as it is; the run carries on with the next item": in `SwagBag/Engine/Stacker.lua`, `if run.waits <= St.MAX_WAITS then` → `if true then`.
-- "combat or a closed window stops the run before the next move; nothing is queued": in `SwagBag/Engine/Stacker.lua`, `if A.InCombat() then ⏎ return finish(run, "combat") ⏎ end` → ∅.
-- "combat or a closed window stops the run before the next move; nothing is queued": in `SwagBag/Engine/Stacker.lua`, `if run.job.still and not run.job.still() then ⏎ return finish(run, "closed") ⏎ end` → ∅.
+- "combat or a closed window stops the run before the next move; nothing is queued": in `SwagBag/Engine/Stacker.lua`, `elseif A.InCombat() then ⏎ stop = "combat"` → `elseif false then ⏎ stop = "combat"`.
+- "combat or a closed window stops the run before the next move; nothing is queued": in `SwagBag/Engine/Stacker.lua`, `if run.job.still and not run.job.still() then ⏎ stop = "closed"` → `if false then ⏎ stop = "closed"`.
+- "combat or a closed window stops the run before the next move; nothing is queued": in `SwagBag/Engine/Stacker.lua`, `if stop then` → `if stop and not m then`.
 - "waits while the game holds a moved slot locked; a move that changes nothing stops the run": in `SwagBag/Engine/Stacker.lua`, `if lockedSlot(m) and run.pending < St.MAX_PENDING then` → `if false then`.
 - "waits while the game holds a moved slot locked; a move that changes nothing stops the run": in `SwagBag/Engine/Stacker.lua`, `if not progressed(m) then` → `if false then`.
+- "a stack the game holds locked for something else is left out; it never holds or stops the run": in `SwagBag/Engine/Stacker.lua`, `local max = s and not s.isLocked and stackable(s, maxOf)` → `local max = s and stackable(s, maxOf)`.
 - "refuses in combat, while the mover runs, and with nothing to do; the mover waits for a run too": in `SwagBag/Engine/Stacker.lua`, `if St.run or (SB.Mover and SB.Mover.Busy()) then` → `if St.run then`.
 - "refuses in combat, while the mover runs, and with nothing to do; the mover waits for a run too": in `SwagBag/Engine/Mover.lua`, `if Mover.run or (SB.Stacker and SB.Stacker.Busy()) then` → `if Mover.run then`.
-- "picks up and drops with the game's own call, puts back what is left, never starts with an item held": in `SwagBag/Core/Adapter.lua`, `if A.CursorItem() ~= nil then ⏎ pcall(C_Container.PickupContainerItem, fromBag, fromSlot) ⏎ end` → ∅.
+- "the first step runs in the stacker's own trap: an error is recorded, never Safe Mode, and the run ends": in `SwagBag/Engine/Stacker.lua`, `trapped(run) -- the first step too` → `step(run) -- the first step too`.
+- "picks up and drops with the game's own call, puts back what is left, never starts with an item held": in `SwagBag/Core/Adapter.lua`, `if A.CursorBusy() then ⏎ pcall(C_Container.PickupContainerItem, fromBag, fromSlot) ⏎ end` → ∅.
+- "CursorBusy sees anything on the cursor (money, a spell, a merchant's item, a secret item ID); no move starts": in `SwagBag/Core/Adapter.lua`, `or A.CursorBusy() then ⏎ return false` → `or A.CursorItem() ~= nil then ⏎ return false`.
+- "waits while anything else is on the cursor too (money, a spell, a merchant's item), however long": in `SwagBag/Engine/Mover.lua`, `if A.CursorBusy() then -- week 9` → `if A.CursorItem() ~= nil then -- week 9`.
+- "a vendor opened during a stacking run sells the junk and repairs once the run ends, if still open": in `SwagBag/Engine/Vendor.lua`, `if SB.Stacker and SB.Stacker.Busy() then ⏎ V.visitWaiting = true` → `if false then ⏎ V.visitWaiting = true`.
+- "a vendor opened during a stacking run sells the junk and repairs once the run ends, if still open": in `SwagBag/Engine/Vendor.lua`, `V.visitWaiting = false ⏎ V.Visit()` → `V.visitWaiting = false`.
 
 - [ ] **Step 3: Write the code**
 
-In `SwagBag/Core/Adapter.lua` (edit 1 of 2), find:
+In `SwagBag/Core/Adapter.lua` (edit 1 of 3), find:
+
+```lua
+end
+
+-- Puts a picked-up item back where it came from.
+```
+
+and replace it with:
+
+```lua
+end
+
+-- Week 9 (P5): anything at all on the cursor: an item (even one whose ID is secret), a merchant's item, money,
+-- a spell, a macro. CursorItem above sees only an item with a readable ID; moves wait while this is true.
+function A.CursorBusy()
+	if not GetCursorInfo then
+		return false
+	end
+	local ok, kind = pcall(GetCursorInfo)
+	return ok and kind ~= nil
+end
+
+-- Puts a picked-up item back where it came from.
+```
+
+In `SwagBag/Core/Adapter.lua` (edit 2 of 3), find:
 
 ```lua
 	return pcall(C_Container.SortBags)
@@ -650,25 +861,26 @@ end
 -- Week 9 (user pick 8, Engine/Stacker.lua): one stack onto another, as a player does it: a click on the stack
 -- (C_Container.PickupContainerItem) and a click on the target. The game merges as many as fit onto a stack of
 -- the same item, or swaps the two; what is left on the cursor goes back where it came from, so nothing ever
--- stays held. Never starts while the player holds an item. Out of combat only (the stacker checks). ok, err.
+-- stays held. Never starts while the cursor holds anything (A.CursorBusy). Out of combat only (the stacker
+-- checks). ok, err.
 function A.MoveStack(fromBag, fromSlot, toBag, toSlot)
-	if not (C_Container and C_Container.PickupContainerItem) or A.CursorItem() ~= nil then
+	if not (C_Container and C_Container.PickupContainerItem) or A.CursorBusy() then
 		return false
 	end
 	local ok, err = pcall(C_Container.PickupContainerItem, fromBag, fromSlot)
 	if ok then
 		ok, err = pcall(C_Container.PickupContainerItem, toBag, toSlot)
 	end
-	if A.CursorItem() ~= nil then
+	if A.CursorBusy() then
 		pcall(C_Container.PickupContainerItem, fromBag, fromSlot)
 	end
-	if A.CursorItem() ~= nil then
+	if A.CursorBusy() then
 		A.ClearCursor()
 	end
 	return ok, err
 ```
 
-In `SwagBag/Core/Adapter.lua` (edit 2 of 2), find:
+In `SwagBag/Core/Adapter.lua` (edit 3 of 3), find:
 
 ```lua
 	{ path = "C_Container.UseContainerItem", window = "bags", required = false },
@@ -693,7 +905,43 @@ and replace it with:
 SB.VERSION = "0.9.0"
 ```
 
-In `SwagBag/Engine/Mover.lua`, find:
+In `SwagBag/Engine/Mover.lua` (edit 1 of 4), find:
+
+```lua
+--   Mover.IsBusy(bag, slot) -> bool   spec 4.2 rule 5: an item is on the cursor, or that slot's button is
+```
+
+and replace it with:
+
+```lua
+--   Mover.IsBusy(bag, slot) -> bool   spec 4.2 rule 5: anything is on the cursor, or that slot's button is
+```
+
+In `SwagBag/Engine/Mover.lua` (edit 2 of 4), find:
+
+```lua
+	if SB.Adapter.CursorItem() ~= nil then
+```
+
+and replace it with:
+
+```lua
+	if SB.Adapter.CursorBusy() then
+```
+
+In `SwagBag/Engine/Mover.lua` (edit 3 of 4), find:
+
+```lua
+	if A.CursorItem() ~= nil then
+```
+
+and replace it with:
+
+```lua
+	if A.CursorBusy() then -- week 9: money, a spell or a merchant's item on the cursor count too
+```
+
+In `SwagBag/Engine/Mover.lua` (edit 4 of 4), find:
 
 ```lua
 	if Mover.run then
@@ -723,14 +971,19 @@ Create `SwagBag/Engine/Stacker.lua`:
 --             busy = fn(bag, slot) -> bool  the slot's button (or its list row) is under the mouse
 --             done = fn(result) }          result = { merged = n, ordered = n, kept = n,
 --                                           why = nil | "combat" | "closed" | "stuck" | "error" }
---   Stacker.Busy() -> bool;  Stacker.Stop(why);  Stacker.Plan(kind, skip) -> the next move | { wait } | nil
+--   Stacker.Busy() -> bool;  Stacker.Stop(why);  Stacker.Plan(kind, skip, maxOf) -> the next move | nil
 --   Stacker.ResultText(result) -> the one chat line for a finished run
--- Every step: out of combat only (combat stops the run, nothing is queued; P5), only while still(), never
--- while an item is on the cursor (it waits RETRY, however long), and a pair whose slot is under the mouse
--- waits RETRY up to MAX_WAITS times, then that item is left as it is. After a move the next step waits while
--- the game holds either slot locked (the server has not answered, up to MAX_PENDING), then checks the move
--- did what it should; one that changed nothing stops the run ("stuck"). Each step plans again from the slots
--- as they are, so an item used or moved by hand meanwhile is simply read as it is now. No OnUpdate.
+-- A run's end is also announced as SB_STACKER_DONE(result) (a vendor opened meanwhile sells then: Vendor.lua).
+-- Every step first stops the run on combat (nothing is queued; P5) or once still() says no, before anything
+-- else is judged, so a closed bank reads "closed". Then: never while anything is on the cursor
+-- (Adapter.CursorBusy: it waits RETRY, however long), and a pair whose slot is under the mouse waits RETRY up
+-- to MAX_WAITS times, then that item is left as it is. After a move the next step waits while the game holds
+-- either of that move's two slots locked (the server has not answered, up to MAX_PENDING), then checks the
+-- move did what it should; one that changed nothing stops the run ("stuck"). A stack the game holds locked for
+-- another reason (being posted at the Auction House, mailed or traded) is left out of the run. Each step plans
+-- again from the slots as they are, so an item used or moved by hand meanwhile is simply read as it is now.
+-- Every step runs in its own "none" trap (the first one too, not the Sort click's): an error is recorded,
+-- never Safe Mode, and ends the run with its one line. No OnUpdate.
 local _, SB = ...
 
 local L = SB.L
@@ -761,16 +1014,16 @@ local function stackable(s, maxOf)
 	return max and max > 1 and max or nil
 end
 
--- The stackable items of a scope, grouped by link, in slot order (bag IDs, then slots).
+-- The stackable items of a scope, grouped by link, in slot order (bag IDs, then slots). A slot the game holds
+-- locked (an auction being posted, a letter, a trade, or this run's own move not answered yet) is left out.
 local function read(kind, skip, maxOf)
 	local A = SB.Adapter
-	local groups, order, pending = {}, {}, false
+	local groups, order = {}, {}
 	for _, bag in ipairs(A.GetBagIDs(kind)) do
 		for slot = 1, A.NumSlots(bag) do
 			local s = A.GetSlot(bag, slot)
-			local max = s and stackable(s, maxOf)
+			local max = s and not s.isLocked and stackable(s, maxOf)
 			if max and not skip[s.link] then
-				pending = pending or s.isLocked
 				local g = groups[s.link]
 				if not g then
 					g = { max = max, list = {} }
@@ -781,14 +1034,11 @@ local function read(kind, skip, maxOf)
 			end
 		end
 	end
-	return groups, order, pending
+	return groups, order
 end
 
 function St.Plan(kind, skip, maxOf)
-	local groups, order, pending = read(kind, skip or {}, maxOf or {})
-	if pending then
-		return { wait = true } -- the game still holds a stack locked: read again shortly
-	end
+	local groups, order = read(kind, skip or {}, maxOf or {})
 	for _, key in ipairs(order) do
 		local g, partial = groups[key], {}
 		for _, s in ipairs(g.list) do
@@ -823,14 +1073,23 @@ local function finish(run, why)
 	if run.job.done then
 		SB.ErrorTrap.Run("stacker.done", "none", run.job.done, run.result)
 	end
+	SB.Emit("SB_STACKER_DONE", run.result)
 end
 
 local step
 
+-- One step in its own trap (P6): an error is recorded under "none" and ends the run with its line, so the
+-- stacker never stays busy (and the mover blocked) after one.
+local function trapped(run)
+	if not SB.ErrorTrap.Run("stacker.step", "none", step, run) then
+		finish(run, "error")
+	end
+end
+
 local function later(run, seconds)
-	SB.Adapter.After(seconds, SB.ErrorTrap.Guard("stacker.step", function()
-		step(run)
-	end, "none"))
+	SB.Adapter.After(seconds, function()
+		trapped(run)
+	end)
 end
 
 -- Did the move do what it should? A merge: the target holds more of the item. An order: the target (the
@@ -852,12 +1111,34 @@ local function lockedSlot(m)
 	return (t ~= nil and t.isLocked) or (f ~= nil and f.isLocked)
 end
 
+local function count(run, m)
+	if m.what == "merge" then
+		run.result.merged = run.result.merged + 1
+	else
+		run.result.ordered = run.result.ordered + 1
+	end
+end
+
 step = function(run)
 	if St.run ~= run then
 		return
 	end
 	local A = SB.Adapter
 	local m = run.sent
+	-- Combat or a closed window first: the run stops before the last move is judged (a closed bank's slots may
+	-- read empty); that move still counts when it shows.
+	local stop
+	if run.job.still and not run.job.still() then
+		stop = "closed"
+	elseif A.InCombat() then
+		stop = "combat"
+	end
+	if stop then
+		if m and progressed(m) then
+			count(run, m)
+		end
+		return finish(run, stop)
+	end
 	if m then
 		if lockedSlot(m) and run.pending < St.MAX_PENDING then
 			run.pending = run.pending + 1
@@ -867,33 +1148,15 @@ step = function(run)
 		if not progressed(m) then
 			return finish(run, "stuck")
 		end
-		if m.what == "merge" then
-			run.result.merged = run.result.merged + 1
-		else
-			run.result.ordered = run.result.ordered + 1
-		end
+		count(run, m)
 	end
-	if run.job.still and not run.job.still() then
-		return finish(run, "closed")
-	end
-	if A.InCombat() then
-		return finish(run, "combat")
-	end
-	if A.CursorItem() ~= nil then
-		return later(run, St.RETRY) -- the user is moving an item by hand: wait, however long it takes
+	if A.CursorBusy() then
+		return later(run, St.RETRY) -- the user is moving something by hand: wait, however long it takes
 	end
 	local nextMove = St.Plan(run.kind, run.skip, run.maxOf)
 	if not nextMove then
 		return finish(run, nil)
 	end
-	if nextMove.wait then
-		run.pending = run.pending + 1
-		if run.pending > St.MAX_PENDING then
-			return finish(run, "stuck")
-		end
-		return later(run, St.DELAY)
-	end
-	run.pending = 0
 	local busy = run.job.busy
 	if busy and (busy(nextMove.from.bag, nextMove.from.slot) or busy(nextMove.to.bag, nextMove.to.slot)) then
 		run.waits = run.waits + 1
@@ -931,7 +1194,7 @@ function St.Start(job)
 	local run = { job = job, kind = job.kind, skip = {}, maxOf = maxOf, waits = 0, pending = 0,
 		result = { merged = 0, ordered = 0, kept = 0 } }
 	St.run = run
-	step(run)
+	trapped(run) -- the first step too runs in the stacker's own trap, not the Sort click's
 	return true
 end
 
@@ -955,6 +1218,68 @@ function St.ResultText(r)
 	end
 	return text
 end
+```
+
+In `SwagBag/Engine/Vendor.lua` (edit 1 of 4), find:
+
+```lua
+-- helps pay for the repair.
+```
+
+and replace it with:
+
+```lua
+-- helps pay for the repair. While the stacker runs, the visit waits for it (SB_STACKER_DONE below).
+```
+
+In `SwagBag/Engine/Vendor.lua` (edit 2 of 4), find:
+
+```lua
+		SB.OutOfCombat(V.Visit, "vendor.visit", "none")
+```
+
+and replace it with:
+
+```lua
+		SB.OutOfCombat(V.Visit, "vendor.visit", "none")
+		return
+	end
+	if SB.Stacker and SB.Stacker.Busy() then
+		V.visitWaiting = true -- week 9: one run moves items at a time; the visit runs when stacking ends
+```
+
+In `SwagBag/Engine/Vendor.lua` (edit 3 of 4), find:
+
+```lua
+	V.open = false
+```
+
+and replace it with:
+
+```lua
+	V.open = false
+	V.visitWaiting = false
+```
+
+In `SwagBag/Engine/Vendor.lua` (edit 4 of 4), find:
+
+```lua
+SB.On("SB_LOCKS_CHANGED", V.WatchLocked, "none")
+```
+
+and replace it with:
+
+```lua
+SB.On("SB_LOCKS_CHANGED", V.WatchLocked, "none")
+
+-- Week 9: a vendor opened while the stacker moved items (Engine/Stacker.lua) waited for the run; its visit (the
+-- auto-sell, then the repair) runs once the run ends, if the vendor is still open. Never skipped in silence (P2).
+SB.On("SB_STACKER_DONE", function()
+	if V.visitWaiting then
+		V.visitWaiting = false
+		V.Visit()
+	end
+end, "none")
 ```
 
 In `SwagBag/Locale/enUS.lua`, find:
@@ -1009,7 +1334,7 @@ Engine/Stacker.lua
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1463 passed, 0 failed`.
+Expected: `1469 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -1017,7 +1342,7 @@ Expected: `1463 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (73 files)`, `1463 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (73 files)`, `1469 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -1026,11 +1351,14 @@ git add SwagBag/Core/Adapter.lua \
 	SwagBag/Core/Init.lua \
 	SwagBag/Engine/Mover.lua \
 	SwagBag/Engine/Stacker.lua \
+	SwagBag/Engine/Vendor.lua \
 	SwagBag/Locale/enUS.lua \
 	SwagBag/SwagBag.toc \
 	spec/adapter_spec.lua \
 	spec/mock_adapter.lua \
-	spec/stacker_spec.lua
+	spec/mover_spec.lua \
+	spec/stacker_spec.lua \
+	spec/vendor_spec.lua
 git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 9 Task 1: the stacker merges partial stacks and puts the partial stack first; v0.9.0
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -1041,15 +1369,15 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 2: The Sort buttons can stack: the sort.mode setting, /swagbag sort, Settings
 
-The setting `sort.mode` (D1): `"blizzard"` (the default: nothing changes for anyone who does not choose) or `"stacks"`. With `"stacks"` the bags window's Sort button and the bank window's "Sort bank" / "Sort warband" buttons start the stacker for their own scope (`"bags"`, `"bank"`, `"warband"`: D5) instead of Blizzard's sort. The click answers in the title (`Stacking...`, or why it cannot start), the run's outcome is one chat line, and the window regroups when the run is done, held by P5 like any layout (D8). The run stops when its window closes (the bags window; the bank visit). The stacker's P5 check is the window's own: the bags' `ButtonBusy` and the bank's new `GroupView` `v.Busy` (in the list a row under the mouse holds its button too). `/swagbag sort [stacks|blizzard]` and a Settings > Bags row ("The Sort buttons": Blizzard's sort first, then Partial stacks first) set it; a share string carries it.
+The setting `sort.mode` (D1): `"blizzard"` (the default: nothing changes for anyone who does not choose) or `"stacks"`. With `"stacks"` the bags window's Sort button and the bank window's "Sort bank" / "Sort warband" buttons start the stacker for their own scope (`"bags"`, `"bank"`, `"warband"`: D5) instead of Blizzard's sort. The click answers in the title (`Stacking...`, or why it cannot start), the run's outcome is one chat line, and the window regroups when the run is done, held by P5 like any layout (D8). The run stops when its window closes (the bags window; the bank visit). The stacker's P5 check is the window's own: the bags' `ButtonBusy` and the bank's new `GroupView` `v.Busy` (in the list a row under the mouse holds its button too). Both windows start the run through one shared helper, `Stacker.SortButton(kind, busy, still, flash, regroup)` (preflight S13), so the two Sort paths cannot drift apart. The bank test also closes the bank with its slots reading empty, as the client may answer, and still expects "the window closed" (preflight S4). `/swagbag sort [stacks|blizzard]` and a Settings > Bags row ("The Sort buttons": Blizzard's sort first, then Partial stacks first) set it; a share string carries it.
 
 **Files:**
-- Modify: `SwagBag/Core/Config.lua` (`sort.mode`), `SwagBag/Engine/Stacker.lua` (`/swagbag sort`), `SwagBag/UI/BagsWindow.lua`, `SwagBag/UI/BankWindow.lua`, `SwagBag/UI/GroupView.lua` (`v.Busy`), `SwagBag/UI/SettingsPages.lua`, `SwagBag/Engine/Profiles.lua`, `SwagBag/Locale/enUS.lua`
+- Modify: `SwagBag/Core/Config.lua` (`sort.mode`), `SwagBag/Engine/Stacker.lua` (`Stacker.SortButton`, `/swagbag sort`), `SwagBag/UI/BagsWindow.lua`, `SwagBag/UI/BankWindow.lua`, `SwagBag/UI/GroupView.lua` (`v.Busy`), `SwagBag/UI/SettingsPages.lua`, `SwagBag/Engine/Profiles.lua`, `SwagBag/Locale/enUS.lua`
 - Test: `spec/stacker_spec.lua`, `spec/bagswindow_sections_spec.lua`, `spec/bankwindow_groups_spec.lua`, `spec/settings_spec.lua`, `spec/profiles_spec.lua`
 
 **Interfaces:**
-- Consumes: `Stacker.Start/ResultText` (Task 1), the bags window's `buttonBusy`, `W.Flash`, `W.RequestLayout`, `BW.Flash`, `BW.interaction`, `BW.view.RequestLayout`, `L.MOVER_BUSY`, `L.SORT_AFTER_COMBAT`.
-- Produces: setting `sort.mode` (`"blizzard"` | `"stacks"`, Profiles `VALID` and `LABELS`); `/swagbag sort`; GroupView `v.Busy(bag, slot)`; `L.STACK_STARTED`, `L.STACK_NOTHING`, `L.HELP_SORT`, `L.SORT_MODE_*`, `L.SET_SORT`, `L.SET_SORT_BLIZZARD`, `L.SET_SORT_STACKS`, `L.SET_SORT_TIP`.
+- Consumes: `Stacker.Start/ResultText` (Task 1), the bags window's `buttonBusy`, `frame:IsShown()`, `W.Flash`, `W.RequestLayout`, `BW.Flash`, `BW.interaction`, `BW.view.RequestLayout`, `L.MOVER_BUSY`, `L.SORT_AFTER_COMBAT`.
+- Produces: `Stacker.SortButton(kind, busy, still, flash, regroup) -> ok` (the windows' one way to start a run); setting `sort.mode` (`"blizzard"` | `"stacks"`, Profiles `VALID` and `LABELS`); `/swagbag sort`; GroupView `v.Busy(bag, slot)`; `L.STACK_STARTED`, `L.STACK_NOTHING`, `L.HELP_SORT`, `L.SORT_MODE_*`, `L.SET_SORT`, `L.SET_SORT_BLIZZARD`, `L.SET_SORT_STACKS`, `L.SET_SORT_TIP`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1066,7 +1394,7 @@ and replace it with:
 		assert.equal(false, W.sortPending)
 	end)
 
-	-- Week 9 (user pick 8). Mutation: in W.Sort, drop the stackSort() branch (Blizzard's sort always runs).
+	-- Week 9 (user pick 8). Mutation: in W.Sort, skip the Stacker.SortButton branch (Blizzard's sort always runs).
 	it("with sort stacks the Sort button stacks instead, says so, reports in chat and regroups when done", function()
 		Loader.LoadFile(SB, "SwagBag/Engine/Stacker.lua")
 		SB.Config.Set("sort.mode", "stacks")
@@ -1084,7 +1412,7 @@ and replace it with:
 		assert.equal(1, #A.stackMoves)
 	end)
 
-	-- Week 9, P5. Mutation: in stackSort, pass no busy function to the stacker.
+	-- Week 9, P5. Mutation: in W.Sort, pass no busy function to Stacker.SortButton.
 	it("stacking waits while the slot it would touch is under the mouse", function()
 		Loader.LoadFile(SB, "SwagBag/Engine/Stacker.lua")
 		SB.Config.Set("sort.mode", "stacks")
@@ -1112,7 +1440,7 @@ and replace it with:
 		assert.same({ "bank", "warband" }, A.bankSorts)
 	end)
 
-	-- Week 9 (user pick 8): item safety. Mutations: in BW.Sort, drop the stackSort(kind) branch; or start the
+	-- Week 9 (user pick 8): item safety. Mutations: in BW.Sort, skip the Stacker.SortButton branch; or start the
 	-- stacker with kind "warband" for either button.
 	it("with sort stacks, Sort bank stacks the character bank only; the warband bank is never touched", function()
 		Loader.LoadFile(SB, "SwagBag/Engine/Stacker.lua")
@@ -1134,7 +1462,9 @@ and replace it with:
 		assert.same({ 9, 15 }, { A.GetSlot(6, 1).count, A.GetSlot(12, 1).count })
 	end)
 
-	-- Week 9: the bank closing stops a stacking run. Mutation: in stackSort's still(), return true.
+	-- Week 9: the bank closing stops a stacking run, and the line says so even when the closed bank's slots read
+	-- empty (preflight S4). Mutations: in the Sort button's still(), return true; or in Stacker's step, judge the
+	-- move in flight before the stop (`if stop then` -> `if stop and not m then`).
 	it("closing the bank stops stacking before the next move", function()
 		Loader.LoadFile(SB, "SwagBag/Engine/Stacker.lua")
 		SB.Config.Set("sort.mode", "stacks")
@@ -1146,6 +1476,22 @@ and replace it with:
 		A.Advance(SB.Stacker.DELAY)
 		assert.equal(1, #A.stackMoves)
 		assert.same({ SB.L.STACK_STOP_CLOSED:format(1, 0) }, A.Lines())
+		-- the same with the closed bank's slots reading empty, as the client may answer
+		A.Put(6, 5, Fixtures.HERB, 2)
+		openBank()
+		Fake.Fire(BW.sortBankButton, "OnClick")
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		local get = A.GetSlot
+		A.GetSlot = function(bag, slot)
+			if bag >= 6 then
+				return nil
+			end
+			return get(bag, slot)
+		end
+		A.Advance(SB.Stacker.DELAY)
+		A.GetSlot = get
+		assert.equal(2, #A.stackMoves)
+		assert.equal(SB.L.STACK_STOP_CLOSED:format(0, 0), A.Lines()[2])
 ```
 
 In `spec/profiles_spec.lua`, find:
@@ -1235,7 +1581,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1463 passed, 7 failed`. The failures, exactly:
+Expected: `1469 passed, 7 failed`. The failures, exactly:
 
 - `spec/bagswindow_sections_spec.lua :: BagsWindow category view > with sort stacks the Sort button stacks instead, says so, reports in chat and regroups when done`
 - `spec/bagswindow_sections_spec.lua :: BagsWindow category view > stacking waits while the slot it would touch is under the mouse`
@@ -1252,11 +1598,12 @@ Critical tests and the mutation that must make each fail (each was applied to th
 - "the Sort button's mode travels in a share string; a word it may not hold is refused": in `SwagBag/Engine/Profiles.lua`, `, ["sort.mode"] = words("blizzard", "stacks"), ⏎ }` → `, ⏎ }`.
 - "bags page: the Sort button row, Blizzard's sort first and selected; each choice runs /swagbag sort": in `SwagBag/UI/SettingsPages.lua`, `return run("sort " .. v)` → `return run("sort stacks")`.
 - "/swagbag sort says the Sort button's mode, sets stacks or blizzard, and refuses while read-only": in `SwagBag/Engine/Stacker.lua`, `if not SB.Config.Set("sort.mode", arg) then ⏎ return L.SETTINGS_READONLY ⏎ end` → `SB.Config.Set("sort.mode", arg)`.
-- "with sort stacks the Sort button stacks instead, says so, reports in chat and regroups when done": in `SwagBag/UI/BagsWindow.lua`, `if SB.Stacker and SB.Config.Get("sort.mode") == "stacks" then ⏎ return stackSort() ⏎ end` → ∅.
-- "stacking waits while the slot it would touch is under the mouse": in `SwagBag/UI/BagsWindow.lua`, `{ kind = "bags", busy = buttonBusy, still` → `{ kind = "bags", still`.
-- "with sort stacks, Sort bank stacks the character bank only; the warband bank is never touched": in `SwagBag/UI/BankWindow.lua`, `if SB.Stacker and SB.Config.Get("sort.mode") == "stacks" then ⏎ return stackSort(kind) ⏎ end` → ∅.
-- "with sort stacks, Sort bank stacks the character bank only; the warband bank is never touched": in `SwagBag/UI/BankWindow.lua`, `SB.Stacker.Start({ kind = kind, busy` → `SB.Stacker.Start({ kind = "warband", busy`.
+- "with sort stacks the Sort button stacks instead, says so, reports in chat and regroups when done": in `SwagBag/UI/BagsWindow.lua`, `if SB.Stacker and SB.Config.Get("sort.mode") == "stacks" then` → `if false then`.
+- "stacking waits while the slot it would touch is under the mouse": in `SwagBag/UI/BagsWindow.lua`, `SB.Stacker.SortButton("bags", buttonBusy,` → `SB.Stacker.SortButton("bags", nil,`.
+- "with sort stacks, Sort bank stacks the character bank only; the warband bank is never touched": in `SwagBag/UI/BankWindow.lua`, `if SB.Stacker and SB.Config.Get("sort.mode") == "stacks" then` → `if false then`.
+- "with sort stacks, Sort bank stacks the character bank only; the warband bank is never touched": in `SwagBag/UI/BankWindow.lua`, `SB.Stacker.SortButton(kind, BW.view.Busy,` → `SB.Stacker.SortButton("warband", BW.view.Busy,`.
 - "closing the bank stops stacking before the next move": in `SwagBag/UI/BankWindow.lua`, `return BW.interaction and frame:IsShown()` → `return true`.
+- "closing the bank stops stacking before the next move": in `SwagBag/Engine/Stacker.lua`, `if stop then` → `if stop and not m then`.
 
 - [ ] **Step 3: Write the code**
 
@@ -1314,6 +1661,18 @@ and replace it with:
 ```lua
 end
 
+-- The Sort buttons' run (week 9; UI/BagsWindow.lua and UI/BankWindow.lua share it, with sort.mode "stacks"):
+-- starts a run for that scope; the click's one answer goes to flash(text) (the window's title: "Stacking...",
+-- or why it cannot start); when the run ends its one chat line is printed, then regroup(). -> ok
+function St.SortButton(kind, busy, still, flash, regroup)
+	local ok, why = St.Start({ kind = kind, busy = busy, still = still, done = function(result)
+		SB.Print(St.ResultText(result))
+		regroup()
+	end })
+	flash(ok and L.STACK_STARTED or (why == "busy" and L.MOVER_BUSY) or L.STACK_NOTHING)
+	return ok
+end
+
 -- /swagbag sort                    what the Sort buttons do
 -- /swagbag sort stacks|blizzard    partial stacks first (SwagBag's stacker) | Blizzard's own sort
 SB.Slash.Register("sort", L.HELP_SORT, function(arg)
@@ -1360,97 +1719,55 @@ L.SET_SORT_TIP = "Blizzard's sort: the game's own sort. Partial stacks first: Sw
 	.. " else moves, and locked or equipment-set items stay put. Bags, bank and warband bank are stacked apart."
 ```
 
-In `SwagBag/UI/BagsWindow.lua` (edit 1 of 2), find:
+In `SwagBag/UI/BagsWindow.lua`, find:
 
 ```lua
--- changes nothing, the timeout below still clears sortPending (W3).
-```
-
-and replace it with:
-
-```lua
--- changes nothing, the timeout below still clears sortPending (W3).
--- Week 9 (user pick 8): with sort.mode "stacks" the Sort button runs SwagBag's stacker (Engine/Stacker.lua)
--- instead of Blizzard's sort: the click answers in the title, the run's result is one chat line, and the
--- window regroups when it is done (held while the mouse is over the items, rule 5).
-local function stackSort()
-	local ok, why = SB.Stacker.Start({ kind = "bags", busy = buttonBusy, still = function()
-		return frame:IsShown()
-	end, done = function(result)
-		SB.Print(SB.Stacker.ResultText(result))
-		if frame:IsShown() then
-			W.RequestLayout("sort")
-		end
-	end })
-	W.Flash(ok and L.STACK_STARTED or (why == "busy" and L.MOVER_BUSY) or L.STACK_NOTHING)
-	return ok
-end
-
-```
-
-In `SwagBag/UI/BagsWindow.lua` (edit 2 of 2), find:
-
-```lua
-		W.Flash(L.SORT_AFTER_COMBAT)
-		return false
 	end
+	local ok, err = A.SortBags()
 ```
 
 and replace it with:
 
 ```lua
-		W.Flash(L.SORT_AFTER_COMBAT)
-		return false
 	end
 	if SB.Stacker and SB.Config.Get("sort.mode") == "stacks" then
-		return stackSort()
+		-- Week 9 (user pick 8): SwagBag's stacker instead (Engine/Stacker.lua, Stacker.SortButton): the click
+		-- answers in the title, the run's result is one chat line, and the window regroups when it is done
+		-- (held while the mouse is over the items, rule 5).
+		return SB.Stacker.SortButton("bags", buttonBusy, function()
+			return frame:IsShown()
+		end, W.Flash, function()
+			if frame:IsShown() then
+				W.RequestLayout("sort")
+			end
+		end)
 	end
+	local ok, err = A.SortBags()
 ```
 
-In `SwagBag/UI/BankWindow.lua` (edit 1 of 2), find:
+In `SwagBag/UI/BankWindow.lua`, find:
 
 ```lua
--- waiting after SORT_TIMEOUT.
+	end
+	local ok, err = A.SortBank(kind)
 ```
 
 and replace it with:
 
 ```lua
--- waiting after SORT_TIMEOUT.
--- Week 9 (user pick 8): with sort.mode "stacks" a Sort button runs SwagBag's stacker for its own bank type
--- only (kind "bank" or "warband": an item never changes bank type), as the bags window does.
-local function stackSort(kind)
-	local ok, why = SB.Stacker.Start({ kind = kind, busy = BW.view.Busy, still = function()
-		return BW.interaction and frame:IsShown()
-	end, done = function(result)
-		SB.Print(SB.Stacker.ResultText(result))
-		if frame:IsShown() and BW.view.IsOpen() then
-			BW.view.RequestLayout("sort")
-		end
-	end })
-	BW.Flash(ok and L.STACK_STARTED or (why == "busy" and L.MOVER_BUSY) or L.STACK_NOTHING)
-	return ok
-end
-
-```
-
-In `SwagBag/UI/BankWindow.lua` (edit 2 of 2), find:
-
-```lua
-		BW.Flash(L.SORT_AFTER_COMBAT)
-		return false
-	end
-```
-
-and replace it with:
-
-```lua
-		BW.Flash(L.SORT_AFTER_COMBAT)
-		return false
 	end
 	if SB.Stacker and SB.Config.Get("sort.mode") == "stacks" then
-		return stackSort(kind)
+		-- Week 9 (user pick 8): SwagBag's stacker for this button's own bank type only (kind "bank" or "warband":
+		-- an item never changes bank type), as the bags window does (Stacker.SortButton).
+		return SB.Stacker.SortButton(kind, BW.view.Busy, function()
+			return BW.interaction and frame:IsShown()
+		end, BW.Flash, function()
+			if frame:IsShown() and BW.view.IsOpen() then
+				BW.view.RequestLayout("sort")
+			end
+		end)
 	end
+	local ok, err = A.SortBank(kind)
 ```
 
 In `SwagBag/UI/GroupView.lua`, find:
@@ -1500,7 +1817,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1470 passed, 0 failed`.
+Expected: `1476 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -1508,7 +1825,7 @@ Expected: `1470 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (73 files)`, `1470 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (73 files)`, `1476 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -1536,17 +1853,17 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 3: TSM as a price source, and the price source choice
 
-The user's second pick (pick 10). `Providers/TSM.lua` registers a "TSM" price provider (priority 5: below Auctionator's 10, above the vendor's 0) that answers while TradeSkillMaster's public addon API is loaded, through the Adapter only: `TSM_API.ToItemString(link)` then `TSM_API.GetCustomPriceValue(priceString, itemString)`, every read pcall'd (TSM_API raises an error on a name it does not have), a secret link or a secret, negative or non-number answer is no price, and only four price strings are ever asked (D11). `Engine/Prices.lua` learns the choice `prices.source` (D10): `"auto"` (the default: Auctionator, else TSM, else the vendor, which is exactly the priority order), `"auctionator"`, `"tsm"` or `"vendor"` (that one, and the vendor for what it has no price for or while it is not loaded). Its cache works as before (per link, 10 minutes); TSM has no "prices changed" callback in that API, so a change of either setting also drops it and refreshes the open windows' totals once (D12). Header totals, the list's Value column, the gold glow and the vendor's "gray BoE worth more than twice at auction" protection all ask `Prices.Value`, so they all follow the choice (D13). `/swagbag price` and two rows on Settings > Bank & guild set it; `/swagbag report` names TSM's price string. `scripts/check.sh` now also fails on `TSM_API` or `LibStub` outside the Adapter, comments included.
+The user's second pick (pick 10). `Providers/TSM.lua` registers a "TSM" price provider (priority 5: below Auctionator's 10, above the vendor's 0) that answers while TradeSkillMaster's public addon API is loaded, through the Adapter only: `TSM_API.ToItemString(link)` then `TSM_API.GetCustomPriceValue(priceString, itemString)`, every read pcall'd (TSM_API raises an error on a name it does not have), a secret link or a secret, zero, negative or non-number answer is no price (preflight S11), TSM's API is found at the first price asked even before `TSMAvailable()` (lazily, preflight S12), and only four price strings are ever asked (D11). `Engine/Prices.lua` learns the choice `prices.source` (D10): `"auto"` (the default: Auctionator, else TSM, else the vendor, which is exactly the priority order), `"auctionator"`, `"tsm"` or `"vendor"` (that one, and the vendor for what it has no price for or while it is not loaded). Its cache works as before (per link, 10 minutes), except that a TSM "no price" is kept 30 seconds only (`Prices.MISS_AGE`, the provider's `missAge`), so TSM data that arrives after login is picked up (preflight S2); TSM has no "prices changed" callback in that API, so a change of either setting also drops the cache and refreshes the open windows' totals once (D12). Header totals, the list's Value column and the gold glow ask `Prices.Value`, so they follow the choice. The vendor's "gray BoE worth more than twice at auction" protection does **not** (controller ruling R0, D13): the new `Prices.AuctionValue(link, itemID)` asks every loaded auction source (Auctionator and TSM, whatever `prices.source` says; its own cache, dropped with the other) and the item stays when any of them prices it above twice what a vendor pays; Sell all's Auction House sentence asks it too. `/swagbag price` and two rows on Settings > Bank & guild set it: "Item prices come from" runs `/swagbag price <source>`, and "TSM price (when TSM answers)" runs the new `/swagbag price string <price>`, which changes TSM's price only and never switches the source (preflight S7; `/swagbag price tsm <price>` still switches to TSM, as documented). Profiles' share-string words and the Settings row's choices are built from `Adapter.TSM_PRICES`, the one list (preflight S13). `/swagbag report` names TSM's price string. `scripts/check.sh` now also fails on `TSM_API` or `LibStub` outside the Adapter, comments included.
 
 **Files:**
 - Create: `SwagBag/Providers/TSM.lua`
-- Modify: `SwagBag/Core/Adapter.lua` (`A.TSM_PRICES`, `A.TSMAvailable`, `A.TSMPrice`), `SwagBag/Engine/Prices.lua`, `SwagBag/Core/Config.lua` (`prices.source`, `prices.tsm`), `SwagBag/Engine/Profiles.lua`, `SwagBag/Core/Report.lua`, `SwagBag/UI/SettingsPages.lua`, `SwagBag/Locale/enUS.lua`
+- Modify: `SwagBag/Core/Adapter.lua` (`A.TSM_PRICES`, `A.TSMAvailable`, `A.TSMPrice`), `SwagBag/Engine/Prices.lua` (the choice, `AuctionValue`, `MISS_AGE`), `SwagBag/Engine/Vendor.lua` (`worthMoreAtAuction` asks `AuctionValue`), `SwagBag/UI/SectionActions.lua` (Sell all's Auction House value), `SwagBag/Core/Config.lua` (`prices.source`, `prices.tsm`), `SwagBag/Engine/Profiles.lua`, `SwagBag/Core/Report.lua`, `SwagBag/UI/SettingsPages.lua`, `SwagBag/Locale/enUS.lua`
 - Modify: `SwagBag/SwagBag.toc` (the new file; `TradeSkillMaster` in OptionalDeps), `scripts/toc_check.lua` (the OptionalDeps line), `scripts/check.sh` (`TSM_API` / `LibStub` only in the Adapter)
-- Test: `spec/adapter_spec.lua`, `spec/mock_adapter.lua` (`m.tsm`, `m.tsmCalls`), `spec/prices_spec.lua` (its file list gains `Core/Slash.lua`), `spec/vendor_spec.lua`, `spec/report_spec.lua`, `spec/profiles_spec.lua`, `spec/settings_spec.lua`
+- Test: `spec/adapter_spec.lua`, `spec/mock_adapter.lua` (`m.tsm`, `m.tsmCalls`), `spec/prices_spec.lua` (its file list gains `Core/Slash.lua`), `spec/vendor_spec.lua`, `spec/sectionactions_spec.lua`, `spec/report_spec.lua`, `spec/profiles_spec.lua`, `spec/settings_spec.lua`
 
 **Interfaces:**
-- Consumes: `Prices.RegisterProvider/Invalidate/Value/Source`, `SB_CONFIG_CHANGED(path)`, `SB.Debounce`, `SB_PRICES_CHANGED`, `Adapter.Resolve`, `Vendor`'s `worthMoreAtAuction` (unchanged).
-- Produces: `Adapter.TSM_PRICES` (`DBMarket`, `DBMinBuyout`, `DBRegionMarketAvg`, `DBRegionSaleAvg`), `Adapter.TSMAvailable()`, `Adapter.TSMPrice(link, priceString)`; `Prices.CHOICES`, `Prices.Choice()`, `Prices.TSMString()`, `Prices.SourceText()`; settings `prices.source` (`"auto"`), `prices.tsm` (`"DBMarket"`); `/swagbag price`; `L.HELP_PRICE`, `L.PRICE_*`, `L.SET_PRICE_*`.
+- Consumes: `Prices.RegisterProvider/Invalidate/Value/Source`, `SB_CONFIG_CHANGED(path)`, `SB.Debounce`, `SB_PRICES_CHANGED`, `Adapter.Resolve`, `Adapter.Now`, `Vendor`'s `worthMoreAtAuction` and `SectionActions.Sellable` (both changed to ask `AuctionValue`).
+- Produces: `Adapter.TSM_PRICES` (`DBMarket`, `DBMinBuyout`, `DBRegionMarketAvg`, `DBRegionSaleAvg`), `Adapter.TSMAvailable()`, `Adapter.TSMPrice(link, priceString)`; `Prices.CHOICES`, `Prices.Choice()`, `Prices.TSMString()`, `Prices.SourceText()`, `Prices.AuctionValue(link, itemID)`, `Prices.MISS_AGE` (30), a provider's optional `missAge`; settings `prices.source` (`"auto"`), `prices.tsm` (`"DBMarket"`); `/swagbag price` (with `price string <price>`); `L.HELP_PRICE`, `L.PRICE_*` (`L.PRICE_TSM_SET` new), `L.SET_PRICE_*`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1565,7 +1882,7 @@ and replace it with:
 In `spec/adapter_spec.lua` (edit 2 of 2), find:
 
 ```lua
-		assert.equal(1, cleared, "nothing stays on the cursor")
+		assert.falsy(A.CursorBusy(), "an error is no answer")
 	end)
 end)
 ```
@@ -1573,7 +1890,7 @@ end)
 and replace it with:
 
 ```lua
-		assert.equal(1, cleared, "nothing stays on the cursor")
+		assert.falsy(A.CursorBusy(), "an error is no answer")
 	end)
 end)
 
@@ -1616,16 +1933,18 @@ describe("Adapter TSM prices (real adapter, stubbed globals)", function()
 		assert.equal(2, #asked)
 	end)
 
-	it("an error, a negative or a non-number from TSM is no price", function()
+	-- Preflight S11, S12. Mutations: in A.TSMPrice, `v > 0` -> `v >= 0`; or drop `tsmApi = tsmApi or tsm()`
+	-- (a price asked before TSMAvailable() finds no TSM).
+	it("TSM is found at the first price asked; an error, zero, a negative or a non-number from TSM is no price", function()
 		tsm({ ToItemString = function(link) return link end, GetCustomPriceValue = function(_, itemString)
 			if itemString == "boom" then
 				error("TSM broke")
 			end
-			return ({ neg = -5, text = "12" })[itemString]
+			return ({ ok = 7, zero = 0, neg = -5, text = "12" })[itemString]
 		end })
-		assert.truthy(A.TSMAvailable())
-		assert.same({ nil, nil, nil }, { A.TSMPrice("boom", "DBMarket"), A.TSMPrice("neg", "DBMarket"),
-			A.TSMPrice("text", "DBMarket") })
+		assert.equal(7, A.TSMPrice("ok", "DBMarket"), "no TSMAvailable() asked first")
+		assert.same({ nil, nil, nil, nil }, { A.TSMPrice("boom", "DBMarket"), A.TSMPrice("zero", "DBMarket"),
+			A.TSMPrice("neg", "DBMarket"), A.TSMPrice("text", "DBMarket") })
 	end)
 end)
 ```
@@ -1723,6 +2042,37 @@ and replace it with:
 		assert.equal("Vendor", P.SourceText())
 	end)
 
+	-- Preflight S2: TSM's data may load after the first lookup. Mutation: in P.Value, `if hit and (hit[3] == nil
+	-- or now <= hit[3]) then` -> `if hit then` (a TSM "no price" kept for the cache's 10 minutes).
+	it("a TSM 'no price' is kept 30 seconds only, so TSM data that arrives after login is used", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		A.tsm = { prices = { DBMarket = {} } }
+		P.Invalidate()
+		assert.same({ 1500, "Vendor" }, { P.Value(HERB_LINK, Fixtures.HERB) })
+		A.tsm.prices.DBMarket[HERB_LINK] = 30000
+		assert.same({ 1500, "Vendor" }, { P.Value(HERB_LINK, Fixtures.HERB) }, "kept a moment")
+		A.Advance(P.MISS_AGE + 1)
+		assert.same({ 30000, "TSM" }, { P.Value(HERB_LINK, Fixtures.HERB) })
+	end)
+
+	-- Ruling R0. Mutations: in P.AuctionValue, `best = math.max(best or v, v)` -> `best = best or v` (the first
+	-- source's answer); or in P.Invalidate, `P.ahCache, P.auction = {}, nil` -> `P.auction = nil`.
+	it("AuctionValue asks every loaded auction source whatever prices.source says; the highest answers", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		SB.Config.Set("prices.source", "vendor")
+		A.auctionator = { prices = { [HERB_LINK] = 42000 } }
+		A.tsm = { prices = { DBMarket = { [HERB_LINK] = 30000 } } }
+		P.Invalidate()
+		assert.same({ 1500, "Vendor" }, { P.Value(HERB_LINK, Fixtures.HERB) }, "what the windows show")
+		assert.equal(42000, P.AuctionValue(HERB_LINK, Fixtures.HERB))
+		A.auctionator.prices[HERB_LINK] = 20000
+		P.Invalidate()
+		assert.equal(30000, P.AuctionValue(HERB_LINK, Fixtures.HERB), "TSM's is the higher one now")
+		A.auctionator, A.tsm = nil, nil
+		P.Invalidate()
+		assert.is_nil(P.AuctionValue(HERB_LINK, Fixtures.HERB), "no auction addon: no auction price, never the vendor's")
+	end)
+
 	-- Mutation: in the price command, set prices.source without checking Config.Set's answer.
 	it("/swagbag price says where prices come from, picks a source and TSM's price, and refuses the rest", function()
 		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
@@ -1741,6 +2091,10 @@ and replace it with:
 			run("price auctionator"))
 		assert.equal(L.PRICE_SET:format(L.PRICE_CHOICE_VENDOR), run("price vendor"))
 		assert.equal(L.PRICE_SET:format(L.PRICE_CHOICE_AUTO), run("price auto"))
+		assert.equal(L.PRICE_TSM_SET:format("DBMinBuyout"), run("price string dbminbuyout"))
+		assert.same({ "auto", "DBMinBuyout" }, { SB.Config.Get("prices.source"), SB.Config.Get("prices.tsm") },
+			"price string: TSM's price only, never the source")
+		assert.equal(L.PRICE_USAGE, run("price string"))
 		assert.equal(L.PRICE_USAGE, run("price tsm dbanything"))
 		assert.equal(L.PRICE_USAGE, run("price auctionhouse"))
 		SB.Config.readOnly = true
@@ -1793,6 +2147,36 @@ and replace it with:
 	it("Hash is stable, order-independent and changes with content", function()
 ```
 
+In `spec/sectionactions_spec.lua`, find:
+
+```lua
+	end)
+
+	-- Mutations: SA.SellConfirmed skips the atVendor() check; MERCHANT_CLOSED stops hiding the question.
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	-- Week 9 ruling R0: the Auction House sentence does not follow the price source. Mutation: in SA.Sellable,
+	-- `local ah = P and not P.Bound(r) and P.AuctionValue(r.link, r.itemID)` -> `local ah = P and P.Value(r.link,
+	-- r.itemID, P.Bound(r))`.
+	it("with Vendor chosen as the price source, Sell all's question still names the Auction House value", function()
+		SB.Config.Set("prices.source", "vendor")
+		A.auctionator = { prices = { ["item:" .. Fixtures.HERB] = 1000 } }
+		assert.same({ 10, "Vendor" }, { SB.Prices.Value("item:" .. Fixtures.HERB, Fixtures.HERB) },
+			"the windows show the vendor's")
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SA.Entries("c_tradegoods")[1].run()
+		assert.equal("Sell 5 items from Trade Goods for about 10s 0c? At the Auction House they are worth about 10g 0s"
+			.. " 0c. " .. SB.L.SECTION_SELL_KEEPS, StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
+	end)
+
+	-- Mutations: SA.SellConfirmed skips the atVendor() check; MERCHANT_CLOSED stops hiding the question.
+```
+
 In `spec/settings_spec.lua`, find:
 
 ```lua
@@ -1806,7 +2190,8 @@ and replace it with:
 ```lua
 	end)
 
-	-- Week 9 (user pick 10), P1. Mutation: in the TSM price row's apply, run "price tsm" without the string.
+	-- Week 9 (user pick 10), P1. The TSM price row changes TSM's price only, never the source (preflight S7).
+	-- Mutations: in the TSM price row's apply, run "price string" without the name; or run "price tsm " .. v.
 	it("bank page: the price source rows, Auto and DBMarket first and selected; each choice runs /swagbag price", function()
 		SB.Slash.Register("price", "test", function(arg)
 			ran[#ran + 1] = "price " .. arg
@@ -1818,7 +2203,7 @@ and replace it with:
 		click("TSM")
 		click("DBMinBuyout")
 		click(SB.L.SET_PRICE_VENDOR)
-		assert.same({ "price tsm", "price tsm DBMinBuyout", "price vendor" }, ran)
+		assert.same({ "price tsm", "price string DBMinBuyout", "price vendor" }, ran)
 	end)
 
 	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
@@ -1837,19 +2222,38 @@ and replace it with:
 ```lua
 	end)
 
-	-- Week 9 (user pick 10): the protection asks the chosen price source. Mutation: worthMoreAtAuction asks
-	-- only Auctionator (source == "Auctionator").
-	it("a gray BoE worth more than twice its vendor price by TSM's price stays when TSM is the source", function()
+	-- Week 9 (user pick 10, ruling R0): every loaded auction source is asked, and any one above twice keeps the
+	-- item. Mutation: in P.AuctionValue, `best = math.max(best or v, v)` -> `best = best or v` (Auctionator's 150
+	-- would decide).
+	it("a gray BoE stays when TSM prices it above twice its vendor price, even while Auctionator answers less", function()
 		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
 		A.AddItem(GRAY_BOE, { name = "Rusted Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
 			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
 		A.Put(0, 8, GRAY_BOE, 1)
 		A.auctionator = { prices = { ["item:" .. GRAY_BOE] = 150 } }
 		A.tsm = { prices = { DBMarket = { ["item:" .. GRAY_BOE] = 900 } } }
-		SB.Config.Set("prices.source", "tsm")
 		SB.Inventory.ScanAll()
 		visit()
 		assert.same({ 6 }, sold())
+	end)
+
+	-- Ruling R0 (gold-maker safety): the protection does not follow the price source. Mutation: in
+	-- worthMoreAtAuction, `SB.Prices.AuctionValue(r.link, r.itemID)` -> `SB.Prices.Value(r.link, r.itemID, false)`.
+	it("with Vendor chosen, a gray BoE Auctionator prices above twice its vendor price stays; with no auction addon it sells", function()
+		A.AddItem(GRAY_BOE, { name = "Rusted Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
+		A.Put(0, 8, GRAY_BOE, 1)
+		A.auctionator = { prices = { ["item:" .. GRAY_BOE] = 500 } }
+		SB.Config.Set("prices.source", "vendor")
+		assert.same({ 100, "Vendor" }, { SB.Prices.Value("item:" .. GRAY_BOE, GRAY_BOE) }, "the windows show the vendor's")
+		SB.Inventory.ScanAll()
+		visit()
+		assert.same({ 6 }, sold())
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.auctionator = nil
+		SB.Prices.Invalidate()
+		visit()
+		assert.same({ 6, 8 }, sold())
 	end)
 
 	-- Ruling R19: a gray piece whose look the account lacks is a transmog, not junk. Mutation: Vendor.Protected
@@ -1862,34 +2266,47 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1470 passed, 9 failed`. The failures, exactly:
+Expected: `1476 passed, 13 failed`. The failures, exactly:
 
 - `spec/adapter_spec.lua :: Adapter TSM prices (real adapter, stubbed globals) > prices through ToItemString and GetCustomPriceValue, only for the price strings SwagBag offers`
-- `spec/adapter_spec.lua :: Adapter TSM prices (real adapter, stubbed globals) > an error, a negative or a non-number from TSM is no price`
+- `spec/adapter_spec.lua :: Adapter TSM prices (real adapter, stubbed globals) > TSM is found at the first price asked; an error, zero, a negative or a non-number from TSM is no price`
 - `spec/prices_spec.lua :: Prices (spec F10, 3.3) > by default Auctionator answers, else TSM, else the vendor; prices.source picks one, the vendor fills in`
 - `spec/prices_spec.lua :: Prices (spec F10, 3.3) > TSM's price string follows the setting; a new source or string drops the cache and refreshes the totals`
+- `spec/prices_spec.lua :: Prices (spec F10, 3.3) > a TSM 'no price' is kept 30 seconds only, so TSM data that arrives after login is used`
+- `spec/prices_spec.lua :: Prices (spec F10, 3.3) > AuctionValue asks every loaded auction source whatever prices.source says; the highest answers`
 - `spec/prices_spec.lua :: Prices (spec F10, 3.3) > /swagbag price says where prices come from, picks a source and TSM's price, and refuses the rest`
 - `spec/profiles_spec.lua :: Profiles (week 7) > the price source and TSM's price string travel; a price string SwagBag does not offer is refused`
 - `spec/report_spec.lua :: Report > names TSM's price string when TSM answers`
+- `spec/sectionactions_spec.lua :: Section actions (week 7) > with Vendor chosen as the price source, Sell all's question still names the Auction House value`
 - `spec/settings_spec.lua :: Settings window > bank page: the price source rows, Auto and DBMarket first and selected; each choice runs /swagbag price`
-- `spec/vendor_spec.lua :: Vendor (week 7) > a gray BoE worth more than twice its vendor price by TSM's price stays when TSM is the source`
+- `spec/vendor_spec.lua :: Vendor (week 7) > a gray BoE stays when TSM prices it above twice its vendor price, even while Auctionator answers less`
+- `spec/vendor_spec.lua :: Vendor (week 7) > with Vendor chosen, a gray BoE Auctionator prices above twice its vendor price stays; with no auction addon it sells`
 
-`spec/prices_spec.lua` now loads `Core/Slash.lua` (the price command lives in `Engine/Prices.lua`); the TSM provider is loaded inside the four tests that need it, so at Step 2 only the new tests fail. The worth line's wording changes in `enUS.lua`, and the week-7 test that quotes it formats `L.WORTH_STATE` itself, so it stays green.
+`spec/prices_spec.lua` now loads `Core/Slash.lua` (the price command lives in `Engine/Prices.lua`); the TSM provider is loaded inside the four tests that need it, so at Step 2 only the new tests fail. The two ruling-R0 tests that choose "Vendor" first check that the windows show the vendor's price, which fails at Step 2 (there is no source choice yet), so they cannot pass for the wrong reason. The worth line's wording changes in `enUS.lua`, and the week-7 test that quotes it formats `L.WORTH_STATE` itself, so it stays green.
 
 Critical tests and the mutation that must make each fail (each was applied to this task's finished code; the named test failed):
 
 - "prices through ToItemString and GetCustomPriceValue, only for the price strings SwagBag offers": in `SwagBag/Core/Adapter.lua`, `if not api or type(link) ~= "string" or isSecret(link) or not TSM_PRICE_OK[priceString] then` → `if not api or type(link) ~= "string" or isSecret(link) then`.
 - "prices through ToItemString and GetCustomPriceValue, only for the price strings SwagBag offers": in `SwagBag/Core/Adapter.lua`, `if not api or type(link) ~= "string" or isSecret(link) or not TSM_PRICE_OK[priceString] then` → `if not api or type(link) ~= "string" or not TSM_PRICE_OK[priceString] then`.
-- "an error, a negative or a non-number from TSM is no price": in `SwagBag/Core/Adapter.lua`, `and v == v and v >= 0 and v < math.huge then ⏎ return math.floor(v)` → `then ⏎ return math.floor(v)`.
+- "TSM is found at the first price asked; an error, zero, a negative or a non-number from TSM is no price": in `SwagBag/Core/Adapter.lua`, `and v == v and v > 0 and v < math.huge then ⏎ return math.floor(v)` → `then ⏎ return math.floor(v)`.
+- "TSM is found at the first price asked; an error, zero, a negative or a non-number from TSM is no price": in `SwagBag/Core/Adapter.lua`, `and v == v and v > 0 and v < math.huge then` → `and v == v and v >= 0 and v < math.huge then`.
+- "TSM is found at the first price asked; an error, zero, a negative or a non-number from TSM is no price": in `SwagBag/Core/Adapter.lua`, `tsmApi = tsmApi or tsm()` → ∅.
 - "by default Auctionator answers, else TSM, else the vendor; prices.source picks one, the vendor fills in": in `SwagBag/Providers/TSM.lua`, `priority = 5,` → `priority = 15,`.
 - "by default Auctionator answers, else TSM, else the vendor; prices.source picks one, the vendor fills in": in `SwagBag/Engine/Prices.lua`, `and (choice == nil or p.name == choice or p.name == "Vendor") then` → `then`.
 - "TSM's price string follows the setting; a new source or string drops the cache and refreshes the totals": in `SwagBag/Providers/TSM.lua`, `SB.Adapter.TSMPrice(link, SB.Prices.TSMString())` → `SB.Adapter.TSMPrice(link, "DBMarket")`.
 - "TSM's price string follows the setting; a new source or string drops the cache and refreshes the totals": in `SwagBag/Engine/Prices.lua`, `elseif path == "prices.source" or path == "prices.tsm" then ⏎ P.Invalidate()` → `elseif path == "prices.source" or path == "prices.tsm" then`.
+- "a TSM 'no price' is kept 30 seconds only, so TSM data that arrives after login is used": in `SwagBag/Engine/Prices.lua`, `if hit and (hit[3] == nil or now <= hit[3]) then` → `if hit then`.
+- "AuctionValue asks every loaded auction source whatever prices.source says; the highest answers": in `SwagBag/Engine/Prices.lua`, `best = math.max(best or v, v)` → `best = best or v`.
+- "AuctionValue asks every loaded auction source whatever prices.source says; the highest answers": in `SwagBag/Engine/Prices.lua`, `P.ahCache, P.auction = {}, nil` → `P.auction = nil`.
 - "/swagbag price says where prices come from, picks a source and TSM's price, and refuses the rest": in `SwagBag/Engine/Prices.lua`, `if not C.Set("prices.source", a) or (priceString and not C.Set("prices.tsm", priceString)) then` → `C.Set("prices.source", a) ⏎ if priceString and not C.Set("prices.tsm", priceString) then`.
+- "/swagbag price says where prices come from, picks a source and TSM's price, and refuses the rest": in `SwagBag/Engine/Prices.lua`, `if not C.Set("prices.tsm", name) then` → `if not (C.Set("prices.source", "tsm") and C.Set("prices.tsm", name)) then`.
 - "names TSM's price string when TSM answers": in `SwagBag/Core/Report.lua`, `local source = (SB.Prices.SourceText or SB.Prices.Source)()` → `local source = SB.Prices.Source()`.
-- "a gray BoE worth more than twice its vendor price by TSM's price stays when TSM is the source": in `SwagBag/Engine/Vendor.lua`, `return source ~= nil and source ~= "Vendor" and` → `return source == "Auctionator" and`.
-- "the price source and TSM's price string travel; a price string SwagBag does not offer is refused": in `SwagBag/Engine/Profiles.lua`, `["prices.tsm"] = words("DBMarket", "DBMinBuyout", "DBRegionMarketAvg", "DBRegionSaleAvg"),` → ∅.
-- "bank page: the price source rows, Auto and DBMarket first and selected; each choice runs /swagbag price": in `SwagBag/UI/SettingsPages.lua`, `return run("price tsm " .. v)` → `return run("price tsm")`.
+- "a gray BoE stays when TSM prices it above twice its vendor price, even while Auctionator answers less": in `SwagBag/Engine/Prices.lua`, `best = math.max(best or v, v)` → `best = best or v`.
+- "with Vendor chosen, a gray BoE Auctionator prices above twice its vendor price stays; with no auction addon it sells": in `SwagBag/Engine/Vendor.lua`, `local ah = SB.Prices.AuctionValue(r.link, r.itemID)` → `local ah = SB.Prices.Value(r.link, r.itemID, false)`.
+- "with Vendor chosen as the price source, Sell all's question still names the Auction House value": in `SwagBag/UI/SectionActions.lua`, `local ah = P and not P.Bound(r) and P.AuctionValue(r.link, r.itemID)` → `local ah = P and P.Value(r.link, r.itemID, P.Bound(r))`.
+- "the price source and TSM's price string travel; a price string SwagBag does not offer is refused": in `SwagBag/Engine/Profiles.lua`, `["prices.tsm"] = words(unpack(SB.Adapter.TSM_PRICES)),` → ∅.
+- "bank page: the price source rows, Auto and DBMarket first and selected; each choice runs /swagbag price": in `SwagBag/UI/SettingsPages.lua`, `return run("price string " .. v)` → `return run("price string")`.
+- "bank page: the price source rows, Auto and DBMarket first and selected; each choice runs /swagbag price": in `SwagBag/UI/SettingsPages.lua`, `return run("price string " .. v)` → `return run("price tsm " .. v)`.
 
 - [ ] **Step 3: Write the code**
 
@@ -1931,7 +2348,8 @@ local function tsm()
 	return nil
 end
 
--- Resolved when availability is asked (once per price-cache fill), as for Auctionator.
+-- Resolved when availability is asked (once per price-cache fill), as for Auctionator, or at the first price
+-- asked before that (lazily, so a price never depends on the call order).
 local tsmApi
 
 function A.TSMAvailable()
@@ -1939,8 +2357,9 @@ function A.TSMAvailable()
 	return tsmApi ~= nil
 end
 
--- Copper per unit by one of A.TSM_PRICES, or nil (no price, not loaded, a secret link, an error).
+-- Copper per unit by one of A.TSM_PRICES, or nil (no price, not loaded, a secret link, an error, 0 or less).
 function A.TSMPrice(link, priceString)
+	tsmApi = tsmApi or tsm()
 	local api = tsmApi
 	if not api or type(link) ~= "string" or isSecret(link) or not TSM_PRICE_OK[priceString] then
 		return nil
@@ -1950,7 +2369,7 @@ function A.TSMPrice(link, priceString)
 		return nil
 	end
 	local ok, v = pcall(api.value, priceString, itemString)
-	if ok and type(v) == "number" and not isSecret(v) and v == v and v >= 0 and v < math.huge then
+	if ok and type(v) == "number" and not isSecret(v) and v == v and v > 0 and v < math.huge then
 		return math.floor(v)
 	end
 	return nil
@@ -1988,27 +2407,52 @@ and replace it with:
 		lines[#lines + 1] = L.REPORT_PRICES:format(tostring(source or L.REPORT_NONE), SB.Prices.cached)
 ```
 
-In `SwagBag/Engine/Prices.lua` (edit 1 of 5), find:
+In `SwagBag/Engine/Prices.lua` (edit 1 of 12), find:
 
 ```lua
---   Prices.Invalidate()
+local _, SB = ...
+
+local P = { providers = {}, cache = {}, boundCache = {}, cached = 0, filledAt = nil, active = nil, errors = {}, off = {},
+	MAX_AGE = 600, REFRESH_DELAY = 0.5, MAX_ERRORS = 3 }
 ```
 
 and replace it with:
 
 ```lua
---   Prices.Invalidate()
 -- Week 9 (user pick 10): Providers/TSM.lua adds "TSM" (priority 5, TradeSkillMaster's price string from the
 -- prices.tsm setting). prices.source picks who answers: "auto" (the default: Auctionator, else TSM, else the
 -- vendor, by priority) | "auctionator" | "tsm" | "vendor" (that one, the vendor for what it has no price for,
--- or for everything while it is not loaded). Header totals, the list's Value column, the gold glow and the
--- vendor's "worth more at auction" protection all ask Prices.Value, so they follow the choice.
+-- or for everything while it is not loaded). Header totals, the list's Value column and the gold glow ask
+-- Prices.Value, so they follow the choice.
+--   Prices.AuctionValue(link, itemID) -> copper | nil   ruling R0: the highest price any loaded auction source
+--                                      (Auctionator, TSM) gives, whatever prices.source says; the vendor's
+--                                      "gray BoE worth more than twice at auction" rule and Sell all's Auction
+--                                      House sentence ask it, so a gold-maker who shows vendor prices keeps them
 --   Prices.Choice() -> provider name | nil (auto);  Prices.TSMString() -> one of Adapter.TSM_PRICES
 --   Prices.SourceText() -> "Auctionator" | "TSM (DBMarket)" | "Vendor"   for /swagbag price and the report
--- A change of either setting drops the cache and refreshes the open windows' totals once.
+-- A change of either setting drops the cache and refreshes the open windows' totals once. A provider with
+-- missAge (TSM: its data may still be loading after login) has its "no price" kept missAge seconds only
+-- (MISS_AGE, 30), not the cache's 10 minutes.
+local _, SB = ...
+
+local P = { providers = {}, cache = {}, boundCache = {}, ahCache = {}, cached = 0, filledAt = nil, active = nil,
+	auction = nil, errors = {}, off = {}, MAX_AGE = 600, MISS_AGE = 30, REFRESH_DELAY = 0.5, MAX_ERRORS = 3 }
 ```
 
-In `SwagBag/Engine/Prices.lua` (edit 2 of 5), find:
+In `SwagBag/Engine/Prices.lua` (edit 2 of 12), find:
+
+```lua
+	P.cache, P.boundCache, P.cached, P.filledAt, P.active = {}, {}, 0, nil, nil
+```
+
+and replace it with:
+
+```lua
+	P.cache, P.boundCache, P.cached, P.filledAt, P.active = {}, {}, 0, nil, nil
+	P.ahCache, P.auction = {}, nil -- ruling R0's own cache (P.AuctionValue)
+```
+
+In `SwagBag/Engine/Prices.lua` (edit 3 of 12), find:
 
 ```lua
 -- The available providers, best first (worked out once per cache fill).
@@ -2047,16 +2491,17 @@ local function active()
 			if not P.off[p.name] and (choice == nil or p.name == choice or p.name == "Vendor") then
 ```
 
-In `SwagBag/Engine/Prices.lua` (edit 3 of 5), find:
+In `SwagBag/Engine/Prices.lua` (edit 4 of 12), find:
 
 ```lua
-	return first and first.name or nil
+end
+
+local function failed(p, message)
 ```
 
 and replace it with:
 
 ```lua
-	return first and first.name or nil
 end
 
 function P.SourceText()
@@ -2065,9 +2510,161 @@ function P.SourceText()
 		return source .. " (" .. P.TSMString() .. ")"
 	end
 	return source
+end
+
+local function failed(p, message)
 ```
 
-In `SwagBag/Engine/Prices.lua` (edit 4 of 5), find:
+In `SwagBag/Engine/Prices.lua` (edit 5 of 12), find:
+
+```lua
+local function lookup(link, itemID, bound)
+```
+
+and replace it with:
+
+```lua
+-- The answer, its provider, and how long a "no price" on the way may be kept (missAge; nil: the cache's age).
+local function lookup(link, itemID, bound)
+	local missAge
+```
+
+In `SwagBag/Engine/Prices.lua` (edit 6 of 12), find:
+
+```lua
+				return v, p.name
+```
+
+and replace it with:
+
+```lua
+				return v, p.name, missAge
+			elseif p.missAge then
+				missAge = math.min(missAge or p.missAge, p.missAge)
+```
+
+In `SwagBag/Engine/Prices.lua` (edit 7 of 12), find:
+
+```lua
+	return nil, nil
+```
+
+and replace it with:
+
+```lua
+	return nil, nil, missAge
+end
+
+-- Now, after dropping a cache older than MAX_AGE.
+local function fresh()
+	local now = SB.Adapter.Now()
+	if P.filledAt and now - P.filledAt > P.MAX_AGE then
+		P.Invalidate()
+	end
+	return now
+```
+
+In `SwagBag/Engine/Prices.lua` (edit 8 of 12), find:
+
+```lua
+	end
+	local now = SB.Adapter.Now()
+	if P.filledAt and now - P.filledAt > P.MAX_AGE then
+		P.Invalidate()
+	end
+```
+
+and replace it with:
+
+```lua
+	end
+	local now = fresh()
+```
+
+In `SwagBag/Engine/Prices.lua` (edit 9 of 12), find:
+
+```lua
+	if hit then
+		return hit[1] or nil, hit[2]
+	end
+	local v, source = lookup(link, itemID, bound)
+	if key ~= nil then
+		store[key] = { v or false, source }
+```
+
+and replace it with:
+
+```lua
+	if hit and (hit[3] == nil or now <= hit[3]) then
+		return hit[1] or nil, hit[2]
+	end
+	local v, source, missAge = lookup(link, itemID, bound)
+	if key ~= nil then
+		store[key] = { v or false, source, missAge and now + missAge or nil }
+```
+
+In `SwagBag/Engine/Prices.lua` (edit 10 of 12), find:
+
+```lua
+	return v, source
+```
+
+and replace it with:
+
+```lua
+	return v, source
+end
+
+-- Ruling R0: every auction source that is loaded (every provider but the vendor), whatever prices.source says.
+local function auctionSources()
+	if not P.auction then
+		local list = {}
+		for _, p in ipairs(P.providers) do
+			if p.name ~= "Vendor" and not P.off[p.name] then
+				local ok, yes = pcall(p.available)
+				if ok and yes then
+					list[#list + 1] = p
+				end
+			end
+		end
+		P.auction = list
+	end
+	return P.auction
+end
+
+function P.AuctionValue(link, itemID)
+	if SB.Adapter.IsSecret(link) then
+		link = nil
+	end
+	if SB.Adapter.IsSecret(itemID) then
+		itemID = nil
+	end
+	local key = link or itemID
+	if key == nil then
+		return nil
+	end
+	local now = fresh()
+	local hit = P.ahCache[key]
+	if hit and (hit[2] == nil or now <= hit[2]) then
+		return hit[1] or nil
+	end
+	local best, missAge
+	for _, p in ipairs(auctionSources()) do
+		local ok, v = pcall(p.value, link, itemID)
+		if not ok then
+			failed(p, v)
+		elseif type(v) == "number" then
+			best = math.max(best or v, v)
+		elseif p.missAge then
+			missAge = math.min(missAge or p.missAge, p.missAge)
+		end
+	end
+	P.ahCache[key] = { best or false, missAge and now + missAge or nil }
+	P.filledAt = P.filledAt or now
+	return best
+```
+
+In `SwagBag/Engine/Prices.lua` (edit 11 of 12), find:
 
 ```lua
 })
@@ -2101,6 +2698,7 @@ end, "none")
 -- /swagbag price                       where prices come from
 -- /swagbag price auto|auctionator|tsm|vendor
 -- /swagbag price tsm <price>          TSM, with one of Adapter.TSM_PRICES (any case)
+-- /swagbag price string <price>       TSM's price only; where prices come from stays (the Settings row)
 local function choiceText(choice)
 	local L = SB.L
 	if choice == "tsm" then
@@ -2110,19 +2708,34 @@ local function choiceText(choice)
 		or L.PRICE_CHOICE_AUTO
 end
 
+-- One of Adapter.TSM_PRICES by its lower-case word, or nil.
+local function tsmName(word)
+	for _, name in ipairs(SB.Adapter.TSM_PRICES) do
+		if name:lower() == word then
+			return name
+		end
+	end
+	return nil
+end
+
 SB.Slash.Register("price", SB.L.HELP_PRICE, function(arg)
 	local L, C = SB.L, SB.Config
 	local a, b = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
 	if a == "" then
 		return L.PRICE_STATE:format(choiceText(C.Get("prices.source")), tostring(P.SourceText() or L.REPORT_NONE))
+	elseif a == "string" then
+		local name = tsmName(b)
+		if not name then
+			return L.PRICE_USAGE
+		end
+		if not C.Set("prices.tsm", name) then
+			return L.SETTINGS_READONLY
+		end
+		return L.PRICE_TSM_SET:format(name)
 	end
 	local priceString
 	if a == "tsm" and b ~= "" then
-		for _, name in ipairs(SB.Adapter.TSM_PRICES) do
-			if name:lower() == b then
-				priceString = name
-			end
-		end
+		priceString = tsmName(b)
 		if not priceString then
 			return L.PRICE_USAGE
 		end
@@ -2143,7 +2756,7 @@ end)
 -- Providers that can say "prices changed" drop the cache when they do.
 ```
 
-In `SwagBag/Engine/Prices.lua` (edit 5 of 5), find:
+In `SwagBag/Engine/Prices.lua` (edit 12 of 12), find:
 
 ```lua
 				-- The windows refresh their header totals in place, once, after the burst.
@@ -2168,7 +2781,7 @@ and replace it with:
 
 ```lua
 	["prices.worthTop"] = range(1, 50, true), ["prices.source"] = words("auto", "auctionator", "tsm", "vendor"),
-	["prices.tsm"] = words("DBMarket", "DBMinBuyout", "DBRegionMarketAvg", "DBRegionSaleAvg"),
+	["prices.tsm"] = words(unpack(SB.Adapter.TSM_PRICES)),
 ```
 
 In `SwagBag/Engine/Profiles.lua` (edit 2 of 2), find:
@@ -2182,6 +2795,53 @@ and replace it with:
 ```lua
 	["prices.worthGold"] = "PROFILE_LABEL_WORTH_GOLD", ["prices.worthTop"] = "PROFILE_LABEL_WORTH_TOP",
 	["prices.source"] = "SET_PRICE_SOURCE", ["prices.tsm"] = "SET_PRICE_TSM",
+```
+
+In `SwagBag/Engine/Vendor.lua` (edit 1 of 3), find:
+
+```lua
+--                                      (Collections.Uncollected, Task 8), or a gray BoE item Auctionator prices
+--                                      above twice the vendor
+```
+
+and replace it with:
+
+```lua
+--                                      (Collections.Uncollected, Task 8), or a gray BoE item an auction source
+--                                      (Auctionator or TSM, whichever is loaded, whatever the price source:
+--                                      Prices.AuctionValue, week 9 ruling R0) prices above twice the vendor
+```
+
+In `SwagBag/Engine/Vendor.lua` (edit 2 of 3), find:
+
+```lua
+-- A gray item that binds when equipped and that Auctionator prices above twice what a vendor pays (R19: a
+-- gold-maker sells those at the Auction House, not to a vendor). No Auctionator price: no such protection.
+```
+
+and replace it with:
+
+```lua
+-- A gray item that binds when equipped and that an auction source prices above twice what a vendor pays (R19:
+-- a gold-maker sells those at the Auction House, not to a vendor). Week 9 ruling R0: every loaded auction
+-- source is asked (Auctionator, TSM; the highest answer counts), even when the price source is "Vendor". No
+-- auction addon loaded, or none knows the item: no such protection.
+```
+
+In `SwagBag/Engine/Vendor.lua` (edit 3 of 3), find:
+
+```lua
+	local ah, source = SB.Prices.Value(r.link, r.itemID, false)
+	local info = SB.Adapter.GetItemInfo(r.itemID)
+	return source ~= nil and source ~= "Vendor" and type(ah) == "number" and ah > 2 * (info and info.sellPrice or 0)
+```
+
+and replace it with:
+
+```lua
+	local ah = SB.Prices.AuctionValue(r.link, r.itemID)
+	local info = SB.Adapter.GetItemInfo(r.itemID)
+	return type(ah) == "number" and ah > 2 * (info and info.sellPrice or 0)
 ```
 
 In `SwagBag/Locale/enUS.lua` (edit 1 of 3), find:
@@ -2222,26 +2882,30 @@ and replace it with:
 	.. " else moves, and locked or equipment-set items stay put. Bags, bank and warband bank are stacked apart."
 
 -- Price source (week 9, user pick 10): Engine/Prices.lua, Providers/TSM.lua
-L.HELP_PRICE = "price [auto|auctionator|tsm [<price>]|vendor]: where item prices come from (header totals, Value, gold glow)"
+L.HELP_PRICE = "price [auto|auctionator|tsm [<price>]|vendor|string <price>]: where item prices come from (header"
+	.. " totals, Value, gold glow); string: TSM's price only"
 L.PRICE_CHOICE_AUTO = "auto (Auctionator, else TSM, else what a vendor pays)"
 L.PRICE_CHOICE_AUCTIONATOR = "Auctionator (else what a vendor pays)"
 L.PRICE_CHOICE_TSM = "TSM's %s (else what a vendor pays)"
 L.PRICE_CHOICE_VENDOR = "what a vendor pays"
 L.PRICE_STATE = "Prices: %s. Answering now: %s. Type /swagbag price auto, price auctionator, price tsm, price vendor,"
-	.. " or price tsm <DBMarket|DBMinBuyout|DBRegionMarketAvg|DBRegionSaleAvg>."
+	.. " or price tsm <DBMarket|DBMinBuyout|DBRegionMarketAvg|DBRegionSaleAvg>; price string <...> changes TSM's"
+	.. " price only."
 L.PRICE_SET = "Prices now come from: %s."
 L.PRICE_NOT_LOADED = "%s is not loaded, so what a vendor pays answers until it is."
-L.PRICE_USAGE = "Use /swagbag price, price auto, price auctionator, price tsm, price vendor, or price tsm <DBMarket|"
-	.. "DBMinBuyout|DBRegionMarketAvg|DBRegionSaleAvg>."
+L.PRICE_USAGE = "Use /swagbag price, price auto, price auctionator, price tsm, price vendor, price tsm <DBMarket|"
+	.. "DBMinBuyout|DBRegionMarketAvg|DBRegionSaleAvg>, or price string <...> (TSM's price only)."
+L.PRICE_TSM_SET = "TSM price: %s. It is used whenever TSM answers; where prices come from stays as it was."
 L.SET_PRICE_SOURCE = "Item prices come from"
 L.SET_PRICE_AUTO = "Auto"
 L.SET_PRICE_VENDOR = "Vendor"
 L.SET_PRICE_SOURCE_TIP = "Auto: Auctionator if it is loaded, else TSM, else what a vendor pays. Section totals, the"
-	.. " list's Value column, the gold glow and the vendor's \"worth more at auction\" rule all use this. Vendor: no"
-	.. " auction prices at all, so a gray BoE is judged by what a vendor pays."
+	.. " list's Value column and the gold glow use this. Whatever you pick, a gray BoE that Auctionator or TSM prices"
+	.. " above twice what a vendor pays is never sold as junk."
 L.SET_PRICE_TSM = "TSM price (when TSM answers)"
 L.SET_PRICE_TSM_TIP = "DBMarket: TSM's market value on your realm (the default). DBMinBuyout: the lowest buyout it saw."
-	.. " DBRegionMarketAvg / DBRegionSaleAvg: the region's averages (need TSM's desktop app for fresh data)."
+	.. " DBRegionMarketAvg / DBRegionSaleAvg: the region's averages (need TSM's desktop app for fresh data). This"
+	.. " row picks TSM's price only; the row above says where prices come from."
 ```
 
 Create `SwagBag/Providers/TSM.lua`:
@@ -2250,12 +2914,14 @@ Create `SwagBag/Providers/TSM.lua`:
 -- SwagBag price provider "TSM" (week 9, user pick 10; spec F10, 3.3). Optional (P4): it answers only while
 -- TradeSkillMaster's public addon API is loaded, by the price string the prices.tsm setting names (DBMarket by
 -- default; Engine/Prices.lua, Prices.TSMString). Priority 5: below Auctionator (10), above the vendor (0), so
--- "auto" asks Auctionator first. Calls go through the Adapter (Adapter.TSMAvailable, Adapter.TSMPrice).
+-- "auto" asks Auctionator first. Calls go through the Adapter (Adapter.TSMAvailable, Adapter.TSMPrice). TSM's
+-- data may still be loading after login, so its "no price" is kept Prices.MISS_AGE (30 s) only (missAge).
 local _, SB = ...
 
 SB.Prices.RegisterProvider({
 	name = "TSM",
 	priority = 5,
+	missAge = SB.Prices.MISS_AGE,
 	available = function()
 		return SB.Adapter.TSMAvailable()
 	end,
@@ -2293,7 +2959,56 @@ Providers/Auctionator.lua
 Providers/TSM.lua
 ```
 
-In `SwagBag/UI/SettingsPages.lua`, find:
+In `SwagBag/UI/SectionActions.lua` (edit 1 of 2), find:
+
+```lua
+-- The section's items a vendor pays for and SwagBag may sell. value: what one is worth to SwagBag
+-- (Auctionator's price, else the vendor's; Engine/Prices.lua), for the question's Auction House sentence.
+```
+
+and replace it with:
+
+```lua
+-- The section's items a vendor pays for and SwagBag may sell. value: what one is worth at auction (the highest
+-- price a loaded auction source gives, whatever the price source: Prices.AuctionValue, week 9 ruling R0), else
+-- the vendor's, for the question's Auction House sentence.
+```
+
+In `SwagBag/UI/SectionActions.lua` (edit 2 of 2), find:
+
+```lua
+			it.value = P and P.Value(r.link, r.itemID, P.Bound(r)) or it.price
+```
+
+and replace it with:
+
+```lua
+			local ah = P and not P.Bound(r) and P.AuctionValue(r.link, r.itemID)
+			it.value = ah or it.price
+```
+
+In `SwagBag/UI/SettingsPages.lua` (edit 1 of 2), find:
+
+```lua
+-- Bank and guild bank -----------------------------------------------------
+```
+
+and replace it with:
+
+```lua
+-- Bank and guild bank -----------------------------------------------------
+-- TSM's price strings, from the one list SwagBag offers (Adapter.TSM_PRICES).
+local function tsmChoices()
+	local list = {}
+	for _, name in ipairs(SB.Adapter.TSM_PRICES) do
+		list[#list + 1] = { value = name, text = name }
+	end
+	return list
+end
+
+```
+
+In `SwagBag/UI/SettingsPages.lua` (edit 2 of 2), find:
 
 ```lua
 		end },
@@ -2311,12 +3026,12 @@ and replace it with:
 			apply = function(v)
 				return run("price " .. v)
 			end },
+		-- TSM's price only (/swagbag price string): it never switches where prices come from (preflight S7).
 		{ kind = "choice", label = L.SET_PRICE_TSM, tip = L.SET_PRICE_TSM_TIP, width = 130, get = function()
 			return SB.Prices.TSMString()
-		end, choices = { { value = "DBMarket", text = "DBMarket" }, { value = "DBMinBuyout", text = "DBMinBuyout" },
-			{ value = "DBRegionMarketAvg", text = "DBRegionMarketAvg" }, { value = "DBRegionSaleAvg", text = "DBRegionSaleAvg" } },
+		end, choices = tsmChoices(),
 		apply = function(v)
-			return run("price tsm " .. v)
+			return run("price string " .. v)
 		end },
 		{ kind = "note", label = L.SET_BANK_NOTE },
 ```
@@ -2362,7 +3077,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1479 passed, 0 failed`.
+Expected: `1489 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -2370,7 +3085,7 @@ Expected: `1479 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (74 files)`, `1479 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (74 files)`, `1489 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -2380,9 +3095,11 @@ git add SwagBag/Core/Adapter.lua \
 	SwagBag/Core/Report.lua \
 	SwagBag/Engine/Prices.lua \
 	SwagBag/Engine/Profiles.lua \
+	SwagBag/Engine/Vendor.lua \
 	SwagBag/Locale/enUS.lua \
 	SwagBag/Providers/TSM.lua \
 	SwagBag/SwagBag.toc \
+	SwagBag/UI/SectionActions.lua \
 	SwagBag/UI/SettingsPages.lua \
 	scripts/check.sh \
 	scripts/toc_check.lua \
@@ -2391,6 +3108,7 @@ git add SwagBag/Core/Adapter.lua \
 	spec/prices_spec.lua \
 	spec/profiles_spec.lua \
 	spec/report_spec.lua \
+	spec/sectionactions_spec.lua \
 	spec/settings_spec.lua \
 	spec/vendor_spec.lua
 git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 9 Task 3: TSM as a price source, and the price source choice (/swagbag price, Settings)
@@ -2403,7 +3121,7 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 4: Masque skins on SwagBag's item buttons (UI/Skins.lua)
 
-The user's third pick, part (a) (pick 11). When Masque is loaded, every item button SwagBag makes joins a Masque group (D14): "Bags" (the bags' secure buttons), "Bank" (the character and warband bank's secure buttons), "Guild bank" (SwagBag's own plain guild buttons) and "Alt viewer" (its plain display buttons). A list row's icon is the slot's own button, only scaled, so the list follows the skin with no extra work. SwagBag's only call is Masque's `group:AddButton(button, nil, "Item")`, once per button, and only out of combat (D15): the bags' and bank's buttons are made out of combat anyway (week 1), and a button made in combat (the alt viewer's) joins when combat ends. Whether Masque is there is asked once, at the first button; without it nothing is asked and nothing changes. Masque's own options page switches each group off. `/swagbag report` says how many buttons Masque skins.
+The user's third pick, part (a) (pick 11). When Masque is loaded, every item button SwagBag makes joins a Masque group (D14): "Bags" (the bags' secure buttons), "Bank" (the character and warband bank's secure buttons), "Guild bank" (SwagBag's own plain guild buttons) and "Alt viewer" (its plain display buttons). A list row's icon is the slot's own button, only scaled, so the list follows the skin with no extra work. SwagBag's only call is Masque's `group:AddButton(button, nil, "Item")`, once per button, and only out of combat (D15): the bags' and bank's buttons are made out of combat anyway (week 1), and a button made in combat (the alt viewer's) joins when combat ends. Whether Masque is there is asked once, at the first button; without it nothing is asked and nothing changes. Masque's own options page switches each group off. `/swagbag report` says how many buttons Masque skins. The "without Masque" test checks that Masque is asked about once per session and that a button made later asks nothing either (preflight S14).
 
 **Files:**
 - Create: `SwagBag/UI/Skins.lua`, `spec/skins_spec.lua`
@@ -2432,7 +3150,7 @@ and replace it with:
 In `spec/adapter_spec.lua` (edit 2 of 2), find:
 
 ```lua
-			A.TSMPrice("text", "DBMarket") })
+			A.TSMPrice("neg", "DBMarket"), A.TSMPrice("text", "DBMarket") })
 	end)
 end)
 ```
@@ -2440,7 +3158,7 @@ end)
 and replace it with:
 
 ```lua
-			A.TSMPrice("text", "DBMarket") })
+			A.TSMPrice("neg", "DBMarket"), A.TSMPrice("text", "DBMarket") })
 	end)
 end)
 
@@ -2626,19 +3344,22 @@ describe("Skins (week 9, Masque)", function()
 		assert.equal(A.GUILD_SLOTS, #A.masque.groups["Guild bank"])
 	end)
 
-	-- Mutation: in Skins.Add, drop the Available() check (Masque is asked for every button).
-	it("without Masque nothing is asked, and SwagBag calls nothing more on a button than before", function()
+	-- Mutations: in Skins.Add, drop the Available() check (Masque is asked for every button); or in
+	-- Skins.Available, ask each time (`if Sk.available == nil then` -> `if true then`).
+	it("without Masque nothing is asked, and whether Masque is there is asked once per session", function()
 		load({ "SwagBag/UI/Skins.lua", "SwagBag/UI/Buttons.lua" })
-		local asked = 0
+		local asked, looked = 0, 0
 		A.MasqueAdd = function() asked = asked + 1 return false end
+		local available = A.MasqueAvailable
+		A.MasqueAvailable = function()
+			looked = looked + 1
+			return available()
+		end
 		SB.Emit("SB_LOGIN")
-		assert.equal(0, asked)
-		assert.equal(0, Sk.count)
-		local b = SB.Buttons.Get(0, 1)
-		Fake.Strict(b)
-		A.masque = { groups = {} }
-		Sk.Add("bags", b) -- Masque was not there at login: the answer is kept for the session
-		assert.same({}, b.log)
+		assert.same({ 0, 0, 1 }, { asked, Sk.count, looked })
+		A.masque = { groups = {} } -- Masque was not there at login: the answer is kept for the session
+		Sk.Add("bags", SB.Buttons.Get(0, 1))
+		assert.same({ 0, 0, 1 }, { asked, Sk.count, looked }, "the late button: nothing asked either")
 	end)
 end)
 ```
@@ -2650,7 +3371,7 @@ end)
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1479 passed, 7 failed`. The failures, exactly:
+Expected: `1489 passed, 7 failed`. The failures, exactly:
 
 - `spec/adapter_spec.lua :: Adapter Masque (real adapter, stubbed globals) > groups come from LibStub('Masque', true), each made once; buttons join as Item buttons`
 - `spec/adapter_spec.lua :: Adapter Masque (real adapter, stubbed globals) > an error inside Masque is no skin, never an error`
@@ -2658,7 +3379,7 @@ Expected: `1479 passed, 7 failed`. The failures, exactly:
 - `spec/skins_spec.lua :: Skins (week 9, Masque) > every bag and bank button joins its Masque group once at login; a bank tab bought later joins too`
 - `spec/skins_spec.lua :: Skins (week 9, Masque) > a button made in combat joins only once combat ends`
 - `spec/skins_spec.lua :: Skins (week 9, Masque) > the guild bank's buttons join the Guild bank group when they are made`
-- `spec/skins_spec.lua :: Skins (week 9, Masque) > without Masque nothing is asked, and SwagBag calls nothing more on a button than before`
+- `spec/skins_spec.lua :: Skins (week 9, Masque) > without Masque nothing is asked, and whether Masque is there is asked once per session`
 
 Critical tests and the mutation that must make each fail (each was applied to this task's finished code; the named test failed):
 
@@ -2667,7 +3388,8 @@ Critical tests and the mutation that must make each fail (each was applied to th
 - "every bag and bank button joins its Masque group once at login; a bank tab bought later joins too": in `SwagBag/UI/Buttons.lua`, `if SB.Skins then -- week 9: Masque's skin, when it is loaded (out of combat: buttons are only made then) ⏎ SB.Skins.Add(kindOf(bag), b) ⏎ end` → ∅.
 - "a button made in combat joins only once combat ends": in `SwagBag/UI/Skins.lua`, `if SB.Adapter.InCombat() then ⏎ Sk.pending[#Sk.pending + 1] = { kind, button } ⏎ SB.OutOfCombat(flush, "skins.add", "none") ⏎ return ⏎ end` → ∅.
 - "the guild bank's buttons join the Guild bank group when they are made": in `SwagBag/UI/GuildButtons.lua`, `if SB.Skins then -- week 9: Masque's skin, when it is loaded ⏎ SB.Skins.Add("guild", b) ⏎ end` → ∅.
-- "without Masque nothing is asked, and SwagBag calls nothing more on a button than before": in `SwagBag/UI/Skins.lua`, `if Sk.added[button] or not Sk.Available() then` → `if Sk.added[button] then`.
+- "without Masque nothing is asked, and whether Masque is there is asked once per session": in `SwagBag/UI/Skins.lua`, `if Sk.added[button] or not Sk.Available() then` → `if Sk.added[button] then`.
+- "without Masque nothing is asked, and whether Masque is there is asked once per session": in `SwagBag/UI/Skins.lua`, `if Sk.available == nil then` → `if true then`.
 - "says whether Masque skins SwagBag's buttons, and how many": in `SwagBag/Core/Report.lua`, `lines[#lines + 1] = skins.Available() and L.REPORT_MASQUE:format(skins.count) or L.REPORT_MASQUE_OFF` → ∅.
 
 - [ ] **Step 3: Write the code**
@@ -2754,13 +3476,13 @@ and replace it with:
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
-	.. " DBRegionMarketAvg / DBRegionSaleAvg: the region's averages (need TSM's desktop app for fresh data)."
+	.. " row picks TSM's price only; the row above says where prices come from."
 ```
 
 and replace it with:
 
 ```lua
-	.. " DBRegionMarketAvg / DBRegionSaleAvg: the region's averages (need TSM's desktop app for fresh data)."
+	.. " row picks TSM's price only; the row above says where prices come from."
 
 -- Masque skins (week 9, user pick 11): UI/Skins.lua
 L.REPORT_MASQUE = "Masque: %d buttons skinned"
@@ -2906,7 +3628,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1486 passed, 0 failed`.
+Expected: `1496 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -2914,7 +3636,7 @@ Expected: `1486 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (75 files)`, `1486 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (75 files)`, `1496 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -2942,17 +3664,44 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 5: Another bag addon on at the same time: one warning at login, and a report line
 
-The third pick, part (b). Two bag replacements at once fight over the same bags (items in two windows, a bank that opens twice). The Adapter names the usual ones by the folder name `C_AddOns` reports them loaded under (`A.OTHER_BAG_ADDONS`: Baganator, Bagnon, Combuctor, AdiBags, ArkInventory, BetterBags, LiteBag, Sorted, GudaBags, Inventorian, EllesmereUIBags, EnhanceQoLBags), and ElvUI only while ElvUI's own bags module is on (`ElvUI[1].private.bags.enable`; ElvUI without its bags is fine). At login, while SwagBag's bags are not in Safe Mode, one chat line names the others that are on and says how to keep one: `/swagbag safe on`, or disable one in the AddOns list. Nothing is ever switched off (D16). `/swagbag report` always has the line `Other bag addons on: ...`.
+The third pick, part (b). Two bag replacements at once fight over the same bags (items in two windows, a bank that opens twice). The Adapter names the usual ones by the folder name `C_AddOns` reports them loaded under (`A.OTHER_BAG_ADDONS`: Baganator, Bagnon, Combuctor, AdiBags, ArkInventory, BetterBags, LiteBag, Sorted, GudaBags, Inventorian, EllesmereUIBags, EnhanceQoLBags), and ElvUI only while ElvUI's own bags module is on (`ElvUI[1].private.bags.enable`; ElvUI without its bags is fine). At login, while SwagBag's bags are not in Safe Mode, one chat line names the others that are on and says how to keep one: `/swagbag safe on`, or disable one in the AddOns list. Nothing is ever switched off (D16). The line repeats at every login (and `/reload`) while both stay on, so a new setting `bags.warnOtherAddons` (default on, P1) silences it: Settings > Bags > "Other bag addons" (Warn at login first, then Don't warn) and `/swagbag otherbags [on|off]` (preflight S16); the line itself says so. `/swagbag report` always has the line `Other bag addons on: ...`. Bag modules inside UI suites (KkthnxUI, NDui, GW2_UI, Tukui) are not recognised (D16; the setting's tip says so).
 
 **Files:**
-- Modify: `SwagBag/Core/Adapter.lua` (`A.OTHER_BAG_ADDONS`, `A.ElvUIBagsOn`, `A.OtherBagAddons`), `SwagBag/Core/Report.lua`, `SwagBag/Locale/enUS.lua`
-- Test: `spec/report_spec.lua`
+- Modify: `SwagBag/Core/Adapter.lua` (`A.OTHER_BAG_ADDONS`, `A.ElvUIBagsOn`, `A.OtherBagAddons`), `SwagBag/Core/Report.lua`, `SwagBag/Core/Commands.lua` (`/swagbag otherbags`), `SwagBag/Core/Config.lua` (`bags.warnOtherAddons`), `SwagBag/Engine/Profiles.lua` (its label), `SwagBag/UI/SettingsPages.lua` (the Bags row), `SwagBag/Locale/enUS.lua`
+- Test: `spec/report_spec.lua`, `spec/commands_spec.lua`, `spec/settings_spec.lua`
 
 **Interfaces:**
-- Consumes: `Adapter.AddOnState`, `Adapter.Resolve`, `SafeMode.IsOn`, `SB_LOGIN`.
-- Produces: `Adapter.OTHER_BAG_ADDONS`, `Adapter.ElvUIBagsOn()`, `Adapter.OtherBagAddons() -> { name }`; `L.OTHER_BAGS_WARN`, `L.REPORT_OTHER_BAGS`.
+- Consumes: `Adapter.AddOnState`, `Adapter.Resolve`, `SafeMode.IsOn`, `SB_LOGIN`, `Config.Get/Set`, `L.OVERLAY_ON/OFF`, `L.SETTINGS_READONLY`.
+- Produces: `Adapter.OTHER_BAG_ADDONS`, `Adapter.ElvUIBagsOn()`, `Adapter.OtherBagAddons() -> { name }`; setting `bags.warnOtherAddons` (default `true`; Profiles `LABELS`; a boolean, checked by type); `/swagbag otherbags [on|off]`; `L.OTHER_BAGS_WARN`, `L.REPORT_OTHER_BAGS`, `L.HELP_OTHER_BAGS`, `L.OTHER_BAGS_STATE/USAGE/ON/OFF`, `L.SET_OTHER_BAGS`, `L.SET_OTHER_BAGS_WARN/QUIET/TIP`.
 
 - [ ] **Step 1: Write the failing tests**
+
+In `spec/commands_spec.lua`, find:
+
+```lua
+		assert.equal("Safe Mode was already ON for bank.", A.Lines()[4])
+```
+
+and replace it with:
+
+```lua
+		assert.equal("Safe Mode was already ON for bank.", A.Lines()[4])
+	end)
+
+	-- Week 9 (preflight S16). Mutation: in the otherbags command, set bags.warnOtherAddons without checking
+	-- Config.Set's answer.
+	it("otherbags says whether the login warning is on, switches it, and refuses while read-only", function()
+		local L = SB.L
+		assert.same({ true, L.OTHER_BAGS_STATE:format(L.OVERLAY_ON) }, { SB.Slash.Run("otherbags") })
+		assert.same({ true, L.OTHER_BAGS_OFF }, { SB.Slash.Run("otherbags off") })
+		assert.equal(false, SB.Config.Get("bags.warnOtherAddons"))
+		assert.same({ true, L.OTHER_BAGS_STATE:format(L.OVERLAY_OFF) }, { SB.Slash.Run("OTHERBAGS") })
+		assert.same({ true, L.OTHER_BAGS_ON }, { SB.Slash.Run("otherbags On") })
+		assert.same({ true, L.OTHER_BAGS_USAGE }, { SB.Slash.Run("otherbags maybe") })
+		SB.Config.readOnly = true
+		assert.same({ true, L.SETTINGS_READONLY }, { SB.Slash.Run("otherbags off") })
+		assert.equal(true, SB.Config.Get("bags.warnOtherAddons"))
+```
 
 In `spec/report_spec.lua` (edit 1 of 2), find:
 
@@ -2994,13 +3743,18 @@ and replace it with:
 		assert.truthy(SB.Report.Build():find("\nOther bag addons on: Baganator, AdiBags\n", 1, true))
 	end)
 
-	-- Never disables anything. Mutations: drop the login warning; or drop its Safe Mode check.
-	it("at login one line names them and suggests /swagbag safe on; silent when none, or in Safe Mode", function()
+	-- Never disables anything. Mutations: drop the login warning; or drop its Safe Mode check; or drop its
+	-- bags.warnOtherAddons check (preflight S16).
+	it("at login one line names them and suggests /swagbag safe on; silent when none, when switched off, or in Safe Mode", function()
 		SB.Emit("SB_LOGIN")
 		assert.same({}, A.Lines(), "none on: nothing said")
 		A.addons = { Baganator = "833", BetterBags = "0.3" }
 		SB.Emit("SB_LOGIN")
 		assert.same({ SB.L.OTHER_BAGS_WARN:format("Baganator, BetterBags") }, A.Lines())
+		SB.Config.Set("bags.warnOtherAddons", false)
+		SB.Emit("SB_LOGIN")
+		assert.equal(1, #A.Lines(), "the user switched the warning off")
+		SB.Config.Set("bags.warnOtherAddons", true)
 		SB.SafeMode.Enable("bags", "manual")
 		SB.Emit("SB_LOGIN")
 		assert.equal(1, #A.Lines(), "SwagBag has stepped aside already")
@@ -3010,6 +3764,37 @@ and replace it with:
 	it("Hash is stable, order-independent and changes with content", function()
 ```
 
+In `spec/settings_spec.lua`, find:
+
+```lua
+	end)
+
+	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
+```
+
+and replace it with:
+
+```lua
+	end)
+
+	-- Week 9 (preflight S16), P1. Mutation: in the other bag addons row's apply, run "otherbags off" whatever the
+	-- choice.
+	it("bags page: the other bag addons row, Warn at login first and selected; each choice runs /swagbag otherbags", function()
+		SB.Slash.Register("otherbags", "test", function(arg)
+			ran[#ran + 1] = "otherbags " .. arg
+			return "ran otherbags " .. arg
+		end)
+		SW.Show("bags")
+		assert.truthy(SW.selected[button(SB.L.SET_OTHER_BAGS_WARN)])
+		click(SB.L.SET_OTHER_BAGS_QUIET)
+		click(SB.L.SET_OTHER_BAGS_WARN)
+		assert.same({ "otherbags off", "otherbags on" }, ran)
+		assert.equal("ran otherbags on", SW.lastStatus)
+	end)
+
+	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
+```
+
 
 - [ ] **Step 2: Run the tests and see them fail**
 
@@ -3017,21 +3802,26 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1485 passed, 3 failed`. The failures, exactly:
+Expected: `1495 passed, 5 failed`. The failures, exactly:
 
+- `spec/commands_spec.lua :: Commands > otherbags says whether the login warning is on, switches it, and refuses while read-only`
 - `spec/report_spec.lua :: Report > builds the full report for a clean session`
 - `spec/report_spec.lua :: Report > names every other bag addon that is on, and ElvUI only while its own bags module is on`
-- `spec/report_spec.lua :: Report > at login one line names them and suggests /swagbag safe on; silent when none, or in Safe Mode`
+- `spec/report_spec.lua :: Report > at login one line names them and suggests /swagbag safe on; silent when none, when switched off, or in Safe Mode`
+- `spec/settings_spec.lua :: Settings window > bags page: the other bag addons row, Warn at login first and selected; each choice runs /swagbag otherbags`
 
-The clean-session report test gains the new `Other bag addons on: none` line, so it fails at Step 2 too.
+The clean-session report test gains the new `Other bag addons on: none` line, so it fails at Step 2 too. The Settings and command tests register or call `otherbags`, which does not exist yet.
 
 Critical tests and the mutation that must make each fail (each was applied to this task's finished code; the named test failed):
 
 - "names every other bag addon that is on, and ElvUI only while its own bags module is on": in `SwagBag/Core/Adapter.lua`, `if A.ElvUIBagsOn() then ⏎ out[#out + 1] = "ElvUI" ⏎ end` → ∅.
 - "names every other bag addon that is on, and ElvUI only while its own bags module is on": in `SwagBag/Core/Adapter.lua`, `return type(bags) == "table" and bags.enable == true` → `return type(E) == "table"`.
-- "at login one line names them and suggests /swagbag safe on; silent when none, or in Safe Mode": in `SwagBag/Core/Report.lua`, `if #others > 0 then ⏎ SB.Print(SB.L.OTHER_BAGS_WARN:format(table.concat(others, ", "))) ⏎ end` → ∅.
-- "at login one line names them and suggests /swagbag safe on; silent when none, or in Safe Mode": in `SwagBag/Core/Report.lua`, `if SB.SafeMode.IsOn("bags") then ⏎ return ⏎ end ⏎ local others = SB.Adapter.OtherBagAddons()` → `local others = SB.Adapter.OtherBagAddons()`.
+- "at login one line names them and suggests /swagbag safe on; silent when none, when switched off, or in Safe Mode": in `SwagBag/Core/Report.lua`, `if #others > 0 then ⏎ SB.Print(SB.L.OTHER_BAGS_WARN:format(table.concat(others, ", "))) ⏎ end` → ∅.
+- "at login one line names them and suggests /swagbag safe on; silent when none, when switched off, or in Safe Mode": in `SwagBag/Core/Report.lua`, `if SB.SafeMode.IsOn("bags") then ⏎ return ⏎ end ⏎ if not SB.Config.Get("bags.warnOtherAddons") then` → `if not SB.Config.Get("bags.warnOtherAddons") then`.
+- "at login one line names them and suggests /swagbag safe on; silent when none, when switched off, or in Safe Mode": in `SwagBag/Core/Report.lua`, `if not SB.Config.Get("bags.warnOtherAddons") then` → `if false then`.
 - "builds the full report for a clean session": in `SwagBag/Core/Report.lua`, `lines[#lines + 1] = L.REPORT_OTHER_BAGS:format(#others > 0 and table.concat(others, ", ") or L.REPORT_NONE)` → ∅.
+- "otherbags says whether the login warning is on, switches it, and refuses while read-only": in `SwagBag/Core/Commands.lua`, `if not SB.Config.Set("bags.warnOtherAddons", arg == "on") then ⏎ return L.SETTINGS_READONLY ⏎ end` → `SB.Config.Set("bags.warnOtherAddons", arg == "on")`.
+- "bags page: the other bag addons row, Warn at login first and selected; each choice runs /swagbag otherbags": in `SwagBag/UI/SettingsPages.lua`, `return run(v and "otherbags on" or "otherbags off")` → `return run("otherbags off")`.
 
 - [ ] **Step 3: Write the code**
 
@@ -3078,6 +3868,58 @@ function A.OtherBagAddons()
 	return out
 ```
 
+In `SwagBag/Core/Commands.lua` (edit 1 of 2), find:
+
+```lua
+-- SwagBag slash commands: safe, report, check, reset, free (week 3), debug.
+```
+
+and replace it with:
+
+```lua
+-- SwagBag slash commands: safe, report, check, reset, free (week 3), debug, otherbags (week 9).
+```
+
+In `SwagBag/Core/Commands.lua` (edit 2 of 2), find:
+
+```lua
+	return L.SAFE_USAGE
+```
+
+and replace it with:
+
+```lua
+	return L.SAFE_USAGE
+end)
+
+-- /swagbag otherbags [on|off] (week 9): the login line about another bag addon (Core/Report.lua).
+Slash.Register("otherbags", L.HELP_OTHER_BAGS, function(arg)
+	arg = (arg or ""):lower()
+	if arg == "" then
+		return L.OTHER_BAGS_STATE:format(SB.Config.Get("bags.warnOtherAddons") and L.OVERLAY_ON or L.OVERLAY_OFF)
+	elseif arg ~= "on" and arg ~= "off" then
+		return L.OTHER_BAGS_USAGE
+	end
+	if not SB.Config.Set("bags.warnOtherAddons", arg == "on") then
+		return L.SETTINGS_READONLY
+	end
+	return arg == "on" and L.OTHER_BAGS_ON or L.OTHER_BAGS_OFF
+```
+
+In `SwagBag/Core/Config.lua`, find:
+
+```lua
+			showIlvl = true, freeTile = true, newAlways = false,
+```
+
+and replace it with:
+
+```lua
+			showIlvl = true, freeTile = true, newAlways = false,
+			-- warnOtherAddons (week 9): one chat line at login while another bag addon is on too (Core/Report.lua).
+			warnOtherAddons = true,
+```
+
 In `SwagBag/Core/Report.lua` (edit 1 of 2), find:
 
 ```lua
@@ -3093,9 +3935,13 @@ end
 
 -- Week 9 (user pick 11b): two bag addons at once fight over the same bags (items in two windows, a bank that
 -- opens twice). At login one chat line names the others that are on and says how to keep one; nothing is ever
--- switched off. Silent while SwagBag's bags are in Safe Mode (SwagBag has stepped aside already).
+-- switched off. Silent while SwagBag's bags are in Safe Mode (SwagBag has stepped aside already), and once the
+-- user said so (bags.warnOtherAddons, /swagbag otherbags off: Core/Commands.lua).
 SB.On("SB_LOGIN", function()
 	if SB.SafeMode.IsOn("bags") then
+		return
+	end
+	if not SB.Config.Get("bags.warnOtherAddons") then
 		return
 	end
 	local others = SB.Adapter.OtherBagAddons()
@@ -3121,6 +3967,18 @@ and replace it with:
 	lines[#lines + 1] = L.REPORT_OTHER_BAGS:format(#others > 0 and table.concat(others, ", ") or L.REPORT_NONE)
 ```
 
+In `SwagBag/Engine/Profiles.lua`, find:
+
+```lua
+	["bags.footer.entries"] = "PROFILE_LABEL_FOOTER",
+```
+
+and replace it with:
+
+```lua
+	["bags.footer.entries"] = "PROFILE_LABEL_FOOTER", ["bags.warnOtherAddons"] = "SET_OTHER_BAGS",
+```
+
 In `SwagBag/Locale/enUS.lua`, find:
 
 ```lua
@@ -3135,8 +3993,37 @@ L.REPORT_MASQUE_OFF = "Masque: not loaded"
 -- Another bag addon on at the same time (week 9, user pick 11b): Core/Report.lua
 L.OTHER_BAGS_WARN = "Another bag addon is on too: %s. Two bag addons fight over the same bags. Keep one: type"
 	.. " /swagbag safe on to let it handle your bags and bank, or disable one in the AddOns list. SwagBag switches"
-	.. " nothing off by itself."
+	.. " nothing off by itself. (/swagbag otherbags off stops this line.)"
 L.REPORT_OTHER_BAGS = "Other bag addons on: %s"
+L.HELP_OTHER_BAGS = "otherbags [on|off]: a chat line at login while another bag addon is on too"
+L.OTHER_BAGS_STATE = "Warning at login about other bag addons: %s. Type /swagbag otherbags on or otherbags off."
+L.OTHER_BAGS_USAGE = "Use /swagbag otherbags, otherbags on, or otherbags off."
+L.OTHER_BAGS_ON = "SwagBag warns at login while another bag addon is on too."
+L.OTHER_BAGS_OFF = "No more warning at login about other bag addons. /swagbag report still names them."
+L.SET_OTHER_BAGS = "Other bag addons"
+L.SET_OTHER_BAGS_WARN = "Warn at login"
+L.SET_OTHER_BAGS_QUIET = "Don't warn"
+L.SET_OTHER_BAGS_TIP = "Two bag addons at once fight over the same bags. Warn at login: one chat line names the other"
+	.. " one while it is on (never in Safe Mode). Don't warn: no line; /swagbag report still names it. SwagBag never"
+	.. " switches an addon off. Bag modules inside UI suites (KkthnxUI, NDui, GW2_UI, Tukui) are not recognised."
+```
+
+In `SwagBag/UI/SettingsPages.lua`, find:
+
+```lua
+				return run("sort " .. v)
+```
+
+and replace it with:
+
+```lua
+				return run("sort " .. v)
+			end },
+		-- Week 9 (user pick 11b): the login line about another bag addon; every click runs /swagbag otherbags.
+		{ kind = "choice", label = L.SET_OTHER_BAGS, tip = L.SET_OTHER_BAGS_TIP, width = 110, get = get("bags.warnOtherAddons"),
+			choices = { { value = true, text = L.SET_OTHER_BAGS_WARN }, { value = false, text = L.SET_OTHER_BAGS_QUIET } },
+			apply = function(v)
+				return run(v and "otherbags on" or "otherbags off")
 ```
 
 
@@ -3146,7 +4033,7 @@ L.REPORT_OTHER_BAGS = "Other bag addons on: %s"
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1488 passed, 0 failed`.
+Expected: `1500 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -3154,15 +4041,21 @@ Expected: `1488 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (75 files)`, `1488 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (75 files)`, `1500 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add SwagBag/Core/Adapter.lua \
+	SwagBag/Core/Commands.lua \
+	SwagBag/Core/Config.lua \
 	SwagBag/Core/Report.lua \
+	SwagBag/Engine/Profiles.lua \
 	SwagBag/Locale/enUS.lua \
-	spec/report_spec.lua
+	SwagBag/UI/SettingsPages.lua \
+	spec/commands_spec.lua \
+	spec/report_spec.lua \
+	spec/settings_spec.lua
 git -c user.email="294288393+Sharpened-Banana@users.noreply.github.com" -c user.name="lonezebra" commit -m "Week 9 Task 5: warn once at login when another bag addon is on; name it in the report
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
@@ -3173,7 +4066,7 @@ Claude-Session: https://claude.ai/code/session_0118QqxrirrDAhG3ciVZpDAx"
 
 ### Task 6: Week-8 deferred polish: the held F6 fallback, a secret item ID, a typed gold amount
 
-The cheap, user-visible deferred items (D17). (1) The week-8 final re-review: when a list fell back to categories (F6) and that fallback had to wait for the mouse, the buttons the list had already shrunk stayed small under the categories still drawn until the retry landed (smaller click targets, and a shrunk button can slide under the mouse). Now a held fallback puts them back at full size at once, unless a list is what is drawn. (2) The same review: `Prices.Value` guarded a secret link but not a secret item ID; a secret item ID is now no key and no price, never an error (the draw path runs under `"bags"`). (3) Week 7, Task 7: an amount typed with `/swagbag worth 250` had no button on the Settings row, so nothing showed selected; it now gets its own selected choice next to 100g, 500g and 1000g.
+The cheap, user-visible deferred items (D17). (1) The week-8 final re-review: when a list fell back to categories (F6) and that fallback had to wait for the mouse, the buttons the list had already shrunk stayed small under the categories still drawn until the retry landed (smaller click targets, and a shrunk button can slide under the mouse). Now a held fallback puts them back at full size at once, unless a list is what is drawn. That rescale happens while the mouse may rest on one of those buttons: a recorded exception to spec §4.2 rule 5 (nothing moves under the mouse), since leaving them small is the worse of the two (a shrunk button can slide under the mouse anyway, and its click target stays small); it goes into "Spec updates at week end" (preflight S10). (2) The same review: `Prices.Value` guarded a secret link but not a secret item ID; a secret item ID is now no key and no price, never an error (the draw path runs under `"bags"`). (3) Week 7, Task 7: an amount typed with `/swagbag worth 250` had no button on the Settings row, so nothing showed selected; it now gets its own selected choice next to 100g, 500g and 1000g.
 
 **Files:**
 - Modify: `SwagBag/UI/GroupView.lua`, `SwagBag/Engine/Prices.lua`, `SwagBag/UI/SettingsPages.lua`
@@ -3276,7 +4169,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1488 passed, 3 failed`. The failures, exactly:
+Expected: `1500 passed, 3 failed`. The failures, exactly:
 
 - `spec/bankwindow_list_spec.lua :: BankWindow list view (week 8) > F6: a fallback held under the mouse puts the drawn categories' buttons back at full size at once`
 - `spec/prices_spec.lua :: Prices (spec F10, 3.3) > a secret item ID is no key either: no price, nothing cached under it, never an error`
@@ -3322,13 +4215,16 @@ and replace it with:
 In `SwagBag/UI/SettingsPages.lua` (edit 1 of 2), find:
 
 ```lua
--- Bank and guild bank -----------------------------------------------------
+end
+
+local function bankRows()
 ```
 
 and replace it with:
 
 ```lua
--- Bank and guild bank -----------------------------------------------------
+end
+
 -- The gold glow's amounts; one typed with /swagbag worth (say 250) gets its own button, selected (week 7 deferred).
 local function worthChoices()
 	local list = {}
@@ -3344,6 +4240,7 @@ local function worthChoices()
 	return list
 end
 
+local function bankRows()
 ```
 
 In `SwagBag/UI/SettingsPages.lua` (edit 2 of 2), find:
@@ -3368,7 +4265,7 @@ and replace it with:
 luajit spec/runner.lua spec/*_spec.lua
 ```
 
-Expected: `1491 passed, 0 failed`.
+Expected: `1503 passed, 0 failed`.
 
 - [ ] **Step 5: Run the local CI**
 
@@ -3376,7 +4273,7 @@ Expected: `1491 passed, 0 failed`.
 scripts/check.sh
 ```
 
-Expected: `TOC OK (75 files)`, `1491 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
+Expected: `TOC OK (75 files)`, `1503 passed, 0 failed`, and the last line `ALL CHECKS PASSED`.
 
 - [ ] **Step 6: Commit**
 
@@ -3425,10 +4322,10 @@ How to split a stack (steps 5 and 12): hold Shift and left-click the stack, type
 10. (Optional, only with a stack you can split into two halves that do not fit in one stack, e.g. two stacks of 15 potions where 20 fit.) Click `Sort`. Expected: one becomes a full stack, the rest stays as one partial stack, and that partial is first; nothing is left on your cursor.
 11. Lock the item: pick up one of its stacks (left-click) and drop it on the small `Lock` button right of the search box. Expected: `SwagBag: Locked: <its name>. SwagBag never sells it, and it shows a small lock.`
 12. Split that item once more into an empty slot, move the mouse off the bags, and click `Sort`. Expected: `Nothing to stack: ...` in the title, and nothing moves (locked items stay put). Then drop the item on `Lock` again. Expected: `SwagBag: Unlocked: <its name>.`
-13. Right-click a banker. Put two small stacks of one item into the **character bank** (in SwagBag's bank: they show in the `Character bank` group). Put one small stack of the same item into the **warband bank** if you can. Move the mouse off the windows.
+13. Right-click a banker. Split two small stacks of one item in your bags (as in step 5), then **drag** each small stack onto a **different empty slot** of the **character bank** (in SwagBag's bank: they show in the `Character bank` group). Do not right-click them: a right-click puts a stack onto one already in the bank, and then there is nothing left to stack. Drag one small stack of the same item onto an empty slot of the **warband bank** if you can. Move the mouse off the windows.
 14. Click `Sort bank` in the bank's title row. Expected: `Stacking...` in the bank's title, then the two character-bank stacks become one, chat shows `SwagBag: Stacking done. Stacks merged: 1. Partial stacks moved first: 0.` (or similar numbers), and the warband bank's stack is **not** touched.
 15. Click `Sort warband`. Expected: only warband bank items are stacked (with a single stack there: `Nothing to stack: ...` in the title).
-16. Make two or three small stacks in the character bank again, click `Sort bank` and at once walk away from the banker (or press Esc twice to close the bank). Expected: chat shows `SwagBag: Stacking stopped: the window closed (stacks merged: N, moved first: N).` Nothing is on your cursor, nothing is lost.
+16. Make two or three small stacks in the character bank again: split them in your bags and drag each onto a different empty character-bank slot (not a right-click, see step 13). Move the mouse off the windows, click `Sort bank` and at once walk away from the banker (or press Esc twice to close the bank). Expected: chat shows `SwagBag: Stacking stopped: the window closed (stacks merged: N, moved first: N).` Nothing is on your cursor, nothing is lost.
 17. Type `/swagbag settings bags`. Expected: the Bags page has a row `The Sort buttons` with `Partial stacks first` selected. Click `Blizzard's sort`. Expected: the status line says `Sort now runs Blizzard's own sort.` (Keep whichever you prefer.)
 18. Type `/swagbag view sections` to go back to your usual view (or `list`). Expected: `SwagBag: SwagBag - category view`.
 
@@ -3441,37 +4338,39 @@ You need: TradeSkillMaster installed and enabled, with its prices loaded (its to
 0. Claude installs the build first.
 1. Quit the game completely and start it again. Expected: the login screen.
 2. Log in. Expected: chat shows `SwagBag: v0.9.0 loaded. Type /swagbag help for commands.`
-3. Type `/swagbag price`. Expected: `SwagBag: Prices: auto (Auctionator, else TSM, else what a vendor pays). Answering now: Auctionator. Type /swagbag price auto, price auctionator, price tsm, price vendor, or price tsm <DBMarket|DBMinBuyout|DBRegionMarketAvg|DBRegionSaleAvg>.` (with `Answering now: TSM (DBMarket).` if Auctionator is not loaded).
+3. Type `/swagbag price`. Expected: `SwagBag: Prices: auto (Auctionator, else TSM, else what a vendor pays). Answering now: Auctionator. Type /swagbag price auto, price auctionator, price tsm, price vendor, or price tsm <DBMarket|DBMinBuyout|DBRegionMarketAvg|DBRegionSaleAvg>; price string <...> changes TSM's price only.` (with `Answering now: TSM (DBMarket).` if Auctionator is not loaded).
 4. Type `/swagbag price tsm`. Expected: `SwagBag: Prices now come from: TSM's DBMarket (else what a vendor pays).`
 5. Press **B** and type `/swagbag view list`. Expected: `SwagBag: SwagBag - list view`. Rest the mouse on the name of your valuable stack's row. Expected: the Value column on that row is the stack's count times TSM's market value from TSM's own tooltip lines (rounded), and the section headers' totals use TSM's prices.
 6. Type `/swagbag price tsm dbminbuyout`. Expected: `SwagBag: Prices now come from: TSM's DBMinBuyout (else what a vendor pays).` Within a second the Value column and the section totals change to TSM's minimum buyout.
 7. Type `/swagbag report`, then look for the `Prices:` line. Expected: `Prices: TSM (DBMinBuyout), N cached`. Close the report box.
-8. Type `/swagbag settings bank`. Expected: the `Bank & guild` page shows `Item prices come from` with `TSM` selected and `TSM price (when TSM answers)` with `DBMinBuyout` selected. Click `Auto`. Expected: the status line says `Prices now come from: auto (Auctionator, else TSM, else what a vendor pays).`
-9. Click `DBMarket` on the TSM row. Expected: the status line says `Prices now come from: TSM's DBMarket (else what a vendor pays).` (The source is now TSM again; click `Auto` once more if you prefer Auctionator first.)
-10. Close the settings window. Type `/swagbag worth 250`. Expected: `SwagBag: Gold glow at the bank: items worth 250g or more a stack.`
-11. Type `/swagbag settings bank`. Expected: the row `Gold glow at the bank on items worth` shows a button `250g or more`, selected. Click `100g or more` (or keep 250). Close the settings window.
-12. Type `/swagbag view sections` (or your usual view).
+8. Type `/swagbag settings bank`. Expected: the `Bank & guild` page shows `Item prices come from` with `TSM` selected and `TSM price (when TSM answers)` with `DBMinBuyout` selected. Click `DBMarket` on the TSM price row. Expected: the status line says `TSM price: DBMarket. It is used whenever TSM answers; where prices come from stays as it was.`, and `TSM` stays selected in the row above.
+9. Click `Auto` in the `Item prices come from` row. Expected: the status line says `Prices now come from: auto (Auctionator, else TSM, else what a vendor pays).`, and `DBMarket` stays selected in the TSM price row.
+10. Click `Vendor` in the `Item prices come from` row. Expected: the status line says `Prices now come from: what a vendor pays.`, and within a second the section totals and the Value column show what a vendor pays. (A gray BoE that Auctionator or TSM prices above twice what a vendor pays is still never sold as junk; the unit tests cover it.) Click `Auto` again. Expected: `Prices now come from: auto (Auctionator, else TSM, else what a vendor pays).`
+11. Close the settings window. Type `/swagbag worth 250`. Expected: `SwagBag: Gold glow at the bank: items worth 250g or more a stack.`
+12. Type `/swagbag settings bank`. Expected: the row `Gold glow at the bank on items worth` shows a button `250g or more`, selected. Click `100g or more` (or keep 250). Close the settings window.
+13. Type `/swagbag view sections` (or your usual view).
 
 ### Session MQ1: Masque skins and the second-bag-addon warning (checks Tasks 4 and 5; about 10 minutes)
 
-You need: Masque installed and enabled (it comes with a few skins of its own); Baganator installed (you have it) for steps 11–14; a banker; a healing potion in your bags. Step 15 only if you use ElvUI.
+You need: Masque installed and enabled (it comes with a few skins of its own); Baganator installed (you have it) for steps 11–15; a banker with something worth 100g or more in the bank or your bags (for the gold glow); a healing potion in your bags; one item you locked (drop any item on the small `Lock` button right of the search box: `SwagBag: Locked: <its name>. SwagBag never sells it, and it shows a small lock.`); if you have them, a cache or toy to open or learn and a piece of gear whose look you have not collected. Step 16 only if you use ElvUI.
 
 0. Claude installs the build first.
 1. Make sure Baganator is **disabled** in the AddOns list (character select, "AddOns"). Quit the game completely and start it again. Expected: the login screen.
 2. Log in. Expected: chat shows `SwagBag: v0.9.0 loaded. Type /swagbag help for commands.` and **no** line about another bag addon.
-3. Type `/masque`. Expected: Masque's options open; under its add-ons list there is `SwagBag` with the group `Bags`, and `Bank` (if it is not there yet, it appears after your first bank visit; `Guild bank` and `Alt viewer` appear once you opened those windows this session).
-4. In Masque's options pick a clearly different skin for SwagBag (for example "Zoomed" or "Blizzard Classic"), then close Masque's options and press **B**. Expected: SwagBag's item icons wear the new skin; counts, item levels and SwagBag's own marks still show.
+3. Type `/masque`. Expected: Masque's options open; under its add-ons list there is `SwagBag` with the groups `Bags` and `Bank` (the bank's buttons are made at login, so `Bank` is there before any bank visit); `Guild bank` and `Alt viewer` appear once you opened those windows this session.
+4. In Masque's options pick a clearly different skin for SwagBag (for example "Zoomed" or "Blizzard Classic"), then close Masque's options and press **B**. Expected: SwagBag's item icons wear the new skin, and counts, item levels and SwagBag's own marks still show on top of it: the small padlock on your locked item; the star on gear whose look you have not collected; the green glow on a cache or toy to open or learn; in `Free`, the faint green tint on your reagent bag's empty slots. Say if the skin's border hides any of them.
 5. Type `/swagbag view list`. Expected: the small icons on the rows wear the same skin and still line up with their rows.
-6. Type `/swagbag view sections` (or your usual view). Right-click a banker. Expected: the bank's icons wear the skin too. Walk away until the bank closes.
+6. Type `/swagbag view sections` (or your usual view). Right-click a banker. Expected: the bank's icons wear the skin too, and the gold glow on items worth 100g or more (in the bank and in your bags) still shows over the skin. Walk away until the bank closes.
 7. Attack a training dummy (or start any fight). While in combat, right-click the healing potion in SwagBag's bags. Expected: you drink it; no "Interface action failed because of an AddOn" message.
 8. Leave combat. Type `/swagbag report` and look for the `Masque:` line. Expected: `Masque: N buttons skinned` (a few hundred). Close the report box.
 9. Type `/masque`, switch SwagBag's skin back to what you like (or turn SwagBag's groups off there). Expected: SwagBag follows at once.
 10. Type `/swagbag report` and look for `Other bag addons on:`. Expected: `Other bag addons on: none`.
-11. Log out, **enable** Baganator in the AddOns list, and log in again. Expected: chat shows `SwagBag: Another bag addon is on too: Baganator. Two bag addons fight over the same bags. Keep one: type /swagbag safe on to let it handle your bags and bank, or disable one in the AddOns list. SwagBag switches nothing off by itself.`
+11. Log out, **enable** Baganator in the AddOns list, and log in again. Expected: chat shows `SwagBag: Another bag addon is on too: Baganator. Two bag addons fight over the same bags. Keep one: type /swagbag safe on to let it handle your bags and bank, or disable one in the AddOns list. SwagBag switches nothing off by itself. (/swagbag otherbags off stops this line.)`
 12. Type `/swagbag report`. Expected: the line `Other bag addons on: Baganator`. Baganator is still enabled (SwagBag disabled nothing). Close the report box.
-13. Type `/swagbag safe on`. Expected: `SwagBag: Safe Mode is ON for bags: Blizzard's frames are used. Type /swagbag safe off to switch back.` and `SwagBag: Safe Mode is ON for bank: Blizzard's frames are used. Type /swagbag safe off to switch back.` Type `/reload`. Expected: no line about another bag addon this time.
-14. Type `/swagbag safe off`. Expected: `SwagBag: Safe Mode is OFF for bags: SwagBag handles them again.` and `SwagBag: Safe Mode is OFF for bank: SwagBag handles them again.` Log out, **disable** Baganator again, and log in. Expected: no line about another bag addon.
-15. (Only with ElvUI.) With ElvUI's own bags turned **on** in ElvUI's options, log in. Expected: the warning names `ElvUI`. With ElvUI's bags **off**, no warning.
+13. Type `/swagbag otherbags off`. Expected: `SwagBag: No more warning at login about other bag addons. /swagbag report still names them.` Type `/reload`. Expected: no line about another bag addon. Type `/swagbag settings bags`. Expected: the row `Other bag addons` has `Don't warn` selected. Click `Warn at login`. Expected: the status line says `SwagBag warns at login while another bag addon is on too.` Close the settings window.
+14. Type `/swagbag safe on`. Expected: `SwagBag: Safe Mode is ON for bags: Blizzard's frames are used. Type /swagbag safe off to switch back.` and `SwagBag: Safe Mode is ON for bank: Blizzard's frames are used. Type /swagbag safe off to switch back.` Type `/reload`. Expected: no line about another bag addon this time.
+15. Type `/swagbag safe off`. Expected: `SwagBag: Safe Mode is OFF for bags: SwagBag handles them again.` and `SwagBag: Safe Mode is OFF for bank: SwagBag handles them again.` Log out, **disable** Baganator again, and log in. Expected: no line about another bag addon.
+16. (Only with ElvUI.) With ElvUI's own bags turned **on** in ElvUI's options, log in. Expected: the warning names `ElvUI`. With ElvUI's bags **off**, no warning.
 
 ## Week 9 exit check
 
@@ -3488,13 +4387,19 @@ You need: Masque installed and enabled (it comes with a few skins of its own); B
 
 Recorded in the week-9 ledger and applied to `docs/superpowers/specs/2026-09-30-swagbag-design.md` at week end (this plan commits only the plan file):
 - **§5.5 (Sort):** an optional SwagBag sort mode, `sort.mode = "stacks"` ("Partial stacks first"): merge each item's partial stacks, then put the partial stack in front of the full ones; nothing else moves; one scope per button (bags, character bank, warband bank), never across; locked, equipment-set, single, not-loaded and secret-link items stay put; out of combat, P5, one move per 0.2 s, a move that does nothing stops the run; combat or closing stops it, nothing queued; the outcome is one chat line. Blizzard's sort stays the default. Add ACs from Tasks 1–2's tests.
-- **§3.3 / F10 (prices):** providers Auctionator (10), TSM (5, TradeSkillMaster's public addon API, price strings DBMarket / DBMinBuyout / DBRegionMarketAvg / DBRegionSaleAvg only) and the vendor (0); `prices.source` "auto" (by priority) or one of them; TSM refreshes by the cache age (no callback); `/swagbag price`. Header totals, the Value column, the gold glow and AC17.2's "worth more at auction" follow the choice (D13 noted).
+- **§5.5 / §4.2 rule 5 (P5):** "anything on the cursor" (money, a spell, a merchant's item, an item with a secret ID) holds every move, the week-7 mover's too (`Adapter.CursorBusy`).
+- **§3.3 / F10 (prices):** providers Auctionator (10), TSM (5, TradeSkillMaster's public addon API, price strings DBMarket / DBMinBuyout / DBRegionMarketAvg / DBRegionSaleAvg only, an answer above 0) and the vendor (0); `prices.source` "auto" (by priority) or one of them; TSM refreshes by the cache age (no callback), a TSM "no price" is kept 30 s; `/swagbag price`, `/swagbag price string`. Header totals, the Value column and the gold glow follow the choice. Retitle F10 from "Auctionator integration" to "Price sources (Auctionator, TSM, vendor)", and AC10.2 "Without Auctionator, totals use vendor price" to "Without an auction price source loaded (or with Vendor chosen), totals use the vendor price".
+- **AC17.2 (vendor protections), ruling R0:** "never sold: a gray BoE worth more than twice its vendor price at auction" asks every loaded auction source (Auctionator, TSM) whatever `prices.source` says; any one above twice keeps it; Sell all's Auction House sentence uses the same value. A vendor opened during a stacking run sells when the run ends (D19).
+- **§1.3 Non-goals:** drop "No TSM integration in v1.x"; "Prices come from Auctionator, else vendor price" becomes "Prices come from Auctionator, TSM or the vendor (a user choice; F10)". SwagBag still never scans the Auction House itself.
+- **§2.3 (Later):** remove "TSM price source" (shipped in week 9); Masque skins also leave the later list if listed.
+- **§1.4 P4 (other addons: detect, never take over):** add TradeSkillMaster (prices, read only through `TSM_API`) and Masque (skins, `AddButton` only) to the addons it names, and other bag addons (detected, named, never disabled).
 - **§4.1 (buttons):** Masque: `AddButton(button, nil, "Item")` once per button, out of combat only; groups Bags, Bank, Guild bank, Alt viewer; no SwagBag setting (Masque's options).
-- **P4 / §10.4:** another bag addon on: one login line (silent in Safe Mode), never disabled; the report's `Other bag addons on:` and `Masque:` lines; `Prices:` names TSM's string.
-- **§8.2 (settings):** `sort.mode`, `prices.source`, `prices.tsm` (explicit defaults, schema 2), share-string words.
+- **P4 / §10.4:** another bag addon on: one login line (silent in Safe Mode or with `bags.warnOtherAddons` off), never disabled; UI suites' bag modules are not detected; the report's `Other bag addons on:` and `Masque:` lines; `Prices:` names TSM's string.
+- **§8.2 (settings):** `sort.mode`, `prices.source`, `prices.tsm`, `bags.warnOtherAddons` (explicit defaults, schema 2), share-string words.
 - **§9 (secret values):** a secret item ID is no price key.
 - **F6 / ruling W5-1:** a held fallback under drawn categories restores full size at once.
-- **§10.5 (commands):** `/swagbag sort [stacks|blizzard]`, `/swagbag price [auto|auctionator|tsm [<price>]|vendor]`.
+- **§4.2 rule 5 (nothing moves under the mouse), a recorded exception:** that held F6 fallback rescales the drawn categories' buttons to full size at once even while the mouse may rest on one (leaving them small is worse: a shrunk button slides under the mouse anyway and its click target stays small).
+- **§10.5 (commands):** `/swagbag sort [stacks|blizzard]`, `/swagbag price [auto|auctionator|tsm [<price>]|vendor|string <price>]`, `/swagbag otherbags [on|off]`.
 - **§11 / §12 (the Adapter rule):** `TSM_API` and `LibStub` are named only in the Adapter (check.sh).
 
 ## Spec coverage (week-9 scope → task)
@@ -3509,18 +4414,23 @@ Recorded in the week-9 ledger and applied to `docs/superpowers/specs/2026-09-30-
 | 2a. TSM as a price source when loaded; Settings Auctionator / TSM / vendor; default Auctionator, else TSM, else vendor | T3 (D10) |
 | 2b. A selectable TSM price string, default DBMarket | T3 (D11) |
 | 2c. Through the Adapter only, secret-safe, cached like Auctionator, invalidated if TSM offers it | T3 (D12; check.sh) |
-| 2d. Header totals, Value column, worth glow, vendor protections use the chosen source | T3 (D13) |
+| 2d. Header totals, Value column, worth glow use the chosen source; the gray-BoE protection asks every loaded auction source (ruling R0) | T3 (D10, D13) |
 | 3a. Masque groups for bags, bank, guild, list-row icons; never secure attributes, never reparent, never in combat; clean without Masque | T4 (D14, D15) |
-| 3b. Warn once at login about another bag addon (incl. ElvUI's bags), suggest /swagbag safe on or disabling one; never auto-disable; in /swagbag report | T5 (D16) |
+| 3b. Warn once at login about another bag addon (incl. ElvUI's bags), suggest /swagbag safe on or disabling one; never auto-disable; in /swagbag report; a setting silences it | T5 (D16) |
 | 4. Week-8 deferred polish (held F6 fallback, secret itemID) and other cheap ones; the rest listed | T6 (D17); "Carry-overs" |
 | Version 0.9.0 in Task 1 | T1 |
 | Adapter-only rule extended to TSM_API and LibStub | T3 (check.sh), Global Constraints |
+| Preflight rulings: R0/S1 AuctionValue; S2 TSM miss 30 s; S11 price above 0; S12 lazy TSM API; S7 TSM price row; S13 one TSM list | T3 |
+| Preflight rulings: S3 locked stacks left out; S4 stop before judging; S5 CursorBusy; S6 vendor waits; S8 first step trapped; S18 header | T1 (S4 also T2's bank test) |
+| Preflight rulings: S13 one Sort-button helper | T2 |
+| Preflight rulings: S14 Skins test; S16 the warning's setting; S9/S10 spec list; S15/S17/S19 session texts; S20 ledger only | T4; T5; "Spec updates at week end"; ST1, MQ1; Self-review 6 |
 
 ## How this plan was checked (while writing it)
 
-- Every task was first built on a scratch clone at `/tmp/sb9` (outside the repo), one commit per task, test-first: each task's tests were run against the previous task's code (red) and then against its own (green). Every block in this file was then generated from those commits' diffs by a script: each find block is grown line by line until it occurs exactly once in the file as it is after the earlier edits, and starts and ends on a non-blank line; the script re-applied every block to the old file and compared the result with the commit's file.
-- **Replay.** A fresh clone of `ae00814` (`/tmp/sb9b`) was driven by a script that reads this file: for each task it applies the Step 1 blocks, runs the suite, applies the Step 3 blocks, runs the suite and `scripts/check.sh`, then commits. Every find block occurred exactly once when applied; every Step 2 count and FAIL list (name by name), every Step 4 total, every Step 5 `ALL CHECKS PASSED` and TOC count, and every Step 6 `git add` list (equal to the files the task changed) above is that script's output. Final total: **1491 passed, 0 failed**.
-- **Mutations.** Every mutation listed under a Step 2 (48 in all) was applied, one at a time, to its own task's replayed commit, and the whole suite run: every one made its named test fail.
+- Every task was first built on a scratch clone at `/tmp/sb9` (outside the repo), one commit per task, test-first (the amendment for the preflight rulings rebuilt all six commits on branch `amend` there): each task's tests were run against the previous task's code (red) and then against its own (green). Every block in this file was then generated from those commits' diffs by a script: each find block is grown line by line until it occurs exactly once in the file as it is after the earlier edits, and starts and ends on a non-blank line; the script re-applied every block to the old file and compared the result with the commit's file.
+- **Replay.** A fresh clone of `ae00814` (`/tmp/sb9b`) was driven by a script that reads this file: for each task it applies the Step 1 blocks, runs the suite, applies the Step 3 blocks, runs the suite and `scripts/check.sh`, then commits. Every find block occurred exactly once when applied; every Step 2 count and FAIL list (name by name), every Step 4 total, every Step 5 `ALL CHECKS PASSED` and TOC count, and every Step 6 `git add` list (equal to the files the task changed) above is that script's output. Final total: **1503 passed, 0 failed**.
+- **Mutations.** Every mutation listed under a Step 2 (70 in all) was applied, one at a time, to its own task's replayed commit, and the whole suite run: every one made its named test fail.
+- **Strings.** Every quoted chat line in ST1, TS1 and MQ1 was matched against `enUS.lua` by a script.
 - **check.sh's new rule** was checked by hand on Task 3's code: a comment `-- TSM_API` added to `Providers/TSM.lua` makes it print `FAIL: TSM_API or LibStub named outside SwagBag/Core/Adapter.lua (comments included)` and `CHECKS FAILED`; removing it passes again.
 - **The F6 polish test** reproduces the real mechanism: a button shrunk for the list moves (its point's offsets are in its own scale) and can slide under a resting mouse, which holds the fallback; the test's button reports the mouse over it only while shrunk.
 - Greps on the final tree:
@@ -3531,9 +4441,9 @@ Recorded in the week-9 ledger and applied to `docs/superpowers/specs/2026-09-30-
 
 ## Self-review
 
-1. **Scope coverage.** Every item of the brief maps to a task or a named decision in "Spec coverage", in the brief's priority order (stacking first, then TSM, then Masque and the warning, then the polish). Each open question has a decision row: the default and the switch (D1), what the mode does (D2) and why not Blizzard's sort (D3), which stack goes where (D4), scopes (D5), what stays put (D6), pace and stopping (D7, D9), how it answers (D8), the price source (D10), TSM's string (D11) and refresh (D12), the vendor rule (D13, flagged), Masque (D14, D15), the warning (D16), the polish (D17).
+1. **Scope coverage.** Every item of the brief maps to a task or a named decision in "Spec coverage", in the brief's priority order (stacking first, then TSM, then Masque and the warning, then the polish). Each open question has a decision row: the default and the switch (D1), what the mode does (D2) and why not Blizzard's sort (D3), which stack goes where (D4), scopes (D5), what stays put (D6), pace and stopping (D7, D9), how it answers (D8), the price source (D10), TSM's string (D11) and refresh (D12), the vendor rule (D13, ruling R0), Masque (D14, D15), the warning and its setting (D16), the polish (D17), a vendor visit during a stacking run (D19). Every controller ruling (R0, S1–S20) is mapped in "Spec coverage".
 2. **Placeholder scan.** No "TBD", "TODO", "similar to", or test-free step. Every code step is a complete block (the replay applies them as written). The in-game expectations quote Locale strings verbatim; where a line holds the player's own numbers or names the step says so.
-3. **Type and name consistency.** These names are the same in every task that uses them: `Adapter.MoveStack`, `SB.Stacker` (`Start`, `Busy`, `Stop`, `Plan`, `ResultText`, `DELAY`, `RETRY`, `MAX_WAITS`), the job's `kind`/`still`/`busy`/`done`, the result's `merged`/`ordered`/`kept`/`why` (T1 → T2); `sort.mode` and its words `"blizzard"`/`"stacks"` (T2: Config, Profiles, Stacker, SettingsPages, both windows); GroupView `v.Busy` (T2); `Adapter.TSM_PRICES/TSMAvailable/TSMPrice`, `Prices.CHOICES/Choice/TSMString/SourceText`, `prices.source`, `prices.tsm` (T3: Adapter, Prices, provider, Profiles, Settings, Report); `Adapter.MasqueAvailable/MasqueAdd`, `SB.Skins.Add/Available/count/GROUPS` (T4); `Adapter.OTHER_BAG_ADDONS/ElvUIBagsOn/OtherBagAddons` (T5). The Locale keys quoted in ST1, TS1 and MQ1 were checked against the blocks by a script.
+3. **Type and name consistency.** These names are the same in every task that uses them: `Adapter.CursorBusy`, `Adapter.MoveStack`, `SB.Stacker` (`Start`, `Busy`, `Stop`, `Plan`, `ResultText`, `SortButton`, `DELAY`, `RETRY`, `MAX_WAITS`), `SB_STACKER_DONE`, the job's `kind`/`still`/`busy`/`done`, the result's `merged`/`ordered`/`kept`/`why` (T1 → T2); `sort.mode` and its words `"blizzard"`/`"stacks"` (T2: Config, Profiles, Stacker, SettingsPages, both windows); GroupView `v.Busy` (T2); `Adapter.TSM_PRICES/TSMAvailable/TSMPrice`, `Prices.CHOICES/Choice/TSMString/SourceText/AuctionValue/MISS_AGE`, `prices.source`, `prices.tsm` (T3: Adapter, Prices, provider, Vendor, SectionActions, Profiles, Settings, Report); `Adapter.MasqueAvailable/MasqueAdd`, `SB.Skins.Add/Available/count/GROUPS` (T4); `Adapter.OTHER_BAG_ADDONS/ElvUIBagsOn/OtherBagAddons`, `bags.warnOtherAddons`, `/swagbag otherbags` (T5: Adapter, Report, Commands, Config, Profiles, Settings). The Locale keys quoted in ST1, TS1 and MQ1 were checked against the blocks by a script.
 4. **Review Focus.** Each of the nine lines names its pinning tests, and each of those tests is in its owning task's Step 1.
-5. **Global Constraints.** No `C_`/`Enum.` or another addon's global outside the Adapter (check.sh enforces `TSM_API`/`LibStub` from Task 3). The stacker touches no button; Masque gets each button once, out of combat. Every new timer, listener and callback runs under `ErrorTrap.Guard`/`Run`/`SB.On` with the labels in P6. Every user-visible string is in `enUS.lua`. Three new settings with explicit defaults, schema 2, share-string words and labels. No `OnUpdate`; nothing runs while idle.
-6. **Known limits, stated in the plan.** The order pass relies on the game swapping a partial stack with a full one of the same item (G1); if it does not, the run stops and nothing is lost. Choosing "Vendor" as the price source also judges gray BoEs by the vendor price (D13, flagged for the user). TSM prices refresh by the cache's 10-minute age (D12). A few bag-addon folder names are unverified (G8). The week-6 bank-speed part 2 still waits on TF1.
+5. **Global Constraints.** No `C_`/`Enum.` or another addon's global outside the Adapter (check.sh enforces `TSM_API`/`LibStub` from Task 3). The stacker touches no button; Masque gets each button once, out of combat. Every new timer, listener and callback runs under `ErrorTrap.Guard`/`Run`/`SB.On` with the labels in P6 (the stacker's first step too). Every user-visible string is in `enUS.lua`. Four new settings with explicit defaults, schema 2, share-string words (or type) and labels. No `OnUpdate`; nothing runs while idle.
+6. **Known limits, stated in the plan.** The order pass relies on the game swapping a partial stack with a full one of the same item (G1); if it does not, the run stops and nothing is lost. The gray-BoE protection may keep an item for an auction price the windows do not show (with "Vendor" chosen, or when Auctionator answers the totals and TSM's price is the higher one: ruling R0, D13). TSM prices refresh by the cache's 10-minute age, a TSM "no price" after 30 s (D12). Two stacks with the same link that the game will not stack (a different bind state) swap instead of merging: the run counts that as a merge, then stops at the next step with "did not move as expected"; nothing is lost (preflight S20: ledger only, low risk, sessions G1/G2 watch for it). Bag modules inside UI suites are not detected as a second bag addon (D16). A few bag-addon folder names are unverified (G8). The week-6 bank-speed part 2 still waits on TF1.
