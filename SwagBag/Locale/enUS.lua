@@ -993,3 +993,7 @@ L.SET_OTHER_BAGS_QUIET = "Don't warn"
 L.SET_OTHER_BAGS_TIP = "Two bag addons at once fight over the same bags. Warn at login: one chat line names the other"
 	.. " one while it is on (never in Safe Mode). Don't warn: no line; /swagbag report still names it. SwagBag never"
 	.. " switches an addon off. Bag modules inside UI suites (KkthnxUI, NDui, GW2_UI, Tukui) are not recognised."
+
+-- Lock warnings (week 10): UI/LockWarnings.lua
+L.LOCK_WARN_SPELL = "Locked by you. SwagBag can't stop this spell: press Esc to cancel it."
+L.SET_LOCK_WARN = "Warn before destroying locked items"

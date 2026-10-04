@@ -99,6 +99,9 @@ Config.Defaults = {
 		-- counts: other characters' counts on item tooltips (UI/TooltipCounts.lua): "auto" (shown unless
 		-- Syndicator is loaded, which writes its own), "on", "off".
 		tooltip = { counts = "auto" },
+		-- warn (week 10, UI/LockWarnings.lua): warn before a locked item is destroyed (a spell waiting for its
+		-- target, the delete box, the scrapper). Warnings only: SwagBag never stops Blizzard's own flows.
+		locks = { warn = true },
 	},
 }
 

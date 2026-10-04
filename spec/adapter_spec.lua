@@ -498,3 +498,42 @@ describe("Adapter Masque (real adapter, stubbed globals)", function()
 		assert.falsy(A.MasqueAdd("Bags", "button1"))
 	end)
 end)
+
+-- Week 10 (lock warnings, UI/LockWarnings.lua): what SwagBag reads to warn about a locked item, never to stop
+-- anything.
+describe("Adapter lock-warning helpers (week 10)", function()
+	local A, tip, savedTargeting
+	before_each(function()
+		savedTargeting = SpellIsTargeting
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+		tip = { lines = {} }
+		function tip.AddLine(_, ...)
+			tip.lines[#tip.lines + 1] = { ... }
+		end
+	end)
+
+	after_each(function()
+		SpellIsTargeting = savedTargeting
+	end)
+
+	-- Mutation: in A.SpellTargeting, `return spellTargeting()` -> `return cursorHeld()`.
+	it("SpellTargeting reads SpellIsTargeting; none, false or an error is no", function()
+		SpellIsTargeting = nil
+		assert.falsy(A.SpellTargeting(), "no API")
+		SpellIsTargeting = function() return false end
+		assert.falsy(A.SpellTargeting())
+		SpellIsTargeting = function() return true end
+		assert.truthy(A.SpellTargeting())
+		SpellIsTargeting = function() error("broken") end
+		assert.falsy(A.SpellTargeting(), "an error is no answer")
+	end)
+
+	-- Mutation: in A.TooltipWarning, drop the last `true` (the line would run off the tooltip's edge).
+	it("TooltipWarning adds one red line that wraps; an error is not swallowed", function()
+		A.TooltipWarning(tip, "careful")
+		assert.same({ { "careful", 1, 0.27, 0.27, true } }, tip.lines)
+		assert.has_error(function() A.TooltipWarning({}, "x") end)
+	end)
+end)

@@ -12,7 +12,8 @@
 --     Locks.CONFIRM seconds clears (Settings > Vendor "Unlock all" and /swagbag lock clear)
 --   Locks.Undo() -> n | false, "none" | "readonly"   puts back the set the last clear removed
 --   Locks.Name(itemID) -> the item's name (or "item 123" while it loads)
---   Locks.TooltipLine(tooltip, itemID)   the item tooltip's "Locked" line (UI/LockButton.lua hooks it)
+--   Locks.TooltipLine(tooltip, itemID)   the item tooltip's "Locked" line (UI/LockButton.lua hooks it), and under
+--     it the red warning of UI/LockWarnings.lua while the item could be destroyed (week 10)
 --   Locks.KeywordNote() -> bool   the one-time note about the `locked` keyword's new meaning (ruling R21)
 -- Every change emits SB_LOCKS_CHANGED; the open windows re-draw their lock marks, a search re-applies (a
 -- `locked` search follows at once) and Settings > Vendor's count follows.
@@ -135,6 +136,11 @@ end
 function Locks.TooltipLine(tooltip, itemID)
 	if Locks.Has(itemID) then
 		SB.Adapter.TooltipLine(tooltip, L.LOCK_TOOLTIP)
+		-- Week 10: right under it, a red warning while the item could be destroyed (UI/LockWarnings.lua).
+		local warn = SB.LockWarnings and SB.LockWarnings.TooltipText()
+		if warn then
+			SB.Adapter.TooltipWarning(tooltip, warn)
+		end
 	end
 end
 
