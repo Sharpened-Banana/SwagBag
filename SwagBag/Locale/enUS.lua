@@ -706,8 +706,8 @@ L.V1_COMBAT = "Open the V1 strip out of combat; it can only be filled then."
 
 -- At a vendor (week 7, user pick 4): auto-sell junk, auto-repair (Engine/Vendor.lua), and the mover.
 -- VENDOR_KEEPS: what SwagBag never sells (Vendor.Protected, ruling R19), in every line that says so.
-L.VENDOR_KEEPS = "locked items, equipment-set items, gear whose look you have not collected, items to open or learn,"
-	.. " and gray BoE items worth more at auction"
+L.VENDOR_KEEPS = "locked items, equipment-set items, gear whose look you have not collected (or the game cannot tell"
+	.. " yet), items to open or learn, and gray BoE items worth more at auction"
 L.HELP_SELL = "sell [on|off|junk]: sell gray junk by itself at every vendor (on), never (off), or now (junk)"
 L.HELP_REPAIR = "repair [own|guild|off]: repair at vendors with your gold, the guild bank first, or not at all"
 L.VENDOR_MONEY_G = "%dg %ds %dc"

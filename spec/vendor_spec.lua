@@ -345,6 +345,73 @@ describe("Vendor (week 7)", function()
 		assert.same({ 6, 8, 9 }, sold())
 	end)
 
+	-- Week 8 (week-7 re-review minor): a ring, necklace or trinket has no look at all, so a gray one is junk
+	-- again; other gray gear the client cannot say about stays. Mutation: in Collections.LookUnknown, drop
+	-- `or Coll.NO_LOOK[r.equipLoc or ""]`.
+	it("gray rings, necklaces and trinkets have no look: sold as junk; a gray robe the client cannot say about stays",
+		function()
+			for i, loc in ipairs({ "INVTYPE_FINGER", "INVTYPE_NECK", "INVTYPE_TRINKET" }) do
+				A.AddItem(400300 + i, { name = "Dull Bauble " .. i, classID = A.ITEM_CLASS.Armor, subclassID = 0,
+					equipLoc = loc, quality = 0, ilvl = 5, maxStack = 1, bind = "none", sellPrice = 30 })
+				A.Put(0, 6 + i, 400300 + i, 1)
+			end
+			A.Put(0, 10, GRAY, 1)
+			A.collected.defaultLook = nil -- the client has no source for any of them
+			SB.Inventory.ScanAll()
+			visit()
+			assert.same({ 6, 7, 8, 9 }, sold())
+			assert.truthy(SB.L.VENDOR_KEEPS:find("cannot tell", 1, true), "what is kept says so")
+		end)
+
+	-- Week 8 (controller ruling Q2). A gray robe has an appearance slot, so a link the client hid (secret) or
+	-- that is missing is no answer, and the robe stays. Mutation: in Collections.LookUnknown,
+	-- `if not link then return true end` -> `return false`, both draw (fast) and sell paths.
+	it("a gray robe whose link is secret or missing is not sold (no answer is not 'cannot collect')", function()
+		local secretLink = "item:400200::secret"
+		A.Put(0, 7, GRAY, 1, { link = secretLink })
+		A.Put(0, 8, GRAY, 1)
+		SB.Inventory.ScanAll()
+		A.IsSecret = function(v) return v == secretLink end
+		local secret, missing = SB.Items.Describe(0, 7), SB.Items.Describe(0, 8)
+		missing.link = nil
+		for _, fast in ipairs({ false, true }) do
+			assert.truthy(SB.Vendor.Protected(secret, fast), "secret link, fast=" .. tostring(fast))
+			assert.truthy(SB.Vendor.Protected(missing, fast), "missing link, fast=" .. tostring(fast))
+		end
+	end)
+
+	-- Week 8 (controller ruling Q5). Uncollected's gear branch reads the link through plain(): a secret link
+	-- is no answer (no star), never an error, and never reaches the client. Mutation: in Collections.Uncollected,
+	-- `local link = plain(r.link)` -> `local link = r.link`.
+	it("Uncollected reads a gear link only when it is not secret: no star, no client call", function()
+		local secretLink = "item:400200::secret"
+		A.Put(0, 7, GRAY, 1, { link = secretLink })
+		SB.Inventory.ScanAll()
+		A.IsSecret = function(v) return v == secretLink end
+		A.collected.looks[secretLink] = false -- would star, if it were read
+		local r = SB.Items.Describe(0, 7)
+		local before = A.collectionCalls
+		assert.is_nil(SB.Collections.Uncollected(r))
+		assert.equal(before, A.collectionCalls)
+	end)
+
+	-- Week 8 (week-7 re-review minor: Protected on the draw path). Mutation: in Collections.LookUnknown, drop
+	-- the `if fast then ... end` branch (every draw of a gray piece would ask the client again).
+	it("a draw asks the client about a gray piece's look once per link; every sale check asks again", function()
+		A.Put(0, 7, GRAY, 1, { link = "item:400200::a" })
+		A.collected.looks["item:400200::a"] = "unknown"
+		SB.Inventory.ScanAll()
+		local r = SB.Items.Describe(0, 7)
+		local before = A.collectionCalls
+		for _ = 1, 3 do
+			assert.truthy(SB.Vendor.Protected(r, true))
+		end
+		assert.equal(before + 1, A.collectionCalls, "three draws, one question")
+		assert.truthy(SB.Vendor.Protected(r))
+		assert.truthy(SB.Vendor.Protected(r))
+		assert.equal(before + 3, A.collectionCalls, "the sell path never trusts a cached unknown")
+	end)
+
 	-- Week 7 (user pick 5). Mutation: Vendor.Protected ignores SB.Locks.
 	it("a locked junk item is never sold, by auto-sell or by /swagbag sell junk", function()
 		A.Put(0, 7, GRAY, 1)

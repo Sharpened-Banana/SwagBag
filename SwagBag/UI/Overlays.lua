@@ -134,7 +134,7 @@ function Ov.Context()
 			learn = SB.Collections and SB.Collections.Learn, locked = SB.Locks and SB.Locks.Has,
 			uncollected = SB.Collections and SB.Collections.Uncollected,
 			protected = function(record) -- the vendor's own rule: a coin only where SwagBag could sell it
-				return SB.Vendor ~= nil and SB.Vendor.Protected(record) == true
+				return SB.Vendor ~= nil and SB.Vendor.Protected(record, true) == true -- cached looks (week 8)
 			end }
 		if SB.Config.Get("overlays.usePawn") then
 			ctx.pawn = function(record)
