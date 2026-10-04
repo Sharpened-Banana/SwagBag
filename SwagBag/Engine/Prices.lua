@@ -95,6 +95,9 @@ function P.Bound(record)
 end
 
 function P.Value(link, itemID, bound)
+	if SB.Adapter.IsSecret(link) then
+		link = nil -- a secret value is never a table key: price by itemID
+	end
 	local now = SB.Adapter.Now()
 	if P.filledAt and now - P.filledAt > P.MAX_AGE then
 		P.Invalidate()

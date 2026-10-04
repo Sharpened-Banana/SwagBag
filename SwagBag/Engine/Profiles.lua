@@ -442,10 +442,12 @@ local function escapeCode(text)
 		or text:find("|c[nN][%u_][%u%d_]*:") ~= nil
 end
 
+-- Built-in categories whose priority an import never changes (protected: Junk, Sets, Keystone, Reagents).
+local PINNED = { c_junk = true, c_sets = true, c_keystone = true, c_reagents = true }
+Pr.PINNED = PINNED -- read by the drift-guard spec
+
 -- A user category id has the shape SwagBag makes (u_...), which is never a built-in or a section id
 -- (new, free, c_...); an edit may only name a built-in category.
-local PINNED = { c_junk = true, c_sets = true, c_keystone = true, c_reagents = true }
-
 local function idOk(prefix, id)
 	if prefix == "cu" then
 		return id:match("^u_[%w_]+$") ~= nil

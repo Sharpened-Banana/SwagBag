@@ -207,6 +207,20 @@ describe("Profiles (week 7)", function()
 		assert.same({ "Consumables watch list: 1 entry" }, Pr.Preview(assert(Pr.Parse("SWAGBAG:1:w=si211880%252A3"))))
 	end)
 
+	-- Week 8 (final review, drift guard). Mutation: rename one id in Profiles.lua's PINNED (c_keystone -> c_keystones).
+	it("every pinned category id is a built-in category", function()
+		local known = {}
+		for _, def in ipairs(SB.CategoryDefaults) do
+			known[def.id] = true
+		end
+		local n = 0
+		for id in pairs(Pr.PINNED) do
+			n = n + 1
+			assert.truthy(known[id], id .. " is not in SB.CategoryDefaults")
+		end
+		assert.equal(4, n)
+	end)
+
 	-- Mutations: Pr.Import skips data.edits; or (ruling R22) drops `def.source = "import"`.
 	it("with categories: your categories, built-in edits and the order travel; import loads them, undo keeps settings", function()
 		SB.Config.db.categories.u_mats = { name = "Mats", query = "herb | ore", priority = 58, displayOrder = 55,

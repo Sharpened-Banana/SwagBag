@@ -24,6 +24,18 @@ describe("Prices (spec F10, 3.3)", function()
 		SB.Emit("SB_LOGIN")
 	end)
 
+	-- Week 8 (final review). A secret link must never be a table key (indexing with one errors in WoW):
+	-- it prices by itemID. Mutation: delete the `if SB.Adapter.IsSecret(link) then link = nil end` guard in P.Value.
+	it("a secret link prices by itemID: never a cache key, never an error", function()
+		local secretLink = "item:secret"
+		A.IsSecret = function(v) return v == secretLink end
+		assert.same({ 1500, "Vendor" }, { P.Value(secretLink, Fixtures.HERB) })
+		assert.truthy(P.cache[Fixtures.HERB])
+		assert.is_nil(P.cache[secretLink])
+		assert.same({ 1500, "Vendor" }, { P.Value(secretLink, Fixtures.HERB, true) })
+		assert.is_nil(P.boundCache[secretLink])
+	end)
+
 	it("money: gold with thousands separators, else silver, else copper", function()
 		assert.same({ "12c", "35s", "1,240g", "123,456g", "1g", "0c" },
 			{ P.Money(12), P.Money(3550), P.Money(12400000), P.Money(1234567890), P.Money(10000), P.Money(0) })

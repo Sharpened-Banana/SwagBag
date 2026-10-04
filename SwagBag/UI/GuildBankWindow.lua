@@ -600,8 +600,9 @@ function GW.ToggleView()
 		return
 	end
 	GW.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[view]])
-	GW.Flash(VIEW_FLASH[view])
 	GW.view.RequestLayout("view")
+	-- the flash says what is drawn: a list that could not size its buttons (F6) shows categories
+	GW.Flash(VIEW_FLASH[(view == "list" and GW.view.listFailed) and "sections" or view])
 end
 
 -- A click on a column of the list: sort every list by it, answered in the title (P2). The drawn lists

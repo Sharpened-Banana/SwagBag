@@ -498,8 +498,9 @@ function BW.ToggleView()
 		return
 	end
 	BW.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[view]])
-	BW.Flash(VIEW_FLASH[view])
 	BW.view.RequestLayout("view")
+	-- the flash says what is drawn: a list that could not size its buttons (F6) shows categories
+	BW.Flash(VIEW_FLASH[(view == "list" and BW.view.listFailed) and "sections" or view])
 end
 
 -- A click on a column of the list: sort every list by it (Engine/Sort.lua), answered in the title (P2).

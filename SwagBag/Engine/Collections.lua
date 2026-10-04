@@ -6,9 +6,9 @@
 --   Collections.Uncollected(record) -> "appearance" | "toy" | "mount" | "pet" | nil   (user pick 9)
 --     appearance  gear whose look the account has not collected (Adapter.AppearanceKnown)
 --     toy / mount / pet   an item that teaches one the account does not have yet
---   Collections.LookUnknown(record, cached) -> bool   gray gear whose look the client cannot say (the sell
+--   Collections.LookUnknown(record, fast) -> bool   gray gear whose look the client cannot say (the sell
 --     path: such a piece is protected; the answer is never cached there, so the next sale asks again).
---     Rings, necklaces and trinkets have no look at all: "cannot collect", never unknown (week 8). cached =
+--     Rings, necklaces and trinkets have no look at all: "cannot collect", never unknown (week 8). fast =
 --     true (the overlays' junk coin, week 8): the answer Uncollected already cached for the link, so a
 --     draw costs a table lookup, never a collection call
 --   Collections.Invalidate()   drop the cached answers (something was learned, or an item left the bags)
@@ -126,7 +126,7 @@ end
 
 -- For SELLING only (Vendor.Protected): a gray piece of gear whose look the client cannot say (no source,
 -- no data yet, a secret) might be an uncollected look, so it stays. "Cannot collect" is an answer
--- ("cannot"), not an unknown. Asked fresh each time: an unknown is never cached on this path.
+-- ("cannot"), not an unknown. The sell path asks fresh each time (an unknown is never cached there); the draw path (fast) may cache.
 function Coll.LookUnknown(r, fast)
 	if not r or r.offline or r.pending or r.quality ~= 0 or not isGear(r) or Coll.NO_LOOK[r.equipLoc or ""] then
 		return false

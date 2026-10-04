@@ -139,6 +139,15 @@ describe("GuildBankWindow list view (week 8)", function()
 		assert.falsy(GW.columnsBar.frame.shown)
 	end)
 
+	-- Week 8 (final review). The title says what is drawn. Mutation: in GW.ToggleView, flash
+	-- VIEW_FLASH[view] (the list's title) whatever the layout drew.
+	it("F6: the guild view button's title says categories when the list could not be drawn", function()
+		openVault()
+		button(2, 2).SetScale = function() end
+		Fake.Fire(GW.viewButton, "OnClick")
+		assert.equal(SB.L.GUILD_VIEW_SECTIONS, GW.frame.title.text)
+	end)
+
 	-- Week 8 ruling Q4. Mutation: drop `GW.scaleWarned` from the reset in the guild window's OnHide.
 	it("F6: the fallback is said once per opening, so a second opening says it again", function()
 		openVault()

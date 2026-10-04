@@ -552,8 +552,10 @@ function GV.New(cfg)
 	-- F6: a full-size button in a 24 px row would cover the next row, so a click there could take or
 	-- deposit the wrong item. That layout draws as categories instead: recorded (never Safe Mode), and
 	-- the window says it once per opening (cfg.onListFailed).
-	local function listFailed(b)
-		scaleAll(b, 1)
+	local function listFailed(b, held)
+		if not held then -- a held fallback leaves the buttons as drawn until the retry lands it
+			scaleAll(b, 1)
+		end
 		v.listFailed = true
 		SB.ErrorTrap.OnError(cfg.key .. ".listScale", "none", "a slot button's SetScale did not take", nil)
 		if cfg.onListFailed then
@@ -562,12 +564,22 @@ function GV.New(cfg)
 	end
 
 	-- Make a candidate the view's layout and draw it at pos.
-	local function commit(b, pos, reason, t0)
+	-- guard (RequestLayout): a fallback to categories moves buttons too, so it waits like any layout
+	-- (P5): returns nil, the retry through SB.Debounce, when one of them is under the mouse.
+	local function commit(b, pos, reason, t0, guard)
 		local t1 = SB.Adapter.ProfileMs()
 		if b.view == "list" and not scaleAll(b, listScale()) then
+			local fallback = build("sections")
+			local fallbackPos = positionTimed(fallback)
+			if guard and v.pos and anyBusy(SB.Layout.Moves(v.pos, fallbackPos)) then
+				listFailed(b, true)
+				SB.Debounce(cfg.key .. ".layout", GV.RETRY, function()
+					v.RequestLayout(reason)
+				end, window)
+				return nil
+			end
 			listFailed(b)
-			b = build("sections")
-			pos = positionTimed(b)
+			b, pos = fallback, fallbackPos
 		elseif b.view ~= "list" then
 			scaleAll(b, 1)
 		end
@@ -633,7 +645,9 @@ function GV.New(cfg)
 			end, window)
 			return false
 		end
-		commit(b, pos, reason, t0)
+		if not commit(b, pos, reason, t0, true) then
+			return false -- a list fell back to categories and that waits under the mouse (P5)
+		end
 		if cfg.onUpdated then
 			cfg.onUpdated()
 		end
