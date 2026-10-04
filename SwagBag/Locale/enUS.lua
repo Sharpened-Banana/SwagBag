@@ -1015,3 +1015,12 @@ L.SET_LOCK_WARN_TIP = "On: a red line on a locked item's tooltip while a spell (
 	.. " line when a locked item lands in the scrapper. These are Blizzard's own actions: SwagBag can't stop them, so it"
 	.. " warns. Off: no warnings."
 L.REPORT_LOCKS = "Locks: %d locked; destroy warnings %s"
+
+-- Category editor (week 11): Engine/Query/Rows.lua's keyword lists, UI/SettingsCategories.lua
+L.KW_FAMILY_TYPE = "Item type"
+L.KW_FAMILY_QUALITY = "Quality"
+L.KW_FAMILY_BINDING = "Binding"
+L.KW_FAMILY_NUMBER = "Numbers (item level, gold...)"
+L.KW_FAMILY_STATE = "State"
+L.KW_FAMILY_SLOT = "Gear slot"
+L.KW_FAMILY_PLACE = "Where it is"
