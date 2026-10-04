@@ -125,7 +125,10 @@ end
 
 SB.On("PLAYER_REGEN_DISABLED", function()
 	for i = 1, #textBoxes do
-		textBoxes[i]:ClearFocus()
+		local box = textBoxes[i] -- each one on its own: one that fails does not stop the rest
+		SB.ErrorTrap.Run("textbox.clearFocus", "none", function()
+			box:ClearFocus()
+		end)
 	end
 end, "none")
 
