@@ -152,6 +152,17 @@ describe("GuildBankWindow list view (week 8)", function()
 		assert.equal(2, #A.Lines(), "a new opening says it again")
 	end)
 
+	-- Week 8 (Task 2 review). A guild button is scaled to row size in the list; a right-click on it still
+	-- withdraws that row's own item. Mutation: in GuildButtons.lua's OnClick pass 1 instead of self.slot.
+	it("a right-click on a scaled guild button in the list withdraws that row's own item", function()
+		SB.Config.Set("guildBank.view", "list")
+		openVault()
+		assert.equal(GV.LIST_ROW / GV.SLOT, button(1, 2).scale)
+		Fake.Fire(button(1, 2), "OnClick", "RightButton")
+		assert.same({ { 1, 2 } }, A.guild.withdrawn)
+		assert.same({}, A.Lines())
+	end)
+
 	-- Week 8 ruling Q9. Mutation: in GuildBankWindow.lua drop `goneTip = L.LIST_GUILD_GONE_TIP,` from GW.rows.
 	it("a ghost row's tooltip and click answer say the guild bank, not the bag or the bank", function()
 		SB.Config.Set("guildBank.view", "list")
