@@ -146,6 +146,15 @@ describe("Report", function()
 		assert.truthy(SB.Report.Build():find("\nMasque: 410 buttons skinned", 1, true))
 	end)
 
+	-- Week 10. Mutation: drop the Locks line from Report.Build.
+	it("says how many items are locked and whether the destroy warnings are on", function()
+		SB.Checks.last = {}
+		SB.Locks = { List = function() return { 1, 2, 3 } end }
+		assert.truthy(SB.Report.Build():find("\nLocks: 3 locked; destroy warnings on", 1, true))
+		SB.Config.Set("locks.warn", false)
+		assert.truthy(SB.Report.Build():find("\nLocks: 3 locked; destroy warnings off", 1, true))
+	end)
+
 	-- Week 9 (user pick 11b). Mutations: in A.OtherBagAddons drop the ElvUIBagsOn() check; or in A.ElvUIBagsOn
 	-- drop `== true` (any ElvUI counts, bags module or not).
 	it("names every other bag addon that is on, and ElvUI only while its own bags module is on", function()

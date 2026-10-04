@@ -174,4 +174,28 @@ describe("Lock warnings (week 10)", function()
 		SB.Emit("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED")
 		assert.equal(2, #A.Lines(), "switched off: nothing")
 	end)
+
+	-- P2. Mutation: in the lock command, drop the `if not SB.Config.Set("locks.warn", word == "on") then` refusal
+	-- (read-only would answer "now warns").
+	it("/swagbag lock warn says the state, switches it, refuses while read-only, and answers every form", function()
+		SB.Slash.Dispatch("lock warn")
+		SB.Slash.Dispatch("lock warn off")
+		SB.Slash.Dispatch("lock warn maybe")
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("lock warn on")
+		SB.Config.readOnly = false
+		SB.Slash.Dispatch("lock warn on")
+		assert.same({ L.LOCK_WARN_STATE:format("on"), L.LOCK_WARN_OFF, L.LOCK_WARN_USAGE, L.SETTINGS_READONLY,
+			L.LOCK_WARN_ON }, A.Lines())
+		assert.truthy(SB.Config.Get("locks.warn"))
+	end)
+
+	-- U11. Mutation: in the lock command, match `arg:match("^warn")` instead of `arg == "warn" or arg:match("^warn%s")`
+	-- ("warnon" would switch the warnings on).
+	it("/swagbag lock warnon is not a warn command: it gets the lock usage line and changes nothing", function()
+		SB.Config.Set("locks.warn", false)
+		SB.Slash.Dispatch("lock warnon")
+		assert.same({ L.LOCK_USAGE }, A.Lines())
+		assert.equal(false, SB.Config.Get("locks.warn"))
+	end)
 end)

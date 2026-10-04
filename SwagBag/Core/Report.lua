@@ -186,6 +186,9 @@ function Report.Build()
 	if skins then -- week 9: Masque's skins on SwagBag's buttons
 		lines[#lines + 1] = skins.Available() and L.REPORT_MASQUE:format(skins.count) or L.REPORT_MASQUE_OFF
 	end
+	if SB.Locks and SB.Config.db then -- week 10: the locks and their destroy warnings
+		lines[#lines + 1] = L.REPORT_LOCKS:format(#SB.Locks.List(), SB.Config.Get("locks.warn") and L.OVERLAY_ON or L.OVERLAY_OFF)
+	end
 	if SB.Theme and SB.Config.db then
 		lines[#lines + 1] = L.REPORT_LOOK:format(SB.Theme.Current(), tostring(SB.Config.Get("theme.name")))
 	end

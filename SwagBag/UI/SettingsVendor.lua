@@ -1,7 +1,8 @@
 -- SwagBag settings: the Vendor page (week 7, user pick 4). Auto-sell junk On (default) / Off, and the
 -- repair: Your gold (default) / Guild bank first / Off. Every click runs the chat command, so the
 -- window and the command never disagree (P2: the status line answers). Item locks (user pick 5): a drop
--- target that locks or unlocks the item on the cursor (as the bags' Lock button), and Unlock all.
+-- target that locks or unlocks the item on the cursor (as the bags' Lock button), and Unlock all. Week 10: the
+-- warnings before a locked item is destroyed, On (default) / Off.
 local _, SB = ...
 
 local L = SB.L
@@ -48,6 +49,13 @@ local function rows()
 				return run("lock clear")
 			end },
 		} },
+		-- Week 10: warnings before a locked item is destroyed (UI/LockWarnings.lua); runs /swagbag lock warn.
+		{ kind = "choice", label = L.SET_LOCK_WARN, tip = L.SET_LOCK_WARN_TIP, get = function()
+			return SB.Config.Get("locks.warn")
+		end, choices = { { value = true, text = L.SET_ON }, { value = false, text = L.SET_OFF } },
+		apply = function(v)
+			return run(v and "lock warn on" or "lock warn off")
+		end },
 	}
 end
 
