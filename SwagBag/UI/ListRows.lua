@@ -9,9 +9,14 @@
 -- Every row script is cosmetic, so it traps as "none" (F3, the week-4 glow precedent): one glitch
 -- there never flips Safe Mode and takes the bags away. Plain frames and font strings only, made the first time a
 -- row is needed (allowed in combat, like the footer, ruling W4-24); one set of rows per window.
---   ListRows.New(parent, window, flash) -> rows  window: kept for the caller's signature (the rows'
---                                              scripts always trap as "none", F3); flash(text): the
---                                              window's title flash, called on a click on a row's text
+--   ListRows.New(parent, window, flash, opts) -> rows  window: kept for the caller's signature (the
+--                                              rows' scripts always trap as "none", F3); flash(text): the
+--                                              window's title flash, called on a click on a row's text;
+--                                              opts (week 8, the bank and guild bank lists), each optional:
+--                                              tip(row, bag, slot) the item's tooltip (default: the bag
+--                                              slot's, with L.LIST_ROW_TIP), click / emptyClick / emptyTip /
+--                                              gone / goneTip (a ghost row's name text, and its tooltip and
+--                                              click answer): the texts a row says (default: the bags window's)
 --   rows.Place(button, x, y, width, height, shown)  the row of a slot button (made on first use)
 --   rows.Paint(button, bag, slot, record, freeCount, family)  record nil: an empty slot ("Empty
 --                                              slot"), or the free tile when freeCount is a number
@@ -23,12 +28,19 @@
 --   rows.IsMouseOver(button) -> bool           P5: a row under the mouse holds its button
 --   ListRows.Columns(width) -> { name, count, ilvl, value } = { x, width }   pure
 --   ListRows.Texts(record, freeCount, family) -> { name, count, ilvl, value } pure
+--   ListRows.SortedText(spec) -> "Sorted by Value, highest first"   pure
+--   ListRows.ColumnBar(parent, width, height, onClick, window, label) -> bar   (week 8) the column
+--                                              header bar over a list's row texts: plain buttons Name, Count, ilvl, Value,
+--                                              each calling onClick(id) under ErrorTrap (window, label);
+--                                              bar.frame, bar.buttons[id], bar.Refresh() (the sorted column's
+--                                              marker, Sort.Spec())
 local _, SB = ...
 
 local L = SB.L
 local TRAP = "none" -- F3: the window label of every row script
 local LR = { COUNT = 36, ILVL = 36, VALUE = 86, GAP = 6, FONT = "GameFontHighlightSmall" }
 SB.ListRows = LR
+LR.COLUMN_NAMES = { name = L.LIST_COL_NAME, count = L.LIST_COL_COUNT, ilvl = L.LIST_COL_ILVL, value = L.LIST_COL_VALUE }
 
 function LR.Columns(width)
 	local nameW = math.max(40, width - LR.COUNT - LR.ILVL - LR.VALUE - 3 * LR.GAP)
@@ -98,13 +110,61 @@ function LR.Texts(record, freeCount, family)
 	}
 end
 
+-- How an order reads: "Sorted by Value, highest first" (names A to Z, numbers highest first).
+function LR.SortedText(spec)
+	local dir
+	if spec.by == "name" then
+		dir = spec.desc and L.LIST_Z_TO_A or L.LIST_A_TO_Z
+	else
+		dir = spec.desc and L.LIST_HIGH_FIRST or L.LIST_LOW_FIRST
+	end
+	return L.LIST_SORTED:format(LR.COLUMN_NAMES[spec.by], dir)
+end
+
+-- Week 8: the column bar of the bank's and the guild bank's lists (the bags window keeps its own, the
+-- same shape). The bar is as wide as the rows' texts, so each header sits over its column.
+function LR.ColumnBar(parent, width, height, onClick, window, label)
+	local bar = { frame = CreateFrame("Frame", nil, parent), buttons = {} }
+	bar.frame:SetSize(width, height)
+	bar.frame:Hide()
+	local cols = LR.Columns(width)
+	for _, id in ipairs(SB.Sort.COLUMNS) do
+		local b = CreateFrame("Button", nil, bar.frame)
+		b:SetPoint("TOPLEFT", bar.frame, "TOPLEFT", cols[id].x, 0)
+		b:SetSize(cols[id].width, height)
+		b.label = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+		b.label:SetAllPoints(b)
+		b.label:SetJustifyH(id == "name" and "LEFT" or "RIGHT")
+		b.label:SetText(LR.COLUMN_NAMES[id])
+		if SB.Theme then
+			SB.Theme.Text(b.label, "small")
+		end
+		b:SetScript("OnClick", SB.ErrorTrap.Guard(label, function()
+			onClick(id)
+		end, window))
+		bar.buttons[id] = b
+	end
+	function bar.Refresh()
+		local spec = SB.Sort.Spec()
+		for id, b in pairs(bar.buttons) do
+			if id == spec.by then
+				b.label:SetText((spec.desc and L.LIST_COL_DOWN or L.LIST_COL_UP):format(LR.COLUMN_NAMES[id]))
+			else
+				b.label:SetText(LR.COLUMN_NAMES[id])
+			end
+		end
+	end
+	return bar
+end
+
 local function hideTip()
 	if GameTooltip then
 		GameTooltip:Hide()
 	end
 end
 
-function LR.New(parent, _window, flash)
+function LR.New(parent, _window, flash, opts)
+	opts = opts or {}
 	local Guard = SB.ErrorTrap.Guard
 	local R = { rows = {}, ghosts = {}, used = 0 }
 	-- [row] = { bag, slot, filled }; [button] = true while dimmed; [button] = its texts, kept until
@@ -144,10 +204,14 @@ function LR.New(parent, _window, flash)
 	local function itemTip(row)
 		local s = slotOf[row]
 		if s and s.filled then
-			SB.Adapter.SlotTooltip(row, s.bag, s.slot, L.LIST_ROW_TIP)
+			if opts.tip then
+				opts.tip(row, s.bag, s.slot)
+			else
+				SB.Adapter.SlotTooltip(row, s.bag, s.slot, L.LIST_ROW_TIP)
+			end
 		elseif GameTooltip then
 			GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-			GameTooltip:SetText(L.LIST_EMPTY_TIP, 1, 1, 1, 1, true)
+			GameTooltip:SetText(opts.emptyTip or L.LIST_EMPTY_TIP, 1, 1, 1, 1, true)
 			GameTooltip:Show()
 		end
 	end
@@ -163,17 +227,17 @@ function LR.New(parent, _window, flash)
 
 	local function itemClick(row)
 		local s = slotOf[row]
-		answer((s and s.filled) and L.LIST_ROW_CLICK or L.LIST_EMPTY_CLICK)
+		answer((s and s.filled) and (opts.click or L.LIST_ROW_CLICK) or (opts.emptyClick or L.LIST_EMPTY_CLICK))
 	end
 
 	local function ghostClick()
-		answer(L.PLACEHOLDER_TIP)
+		answer(opts.goneTip or L.PLACEHOLDER_TIP)
 	end
 
 	local function ghostTip(row)
 		if GameTooltip then
 			GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
-			GameTooltip:SetText(L.PLACEHOLDER_TIP, 1, 1, 1, 1, true)
+			GameTooltip:SetText(opts.goneTip or L.PLACEHOLDER_TIP, 1, 1, 1, 1, true)
 			GameTooltip:Show()
 		end
 	end
@@ -245,7 +309,7 @@ function LR.New(parent, _window, flash)
 				R.ghosts[i] = row
 			end
 			layoutTexts(row, width, height)
-			setTexts(row, { name = L.LIST_GONE, count = "", ilvl = "", value = "" })
+			setTexts(row, { name = opts.gone or L.LIST_GONE, count = "", ilvl = "", value = "" })
 			row:ClearAllPoints()
 			row:SetPoint("TOPLEFT", parent, "TOPLEFT", p.x, p.y)
 			row:SetAlpha(SB.Buttons.PLACEHOLDER_ALPHA)

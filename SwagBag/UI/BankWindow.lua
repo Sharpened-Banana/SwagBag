@@ -13,7 +13,8 @@
 -- visit lasts; the bags window shows "Bank still open", which shows this window again.
 -- Contents (UI/GroupView.lua): the "Character bank" group on top, the "Warband bank" group
 -- below, each with its own category sections (or grid), for the purchased tabs the client
--- reports. The receiving group is tinted and says "deposits go here". Items move only into
+-- reports, as categories, a list (week 8: one row per slot, the bags window's columns and order,
+-- UI/ListRows.lua) or a grid. The receiving group is tinted and says "deposits go here". Items move only into
 -- New or Free while the window is open (spec 4.3). Sort buttons call Blizzard's bank sort
 -- and regroup after the bank settles; in combat they refuse with feedback and nothing runs
 -- later (spec 5.5, ruling W11). The window has its own search box.
@@ -31,6 +32,8 @@ local BW = {
 	sortPending = false, -- a Sort was pressed and the bank updates are still settling
 	sortSawUpdate = false,
 	HEADER = 80, -- title row, search row, deposit line
+	COLUMNS_H = 18, -- the list's column bar under the deposit line (week 8), shown while a list is drawn
+	scaleWarned = false, -- the list's F6 fallback was said this opening
 	FOOTER = 6,
 	MAX_HEIGHT_FRACTION = 0.75,
 	SORT_SETTLE = 0.3,
@@ -268,9 +271,33 @@ BW.blizzardButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -5)
 ---------------------------------------------------------------------------
 -- Contents: two groups in one GroupView
 ---------------------------------------------------------------------------
+-- The view button's order, as in the bags window: each click shows the next one.
+local VIEW_NEXT = { sections = "list", list = "grid", grid = "sections" }
+local VIEW_BUTTON = { sections = L.VIEW_TO_SECTIONS, list = L.VIEW_TO_LIST, grid = L.VIEW_TO_GRID }
+local VIEW_FLASH = { sections = L.BANK_VIEW_SECTIONS, list = L.BANK_VIEW_LIST, grid = L.BANK_VIEW_GRID }
+
 function BW.View()
-	return SB.Config.Get("bank.view") == "grid" and "grid" or "sections"
+	local v = SB.Config.Get("bank.view")
+	if v == "grid" or v == "list" then
+		return v
+	end
+	return "sections"
 end
+
+-- The title, search and deposit rows, plus the column bar while a list is drawn (the drawn view,
+-- never the setting: a view change held under the mouse keeps the old header room, W4-1).
+function BW.HeaderHeight()
+	return BW.HEADER + ((BW.view and BW.view.drawn == "list") and BW.COLUMNS_H or 0)
+end
+
+-- The list's rows (week 8). A click on a row's text answers in the title (F24); the texts say what
+-- the bank's icons do (a right-click takes the item).
+BW.rows = SB.ListRows and SB.ListRows.New(child, "bank", function(text)
+	BW.Flash(text)
+end, { click = L.LIST_BANK_ROW_CLICK, emptyTip = L.LIST_BANK_EMPTY_TIP, gone = L.LIST_BANK_GONE, goneTip = L.LIST_BANK_GONE_TIP,
+	tip = function(row, bag, slot)
+		SB.Adapter.SlotTooltip(row, bag, slot, L.LIST_BANK_ROW_TIP)
+	end }) or nil
 
 local searchBox -- the bank's search box, built below the view
 
@@ -319,9 +346,15 @@ end
 -- Fit the window around the content; scroll when taller than 75 % of the screen. Every anchor
 -- of this window is a top-left corner, so a resize never moves its top edge.
 local function sizeFrame(width, height)
+	local header = BW.HeaderHeight()
+	if BW.columnsBar then -- the bar shows above a drawn list only (an F6 fallback draws none)
+		BW.columnsBar.frame:SetShown(BW.view.drawn == "list")
+		BW.columnsBar.Refresh()
+	end
+	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -header)
 	child:SetSize(width, height)
 	local maxHeight = UIParent:GetHeight() * BW.MAX_HEIGHT_FRACTION / frame:GetScale()
-	frame:SetSize(width + 8, math.min(height, maxHeight - BW.HEADER - BW.FOOTER) + BW.HEADER + BW.FOOTER)
+	frame:SetSize(width + 8, math.min(height, maxHeight - header - BW.FOOTER) + header + BW.FOOTER)
 	clampScroll()
 end
 
@@ -365,7 +398,25 @@ BW.view = SB.GroupView.New({
 	onDrop = function(sectionId)
 		SB.BagsWindow.DropOnSection(sectionId)
 	end,
+	rows = BW.rows,
+	onListFailed = function() -- F6: said once per opening; the bank shows categories
+		if not BW.scaleWarned then
+			BW.scaleWarned = true
+			SB.Print(L.LIST_SCALE_FALLBACK_BANK)
+		end
+	end,
 })
+
+-- The list's column bar: Name, Count, ilvl, Value over the rows' texts (where the bags window's
+-- sits: x 4 + PAD + LIST_ROW + ROW_TEXT_GAP, the rows' own columns). A click sorts every list by
+-- that column (again: the other way round; one shared order, saved in bags.list).
+if SB.ListRows then
+	local GV = SB.GroupView
+	BW.columnsBar = SB.ListRows.ColumnBar(frame, BW.view.RowWidth(), BW.COLUMNS_H, function(id)
+		BW.SortList(id)
+	end, "bank", "bank.listColumn")
+	BW.columnsBar.frame:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + GV.PAD + GV.LIST_ROW + GV.ROW_TEXT_GAP, -BW.HEADER)
+end
 
 searchBox = SB.SearchBox.New({
 	parent = frame,
@@ -379,8 +430,8 @@ searchBox = SB.SearchBox.New({
 	forEachSlot = function(fn)
 		return BW.view.ForEachSlot(fn)
 	end,
-	setDimmed = function(button, dimmed)
-		return SB.Buttons.SetDimmed(button, dimmed)
+	setDimmed = function(button, dimmed) -- the button, and in the list its row
+		return BW.view.SetDimmed(button, dimmed)
 	end,
 })
 BW.searchBox = searchBox
@@ -435,19 +486,32 @@ function BW.Reflow(reason)
 	return done
 end
 
+-- Categories -> list -> grid -> categories, like the bags window's view button.
 function BW.ToggleView()
-	local view = BW.View() == "grid" and "sections" or "grid"
+	local view = VIEW_NEXT[BW.View()]
 	if not SB.Config.Set("bank.view", view) then -- read-only settings: nothing changes
 		BW.Flash(L.SETTINGS_READONLY)
 		return
 	end
-	BW.viewButton:SetText(view == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
-	BW.Flash(view == "grid" and L.BANK_VIEW_GRID or L.BANK_VIEW_SECTIONS)
+	BW.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[view]])
+	BW.Flash(VIEW_FLASH[view])
 	BW.view.RequestLayout("view")
 end
 
+-- A click on a column of the list: sort every list by it (Engine/Sort.lua), answered in the title (P2).
+-- The drawn lists regroup through SB_LIST_SORTED (below), held while the mouse is over the items.
+function BW.SortList(by)
+	local spec = SB.Sort.Next(SB.Sort.Spec(), by)
+	if not SB.Sort.Save(spec.by, spec.desc) then
+		BW.Flash(L.SETTINGS_READONLY)
+		return false
+	end
+	BW.Flash(SB.ListRows.SortedText(spec))
+	return true
+end
+
 -- Config is not initialized while this file loads, so the view label is set in BW.Open().
-BW.viewButton = titleButton(L.VIEW_TO_GRID, "bank.viewButton", function()
+BW.viewButton = titleButton(L.VIEW_TO_LIST, "bank.viewButton", function()
 	BW.ToggleView()
 end)
 BW.viewButton:SetPoint("RIGHT", BW.blizzardButton, "LEFT", -4, 0)
@@ -671,7 +735,7 @@ function BW.Open()
 		return true
 	end
 	BW.sortPending, BW.sortSawUpdate = false, false
-	BW.viewButton:SetText(BW.View() == "grid" and L.VIEW_TO_SECTIONS or L.VIEW_TO_GRID)
+	BW.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[BW.View()]])
 	frame:Show()
 	BW.ApplyMode()
 	BW.RefreshReagents()
@@ -696,7 +760,7 @@ frame:SetScript("OnHide", Guard("bank.hide", function(self)
 		host.Restore()
 	end
 	BW.view.Clear()
-	BW.sortPending, BW.sortSawUpdate = false, false
+	BW.sortPending, BW.sortSawUpdate, BW.scaleWarned = false, false, false
 	SB.Emit("SB_BANK_CLOSED")
 	BW.RefreshStillOpen()
 end, "bank"))
@@ -744,10 +808,22 @@ SB.On("SB_FREE_TILE_CHANGED", function()
 	end
 end, "bank")
 
--- Auctionator reported new prices: the section totals follow, in place.
+-- Auctionator reported new prices: the section totals and the list's Value column follow, in place.
 SB.On("SB_PRICES_CHANGED", function()
 	if frame:IsShown() then
 		BW.view.RefreshTotals()
+		BW.view.RefreshRows()
+	end
+end, "bank")
+
+-- The list's order changed (a column click in any window, /swagbag list): the bar's marker follows
+-- and a drawn list regroups, held while the mouse is over the items (P5).
+SB.On("SB_LIST_SORTED", function()
+	if BW.columnsBar then
+		BW.columnsBar.Refresh()
+	end
+	if frame:IsShown() and BW.view.IsOpen() and BW.view.drawn == "list" then
+		BW.view.RequestLayout("listsort")
 	end
 end, "bank")
 

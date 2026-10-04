@@ -47,7 +47,8 @@ function Env.LoadBank(SB)
 		Env.FakeBags(SB)
 	end
 	for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/SearchBox.lua",
-		"SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua", "SwagBag/UI/Overlays.lua" }) do
+		"SwagBag/UI/ListRows.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua",
+		"SwagBag/UI/Overlays.lua" }) do
 		Loader.LoadFile(SB, path)
 	end
 	return SB.BankWindow
@@ -59,7 +60,8 @@ function Env.LoadGuild(SB)
 		Env.FakeBags(SB)
 	end
 	for _, path in ipairs({ "SwagBag/Engine/Snapshots.lua", "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua",
-		"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/GuildButtons.lua",
+		"SwagBag/UI/SearchBox.lua", "SwagBag/UI/ListRows.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua",
+		"SwagBag/UI/GuildButtons.lua",
 		"SwagBag/UI/GuildBankWindow.lua", "SwagBag/UI/Overlays.lua" }) do
 		Loader.LoadFile(SB, path)
 	end

@@ -415,7 +415,16 @@ describe("BagsWindow list view", function()
 		assert.equal(-W.HEADER, lastTopLeft(W.scroll)[5])
 	end)
 
-	-- Mutation: in W.SortList, drop the W.RequestLayout("listsort") call.
+	-- Week 8: one order for every list. Mutation: delete the bags window's SB_LIST_SORTED listener's
+	-- W.RequestLayout("listsort") call.
+	it("a sort saved anywhere (the bank's column bar) regroups the bags' list and moves its marker", function()
+		W.Open()
+		SB.Sort.Save("name", false)
+		assert.equal("Name ^", W.columnButtons.name.label.text)
+		assert.truthy(B.Get(0, 1).y > B.Get(0, 2).y, "Algari Healing Potion above Flask of Alchemical Chaos")
+	end)
+
+	-- Mutation: in the SB_LIST_SORTED listener, drop the W.RequestLayout("listsort") call.
 	it("a click on the sorted column flips it: saved, answered in the title, and the list regroups", function()
 		W.Open()
 		W.columnButtons.value.scripts.OnClick(W.columnButtons.value)
@@ -434,8 +443,8 @@ describe("BagsWindow list view", function()
 		assert.equal("Value", W.columnButtons.value.label.text)
 	end)
 
-	-- P5: re-sorting never moves a row under the mouse. Mutation: in W.SortList, call W.Layout
-	-- instead of W.RequestLayout.
+	-- P5: re-sorting never moves a row under the mouse. Mutation: in the SB_LIST_SORTED listener
+	-- (week 8), call W.Layout instead of W.RequestLayout.
 	it("a re-sort waits while the mouse is over the items or an item is on the cursor", function()
 		W.Open()
 		local potion, flask = B.Get(0, 1), B.Get(0, 2)
@@ -569,8 +578,8 @@ describe("BagsWindow list view", function()
 		return out
 	end
 
-	-- Fix round 1, item 3: the order is saved, but only a drawn list regroups. Mutation: in W.SortList,
-	-- request the layout whenever the window is shown (drop the isList() check).
+	-- Fix round 1, item 3: the order is saved, but only a drawn list regroups. Mutation: in the
+	-- SB_LIST_SORTED listener (week 8), request the layout whenever the window is shown (drop the isList() check).
 	it("a sort change while the list is not drawn (grid, or an F6 fallback) requests no layout and moves nothing", function()
 		local layouts = 0
 		SB.On("SB_BAGS_LAYOUT", function() layouts = layouts + 1 end)

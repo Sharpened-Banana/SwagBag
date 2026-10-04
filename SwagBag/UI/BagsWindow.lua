@@ -518,7 +518,8 @@ end
 
 -- by: a column; desc: the direction, or nil for a click (the same column flips, another starts at
 -- its natural direction, Sort.Next). Saved, answered in the title (P2), and the open list regroups
--- through a full layout held while the mouse is over the items or an item is on the cursor (P5).
+-- (SB_LIST_SORTED, below) through a full layout held while the mouse is over the items or an item is
+-- on the cursor (P5).
 -- Returns true, or false (with the reason in the title) while the settings are read-only.
 -- quiet: the caller (/swagbag list, so also the Settings rows) answers in chat itself (W.Flash).
 function W.SortList(by, desc, quiet)
@@ -530,13 +531,18 @@ function W.SortList(by, desc, quiet)
 		W.Flash(L.SETTINGS_READONLY, quiet)
 		return false
 	end
-	W.RefreshColumns()
 	W.Flash(L.LIST_SORTED:format(COLUMN_NAMES[spec.by], direction(spec.by, spec.desc)), quiet)
+	return true
+end
+
+-- Week 8: one order for every list (the bags, the bank, the guild bank). A sort saved from any of
+-- them (Sort.Save) redraws this bar's marker and regroups the bags' list while it is drawn.
+SB.On("SB_LIST_SORTED", function()
+	W.RefreshColumns()
 	if frame:IsShown() and isList() then
 		W.RequestLayout("listsort")
 	end
-	return true
-end
+end, "bags")
 
 ---------------------------------------------------------------------------
 -- Layout
