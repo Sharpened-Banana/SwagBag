@@ -223,7 +223,8 @@ end
 ---------------------------------------------------------------------------
 -- Worth money at the bank (week 7, user pick 7): Ov.worthMin is the stack value (copper) from which an
 -- item glows gold; nil while the bank is closed or the glow is off. Worked out once when the bank opens
--- (and again when prices, the setting or the bags' layout change during the visit), never per button.
+-- (and again when prices, the setting or the bags' layout change during the visit, and for "top" when the
+-- bank's contents change, week 8), never per button.
 -- A missing or secret price is no price (Engine/Prices.lua): such an item never glows.
 ---------------------------------------------------------------------------
 local function stackValue(record)
@@ -236,12 +237,17 @@ local function stackValue(record)
 end
 
 function Ov.IsWorth(record)
-	return Ov.worthMin ~= nil and stackValue(record) >= Ov.worthMin and stackValue(record) > 0
+	if Ov.worthMin == nil then
+		return false
+	end
+	local value = stackValue(record)
+	return value > 0 and value >= Ov.worthMin
 end
 
 -- Work the threshold out over the bags and both banks, then re-draw. SB.AtBank: Core/Init.lua (one
 -- definition for the section actions and this glow, ruling R12).
-function Ov.RefreshWorth()
+function Ov.RefreshWorth(onlyIfMoved)
+	local before = Ov.worthMin
 	Ov.worthMin = nil
 	if SB.AtBank() and SB.Prices then
 		local values = {}
@@ -260,6 +266,9 @@ function Ov.RefreshWorth()
 		local C = SB.Config
 		Ov.worthMin = SB.Prices.WorthThreshold(values, C.Get("prices.worth"), C.Get("prices.worthGold"),
 			C.Get("prices.worthTop"))
+	end
+	if onlyIfMoved and Ov.worthMin == before then
+		return -- the bank's contents changed but the line did not move: nothing to re-draw
 	end
 	Ov.RefreshAll()
 end
@@ -280,6 +289,16 @@ end, "none")
 SB.On("SB_BAGS_LAYOUT", function()
 	if SB.AtBank() then
 		worthSoon()
+	end
+end, "none")
+-- Week 8 (week-7 deferred): the bank's contents arrive or change while it is open. Only "your top X %"
+-- depends on them (a fixed amount does not), so only that line is worked out again, once after the burst,
+-- and the windows are re-drawn only when the line moved (own debounce key: it never replaces a full refresh).
+SB.On("SB_BANK_CHANGED", function()
+	if SB.AtBank() and SB.Config.Get("prices.worth") == "top" then
+		SB.Debounce("overlays.worthBank", Ov.WORTH_DELAY, function()
+			Ov.RefreshWorth(true)
+		end, "none")
 	end
 end, "none")
 
