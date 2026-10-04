@@ -103,7 +103,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC4.1 First run ships ~18 built-in categories (see §7.6) that place every item in a sensible section; "Other" is the fallback.
 - AC4.2 Categories are `{query, priority, itemList}`; manual item lists win over rules; priority decides which rule wins; display order is separate from priority.
 - AC4.3 Dragging an item onto a section header adds it to that section's manual list, with a confirmation ("Added Healing Potion to Consumables").
-- AC4.4 Items whose data is not yet loaded go to "New" and are re-categorized when loaded; they move only on the next open or Reflow.
+- AC4.4 Items whose data is not yet loaded go to "New" and are re-categorized when loaded; they move only on the next open or Reflow, after they were hovered, like every arrival (AC3.3).
 
 #### F5. Search
 - AC5.1 A search box per window accepts the query grammar (§7). Non-matching items are fully dimmed (icon, border, overlays, glows). Matching ones are untouched.
@@ -184,6 +184,8 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 #### F18. Item locks (week 7)
 - AC18.1 Dropping an item on the small Lock button (or Settings > Vendor) locks every copy of that item ID, account-wide; again unlocks it. A locked item shows a padlock, says so on its tooltip, is found by `locked`, and is never sold by SwagBag. Selling it by hand still works; one chat line then names it and the Buyback tab.
 - AC18.2 Unlocking everything asks first: the first press of Unlock all (or `/swagbag lock clear`) says how many locks it removes and waits for the same press again within 10 seconds; only the second clears. The cleared set is kept one step: `/swagbag lock undo` puts it back.
+- AC18.3 (week 10) Warnings, never blocks: while a spell waits for its target (`SpellIsTargeting()`, any spell), a locked item's tooltip shows a red line under its "Locked" line (`Locked by you. SwagBag can't stop this spell: press Esc to cancel it.`); while the scrapper is open, a red line that a right-click can put it in; at Blizzard's delete box for a locked item, one red chat line and SwagBag's own note above the box (the box is never touched); a locked item landing in a scrapper slot, one red chat line (again only after it was taken out and put back). SwagBag never cancels, clicks, hides or changes Blizzard's spells, buttons or dialogs; other addons' one-click destroy buttons cast with no targeting and are not covered.
+- AC18.4 (week 10) One switch, `locks.warn` (default on): Settings > Vendor > "Warn before destroying locked items", `/swagbag lock warn [on|off]`; the report's `Locks: N locked; destroy warnings on|off`.
 
 #### F19. Section actions (week 7)
 - AC19.1 Shift+right-click a section header opens a small menu: at a bank, "Send all to bank" and "Send all to warband bank"; at a vendor, "Sell all" after a confirmation (same protections and 12-a-visit limit as F17). Nothing moves in combat or under the mouse.
@@ -312,7 +314,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 2. **Section truth:** every slot button drawn inside a category section shows the item that section was built for, or it is not in that section. (The spike asserted this after every incremental update with zero violations.)
 3. **Placeholder honesty:** a placeholder never responds to item interaction. Its click shows a tooltip "This item moved or was used — items regroup when you close the bag" and does nothing else. (Spike check `placeholderClickIsHarmless` is the first in-dev verification; see §11.3.)
 4. **Free is real:** empty slots are drawn as their real buttons in the "Free" section, so dropping an item onto Free is a real drop into that slot.
-5. **No motion under the cursor:** a button is never moved while `IsMouseOver()`, while `GetCursorInfo()` holds an item, or while a modifier key relevant to the button is down. Deferred moves retry 300 ms later. SwagBag's own item moves (the mover, week 7) follow it too: an item on the cursor holds every step while the vendor or bank is open; an item whose button is under the mouse holds up to 20 retries, then stays; a moved item leaves a placeholder (§4.3). In a list a row under the mouse holds its button too, and a list that falls back to categories (below) waits like any layout. Week 8, all windows: a list row never shows a full-size button, so every button is scaled before a list is drawn; if a scale does not take, that layout draws as categories instead, said once per opening, recorded under "none" (never Safe Mode). Week 9: "anything on the cursor" means any `GetCursorInfo()` answer (an item, even one with a secret ID, money, a spell, a merchant's item) **or a spell waiting for its target** (`SpellIsTargeting()`), all through `Adapter.CursorBusy()`; it holds every move of the stacker, `Adapter.MoveStack` and the week-7 mover. **Recorded exception (week 9, F6 / ruling W5-1):** a held F6 fallback rescales the drawn categories' buttons to full size at once, even while the mouse may rest on one (leaving them small is worse: a shrunk button slides under the mouse anyway and its click target stays small).
+5. **No motion under the cursor:** a button is never moved while `IsMouseOver()`, while `GetCursorInfo()` holds an item, or while a modifier key relevant to the button is down. Deferred moves retry 300 ms later. SwagBag's own item moves (the mover, week 7) follow it too: an item on the cursor holds every step while the vendor or bank is open; an item whose button is under the mouse holds up to 20 retries, then stays; a moved item leaves a placeholder (§4.3). In a list a row under the mouse holds its button too, and a list that falls back to categories (below) waits like any layout. Week 8, all windows: a list row never shows a full-size button, so every button is scaled before a list is drawn; if a scale does not take, that layout draws as categories instead, said once per opening, recorded under "none" (never Safe Mode). Week 9: "anything on the cursor" means any `GetCursorInfo()` answer (an item, even one with a secret ID, money, a spell, a merchant's item) **or a spell waiting for its target** (`SpellIsTargeting()`), all through `Adapter.CursorBusy()`; it holds every move of the stacker, `Adapter.MoveStack` and the week-7 mover. Week 10: the same rule, through `Adapter.CursorBusy()`, now guards every layout of the bags, bank and guild bank windows (not only the moves); the drops that need the item itself (a section header, the Lock button, the Consumables page) read the item; the alt viewer keeps the item rule (no spell targets a snapshot). **Recorded exception (week 9, F6 / ruling W5-1):** a held F6 fallback rescales the drawn categories' buttons to full size at once, even while the mouse may rest on one (leaving them small is worse: a shrunk button slides under the mouse anyway and its click target stays small).
 
 ### 4.3 State transitions while a window is open
 
@@ -328,7 +330,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 | **Lock/cooldown changes** | Repaint only. | Same. |
 | **New overflows** its 2 rows | Further arrivals go to the end of Free (never shifting others); header shows "+N more below". New's rows are always reserved. | Same. |
 | **Bag size grows** (new bag equipped) | `EnsureCapacity` creates buttons; they appear in Free. | Logged; buttons created on `PLAYER_REGEN_ENABLED`; until then the slot is invisible (acceptable — equipping a bag in combat is not possible anyway). |
-| **Item data loads** (`ITEM_DATA_LOAD_RESULT`) for a pending item | Stays in New; re-categorized for the next layout. | Same. |
+| **Item data loads** (`ITEM_DATA_LOAD_RESULT`) for a pending item | Stays in New until hovered; re-categorized for the next layout after that. | Same. |
 | **Window closes** | Placeholders released; `needsReflow` cleared; the next open does a full layout. | Reflow deferred to `PLAYER_REGEN_ENABLED` plus next open. |
 | **Reflow button / sort button** | Full layout, guarded by rule 5 (retries until cursor is clear). Sort regroups 0.3 s after the last bag update. | Sort is refused with feedback; Reflow is allowed (verified), still guarded by rule 5. |
 | **Placeholder clicked** | Tooltip only. | Tooltip only. |
@@ -366,7 +368,7 @@ Send all to bank / warband bank (week 7, F19): the bank type is chosen on the us
 
 Forbidden anywhere in SwagBag source: `BankFrame:SetTab`, `BankFrame.SetTab`, `.bankType =`, `C_Bank.CloseBankFrame`, `CloseBankFrame(`, `OpenAllBags(`, `PurchaseBankTab`, assignments to global `_`. The spike's taint probe proved that one `BankFrame:SetTab()` call from addon code taints `UseContainerItem` until /reload; this is a NO-GO, permanently.
 
-Also: no `PreClick`/`PostClick` scripts on slot buttons; no insecure wrappers around item use; overlays and tooltips hook `OnEnter`/`OnLeave`/`OnUpdate` only.
+Also: no `PreClick`/`PostClick` scripts on slot buttons; no insecure wrappers around item use; overlays and tooltips hook `OnEnter`/`OnLeave`/`OnUpdate` only. Week 10: reading Blizzard's delete box (`StaticPopup_FindVisible`) and the scrapper's slots is allowed; writing `StaticPopupDialogs`, calling any method on a Blizzard dialog, and every `C_ScrappingMachineUI` call that changes something are not.
 
 ### 5.4 Fallback
 
@@ -632,6 +634,7 @@ SwagBagDB = {
 -- Week 9 (schema stays 2, only explicit values stored, share-string words in Profiles.VALID):
 --   sort.mode = "blizzard" | "stacks", prices.source = "auto" | "auctionator" | "tsm" | "vendor",
 --   prices.tsm = "DBMarket" | "DBMinBuyout" | "DBRegionMarketAvg" | "DBRegionSaleAvg", bags.warnOtherAddons = true.
+-- Week 10 (schema stays 2): locks.warn = true (explicit default; a boolean in share strings).
 SwagBagCharDB = { schemaVersion = 1, overrides = { ["modes.enabled.mplus"] = false, ... },
                   ui = { positions = {}, collapsed = {}, wizardDone = true } }
 ```
@@ -698,9 +701,10 @@ Event policy:
 - `ITEM_DATA_LOAD_RESULT` / `GET_ITEM_INFO_RECEIVED` → `LOADED` for pending keys.
 - `PLAYER_EQUIPMENT_CHANGED` → invalidate `equipped`/`upgrade` memos.
 - `BANKFRAME_OPENED/CLOSED`, `PLAYERBANKSLOTS_CHANGED`, `PLAYERBANKBAGSLOTS_CHANGED`, `BANK_TAB_SETTINGS_UPDATED` (feature-detected; registered via `pcall(frame.RegisterEvent)`) → bank model.
-- `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE` are logged for diagnostics only (the manager still exists in 12.1, verified).
+- `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE` are logged for diagnostics only (the manager still exists in 12.1, verified); week 10 also reads them for the scrapper (open between SHOW and HIDE of its interaction).
+- Week 10 (lock warnings, all under "none"): `DELETE_ITEM_CONFIRM` (one chat line and SwagBag's note for a locked item; the note goes on `ITEM_LOCK_CHANGED` / `BAG_UPDATE_DELAYED`, no `CURSOR_CHANGED` listener) and `SCRAPPING_MACHINE_PENDING_ITEM_CHANGED` (one chat line per locked item landing in a slot, only while the scrapper is open).
 - Secret values: every read from `C_TooltipInfo` is wrapped; `issecretvalue()` → `nil`. The collections' draw path treats a secret link or name as no answer (no glow, no star, no error); a secret link is never a table key (week 8); nor is a secret item ID: it has no price, nothing is cached under it (week 9).
-- Combat: no `CreateFrame`, no `EnsureCapacity` growth, no physical sort, no snapshot writes; everything else proceeds (verified legal).
+- Combat: no `CreateFrame`, no `EnsureCapacity` growth, no physical sort, no snapshot writes; everything else proceeds (verified legal). Plain frames (no secure template) may be created in combat: the delete note is one, made at `SB_LOGIN` through `SB.OutOfCombat`.
 
 `/swagbag perf` prints last open/layout/search timings and memo hit rates (P2: always prints something).
 
@@ -721,7 +725,7 @@ Every entry point from WoW into SwagBag (event handlers, hooks, OnClick of our o
 
 ### 10.3 Feature checks
 
-`Checks.Run()` at login (and via `/swagbag check`) verifies: every required API path (list from spike H: `C_Container.*`, `C_Bank.FetchPurchasedBankTabIDs`, `C_Item.*`, `BankFrame.GetActiveBankType`, `BankFrame.TabSystem`, `ContainerFrameItemButtonMixin`, `SetItemButton*`, …), enum values (`Enum.BagIndex`, `Enum.BankType`, `Enum.AddOnRestrictionType`), and the frames we hook. A failed required check turns on Safe Mode for the affected window before anything is shown and lists the failures in the report. Optional checks (Auctionator, Syndicator, `C_ChallengeMode`, profession APIs) only degrade features.
+`Checks.Run()` at login (and via `/swagbag check`) verifies: every required API path (list from spike H: `C_Container.*`, `C_Bank.FetchPurchasedBankTabIDs`, `C_Item.*`, `BankFrame.GetActiveBankType`, `BankFrame.TabSystem`, `ContainerFrameItemButtonMixin`, `SetItemButton*`, …), enum values (`Enum.BagIndex`, `Enum.BankType`, `Enum.AddOnRestrictionType`), and the frames we hook. A failed required check turns on Safe Mode for the affected window before anything is shown and lists the failures in the report. Optional checks (Auctionator, Syndicator, `C_ChallengeMode`, profession APIs) only degrade features. Week 10 adds four optional checks: `SpellIsTargeting`, `StaticPopup_FindVisible`, `C_ScrappingMachineUI.GetCurrentPendingScrapItemLocationByIndex`, `C_Item.GetItemID`.
 
 ### 10.4 `/swagbag report`
 
@@ -738,13 +742,13 @@ Settings hash: 7f3a…  Categories: 21 (3 user)  Modes: 6 on
 Season data: crest currencies ...; season items in bags ...   (week 7: confirms the season's IDs; a failure reading it prints "unavailable" and never blanks the report)
 ```
 
-Week 9 adds `Other bag addons on: <names> | none`, `Masque: N buttons skinned` and `Prices:` naming TSM's string (`TSM (DBMarket), N cached`). Another bag addon on at login gives one chat line (silent in Safe Mode or with `bags.warnOtherAddons` off; `/swagbag otherbags [on|off]`); it is never disabled; UI suites' bag modules are not detected (ElvUI only while its own bags are on).
+Week 10 adds `Locks: N locked; destroy warnings on|off`. Week 9 adds `Other bag addons on: <names> | none`, `Masque: N buttons skinned` and `Prices:` naming TSM's string (`TSM (DBMarket), N cached`). Another bag addon on at login gives one chat line (silent in Safe Mode or with `bags.warnOtherAddons` off; `/swagbag otherbags [on|off]`); it is never disabled; UI suites' bag modules are not detected (ElvUI only while its own bags are on).
 
 This is what the user pastes into Claude Code. BugGrabber/BugSack compatibility: if present, we do not install our own `seterrorhandler`; we read errors through our own `Guard` wrappers only.
 
 ### 10.5 Slash commands (all with feedback, P2)
 
-`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo]` (clear asks first; one lock is answered in the singular), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added); week 9: `sort [stacks|blizzard]`, `price [auto|auctionator|tsm [<price>]|vendor|string <price>]`, `otherbags [on|off]`.
+`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo|warn [on|off]]` (clear asks first; one lock is answered in the singular; `warn` says or switches the destroy warnings), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added); week 9: `sort [stacks|blizzard]`, `price [auto|auctionator|tsm [<price>]|vendor|string <price>]`, `otherbags [on|off]`.
 
 ---
 
@@ -849,6 +853,7 @@ M7 rule builder + full wizard + tour (≈2 weeks) · M8 offline alt view + toolt
 | Developer loop stalls (user availability) | Med / High | Milestones are testing-sized; Claude prepares scripted guides so each evening is productive |
 | Guild bank full replacement taints or breaks (12.1 changed guild bank opening; Bagnon reported breakage) | Med / Med | G1 on day one of week 3; `view` fallback is a setting; never write Blizzard guild bank state |
 | October date slips | Med / Med | Week-by-week exit criteria; slip reported weekly; deferrals already moved to November |
+| 12.1.x renames Blizzard's delete box, or changes the scrapper's events or slot numbering | Low / Low | Delete box: only the chat line comes, no error. Scrapper: the tooltip line only. Both under "none" |
 | Blizzard ships native category bags | Low / High | Focus modes, gold features and setup ease remain differentiators |
 
 ### 13.2 Open items (to be resolved during the named milestone)
