@@ -511,7 +511,10 @@ end
 local function sectionNames(id)
 	local names = {}
 	for _, sid in ipairs(Focus.Sections(id)) do
-		names[#names + 1] = SB.Categories and SB.Categories.Name(sid) or sid
+		-- week 11: a deleted category (a stale id in another character's own sections) is left out
+		if not SB.Categories or sid == SB.Categories.FREE or SB.Categories.Get(sid) then
+			names[#names + 1] = SB.Categories and SB.Categories.Name(sid) or sid
+		end
 	end
 	return #names > 0 and table.concat(names, ", ") or SB.L.REPORT_NONE
 end
@@ -566,7 +569,11 @@ end, "bags")
 -- Any focus setting changed, by a writer above, a character override, a reset or a new Init: the
 -- cached view is stale. Refresh never writes settings, so this cannot loop.
 SB.On("SB_CONFIG_CHANGED", function(_, path)
-	if path == nil or path:sub(1, 6) == "focus." then
+	if path == "focus.sections" then
+		-- week 11: a deleted category's id left the section sets (Categories.Delete). It had no section in the
+		-- bags, so nothing open changes: the sets are read again, and the open bags are not re-stacked (P5).
+		invalidate()
+	elseif path == nil or path:sub(1, 6) == "focus." then
 		Focus.Refresh("settings")
 	end
 end, "bags")

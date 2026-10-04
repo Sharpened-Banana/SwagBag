@@ -7,7 +7,10 @@
 -- the quick-setup flag are this machine's state and never travel. Character overrides stay as they are.
 --   Profiles.List() -> { name }              Profiles.Save(name) / Load(name) / Delete(name) -> ok, why
 --   Profiles.Reset() / Undo() -> ok, why     why: "readonly" | "name" | "unknown" | "none"
---   Profiles.Export(withCategories) -> text  "SWAGBAG:1:" then key=value entries joined by ";"
+--   Profiles.Export(withCategories) -> text, left   "SWAGBAG:1:" then key=value entries joined by ";"; left: the
+--                                            names of the categories whose rule an import would refuse (week 11:
+--                                            a user category is left out, a built-in's edit loses its rule), so the
+--                                            string never refuses at import
 --   Profiles.Parse(text) -> data | nil, error, detail   never runs anything it reads (no load, no
 --                                            loadstring): patterns only; every value is checked
 --   Profiles.Preview(data) -> { line }        what an import would change, each setting by its name in the
@@ -29,7 +32,8 @@
 local _, SB = ...
 
 local L = SB.L
-local Pr = { VERSION = 1, HEADER = "SWAGBAG:", MAX_TEXT = 30000, MAX_ENTRIES = 1500, MAX_STRING = 500,
+-- MAX_STRING: a text value's limit, the same as a rule's (Query.MAX_QUERY, week 11).
+local Pr = { VERSION = 1, HEADER = "SWAGBAG:", MAX_TEXT = 30000, MAX_ENTRIES = 1500, MAX_STRING = SB.Query.MAX_QUERY,
 	MAX_NAME = 24, MAX_ITEM = 10000000, MAX_NUM = 1000, MAX_CATEGORIES = 100, MAX_PRIORITY = 90, MAX_LIST = 2000, MAX_WATCH = 50 }
 SB.Profiles = Pr
 
@@ -360,8 +364,14 @@ local function categoryEntries(entries, prefix, id, def)
 	end
 end
 
+-- A rule an import takes (Parse's checks): a broken one, or one with a chat code, would refuse the whole string.
+local function importable(query)
+	return query == nil or (type(query) == "string" and #query <= Pr.MAX_STRING and not query:find("%c")
+		and not SB.Query.EscapeCode(query) and SB.Query.Compile(query).fn ~= nil)
+end
+
 function Pr.Export(withCategories)
-	local d, known, entries = db(), knownPaths(), {}
+	local d, known, entries, left = db(), knownPaths(), {}, {}
 	for path, v in pairs(leaves(shareable(d.settings), nil, {})) do
 		if known[path] and type(v) == known[path] and not NEVER[path] then
 			entries[#entries + 1] = "s." .. path .. "=" .. encode(v)
@@ -383,11 +393,23 @@ function Pr.Export(withCategories)
 	end
 	if withCategories then
 		for id, def in pairs(type(d.categories) == "table" and d.categories or {}) do
-			if type(def) == "table" then
+			if type(def) == "table" and importable(def.query) then
 				categoryEntries(entries, "cu", id, def)
+			elseif type(def) == "table" then
+				left[#left + 1] = type(def.name) == "string" and def.name or tostring(id)
 			end
 		end
 		for id, def in pairs(type(d.userEdits) == "table" and d.userEdits or {}) do
+			if type(def) == "table" and not importable(def.query) then
+				local rest = {}
+				for k, v in pairs(def) do
+					if k ~= "query" then
+						rest[k] = v
+					end
+				end
+				def = rest
+				left[#left + 1] = type(def.name) == "string" and def.name or SB.Categories.Name(id)
+			end
 			if type(def) == "table" then
 				categoryEntries(entries, "ce", id, def)
 			end
@@ -403,7 +425,8 @@ function Pr.Export(withCategories)
 		end
 	end
 	table.sort(entries)
-	return Pr.HEADER .. Pr.VERSION .. ":" .. table.concat(entries, ";")
+	table.sort(left)
+	return Pr.HEADER .. Pr.VERSION .. ":" .. table.concat(entries, ";"), left
 end
 
 local function decode(raw)
@@ -437,16 +460,12 @@ local function numbers(text)
 	return out
 end
 
--- A real chat escape opener in a query: |T |H |A |K, |c with eight hex digits, or a named colour: |cn (or |cN)
--- followed by an upper-case name and ":" (|cnIQ4:, |cnGREEN_FONT_COLOR:; week 8, the narrowest rule that
--- still catches it). Every other "|" is the OR operator ("herb|cloth", "herb|cname").
-local function escapeCode(text)
-	return text:find("|[THAK]") ~= nil or text:find("|c%x%x%x%x%x%x%x%x") ~= nil
-		or text:find("|c[nN][%u_][%u%d_]*:") ~= nil
-end
+-- A real chat escape opener in a query: one check for the whole addon (Query.EscapeCode, week 11).
+local escapeCode = SB.Query.EscapeCode
 
--- Built-in categories whose priority an import never changes (protected: Junk, Sets, Keystone, Reagents).
-local PINNED = { c_junk = true, c_sets = true, c_keystone = true, c_reagents = true }
+-- Built-in categories whose priority an import never changes (protected: Junk, Sets, Keystone, Reagents): the
+-- category editor's own list (Categories.PINNED, week 11), so the two never differ.
+local PINNED = SB.Categories.PINNED
 Pr.PINNED = PINNED -- read by the drift-guard spec
 
 -- A user category id has the shape SwagBag makes (u_...), which is never a built-in or a section id
@@ -810,11 +829,15 @@ SB.Slash.Register("profile", L.HELP_PROFILE, function(arg)
 		local ok, r = Pr.Undo()
 		return ok and L.PROFILE_UNDONE or why(r)
 	elseif verb == "export" and (rest == "" or rest:lower() == "categories") then
-		local text = Pr.Export(rest ~= "")
+		local text, left = Pr.Export(rest ~= "")
 		if SB.ShareBox then
 			SB.ShareBox.ShowExport(text)
 		end
-		return rest ~= "" and L.PROFILE_EXPORTED_CATEGORIES or L.PROFILE_EXPORTED
+		local said = rest ~= "" and L.PROFILE_EXPORTED_CATEGORIES or L.PROFILE_EXPORTED
+		if #left > 0 then
+			return { said, L.PROFILE_EXPORT_LEFT_OUT:format(table.concat(left, ", ")) } -- one answer, two lines
+		end
+		return said
 	elseif verb == "import" and rest == "" then
 		if SB.ShareBox then
 			SB.ShareBox.ShowImport()
