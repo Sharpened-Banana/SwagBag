@@ -4383,7 +4383,7 @@ You need: a vendor that sells something cheap (a drink, a reagent) that is **not
 4. Right-click the cheap item in the vendor's window to buy one. Expected: you paid for it; your bags stay closed.
 5. Press **B**. Expected: the title starts with `SwagBag — AH/Vendor/Bank` (the vendor's focus mode is on), and the item you bought is in the `New` section at the very top, its header counting it (`New (1)`), not in its own category.
 6. Rest the mouse on the item you bought. Expected: its tooltip shows; nothing moves; it is still in `New`.
-7. Move the mouse off the bags. Press **B** to close them, then **B** again to open them. Expected: `New` is gone (or empty), and the item is now in its own category (for a drink, `Consumables`).
+7. Move the mouse off the bags. Press **B** to close them, then **B** again to open them. Expected: `New` is gone (or empty), and the item is now in its own category (for a drink, `Consumables`; if you use the "Collapse the rest" focus style and a mode is active, that header may be folded — it still counts the item).
 8. (Optional, inside a key or a dungeon.) Loot something new while your bags are closed, then open them. Expected: it is at the top in `New` until you rest the mouse on it, and it joins its category the next time you open your bags.
 
 ## Week 9 exit check
