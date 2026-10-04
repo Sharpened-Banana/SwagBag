@@ -137,6 +137,21 @@ local function tsmChoices()
 	return list
 end
 
+-- The gold glow's amounts; one typed with /swagbag worth (say 250) gets its own button, selected (week 7 deferred).
+local function worthChoices()
+	local list = {}
+	for _, gold in ipairs({ 100, 500, 1000 }) do
+		list[#list + 1] = { value = gold, text = L.SET_WORTH_GOLD:format(gold) }
+	end
+	local own = SB.Config.Get("prices.worthGold")
+	if own ~= 100 and own ~= 500 and own ~= 1000 then
+		list[#list + 1] = { value = own, text = L.SET_WORTH_GOLD:format(own) }
+	end
+	list[#list + 1] = { value = "top", text = L.SET_WORTH_TOP:format(SB.Config.Get("prices.worthTop")) }
+	list[#list + 1] = { value = "off", text = L.SET_OFF }
+	return list
+end
+
 local function bankRows()
 	return {
 		{ kind = "choice", label = L.SET_BANK_FRAME, get = get("bank.blizzardFrame"),
@@ -170,10 +185,7 @@ local function bankRows()
 				return SB.Config.Get("prices.worthGold")
 			end
 			return mode
-		end, choices = { { value = 100, text = L.SET_WORTH_GOLD:format(100) },
-			{ value = 500, text = L.SET_WORTH_GOLD:format(500) }, { value = 1000, text = L.SET_WORTH_GOLD:format(1000) },
-			{ value = "top", text = L.SET_WORTH_TOP:format(SB.Config.Get("prices.worthTop")) },
-			{ value = "off", text = L.SET_OFF } },
+		end, choices = worthChoices(),
 		apply = function(v)
 			if v == "top" then
 				return run("worth top " .. SB.Config.Get("prices.worthTop"))

@@ -36,6 +36,15 @@ describe("Prices (spec F10, 3.3)", function()
 		assert.is_nil(P.boundCache[secretLink])
 	end)
 
+	-- Week 8 deferred (final re-review). Mutation: drop the `if SB.Adapter.IsSecret(itemID) then` guard in P.Value.
+	it("a secret item ID is no key either: no price, nothing cached under it, never an error", function()
+		local secretID = 999999
+		A.IsSecret = function(v) return v == secretID end
+		assert.is_nil((P.Value(nil, secretID)))
+		assert.is_nil(P.cache[secretID])
+		assert.same({ 1500, "Vendor" }, { P.Value(nil, Fixtures.HERB) }, "a plain one still prices")
+	end)
+
 	it("money: gold with thousands separators, else silver, else copper", function()
 		assert.same({ "12c", "35s", "1,240g", "123,456g", "1g", "0c" },
 			{ P.Money(12), P.Money(3550), P.Money(12400000), P.Money(1234567890), P.Money(10000), P.Money(0) })

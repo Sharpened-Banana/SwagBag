@@ -250,6 +250,15 @@ describe("Settings window", function()
 		assert.equal("ran otherbags on", SW.lastStatus)
 	end)
 
+	-- Week 7 deferred: an amount typed in chat had no button. Mutation: drop the custom-amount choice from the
+	-- worth row.
+	it("bank page: a gold amount set with /swagbag worth shows as its own selected choice", function()
+		SB.Config.Set("prices.worthGold", 250)
+		SW.Show("bank")
+		assert.truthy(SW.selected[button("250g or more")])
+		assert.falsy(SW.selected[button("100g or more")])
+	end)
+
 	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
 	it("an error in a change is recorded without Safe Mode, and the status line says so", function()
 		SW.Show("bags")
