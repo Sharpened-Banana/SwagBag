@@ -241,8 +241,14 @@ SB.On("SB_LOGIN", function()
 	P.Hook(false)
 end, "none")
 
+-- If Syndicator's registry is not ready at its own ADDON_LOADED, one more try a moment later (once only).
+P.RETRY = 1
+P.retried = false
 SB.On("ADDON_LOADED", function(_, name)
-	if SB.Adapter.IsSyndicatorAddon(name) then
-		P.Hook(true)
+	if SB.Adapter.IsSyndicatorAddon(name) and not P.Hook(true) and not P.retried then
+		P.retried = true
+		SB.Debounce("syndicator.hook", P.RETRY, function()
+			P.Hook(true)
+		end, "none")
 	end
 end, "none")

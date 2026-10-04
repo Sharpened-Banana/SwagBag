@@ -187,6 +187,34 @@ describe("Syndicator provider", function()
 			assert.equal(2, n, "and of Syndicator's later updates")
 		end)
 
+	-- Week 8 (final review). Mutation: delete the SB.Debounce("syndicator.hook", ...) retry (or drop `P.retried`
+	-- so it tries on every ADDON_LOADED of Syndicator forever).
+	it("a hook that fails at Syndicator's ADDON_LOADED is tried once more a moment later, once only", function()
+		A.globals.Syndicator = nil
+		SB.Emit("SB_LOGIN")
+		A.globals.Syndicator = { API = api } -- the registry is not there yet
+		SB.eventFrame:Fire("ADDON_LOADED", "Syndicator")
+		assert.falsy(SB.SyndicatorProvider and SB.SyndicatorProvider.hooked)
+		assert.is_nil(reg.events.BagCacheUpdate)
+		A.globals.Syndicator = { API = api, CallbackRegistry = reg }
+		A.Advance(1.1)
+		assert.truthy(reg.events.BagCacheUpdate and reg.events.Ready, "the retry hooked it")
+		A.Advance(0.6)
+		assert.equal("Syndicator", AD.Source())
+	end)
+
+	it("the hook retry runs once: after a second failure no further try is armed", function()
+		A.globals.Syndicator = nil
+		SB.Emit("SB_LOGIN")
+		A.globals.Syndicator = { API = api }
+		SB.eventFrame:Fire("ADDON_LOADED", "Syndicator")
+		A.Advance(1.1) -- the one retry fails too
+		SB.eventFrame:Fire("ADDON_LOADED", "Syndicator") -- fails again: no new retry is armed
+		A.globals.Syndicator = { API = api, CallbackRegistry = reg }
+		A.Advance(5)
+		assert.is_nil(reg.events.BagCacheUpdate)
+	end)
+
 	-- Mutation: in P.Hook, drop `if P.hooked then return true end` (every ADDON_LOADED would register again).
 	it("Syndicator's callbacks are registered once: at login, never again on a later ADDON_LOADED", function()
 		local registered = 0

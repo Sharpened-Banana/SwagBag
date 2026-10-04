@@ -259,6 +259,35 @@ describe("BankWindow list view (week 8)", function()
 		assert.equal(2, #A.Lines(), "a new opening says it again")
 	end)
 
+	-- Week 8 (final review F6 fallback, P5). The fallback to categories moves buttons, so it waits for the mouse
+	-- like any layout. Mutation: in GroupView's RequestLayout, `commit(b, pos, reason, t0, true)` -> `commit(b, pos, reason, t0)`.
+	it("F6: a list that falls back to categories waits while a row is under the mouse, then lands", function()
+		SB.Config.Set("bank.view", "list")
+		openBank()
+		assert.equal("list", BW.view.drawn)
+		local before = on(6, 1)
+		B.Get(12, 2).scale = 1
+		B.Get(12, 2).SetScale = function() end -- a scale that no longer takes
+		row(6, 1).mouseOver = true
+		BW.Reflow("reflow")
+		assert.equal("list", BW.view.drawn, "held: nothing drawn under the mouse")
+		assert.same(before, on(6, 1))
+		row(6, 1).mouseOver = false
+		A.Advance(GV.RETRY)
+		assert.equal("sections", BW.view.drawn)
+		assert.equal(1, B.Get(6, 1).scale)
+		assert.equal(1, #SB.ErrorTrap.Recent(), "recorded once")
+	end)
+
+	-- Week 8 (final review). The title says what is drawn. Mutation: in BW.ToggleView, flash
+	-- VIEW_FLASH[view] (the list's title) whatever the layout drew.
+	it("F6: the view button's title says categories when the list could not be drawn", function()
+		openBank()
+		B.Get(12, 2).SetScale = function() end
+		Fake.Fire(BW.viewButton, "OnClick")
+		assert.equal(SB.L.BANK_VIEW_SECTIONS, BW.frame.title.text)
+	end)
+
 	-- Week 8 ruling Q11. Mutation: in GroupView's listFailed(), drop `v.listFailed = true`.
 	it("F6: after a fallback the visit stays on categories: no button is scaled again, no second error", function()
 		openBank()
