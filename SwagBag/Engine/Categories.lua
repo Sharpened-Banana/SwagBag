@@ -6,12 +6,30 @@
 --   Categories.SectionOrder()          { "new", <enabled categories in display order>, "free" }
 --   Categories.Name(sectionId)         display name, including "new" and "free"
 --   Categories.AddToList(id, itemID)   manual include (drag onto a header, AC4.3)
---   Categories.ResetBuiltin(id)        remove the user's diff of a built-in
+--   Categories.ResetBuiltin(id) -> true | false, "readonly"   remove the user's whole diff of a built-in
 --   Categories.MarkFailed(id, message) a rule threw while evaluating (Categorizer)
 --   Categories.Counts() -> total, edited, broken names (list)
+-- The category editor's writers (week 11, spec F6; UI/SettingsCategories.lua). Each refuses while the settings are
+-- read-only and changes nothing then; each loads the categories again after a change:
+--   Categories.CheckName(name, exceptId) -> name (trimmed) | nil, why   why: "EMPTY" | "LONG" | "CHARS" | "TAKEN"
+--   Categories.Create(name, query, source) -> id | nil, why, detail      a user category ("u_..."), shown first
+--   Categories.Save(id, fields) -> ok, why, detail   fields: name, query, priority, enabled (each optional). A
+--     built-in keeps only what differs from its default (spec 8.5). Save and Create run Validate (spec 7.9). A query
+--     that does not compile is never dropped (AC6.2): while the category has a rule that works, that rule stays in
+--     use and on (spec 7.5 #3) and the new text is kept as its draft (true, "draft", the error text); with no rule
+--     that works (a new category, or one already broken) it is saved switched off (true, "broken", the error text).
+--     A rule that compiles replaces the rule and its draft, and a category that was broken is on again unless the
+--     fields say Off. A changed rule that compiles with warnings answers true, "warned", the warnings (Validate's)
+--   Categories.Delete(id) -> ok, why       a user category only; its id leaves the order, every focus mode's sections
+--     (account-wide and this character's) and this character's collapsed sections
+--   Categories.Move(id, step) -> ok, why   one place up (-1) or down (+1) in the display order
+--   Categories.Preview(query) -> matches, total | nil, message     the bags' slots the query matches now
+--   why (all writers): "readonly" | "unknown" | "builtin" | "pinned" | "priority" | "long" | "code" (a chat code
+--     in a rule) | "edge" or a name why. A deleted category's id is never given again (its entry stays, false).
 -- Runtime category: { id, name, query, priority, displayOrder, enabled, builtin, source,
 --   itemList = { include = {[itemID]=true}, exclude = {...} }, compiled, hasRule,
---   fallback, setting, error (compile error text), runtimeError (evaluation error text) }
+--   fallback, setting, error (compile error text), runtimeError (evaluation error text),
+--   draft, draftError (week 11: a change of the rule saved with an error while the rule before it stays in use) }
 -- A category whose query does not compile is disabled with `error` set and never
 -- affects other categories (spec 7.10).
 local _, SB = ...
@@ -72,6 +90,12 @@ local function build(def, edit, builtin)
 	else
 		c.error = SB.Query.FormatError(compiled.errors[1])
 		c.enabled = false
+	end
+	-- The draft (week 11), read defensively: a save from before week 11 has none.
+	local draft = type(edit) == "table" and edit.draft or def.draft
+	if type(draft) == "string" then
+		local d = SB.Query.Compile(draft)
+		c.draft, c.draftError = draft, not d.fn and SB.Query.FormatError(d.errors[1]) or nil
 	end
 	return c
 end
@@ -299,11 +323,15 @@ function C.AddToList(targetId, itemID)
 end
 
 function C.ResetBuiltin(id)
+	if SB.Config.readOnly then
+		return false, "readonly" -- week 11: the editor's Reset to default refuses, as every writer
+	end
 	local db = SB.Config.db
 	if type(db.userEdits) == "table" then
 		db.userEdits[id] = nil
 	end
 	C.Load()
+	return true
 end
 
 -- Called by the Categorizer when a category's rule throws. Returns true the first time
@@ -333,6 +361,298 @@ function C.Counts()
 		end
 	end
 	return #C.list, edited, broken
+end
+
+---------------------------------------------------------------------------
+-- The category editor's writers (week 11, spec F6)
+---------------------------------------------------------------------------
+C.MAX_NAME, C.MAX_QUERY = 30, SB.Query.MAX_QUERY
+-- A category you make starts at 88: above every built-in but Reagents, Keystone & Crests, Equipment sets and Junk,
+-- which it may never outrank (the share-string rule, F20). Priorities go from 1 to 89.
+C.USER_PRIORITY, C.MIN_PRIORITY, C.MAX_PRIORITY = 88, 1, 89
+-- The four that keep their priority: one list, which Profiles' share strings read too.
+C.PINNED = { c_junk = true, c_sets = true, c_keystone = true, c_reagents = true }
+
+local function default(id)
+	for _, def in ipairs(SB.CategoryDefaults) do
+		if def.id == id then
+			return def
+		end
+	end
+end
+
+function C.CheckName(name, exceptId)
+	name = type(name) == "string" and name:match("^%s*(.-)%s*$") or ""
+	if name == "" then
+		return nil, "EMPTY"
+	elseif #name > C.MAX_NAME then
+		return nil, "LONG"
+	elseif name:find("[%c|]") then
+		return nil, "CHARS" -- "|" starts a chat code (a colour, a link)
+	end
+	C.Ensure()
+	local low = name:lower()
+	if low == SB.L.CAT_NEW:lower() or low == SB.L.CAT_FREE:lower() then
+		return nil, "TAKEN"
+	end
+	for _, c in ipairs(C.list) do
+		if c.id ~= exceptId and type(c.name) == "string" and c.name:lower() == low then
+			return nil, "TAKEN"
+		end
+	end
+	-- A built-in's own name stays its own after a rename, so its Reset to default never makes two of one name.
+	for _, def in ipairs(SB.CategoryDefaults) do
+		if def.id ~= exceptId and type(def.name) == "string" and def.name:lower() == low then
+			return nil, "TAKEN"
+		end
+	end
+	return name
+end
+
+local function queryWhy(query)
+	if type(query) ~= "string" or #query > C.MAX_QUERY then
+		return "long"
+	elseif SB.Query.EscapeCode(query) then
+		return "code" -- a chat code is never part of a rule, and a share string holding one is refused (F20)
+	end
+end
+
+-- Spec 7.9, before a save: the error text of a rule that does not compile, else nil and Validate's warnings (a word
+-- that is no keyword matches item names; an unknown #keyword matches nothing).
+local function check(query)
+	local compiled = SB.Query.Compile(query)
+	if not compiled.fn then
+		return SB.Query.FormatError(compiled.errors[1])
+	end
+	return nil, SB.Query.Validate(compiled).warnings
+end
+
+function C.Create(name, query, source)
+	if SB.Config.readOnly then
+		return nil, "readonly"
+	end
+	query = query or ""
+	local clean, why = C.CheckName(name)
+	if not clean then
+		return nil, why
+	end
+	why = queryWhy(query)
+	if why then
+		return nil, why
+	end
+	local db = SB.Config.db
+	db.categories = type(db.categories) == "table" and db.categories or {}
+	local slug = clean:lower():gsub("[^%w]+", "_"):gsub("^_+", ""):gsub("_+$", ""):sub(1, 20)
+	local base = "u_" .. (slug ~= "" and slug or "category")
+	local id, n = base, 1
+	while db.categories[id] ~= nil or C.byId[id] do
+		n = n + 1
+		id = base .. "_" .. n
+	end
+	local def = { name = clean, query = query, priority = C.USER_PRIORITY, enabled = true,
+		source = source == "import" and "import" or "user" }
+	local err, warnings = check(query)
+	if err then
+		def.enabled = false -- AC6.2: no rule that works yet: made switched off, the error shown
+	end
+	if type(db.categoryOrder) == "table" then
+		table.insert(db.categoryOrder, 1, id)
+	else
+		def.displayOrder = 5 -- before Keystone & Crests (10): a new category shows first
+	end
+	db.categories[id] = def
+	C.Load()
+	if err then
+		return id, "broken", err
+	elseif #warnings > 0 then
+		return id, "warned", warnings
+	end
+	return id
+end
+
+function C.Save(id, fields)
+	if SB.Config.readOnly then
+		return false, "readonly"
+	end
+	C.Ensure()
+	local c = C.byId[id]
+	if not c or type(fields) ~= "table" then
+		return false, "unknown"
+	end
+	local out = {}
+	if fields.name ~= nil then
+		local clean, why = C.CheckName(fields.name, id)
+		if not clean then
+			return false, why
+		end
+		out.name = clean
+	end
+	if fields.query ~= nil then
+		local why = queryWhy(fields.query)
+		if why then
+			return false, why
+		end
+		out.query = fields.query
+	end
+	local p = fields.priority
+	if p ~= nil and p ~= c.priority then
+		if C.PINNED[id] then
+			return false, "pinned" -- Junk, Sets, Keystone & Crests and Reagents keep their rank
+		elseif type(p) ~= "number" or p ~= math.floor(p) or p < C.MIN_PRIORITY or p > C.MAX_PRIORITY then
+			return false, "priority"
+		end
+		out.priority = p
+	end
+	if fields.enabled ~= nil then
+		out.enabled = fields.enabled == true
+	end
+	local err, warnings = check(out.query or c.query or "")
+	local e, kept = editFor(c), false
+	if err and out.query ~= nil and not c.error then
+		-- Spec 7.5 #3: the rule that works stays in use, and on; the new text waits as its draft (AC6.2: never lost)
+		e.draft, out.query, kept = out.query, nil, true
+	elseif err then
+		out.enabled = false -- AC6.2: no rule that works to keep: saved switched off, the error shown
+	else
+		if out.query ~= nil then
+			e.draft = nil -- a rule that compiles replaces the rule in use and its draft
+		end
+		if c.error and fields.enabled == nil then
+			out.enabled = true -- fixed: on again, also where the editor sends no On/Off (Reagents' is a setting)
+		end
+	end
+	local def = c.builtin and default(id) or nil
+	for f, v in pairs(out) do
+		if def and (v == def[f] or (f == "enabled" and v == true and def.enabled == nil)) then
+			e[f] = nil -- a built-in keeps only what differs from its default (spec 8.5)
+		else
+			e[f] = v
+		end
+	end
+	prune(c, e)
+	C.Load()
+	if err then
+		return true, kept and "draft" or "broken", err
+	elseif #warnings > 0 and out.query ~= nil and out.query ~= c.query then
+		return true, "warned", warnings -- a changed rule's (an unchanged one's were said when it was saved)
+	end
+	return true
+end
+
+-- One section id out of a comma-separated list; the new list, or nil when it was not there.
+local function without(ids, id)
+	if type(ids) ~= "string" then
+		return nil
+	end
+	local out, found = {}, false
+	for sid in ids:gmatch("[^,]+") do
+		if sid == id then
+			found = true
+		else
+			out[#out + 1] = sid
+		end
+	end
+	return found and table.concat(out, ",") or nil
+end
+
+function C.Delete(id)
+	if SB.Config.readOnly then
+		return false, "readonly"
+	end
+	C.Ensure()
+	local c = C.byId[id]
+	if not c then
+		return false, "unknown"
+	elseif c.builtin then
+		return false, "builtin"
+	end
+	local Cfg = SB.Config
+	Cfg.db.categories[id] = false -- deleted: Load skips it, and Create never gives its id again (a stale id elsewhere)
+	if type(Cfg.db.categoryOrder) == "table" then
+		for i = #Cfg.db.categoryOrder, 1, -1 do
+			if Cfg.db.categoryOrder[i] == id then
+				table.remove(Cfg.db.categoryOrder, i)
+			end
+		end
+	end
+	-- Focus modes that opened it (spec 6.1): the account's sections and this character's own, both layers.
+	local account = type(Cfg.db.settings.focus) == "table" and type(Cfg.db.settings.focus.sections) == "table"
+		and Cfg.db.settings.focus.sections or {}
+	local changed = false
+	for mode in pairs(Cfg.Defaults.settings.focus.sections) do
+		local left = without(account[mode], id)
+		if left then
+			account[mode], changed = left, true
+		end
+		local path = "focus.sections." .. mode
+		left = without(Cfg.charDB.overrides[path], id)
+		if left then
+			Cfg.charDB.overrides[path], changed = left, true
+		end
+	end
+	local collapsed = Cfg.UI().collapsed
+	for _, windowSet in pairs(type(collapsed) == "table" and collapsed or {}) do
+		if type(windowSet) == "table" then
+			windowSet[id] = nil
+		end
+	end
+	C.Load()
+	if changed then
+		SB.Emit("SB_CONFIG_CHANGED", "focus.sections") -- Focus forgets its section sets; nothing open moves (P5)
+	end
+	return true
+end
+
+function C.Move(id, step)
+	if SB.Config.readOnly then
+		return false, "readonly"
+	end
+	C.Ensure()
+	local order, at = {}, nil
+	for i, c in ipairs(C.display) do
+		order[i] = c.id
+		if c.id == id then
+			at = i
+		end
+	end
+	if not at then
+		return false, "unknown"
+	end
+	local to = at + step
+	if to < 1 or to > #order then
+		return false, "edge"
+	end
+	order[at], order[to] = order[to], order[at]
+	SB.Config.db.categoryOrder = order
+	C.Load()
+	return true
+end
+
+-- How many of the bags' items (stacks) a query matches right now, of how many: for the editor's preview. A query
+-- with an error, or one that fails while matching, answers nil and why.
+function C.Preview(query)
+	local compiled = SB.Query.Compile(query or "")
+	if not compiled.fn then
+		return nil, SB.Query.FormatError(compiled.errors[1])
+	end
+	local matches, total = 0, 0
+	local ok = pcall(function()
+		for bag, slot, s in SB.Inventory.Iterate("bags") do
+			if s then
+				local record = SB.Items.Describe(bag, slot)
+				if record then
+					total = total + 1
+					if SB.Query.Eval(compiled, record) == true then
+						matches = matches + 1
+					end
+				end
+			end
+		end
+	end)
+	if not ok then
+		return nil, SB.L.SEARCH_EVAL_FAILED
+	end
+	return matches, total
 end
 
 SB.On("SB_LOGIN", function()

@@ -854,6 +854,7 @@ L.PROFILE_RESET = "Your settings are back to SwagBag's defaults. /swagbag profil
 L.PROFILE_UNDONE = "Your settings are back as they were before the last load, import or reset."
 L.PROFILE_EXPORTED = "Your settings' share string is in the box: press Ctrl+C to copy it."
 L.PROFILE_EXPORTED_CATEGORIES = "Your settings' and categories' share string is in the box: press Ctrl+C to copy it."
+L.PROFILE_EXPORT_LEFT_OUT = "Left out, because a rule has an error (fix it in Settings > Categories, then export again): %s."
 L.PROFILE_IMPORT_OPENED = "Paste a share string into the box, then press Preview."
 L.PROFILE_IMPORTED = "Imported %d changes. Your previous settings are kept: /swagbag profile undo brings them back."
 L.PROFILE_AUTO_NAME = "Profile %d"

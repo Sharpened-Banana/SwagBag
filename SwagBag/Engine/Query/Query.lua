@@ -15,6 +15,7 @@
 --   Query.FormatWarning(w) -> "Unknown keyword "#potin" matches nothing (character 7)"
 --   Query.MAX_QUERY = 500   the longest rule SwagBag keeps: a category's, a share string's, a paste's (week 11: one
 --                           constant, read by Rows, Categories, Paste and Profiles)
+--   Query.EscapeCode(text) -> bool   the text holds a chat code (week 11: one check, for Profiles, Categories, Paste)
 -- Tri-state (Kleene): AND is false if any part is false, else nil if any is nil;
 -- OR is true if any part is true, else nil if any is nil; NOT nil is nil.
 local _, SB = ...
@@ -229,6 +230,14 @@ function Q.FormatError(err)
 	end
 	local found = err.got == "" and L.QUERY_FOUND_END or ("\"" .. err.got .. "\"")
 	return L.QUERY_ERR_FOUND:format(expect, found, err.position)
+end
+
+-- A chat escape opener: |T |H |A |K, |c with eight hex digits, or a named colour: |cn (or |cN) followed by an
+-- upper-case name and ":" (|cnIQ4:, |cnGREEN_FONT_COLOR:; week 8, the narrowest rule that still catches it). Every
+-- other "|" is the OR operator ("herb|cloth", "herb|cname"). Share strings, the category writers and Paste all ask here.
+function Q.EscapeCode(text)
+	return text:find("|[THAK]") ~= nil or text:find("|c%x%x%x%x%x%x%x%x") ~= nil
+		or text:find("|c[nN][%u_][%u%d_]*:") ~= nil
 end
 
 function Q.FormatWarning(w)
