@@ -123,6 +123,10 @@ function Rows.FromText(text)
 	if n > Rows.MAX_ROWS or #rules.blocks > Rows.MAX_BLOCKS then
 		return nil, "long"
 	end
+	-- the cap is on the text the rows print (spaced), so what is shown always reads back as itself
+	if #Rows.ToText(rules) > Rows.MAX_TEXT then
+		return nil, "long"
+	end
 	return rules
 end
 
