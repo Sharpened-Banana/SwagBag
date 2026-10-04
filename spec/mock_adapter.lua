@@ -130,6 +130,13 @@ function M.New(SB)
 		return nil
 	end
 
+	-- Week 9: m.cursorOther = "money" (or "spell", "merchant"...): something on the cursor that is not an item
+	-- CursorItem can name. CursorBusy is true for it and for m.cursor.
+	m.cursorOther = nil
+	function m.CursorBusy()
+		return m.cursor ~= nil or m.cursorOther ~= nil
+	end
+
 	function m.ClearCursor()
 		m.cursor = nil
 		m.cleared = m.cleared + 1
@@ -649,6 +656,37 @@ function M.AddContainers(m)
 
 	function m.MoveToBank(bag, slot, kind)
 		return use(bag, slot, kind)
+	end
+
+	-- Stacking (week 9): every MoveStack is recorded in m.stackMoves = { { fromBag, fromSlot, toBag, toSlot } }.
+	-- m.onMoveStack(fromBag, fromSlot, toBag, toSlot) decides what happens; by default what the game does at once:
+	-- onto a partial stack of the same item (same link) as many as fit (the rest stays), else the two swap.
+	-- m.moveFails = true: the call throws (the client refused it).
+	m.stackMoves = {}
+	m.onMoveStack = function(fb, fs, tb, ts)
+		local f, t = m.slots[fb] and m.slots[fb][fs], m.slots[tb] and m.slots[tb][ts]
+		if not f then
+			return
+		end
+		local max = (m.items[f.itemID] or {}).maxStack or 1
+		if t and t.itemID == f.itemID and t.link == f.link and t.count < max then
+			local moved = math.min(f.count, max - t.count)
+			t.count, f.count = t.count + moved, f.count - moved
+			if f.count == 0 then
+				m.slots[fb][fs] = nil
+			end
+		else
+			m.slots[tb] = m.slots[tb] or {}
+			m.slots[fb][fs], m.slots[tb][ts] = t, f
+		end
+	end
+	function m.MoveStack(fb, fs, tb, ts)
+		m.stackMoves[#m.stackMoves + 1] = { fb, fs, tb, ts }
+		if m.moveFails then
+			return false, "refused"
+		end
+		m.onMoveStack(fb, fs, tb, ts)
+		return true
 	end
 
 	-- Repairs: m.repairCost (nil: this vendor does not repair), m.guildRepair (nil: the guild does not pay;

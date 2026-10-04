@@ -920,3 +920,11 @@ L.SET_SHARE_IMPORT = "Import"
 L.SET_PROFILES_BACK = "Go back"
 L.SET_PROFILES_UNDO = "Undo last load or import"
 L.SET_PROFILES_DEFAULTS = "Defaults"
+
+-- Stacking (week 9, user pick 8): Engine/Stacker.lua
+L.STACK_DONE = "Stacking done. Stacks merged: %d. Partial stacks moved first: %d."
+L.STACK_KEPT = "Left alone under your mouse: %d."
+L.STACK_STOP_COMBAT = "Stacking stopped: combat started (stacks merged: %d, moved first: %d). Press Sort again after combat."
+L.STACK_STOP_CLOSED = "Stacking stopped: the window closed (stacks merged: %d, moved first: %d)."
+L.STACK_STOP_STUCK = "Stacking stopped: an item did not move as expected (stacks merged: %d, moved first: %d). Nothing"
+	.. " was lost; press Sort to try again."

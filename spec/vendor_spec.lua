@@ -154,6 +154,36 @@ describe("Vendor (week 7)", function()
 		assert.same({ "own" }, A.repairs, "closed vendor: no repair")
 	end)
 
+	-- Week 9 (preflight S6): the stacker and the mover never run at once, so a vendor opened during a stacking
+	-- run waits for it instead of skipping the sale in silence (P2). Mutations: drop the Stacker.Busy() check in
+	-- V.Visit; or the SB_STACKER_DONE listener's V.Visit() call.
+	it("a vendor opened during a stacking run sells the junk and repairs once the run ends, if still open", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Stacker.lua")
+		A.Put(0, 7, Fixtures.HEALING_POTION, 2) -- slot 1 holds 5: one merge to make
+		SB.Inventory.ScanAll()
+		A.repairCost = 52000
+		assert.truthy(SB.Stacker.Start({ kind = "bags" }))
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		assert.same({}, sold(), "the stacker is moving items: the visit waits")
+		assert.same({}, A.repairs)
+		A.Advance(SB.Stacker.DELAY)
+		A.Advance(Mover.DELAY * 5)
+		assert.same({ 6 }, sold())
+		assert.same({ "own" }, A.repairs)
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		-- the vendor closes before the run ends: nothing happens later
+		A.Put(0, 8, Fixtures.HEALING_POTION, 2)
+		A.Put(0, 9, GRAY, 1)
+		SB.Inventory.ScanAll()
+		assert.truthy(SB.Stacker.Start({ kind = "bags" }))
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.Advance(SB.Stacker.DELAY * 3)
+		A.Advance(Mover.DELAY * 5)
+		assert.same({ 6 }, sold())
+		assert.same({ "own" }, A.repairs)
+	end)
+
 	-- Review fix 2. Mutation: in V.Repair, `local room = limit < 0 and balance or math.min(limit, balance)` ->
 	-- `local room = limit < 0 and cost or limit`; in repairResult drop the `after > 0` branch.
 	it("guild repair needs the guild bank to hold the cost; the line says whose gold paid; an unfinished repair says so", function()

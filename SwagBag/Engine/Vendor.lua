@@ -233,7 +233,7 @@ local function work()
 end
 
 -- The vendor opened (or combat ended while it stayed open): sell junk, then repair, so the junk's gold
--- helps pay for the repair.
+-- helps pay for the repair. While the stacker runs, the visit waits for it (SB_STACKER_DONE below).
 function V.Visit()
 	if not V.open then
 		return
@@ -243,6 +243,10 @@ function V.Visit()
 			SB.Print(L.VENDOR_COMBAT)
 		end
 		SB.OutOfCombat(V.Visit, "vendor.visit", "none")
+		return
+	end
+	if SB.Stacker and SB.Stacker.Busy() then
+		V.visitWaiting = true -- week 9: one run moves items at a time; the visit runs when stacking ends
 		return
 	end
 	if SB.Config.Get("vendor.autoSell") and not SB.Mover.Busy() then
@@ -302,11 +306,21 @@ end, "none")
 
 SB.On("MERCHANT_CLOSED", function()
 	V.open = false
+	V.visitWaiting = false
 	V.pastAsked = false
 	V.lockedAt = {}
 end, "none")
 
 SB.On("SB_LOCKS_CHANGED", V.WatchLocked, "none")
+
+-- Week 9: a vendor opened while the stacker moved items (Engine/Stacker.lua) waited for the run; its visit (the
+-- auto-sell, then the repair) runs once the run ends, if the vendor is still open. Never skipped in silence (P2).
+SB.On("SB_STACKER_DONE", function()
+	if V.visitWaiting then
+		V.visitWaiting = false
+		V.Visit()
+	end
+end, "none")
 
 ---------------------------------------------------------------------------
 -- /swagbag sell and /swagbag repair (P2: every form answers)

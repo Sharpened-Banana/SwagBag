@@ -698,6 +698,16 @@ function A.CursorItem()
 	return nil
 end
 
+-- Week 9 (P5): anything at all on the cursor: an item (even one whose ID is secret), a merchant's item, money,
+-- a spell, a macro. CursorItem above sees only an item with a readable ID; moves wait while this is true.
+function A.CursorBusy()
+	if not GetCursorInfo then
+		return false
+	end
+	local ok, kind = pcall(GetCursorInfo)
+	return ok and kind ~= nil
+end
+
 -- Puts a picked-up item back where it came from.
 function A.ClearCursor()
 	if ClearCursor then
@@ -711,6 +721,28 @@ function A.SortBags()
 		return false
 	end
 	return pcall(C_Container.SortBags)
+end
+
+-- Week 9 (user pick 8, Engine/Stacker.lua): one stack onto another, as a player does it: a click on the stack
+-- (C_Container.PickupContainerItem) and a click on the target. The game merges as many as fit onto a stack of
+-- the same item, or swaps the two; what is left on the cursor goes back where it came from, so nothing ever
+-- stays held. Never starts while the cursor holds anything (A.CursorBusy). Out of combat only (the stacker
+-- checks). ok, err.
+function A.MoveStack(fromBag, fromSlot, toBag, toSlot)
+	if not (C_Container and C_Container.PickupContainerItem) or A.CursorBusy() then
+		return false
+	end
+	local ok, err = pcall(C_Container.PickupContainerItem, fromBag, fromSlot)
+	if ok then
+		ok, err = pcall(C_Container.PickupContainerItem, toBag, toSlot)
+	end
+	if A.CursorBusy() then
+		pcall(C_Container.PickupContainerItem, fromBag, fromSlot)
+	end
+	if A.CursorBusy() then
+		A.ClearCursor()
+	end
+	return ok, err
 end
 
 -- Blizzard's own bank sort for "bank" (character bank) or "warband" (spec 5.5). ok, err.
@@ -1567,6 +1599,7 @@ A.CHECKS = {
 	{ path = "C_Container.SortBags", window = "bags", required = false },
 	{ path = "C_Container.SortBank", window = "bank", required = false },
 	{ path = "C_Container.UseContainerItem", window = "bags", required = false },
+	{ path = "C_Container.PickupContainerItem", window = "bags", required = false },
 	{ path = "CanMerchantRepair", window = "bags", required = false },
 	{ path = "GetRepairAllCost", window = "bags", required = false },
 	{ path = "RepairAllItems", window = "bags", required = false },
