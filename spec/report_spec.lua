@@ -136,6 +136,15 @@ describe("Report", function()
 		assert.truthy(SB.Report.Build():find("\nPrices: TSM (DBMarket), 7 cached", 1, true))
 	end)
 
+	-- Week 9 (user pick 11). Mutation: drop the Masque line from Report.Build.
+	it("says whether Masque skins SwagBag's buttons, and how many", function()
+		SB.Checks.last = {}
+		SB.Skins = { Available = function() return false end, count = 0 }
+		assert.truthy(SB.Report.Build():find("\nMasque: not loaded", 1, true))
+		SB.Skins = { Available = function() return true end, count = 410 }
+		assert.truthy(SB.Report.Build():find("\nMasque: 410 buttons skinned", 1, true))
+	end)
+
 	it("Hash is stable, order-independent and changes with content", function()
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 		local h2 = SB.Report.Hash({ x = "a", bags = { columns = 12 } })

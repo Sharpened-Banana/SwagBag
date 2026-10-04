@@ -39,6 +39,9 @@ local function create(bag, slot)
 		SB.Adapter.HideTooltip()
 	end, "none"))
 	b:Hide()
+	if SB.Skins then -- week 9: Masque's skin, when it is loaded (made in combat: it joins after combat)
+		SB.Skins.Add("alts", b)
+	end
 	DB.count = DB.count + 1
 	return b
 end

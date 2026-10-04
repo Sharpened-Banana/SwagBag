@@ -1418,6 +1418,53 @@ function A.TSMPrice(link, priceString)
 end
 
 ---------------------------------------------------------------------------
+-- Masque (optional button skins, week 9, user pick 11; UI/Skins.lua). Only its public API:
+-- LibStub("Masque", true) (silent: nil when Masque is not there), Masque:Group("SwagBag", name) and
+-- group:AddButton(button, nil, "Item") (Masque finds the item button's own regions). One group per name, made
+-- once. Every call is pcall'd: an error inside Masque is no skin, never an error. UI/Skins.lua calls this out
+-- of combat only.
+---------------------------------------------------------------------------
+local masqueGroups = {}
+
+local function masque()
+	local okL, lib = pcall(A.Resolve, "LibStub")
+	if not okL or (type(lib) ~= "table" and type(lib) ~= "function") or isSecret(lib) then
+		return nil
+	end
+	local ok, msq = pcall(lib, "Masque", true)
+	if ok and type(msq) == "table" and not isSecret(msq) then
+		return msq
+	end
+	return nil
+end
+
+function A.MasqueAvailable()
+	return masque() ~= nil
+end
+
+-- true when the button joined Masque's group of that name.
+function A.MasqueAdd(groupName, button)
+	local group = masqueGroups[groupName]
+	if not group then
+		local msq = masque()
+		if not msq then
+			return false
+		end
+		local ok, g = pcall(function()
+			return msq:Group("SwagBag", groupName)
+		end)
+		if not ok or type(g) ~= "table" then
+			return false
+		end
+		group = g
+		masqueGroups[groupName] = g
+	end
+	return (pcall(function()
+		group:AddButton(button, nil, "Item")
+	end))
+end
+
+---------------------------------------------------------------------------
 -- Syndicator (optional alt data, spec 3.3; Providers/Syndicator.lua). Read only, through its
 -- public API: Syndicator.API.IsReady, .GetAllCharacters, .GetByCharacterFullName, .GetWarband,
 -- .GetInventoryInfoByItemID, and Syndicator.CallbackRegistry:RegisterCallback(event, fn, owner).

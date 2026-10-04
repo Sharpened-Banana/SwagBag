@@ -320,6 +320,22 @@ function M.New(SB)
 		return list and list[link] or nil
 	end
 
+	-- Masque (week 9): m.masque = { groups = { [groupName] = { button, ... } } } while "loaded"; nil otherwise.
+	m.masque = nil
+	function m.MasqueAvailable()
+		return m.masque ~= nil
+	end
+
+	function m.MasqueAdd(groupName, button)
+		if not m.masque then
+			return false
+		end
+		local list = m.masque.groups[groupName] or {}
+		m.masque.groups[groupName] = list
+		list[#list + 1] = button
+		return true
+	end
+
 	-- Focus signals (week 4): m.instance = { instanceType, difficultyID }; m.challengeMode true |
 	-- false | nil (no API); m.delve; m.spellNames[spellID] = lower-case name; m.fishingLoot;
 	-- m.lootSource ("GameObject", "Creature", ... or nil); m.professions ({ herb, ore, skin } or nil).

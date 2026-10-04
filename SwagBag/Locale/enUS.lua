@@ -970,3 +970,7 @@ L.SET_PRICE_TSM = "TSM price (when TSM answers)"
 L.SET_PRICE_TSM_TIP = "DBMarket: TSM's market value on your realm (the default). DBMinBuyout: the lowest buyout it saw."
 	.. " DBRegionMarketAvg / DBRegionSaleAvg: the region's averages (need TSM's desktop app for fresh data). This"
 	.. " row picks TSM's price only; the row above says where prices come from."
+
+-- Masque skins (week 9, user pick 11): UI/Skins.lua
+L.REPORT_MASQUE = "Masque: %d buttons skinned"
+L.REPORT_MASQUE_OFF = "Masque: not loaded"

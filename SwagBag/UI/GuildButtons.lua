@@ -42,6 +42,9 @@ local function create(tab, slot)
 		SB.Adapter.HideTooltip()
 	end, "bank"))
 	b:Hide()
+	if SB.Skins then -- week 9: Masque's skin, when it is loaded
+		SB.Skins.Add("guild", b)
+	end
 	GB.buttons[tab][slot] = b
 	GB.count = GB.count + 1
 	return b
