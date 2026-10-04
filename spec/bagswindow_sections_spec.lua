@@ -255,6 +255,32 @@ describe("BagsWindow category view", function()
 		assert.truthy(helm.y > y)
 	end)
 
+	-- Week 10 (P5, week-9 deferred): a spell waiting for its target (Disenchant, Milling...) holds a regroup like an
+	-- item on the cursor, so no other item slides under the targeting hand. Mutation: in BagsWindow's busyCheck,
+	-- `local cursor = SB.Adapter.CursorBusy()` -> `local cursor = SB.Adapter.CursorItem() ~= nil`.
+	it("a spell waiting for its target holds a header click's collapse; it applies once cast or cancelled", function()
+		W.Open()
+		A.cursorOther = "targeting"
+		W.ToggleSection("c_consumables")
+		A.Advance(0.3)
+		assert.truthy(B.Get(0, 1).shown, "held")
+		A.cursorOther = nil
+		A.Advance(0.3)
+		assert.falsy(B.Get(0, 1).shown)
+	end)
+
+	-- Week 10. Mutation: in W.RequestLayout, `if SB.Adapter.CursorBusy() or scroll:IsMouseOver() then` ->
+	-- `if SB.Adapter.CursorItem() or scroll:IsMouseOver() then`.
+	it("a full layout waits while a spell waits for its target, then runs", function()
+		W.Open()
+		A.cursorOther = "targeting"
+		assert.falsy(W.RequestLayout("test"))
+		assert.truthy(W.stats.lastLayoutReason ~= "test", "held")
+		A.cursorOther = nil
+		A.Advance(W.RETRY)
+		assert.equal("test", W.stats.lastLayoutReason)
+	end)
+
 	it("closing forgets the layout and releases placeholders", function()
 		W.Open()
 		local released = B.released
@@ -1332,6 +1358,25 @@ describe("BagsWindow category view", function()
 		assert.equal(h - 18, W.frame.h)
 	end)
 
+	-- Week 10. Mutation: in W.Resize, `(scroll:IsMouseOver() or SB.Adapter.CursorBusy())` ->
+	-- `(scroll:IsMouseOver() or SB.Adapter.CursorItem())`.
+	it("a shorter footer waits while a spell waits for its target, then fits the window", function()
+		local stub = { height = 34 }
+		function stub.Layout()
+			return stub.height
+		end
+		SB.Footer = stub
+		W.Open()
+		local h = W.frame.h
+		A.cursorOther = "targeting"
+		stub.height = 16
+		W.Resize()
+		assert.equal(h, W.frame.h, "held")
+		A.cursorOther = nil
+		A.Advance(W.RETRY)
+		assert.equal(h - 18, W.frame.h)
+	end)
+
 	-- M1. Mutation: in sizeFrame, drop `if W.footHeld and W.foot and foot < W.foot then foot = W.foot end`.
 	it("while a footer shrink is held, no other resize applies it under the mouse", function()
 		local stub = { height = 34 }
@@ -1647,6 +1692,20 @@ describe("BagsWindow focus modes (spec 6)", function()
 		A.cursor = nil
 		A.Advance(0.3)
 		assert.falsy(B.Get(0, 6).shown)
+	end)
+
+	-- Week 10. Two guards hold it (every move's busyCheck and the hidden-New area check); either alone is enough.
+	-- Mutation: both of them back to CursorItem.
+	it("hidden New: an arrival waits while a spell waits for its target; New shows once it is cast or cancelled", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		A.cursorOther = "targeting"
+		A.Put(0, 10, Fixtures.HERB, 20)
+		bagUpdate()
+		assert.is_nil(header("new"), "showing New would move every section under the targeting hand")
+		A.cursorOther = nil
+		A.Advance(0.3)
+		assert.equal("- New (1)", header("new").text.text)
 	end)
 
 	it("a switch in combat applies at once (moving buttons is legal in combat)", function()
@@ -2097,6 +2156,18 @@ describe("BagsWindow focus modes (spec 6)", function()
 	-- the window (here the Pause button itself) or an item is on the cursor the view is capped as
 	-- before (W4-22), and the grow retries every 300 ms until the pointer leaves.
 	-- Mutation: in sizeFrame, remove the SB.Debounce("bags.grow", ...) retry.
+	-- Week 10. Three guards hold it (busyCheck, the switch's re-stack and the grow itself); any one is enough.
+	-- Mutation: all three back to CursorItem.
+	it("W4-25: the grow waits while a spell waits for its target; it applies once cast or cancelled", function()
+		local top = lowInMode()
+		A.cursorOther = "targeting"
+		W.modeButton.scripts.OnClick(W.modeButton)
+		assert.equal(top, W.frame:GetTop(), "nothing moved under the targeting hand")
+		A.cursorOther = nil
+		A.Advance(W.RETRY)
+		assert.equal(W.size[2], viewHeight(), "grown")
+	end)
+
 	it("W4-25: with the mouse on the window the grow waits; it applies once the mouse leaves", function()
 		local top = lowInMode()
 		W.frame.mouseOver = true -- on the Pause button, in the title bar

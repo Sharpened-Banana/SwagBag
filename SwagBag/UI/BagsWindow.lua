@@ -256,7 +256,7 @@ local function sizeFrame(width, height, keepTop)
 	if pinned then
 		local shortfall = viewHeight - (top - header - foot)
 		if shortfall > 0 then
-			if not (frame:IsMouseOver() or scroll:IsMouseOver() or SB.Adapter.CursorItem()) then
+			if not (frame:IsMouseOver() or scroll:IsMouseOver() or SB.Adapter.CursorBusy()) then
 				-- Ruling W4-25: nothing is under the pointer, so the whole window may move (P5): the top
 				-- edge goes up by the shortfall, never past the top of the screen. The bottom edge stays
 				-- on the screen (the room clamp below still holds).
@@ -287,7 +287,7 @@ end
 -- footer grows the window downward (or, at the height limit or the bottom of the screen, shortens
 -- the scroll area from the bottom), so nothing in the scroll area moves. A shorter one can pull a
 -- scrolled view down (the scroll offset is clamped to the taller view), so it waits like any other
--- move while the mouse is over the items or an item is on the cursor (spec 4.2 rule 5), retrying
+-- move while the mouse is over the items or anything is on the cursor (CursorBusy) (spec 4.2 rule 5), retrying
 -- every 300 ms; until then the smaller bar leaves a gap and covers nothing.
 function W.Resize()
 	if not frame:IsShown() then
@@ -295,7 +295,7 @@ function W.Resize()
 		return
 	end
 	local foot = W.FOOTER + (SB.Footer and SB.Footer.height or 0)
-	if W.foot and foot < W.foot and (scroll:IsMouseOver() or SB.Adapter.CursorItem()) then
+	if W.foot and foot < W.foot and (scroll:IsMouseOver() or SB.Adapter.CursorBusy()) then
 		W.footHeld = true
 		SB.Debounce("bags.footerResize", W.RETRY, W.Resize, "bags")
 		return
@@ -518,8 +518,8 @@ end
 
 -- by: a column; desc: the direction, or nil for a click (the same column flips, another starts at
 -- its natural direction, Sort.Next). Saved, answered in the title (P2), and the open list regroups
--- (SB_LIST_SORTED, below) through a full layout held while the mouse is over the items or an item is
--- on the cursor (P5).
+-- (SB_LIST_SORTED, below) through a full layout held while the mouse is over the items or anything is
+-- on the cursor (CursorBusy, P5).
 -- Returns true, or false (with the reason in the title) while the settings are read-only.
 -- quiet: the caller (/swagbag list, so also the Settings rows) answers in chat itself (W.Flash).
 function W.SortList(by, desc, quiet)
@@ -950,16 +950,18 @@ function W.SetDimmed(button, dimmed)
 end
 
 -- Spec 4.2 rule 5, one definition for every move: busyCheck() returns isBusy(bag, slot),
--- true while an item is on the cursor or that button is under the mouse (the cursor is
--- read once), plus whether the cursor holds an item.
+-- true while anything is on the cursor or that button is under the mouse (the cursor is
+-- read once), plus whether the cursor is busy. Week 10 (week-9 deferred): "anything" is
+-- Adapter.CursorBusy, a spell waiting for its target too (Disenchant: an item sliding under the
+-- targeting hand would be the one destroyed).
 local function busyCheck()
-	local cursor = SB.Adapter.CursorItem() ~= nil
+	local cursor = SB.Adapter.CursorBusy()
 	return function(bag, slot)
 		return cursor or buttonBusy(bag, slot)
 	end, cursor
 end
 
--- A re-stack waits while an item is on the cursor or one of the buttons that would move
+-- A re-stack waits while anything is on the cursor (CursorBusy) or one of the buttons that would move
 -- is under the mouse.
 local function anyBusy(keys)
 	local busy, cursor = busyCheck()
@@ -976,7 +978,7 @@ end
 
 -- Collapse/expand re-stack (spec 6.4): same cells, new section offsets, so no button moves
 -- relative to its own header. Only the buttons whose position changes are touched. It waits
--- while an item is on the cursor or a button that would move is under the mouse, and retries
+-- while anything is on the cursor (CursorBusy) or a button that would move is under the mouse, and retries
 -- every 300 ms. A focus-mode switch comes here too: whichever state is current when the retry
 -- runs is the one drawn (a switch that waits is never queued behind another). Only a re-stack
 -- that runs switches W.view, the lookup ApplyChanges lays out with (ruling W4-1).
@@ -1057,7 +1059,7 @@ function W.Restack(area)
 		wait = headerY(W.pos, area) ~= headerY(pos, area)
 	end
 	local moves = SB.Layout.Moves(W.pos, pos)
-	if (wait and ((scroll:IsMouseOver() and not overSettings()) or SB.Adapter.CursorItem())) or anyBusy(moves) then
+	if (wait and ((scroll:IsMouseOver() and not overSettings()) or SB.Adapter.CursorBusy())) or anyBusy(moves) then
 		W.areaHeld = wait
 		SB.Debounce("bags.restack", W.RETRY, function()
 			W.Restack(area)
@@ -1130,13 +1132,13 @@ function W.PinSection(id)
 	flashSection(result == "pin" and L.HEADER_FLASH_KEPT or L.HEADER_FLASH_UNPINNED, id)
 end
 
--- A full layout moves many buttons, so it waits while an item is on the cursor or the
+-- A full layout moves many buttons, so it waits while anything is on the cursor (CursorBusy) or the
 -- mouse is over the items (spec 4.3: Reflow/sort "guarded by rule 5"), retrying every 300 ms.
 function W.RequestLayout(reason)
 	if not frame:IsShown() then
 		return false
 	end
-	if SB.Adapter.CursorItem() or scroll:IsMouseOver() then
+	if SB.Adapter.CursorBusy() or scroll:IsMouseOver() then
 		SB.Debounce("bags.layout", W.RETRY, function()
 			W.RequestLayout(reason)
 		end, "bags")
@@ -1451,7 +1453,7 @@ end
 --   sections view: count, lock, cooldown and loaded data repaint in place; an emptied
 --                  slot or a different item goes through Layout.Apply (placeholder, New,
 --                  Free); a bag that grows or shrinks adds or removes Free slots. A button
---                  under the mouse, or every button while an item is on the cursor, waits
+--                  under the mouse, or every button while anything is on the cursor (CursorBusy), waits
 --                  and retries 300 ms later (spec 4.2 rule 5). No OnUpdate anywhere.
 ---------------------------------------------------------------------------
 -- Apply transitions to the open sections layout and redraw. Returns Layout.Apply's result.
@@ -1465,9 +1467,9 @@ function W.ApplyChanges(changes)
 	-- The drawn view, never a fresh one: a mode switch or collapse held under the mouse must not
 	-- be drawn by loot or an emptied slot (ruling W4-1). The held Restack retry applies it.
 	-- The first arrival into a hidden New moves every section below, so it also waits while the
-	-- mouse is anywhere over the items or an item is on the cursor (W4-15, same rule as W4-13).
+	-- mouse is anywhere over the items or anything is on the cursor (CursorBusy) (W4-15, same rule as W4-13).
 	local result = SB.Layout.Apply(st, changes, (busyCheck()), W.view, function()
-		return scroll:IsMouseOver() or SB.Adapter.CursorItem() ~= nil
+		return scroll:IsMouseOver() or SB.Adapter.CursorBusy()
 	end)
 	newSec = st.sections[SB.Layout.NEW]
 	-- New's "+N more below" can change with no button moving, so the headers redraw then too. New
@@ -1600,7 +1602,7 @@ end, "bags"))
 
 -- A focus mode switched, paused or resumed, or a focus setting changed (Engine/Focus.lua): the
 -- title and the Pause button follow at once; the sections re-stack, held back while a button
--- that would move is under the mouse or an item is on the cursor. In the grid view there are no
+-- that would move is under the mouse or anything is on the cursor (CursorBusy). In the grid view there are no
 -- sections, so only the title changes. A closed window picks the state up on its next open.
 SB.On("SB_FOCUS_CHANGED", function()
 	W.RefreshTitle()
@@ -1672,7 +1674,7 @@ end, "bags")
 -- A bag equipped, taken off or swapped (W3-21). A swap for a bag of the same size changes no
 -- slot count, but its empty slots may now be another family (a herb bag for a plain bag), so
 -- the window regroups: a full layout, guarded by rule 5 (it waits while the mouse is over the
--- items or an item is on the cursor). Debounced so the bag's own updates land first. SB.On
+-- items or anything is on the cursor (CursorBusy)). Debounced so the bag's own updates land first. SB.On
 -- skips an event the client does not know.
 W.BAG_CHANGE_DELAY = 0.1
 SB.On("BAG_CONTAINER_UPDATE", function()
