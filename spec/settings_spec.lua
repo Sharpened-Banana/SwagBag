@@ -235,6 +235,21 @@ describe("Settings window", function()
 		assert.same({ "price tsm", "price string DBMinBuyout", "price vendor" }, ran)
 	end)
 
+	-- Week 9 (preflight S16), P1. Mutation: in the other bag addons row's apply, run "otherbags off" whatever the
+	-- choice.
+	it("bags page: the other bag addons row, Warn at login first and selected; each choice runs /swagbag otherbags", function()
+		SB.Slash.Register("otherbags", "test", function(arg)
+			ran[#ran + 1] = "otherbags " .. arg
+			return "ran otherbags " .. arg
+		end)
+		SW.Show("bags")
+		assert.truthy(SW.selected[button(SB.L.SET_OTHER_BAGS_WARN)])
+		click(SB.L.SET_OTHER_BAGS_QUIET)
+		click(SB.L.SET_OTHER_BAGS_WARN)
+		assert.same({ "otherbags off", "otherbags on" }, ran)
+		assert.equal("ran otherbags on", SW.lastStatus)
+	end)
+
 	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
 	it("an error in a change is recorded without Safe Mode, and the status line says so", function()
 		SW.Show("bags")

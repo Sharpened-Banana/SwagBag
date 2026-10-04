@@ -42,6 +42,21 @@ describe("Commands", function()
 		assert.equal("Safe Mode was already ON for bank.", A.Lines()[4])
 	end)
 
+	-- Week 9 (preflight S16). Mutation: in the otherbags command, set bags.warnOtherAddons without checking
+	-- Config.Set's answer.
+	it("otherbags says whether the login warning is on, switches it, and refuses while read-only", function()
+		local L = SB.L
+		assert.same({ true, L.OTHER_BAGS_STATE:format(L.OVERLAY_ON) }, { SB.Slash.Run("otherbags") })
+		assert.same({ true, L.OTHER_BAGS_OFF }, { SB.Slash.Run("otherbags off") })
+		assert.equal(false, SB.Config.Get("bags.warnOtherAddons"))
+		assert.same({ true, L.OTHER_BAGS_STATE:format(L.OVERLAY_OFF) }, { SB.Slash.Run("OTHERBAGS") })
+		assert.same({ true, L.OTHER_BAGS_ON }, { SB.Slash.Run("otherbags On") })
+		assert.same({ true, L.OTHER_BAGS_USAGE }, { SB.Slash.Run("otherbags maybe") })
+		SB.Config.readOnly = true
+		assert.same({ true, L.SETTINGS_READONLY }, { SB.Slash.Run("otherbags off") })
+		assert.equal(true, SB.Config.Get("bags.warnOtherAddons"))
+	end)
+
 	it("safe with a wrong argument explains the usage", function()
 		SB.Slash.Dispatch("safe maybe")
 		assert.same({ SB.L.SAFE_USAGE }, A.Lines())

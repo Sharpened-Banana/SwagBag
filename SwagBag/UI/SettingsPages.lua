@@ -105,6 +105,12 @@ local function bagsRows()
 			apply = function(v)
 				return run("sort " .. v)
 			end },
+		-- Week 9 (user pick 11b): the login line about another bag addon; every click runs /swagbag otherbags.
+		{ kind = "choice", label = L.SET_OTHER_BAGS, tip = L.SET_OTHER_BAGS_TIP, width = 110, get = get("bags.warnOtherAddons"),
+			choices = { { value = true, text = L.SET_OTHER_BAGS_WARN }, { value = false, text = L.SET_OTHER_BAGS_QUIET } },
+			apply = function(v)
+				return run(v and "otherbags on" or "otherbags off")
+			end },
 		{ kind = "choice", label = L.SET_LIST_SORT, get = function()
 			return SB.Sort.Spec().by
 		end, width = 90, choices = { { value = "value", text = L.LIST_COL_VALUE }, { value = "name", text = L.LIST_COL_NAME },

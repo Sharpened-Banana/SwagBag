@@ -26,6 +26,8 @@ Config.Defaults = {
 		-- and rows when empty; false (default) shows New only once something new arrives (W4-15).
 		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
 			showIlvl = true, freeTile = true, newAlways = false,
+			-- warnOtherAddons (week 9): one chat line at login while another bag addon is on too (Core/Report.lua).
+			warnOtherAddons = true,
 			-- list: the list view's order (Engine/Sort.lua; the bags window's third view). sort: "value" |
 			-- "name" | "count" | "ilvl"; desc: highest first (Z to A for names). Default: worth most first.
 			list = { sort = "value", desc = true },

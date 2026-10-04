@@ -93,7 +93,7 @@ local LABELS = {
 	["bags.reagentSeparate"] = "PROFILE_LABEL_REAGENTS",
 	["bags.newRows"] = "PROFILE_LABEL_NEW_ROWS", ["bags.showIlvl"] = "PROFILE_LABEL_SHOW_ILVL",
 	["bags.list.sort"] = "SET_LIST_SORT", ["bags.list.desc"] = "PROFILE_LABEL_LIST_DESC",
-	["bags.footer.entries"] = "PROFILE_LABEL_FOOTER",
+	["bags.footer.entries"] = "PROFILE_LABEL_FOOTER", ["bags.warnOtherAddons"] = "SET_OTHER_BAGS",
 	["bank.blizzardFrame"] = "SET_BANK_FRAME", ["bank.view"] = "PROFILE_LABEL_BANK_VIEW",
 	["bank.columns"] = "PROFILE_LABEL_BANK_COLUMNS",
 	["guildBank.mode"] = "SET_GUILD_MODE", ["guildBank.withdrawAnyTab"] = "PROFILE_LABEL_ANYTAB",

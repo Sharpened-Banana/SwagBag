@@ -23,6 +23,7 @@ describe("Report", function()
 			" none",
 			"Blocked actions: none",
 			"Bag-related addons: Auctionator (not loaded), Syndicator (not loaded)",
+			"Other bag addons on: none",
 			"Settings hash: " .. SB.Report.Hash({}) .. "  Schema: 2  Buttons: 0 (0 ms)",
 		}, "\n")
 		assert.equal(expected, SB.Report.Build())
@@ -143,6 +144,38 @@ describe("Report", function()
 		assert.truthy(SB.Report.Build():find("\nMasque: not loaded", 1, true))
 		SB.Skins = { Available = function() return true end, count = 410 }
 		assert.truthy(SB.Report.Build():find("\nMasque: 410 buttons skinned", 1, true))
+	end)
+
+	-- Week 9 (user pick 11b). Mutations: in A.OtherBagAddons drop the ElvUIBagsOn() check; or in A.ElvUIBagsOn
+	-- drop `== true` (any ElvUI counts, bags module or not).
+	it("names every other bag addon that is on, and ElvUI only while its own bags module is on", function()
+		SB.Checks.last = {}
+		A.addons = { Baganator = "833", Bagnon = false, AdiBags = "1.10", ElvUI = "14.0", Syndicator = "200" }
+		A.globals.ElvUI = { { private = { bags = { enable = false } } } }
+		assert.same({ "Baganator", "AdiBags" }, A.OtherBagAddons())
+		A.globals.ElvUI[1].private.bags.enable = true
+		assert.same({ "Baganator", "AdiBags", "ElvUI" }, A.OtherBagAddons())
+		A.globals.ElvUI = { { private = {} } }
+		assert.same({ "Baganator", "AdiBags" }, A.OtherBagAddons(), "no bags settings yet: not counted")
+		assert.truthy(SB.Report.Build():find("\nOther bag addons on: Baganator, AdiBags\n", 1, true))
+	end)
+
+	-- Never disables anything. Mutations: drop the login warning; or drop its Safe Mode check; or drop its
+	-- bags.warnOtherAddons check (preflight S16).
+	it("at login one line names them and suggests /swagbag safe on; silent when none, when switched off, or in Safe Mode", function()
+		SB.Emit("SB_LOGIN")
+		assert.same({}, A.Lines(), "none on: nothing said")
+		A.addons = { Baganator = "833", BetterBags = "0.3" }
+		SB.Emit("SB_LOGIN")
+		assert.same({ SB.L.OTHER_BAGS_WARN:format("Baganator, BetterBags") }, A.Lines())
+		SB.Config.Set("bags.warnOtherAddons", false)
+		SB.Emit("SB_LOGIN")
+		assert.equal(1, #A.Lines(), "the user switched the warning off")
+		SB.Config.Set("bags.warnOtherAddons", true)
+		SB.SafeMode.Enable("bags", "manual")
+		SB.Emit("SB_LOGIN")
+		assert.equal(1, #A.Lines(), "SwagBag has stepped aside already")
+		assert.same({ "833", "0.3" }, { A.addons.Baganator, A.addons.BetterBags }, "nothing was switched off")
 	end)
 
 	it("Hash is stable, order-independent and changes with content", function()

@@ -60,6 +60,23 @@ local function addonList()
 	return out
 end
 
+-- Week 9 (user pick 11b): two bag addons at once fight over the same bags (items in two windows, a bank that
+-- opens twice). At login one chat line names the others that are on and says how to keep one; nothing is ever
+-- switched off. Silent while SwagBag's bags are in Safe Mode (SwagBag has stepped aside already), and once the
+-- user said so (bags.warnOtherAddons, /swagbag otherbags off: Core/Commands.lua).
+SB.On("SB_LOGIN", function()
+	if SB.SafeMode.IsOn("bags") then
+		return
+	end
+	if not SB.Config.Get("bags.warnOtherAddons") then
+		return
+	end
+	local others = SB.Adapter.OtherBagAddons()
+	if #others > 0 then
+		SB.Print(SB.L.OTHER_BAGS_WARN:format(table.concat(others, ", ")))
+	end
+end, "none")
+
 function Report.Build()
 	local A, L = SB.Adapter, SB.L
 	local build = A.BuildInfo()
@@ -93,6 +110,8 @@ function Report.Build()
 	end
 	lines[#lines + 1] = L.REPORT_BLOCKED:format(#blocked > 0 and table.concat(blocked, ", ") or L.REPORT_NONE)
 	lines[#lines + 1] = L.REPORT_ADDONS:format(table.concat(addonList(), ", "))
+	local others = A.OtherBagAddons() -- week 9: a second bag addon on at the same time
+	lines[#lines + 1] = L.REPORT_OTHER_BAGS:format(#others > 0 and table.concat(others, ", ") or L.REPORT_NONE)
 	local db = SB.Config.db or {}
 	local stats = SB.Buttons and SB.Buttons.stats or {}
 	lines[#lines + 1] = L.REPORT_SETTINGS:format(Report.Hash(db.settings or {}), db.schemaVersion or 0, stats.count or 0,
