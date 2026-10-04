@@ -140,6 +140,14 @@ describe("Profiles (week 7)", function()
 		assert.equal("list", data.settings["bank.view"])
 	end)
 
+	-- Week 9 (user pick 8). Mutation: drop `["sort.mode"] = ...` from VALID (any word would come in).
+	it("the Sort button's mode travels in a share string; a word it may not hold is refused", function()
+		C.Set("sort.mode", "stacks")
+		local data = assert(Pr.Parse(Pr.Export(false)))
+		assert.equal("stacks", data.settings["sort.mode"])
+		assert.is_nil(Pr.Parse("SWAGBAG:1:s.sort.mode=sshuffle"))
+	end)
+
 	-- Week 8. Mutation: drop "list" from guildBank.view's words in VALID.
 	it("the guild bank's list view travels in a share string", function()
 		C.Set("guildBank.view", "list")

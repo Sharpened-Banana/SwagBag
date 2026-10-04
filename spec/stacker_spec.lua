@@ -235,6 +235,33 @@ describe("Stacker (week 9)", function()
 		assert.falsy(St.Busy(), "never left busy")
 	end)
 
+	-- Mutation: in the sort command, set sort.mode without checking Config.Set's answer.
+	it("/swagbag sort says the Sort button's mode, sets stacks or blizzard, and refuses while read-only", function()
+		local L = SB.L
+		assert.same({ true, L.SORT_MODE_STATE:format(L.SORT_MODE_BLIZZARD) }, { SB.Slash.Run("sort") })
+		assert.same({ true, L.SORT_MODE_STACKS_ON }, { SB.Slash.Run("sort stacks") })
+		assert.equal("stacks", SB.Config.Get("sort.mode"))
+		assert.same({ true, L.SORT_MODE_STATE:format(L.SORT_MODE_STACKS) }, { SB.Slash.Run("sort") })
+		assert.same({ true, L.SORT_MODE_BLIZZARD_ON }, { SB.Slash.Run("SORT Blizzard") })
+		assert.same({ true, L.SORT_MODE_USAGE }, { SB.Slash.Run("sort shuffle") })
+		SB.Config.readOnly = true
+		assert.same({ true, L.SETTINGS_READONLY }, { SB.Slash.Run("sort stacks") })
+		assert.equal("blizzard", SB.Config.Get("sort.mode"))
+	end)
+
+	-- P2 (carried from Task 1's review). Mutation: in St.SortButton, flash without checking `ended`.
+	it("the Sort button answers once: a run that ends inside Start gets its chat line and no title", function()
+		A.Put(0, 1, POTION, 5)
+		A.Put(0, 2, POTION, 5)
+		local flashes, regrouped = {}, 0
+		local ok = St.SortButton("bags", function() error("broken") end, function() return open end,
+			function(text) flashes[#flashes + 1] = text end, function() regrouped = regrouped + 1 end)
+		assert.truthy(ok)
+		assert.same({}, flashes, "the run already answered in chat")
+		assert.same({ SB.L.STACK_STOP_STUCK:format(0, 0) }, A.Lines())
+		assert.equal(1, regrouped)
+	end)
+
 	it("the result line says what was merged and moved first, and why a run stopped", function()
 		local L = SB.L
 		assert.equal(L.STACK_DONE:format(2, 1), St.ResultText({ merged = 2, ordered = 1, kept = 0 }))
