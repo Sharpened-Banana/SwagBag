@@ -31,6 +31,7 @@ Engine/Query/Lexer.lua
 Engine/Query/Parser.lua
 Engine/Query/Query.lua
 Engine/Query/Rows.lua
+Engine/Query/Paste.lua
 Engine/Crests.lua
 Engine/Keywords.lua
 Engine/Search.lua

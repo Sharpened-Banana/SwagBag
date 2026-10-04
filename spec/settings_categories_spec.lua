@@ -12,6 +12,7 @@ describe("Settings > Categories (week 11)", function()
 	before_each(function()
 		local files = { unpack(Env.ENGINE) }
 		table.insert(files, 12, "SwagBag/Engine/Query/Rows.lua") -- right after Query.lua, as in the TOC
+		table.insert(files, 13, "SwagBag/Engine/Query/Paste.lua")
 		SB = Loader.New(files)
 		SB.Config.Init(nil, nil)
 		Fake.Install()
@@ -98,12 +99,12 @@ describe("Settings > Categories (week 11)", function()
 	-- `return L.CAT_LIST_PRIORITY:format(s, c.priority)` -> `return s` (no priority in the list).
 	it("the page lists every category in display order with its priority, Edit, Up and Down, and the state it is in", function()
 		assert.equal(L.CAT_INTRO, labels()[1])
-		assert.same({ L.CAT_NEW_BUTTON, L.CAT_EDIT, L.CAT_UP, L.CAT_DOWN, L.CAT_EDIT }, { unpack(texts(), 1, 5) })
+		assert.same({ L.CAT_NEW_BUTTON, L.PASTE_BUTTON, L.CAT_EDIT, L.CAT_UP, L.CAT_DOWN }, { unpack(texts(), 1, 5) })
 		assert.equal(L.CAT_MAKE, labels()[2])
 		assert.same({ P:format("Keystone & Crests", 95), P:format("Consumables", 65), P:format("Gear", 70) },
 			{ unpack(labels(), 3, 5) })
 		assert.equal("Other", labels()[#labels()], "Other takes what no rule takes: no priority")
-		assert.equal(1 + #C.display * 3, #texts())
+		assert.equal(2 + #C.display * 3, #texts())
 		C.Create("Mine", "toy")
 		C.Create("Bad", "boe &")
 		C.Save("c_gear", { name = "Kit" })
@@ -264,9 +265,9 @@ describe("Settings > Categories (week 11)", function()
 		assert.equal(P:format("Keystone & Crests", 95), labels()[3])
 	end)
 
-	-- Mutations: in SettingsCategories' previewRows, `return run("search " .. d.text)` -> `return run("search")`; or
-	-- `for _, w in ipairs(SB.Query.Validate(SB.Query.Compile(d.text)).warnings) do` ->
-	-- `for _, w in ipairs({ SB.Query.Validate(SB.Query.Compile(d.text)).warnings[1] }) do` (the first warning only).
+	-- Mutations: in SettingsCategories' previewRows, `return run("search " .. text)` -> `return run("search")`; or
+	-- `for _, w in ipairs(SB.Query.Validate(SB.Query.Compile(text)).warnings) do` ->
+	-- `for _, w in ipairs({ SB.Query.Validate(SB.Query.Compile(text)).warnings[1] }) do` (the first warning only).
 	it("the preview counts the bags' matches, names every word that is no keyword, and Show matches searches the bags", function()
 		click(L.CAT_NEW_BUTTON)
 		click(L.CAT_ADD_RULE)
@@ -432,6 +433,112 @@ describe("Settings > Categories (week 11)", function()
 		SW.Show("categories")
 		SW.Hide()
 		assert.equal(3, #searched, "nothing shown, nothing cleared")
+	end)
+
+	-- Mutations: in SettingsCategories' make(), `local id, why = C.Create(p.name, p.result.query, "import")` ->
+	-- `local id, why = C.Create(p.name, p.text, "import")` (the pasted text, not what SwagBag read it as); or in
+	-- pasteRows, drop `previewRows(out, p.result.query, true)` (no count before saving: AC6.3).
+	it("Paste: the search is read, its differences named, its matches counted; Make category saves it as yours", function()
+		assert.equal(L.PASTE_HINT, click(L.PASTE_BUTTON))
+		assert.equal(L.PASTE_INTRO, labels()[1])
+		assert.falsy(has(texts(), L.PASTE_MAKE), "nothing read yet")
+		assert.equal(L.PASTE_READ:format("#gear & value>=1000 | pot | key"), enter(1, "#gear & >1000g | pot | key"))
+		local l = labels()
+		assert.truthy(has(l, L.PASTE_READS_AS:format("#gear & value>=1000 | pot | key")))
+		assert.truthy(has(l, L.PASTE_NOTE_GOLD))
+		assert.truthy(has(l, L.PASTE_NOTE_NAME:format("pot") .. L.PASTE_NOTE_PREFIX:format("potion")))
+		assert.truthy(has(l, L.PASTE_NOTE_ALSO:format("key", "keystone")))
+		assert.truthy(has(l, "Matches 1 of the 6 items in your bags right now."), "the potion's name holds pot")
+		assert.falsy(has(l, L.CAT_WARN_WORD:format("pot") .. L.CAT_DID_YOU_MEAN:format("pet")), "Paste's own note says it")
+		assert.equal("From Baganator", SW.inputs[2]:GetText())
+		assert.equal("searched #gear & value>=1000 | pot | key", click(L.CAT_SHOW_MATCHES))
+		assert.equal(L.PASTE_MADE:format("From Baganator"), click(L.PASTE_MAKE))
+		local c = C.Get("u_from_baganator")
+		assert.same({ "#gear & value>=1000 | pot | key", "import", 88, true }, { c.query, c.source, c.priority, c.enabled })
+		assert.equal(P:format("From Baganator (yours)", 88), labels()[3], "back at the list, first")
+		click(L.PASTE_BUTTON)
+		enter(1, "#toy")
+		assert.equal("From Baganator 2", SW.inputs[2]:GetText(), "a free name")
+	end)
+
+	-- Mutation: in SettingsCategories' readPaste(), `if not result then` -> `if false then` (a refused string offers
+	-- Make category).
+	it("Paste: a string SwagBag can't read is refused whole, with the reason; nothing is made", function()
+		click(L.PASTE_BUTTON)
+		local said = enter(1, "boe | (epic")
+		assert.equal(L.PASTE_READ:format("boe | (epic)"), said, "an open ( is closed, as in Baganator")
+		said = enter(1, "boe)")
+		assert.equal(L.PASTE_ERR_ERROR:format("Expected & or | but found \")\" at character 4"), said)
+		assert.truthy(has(labels(), said))
+		assert.falsy(has(texts(), L.PASTE_MAKE))
+		assert.equal(L.PASTE_ERR_QUOTE:format(4), enter(1, "pot\"s"))
+		assert.equal(L.PASTE_ERR_CODE, enter(1, "|cffff0000x"))
+		assert.equal(L.PASTE_ERR_LONG:format(600), enter(1, string.rep("b", 600)))
+		assert.equal(L.PASTE_ERR_GROWN:format(799), enter(1, string.rep("5g|", 99) .. "5g"), "299 pasted, 799 read")
+		assert.equal(L.PASTE_CANCELLED, click(L.CAT_CANCEL))
+		local n = 0
+		for _ in pairs(SB.Config.db.categories) do
+			n = n + 1
+		end
+		assert.equal(0, n)
+	end)
+
+	-- Mutation: in SettingsCategories' pasteRows, the box's set: `p.text, p.result, p.why = text, nil, nil` ->
+	-- `p.text = text` (a string changed after it was read is made without being read again).
+	it("Paste: a string changed after it was read must be read again; a taken name is refused", function()
+		click(L.PASTE_BUTTON)
+		enter(1, "#toy")
+		type(1, "#toy | #pet")
+		assert.equal(L.PASTE_READ_FIRST, click(L.PASTE_MAKE), "changed: read it again first")
+		assert.falsy(has(texts(), L.PASTE_MAKE))
+		enter(1, "#toy | #pet")
+		type(2, "Gear")
+		assert.equal(L.CAT_NAME_TAKEN:format("Gear"), click(L.PASTE_MAKE))
+		type(2, "Fun")
+		assert.equal(L.PASTE_MADE:format("Fun"), click(L.PASTE_MAKE))
+		assert.equal("#toy | #pet", C.Get("u_fun").query)
+	end)
+
+	-- Mutation: in SwagBag/Locale/enUS.lua, drop `L.PASTE_NOTE_PARENS = "A ( left open at the end is closed, as
+	-- Baganator does."` (L falls back to the key's name, so the page would show "PASTE_NOTE_PARENS").
+	it("every reason and note the page builds a key for at run time has its words in enUS.lua", function()
+		local Rows, Paste, seen = SB.QueryRows, SB.QueryPaste, {}
+		local function words(prefix, why)
+			seen[prefix] = seen[prefix] or {}
+			table.insert(seen[prefix], why)
+			assert.truthy(rawget(L, prefix .. why), prefix .. why)
+		end
+		for _, fam in ipairs(Rows.FAMILIES) do
+			words("", fam.label)
+		end
+		local rows41 = {}
+		for i = 1, 41 do
+			rows41[i] = "w" .. i
+		end
+		for _, text in ipairs({ "boe &", "a & (b | (c & d))", table.concat(rows41, " | "), string.rep("a", 501) }) do
+			local _, why = Rows.FromText(text)
+			words("CAT_WHY_", why:upper())
+		end
+		for _, row in ipairs({ Rows.NewRow(nil), { kind = "text", value = "a\"b" }, Rows.NewRow("ilvl", true),
+			{ kind = "word", value = "536" } }) do
+			words("CAT_PROBLEM_", Rows.Problem(row))
+		end
+		for _, name in ipairs({ " ", string.rep("n", 31), "a|b", "gear" }) do
+			local _, why = C.CheckName(name)
+			words("CAT_NAME_", why)
+		end
+		for _, text in ipairs({ " ", string.rep("a", 501), "|T1:0|t", "a\"b", "boe)", string.rep("5g|", 99) .. "5g" }) do
+			local _, why = Paste.Translate(text)
+			words("PASTE_ERR_", why)
+		end
+		for _, n in ipairs(Paste.Translate("!!boe | (#elemental | pot | upgrade | key | >5g | <600").notes) do
+			words("PASTE_NOTE_", n.kind)
+		end
+		assert.same({ "ERROR", "DEEP", "LONG", "TOOLONG" }, seen.CAT_WHY_)
+		assert.same({ "EMPTY", "QUOTE", "NUMBER", "WORD" }, seen.CAT_PROBLEM_)
+		assert.same({ "EMPTY", "LONG", "CHARS", "TAKEN" }, seen.CAT_NAME_)
+		assert.same({ "EMPTY", "LONG", "CODE", "QUOTE", "ERROR", "GROWN" }, seen.PASTE_ERR_)
+		assert.same({ "NOTS", "GOLD", "PARENS", "UNKNOWN", "NAME", "DIFFERENT", "ALSO", "ILVL" }, seen.PASTE_NOTE_)
 	end)
 
 	-- Fix round 1. Mutation: in SettingsCategories' Show matches, `SC.shown = d.text:match("^%s*(.-)%s*$")` -> `SC.shown = d.text`.

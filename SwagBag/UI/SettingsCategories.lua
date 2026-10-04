@@ -21,13 +21,18 @@
 -- status line (P2). Plain frames only (the settings window's own); no secure frame, no item button.
 --   SC.Edit(id) / SC.New() / SC.Save() / SC.Cancel() -> feedback     SC.draft, SC.picking (the keyword lists shown),
 --   SC.confirmDelete / SC.confirmReset (the id asked about), SC.shown (the text Show matches put in the bags' search)
+-- Paste a Baganator search (week 11 Task 4, AC6.3): a box for the string, read by Engine/Query/Paste.lua (nothing in
+-- it ever runs); what SwagBag reads it as, every difference in words, what it matches in the bags now (and Show
+-- matches); Make category saves it as a new category of the user's (source "import") under a name they may change.
+-- A string Paste refuses makes nothing, and says why and where.
+--   SC.Paste() -> feedback       SC.paste = { text, result, why, detail, name } while the paste view is open
 local _, SB = ...
 
 local L = SB.L
 local Guard = SB.ErrorTrap.Guard
-local C, Rows = SB.Categories, SB.QueryRows
-local SC = { draft = nil, picking = nil, confirmDelete = nil, confirmReset = nil, shown = nil,
-	STEPS = { -10, -1, 1, 10 } }
+local C, Rows, Paste = SB.Categories, SB.QueryRows, SB.QueryPaste
+local SC = { draft = nil, picking = nil, confirmDelete = nil, confirmReset = nil, shown = nil, paste = nil,
+	STEPS = { -10, -1, 1, 10 }, MAX_NOTES = 6 }
 SB.SettingsCategories = SC
 
 local function run(line)
@@ -301,7 +306,10 @@ local function listRows()
 	C.Ensure()
 	local out = {
 		{ kind = "note", label = L.CAT_INTRO },
-		{ kind = "actions", label = L.CAT_MAKE, actions = { { text = L.CAT_NEW_BUTTON, run = forget(SC.New) } } },
+		{ kind = "actions", label = L.CAT_MAKE, actions = { { text = L.CAT_NEW_BUTTON, run = forget(SC.New) },
+			{ text = L.PASTE_BUTTON, tip = L.PASTE_TIP, run = forget(function()
+				return SC.Paste()
+			end) } } },
 	}
 	for _, c in ipairs(C.display) do
 		local id = c.id
@@ -460,18 +468,19 @@ local function ruleRows(out, d)
 	end) } } }
 end
 
-local function previewRows(out, d)
-	local n, total = C.Preview(d.text)
+-- noHint: the paste view names its differences itself (Paste's notes), so no warnings and no "did you mean" there.
+local function previewRows(out, text, noHint)
+	local n, total = C.Preview(text)
 	out[#out + 1] = { kind = "note", label = n and L.CAT_PREVIEW:format(n, total) or L.CAT_PREVIEW_ERROR:format(total) }
-	if n then
-		for _, w in ipairs(SB.Query.Validate(SB.Query.Compile(d.text)).warnings) do
+	if n and not noHint then
+		for _, w in ipairs(SB.Query.Validate(SB.Query.Compile(text)).warnings) do
 			out[#out + 1] = { kind = "note", label = warningText(w) } -- every warning, not only the first (spec 7.9)
 		end
 	end
 	out[#out + 1] = { kind = "actions", label = L.CAT_SEE, tip = L.CAT_SEE_TIP, actions = {
 		{ text = L.CAT_SHOW_MATCHES, run = forget(function()
-			SC.shown = d.text:match("^%s*(.-)%s*$") -- the command trims it; the close compares with what it stored
-			return run("search " .. d.text)
+			SC.shown = text:match("^%s*(.-)%s*$") -- the command trims it; the close compares with what it stored
+			return run("search " .. text)
 		end) },
 		{ text = L.CAT_CLEAR_MATCHES, run = forget(function()
 			SC.shown = nil
@@ -576,7 +585,7 @@ local function editorRows()
 				return L.CAT_TEXT_ONLY:format(L["CAT_WHY_" .. d.why:upper()])
 			end) }
 	end
-	previewRows(out, d)
+	previewRows(out, d.text)
 	if d.pinned then
 		out[#out + 1] = { kind = "note", label = L.CAT_PINNED_NOTE }
 	else
@@ -593,8 +602,120 @@ local function editorRows()
 	return out
 end
 
+---------------------------------------------------------------------------
+-- Paste a Baganator search (AC6.3)
+---------------------------------------------------------------------------
+-- "From Baganator", else "From Baganator 2", 3...: a name no category has yet.
+local function freeName()
+	for n = 1, 99 do
+		local name = n == 1 and L.PASTE_NAME or (L.PASTE_NAME .. " " .. n)
+		if C.CheckName(name) then
+			return name
+		end
+	end
+	return ""
+end
+
+function SC.Paste()
+	SC.draft, SC.picking, SC.confirmDelete, SC.confirmReset = nil, nil, nil, nil
+	SC.paste = { text = "", name = "" }
+	return L.PASTE_HINT
+end
+
+local function readPaste(p)
+	local result, why, detail = Paste.Translate(p.text)
+	p.result, p.why, p.detail = result, why, detail
+	if not result then
+		return L["PASTE_ERR_" .. why]:format(tostring(detail or ""))
+	end
+	if p.name == "" then
+		p.name = freeName()
+	end
+	return L.PASTE_READ:format(result.query)
+end
+
+local function noteText(n)
+	if n.kind == "NAME" then
+		local starting = Paste.Prefixed(n.value)
+		return L.PASTE_NOTE_NAME:format(n.value)
+			.. (#starting > 0 and L.PASTE_NOTE_PREFIX:format(table.concat(starting, ", ")) or "")
+	elseif n.kind == "ALSO" then
+		return L.PASTE_NOTE_ALSO:format(n.value, table.concat(Paste.Prefixed(n.value), ", "))
+	end
+	return L["PASTE_NOTE_" .. n.kind]:format(tostring(n.value or ""))
+end
+
+local function make()
+	local p = SC.paste
+	if not p.result then
+		return L.PASTE_READ_FIRST
+	end
+	local id, why = C.Create(p.name, p.result.query, "import")
+	if not id then
+		return refusal(why, p.name)
+	end
+	SC.paste = nil
+	return L.PASTE_MADE:format(C.Get(id).name)
+end
+
+local function pasteRows()
+	local p = SC.paste
+	local out = {
+		{ kind = "note", label = L.PASTE_INTRO },
+		{ kind = "actions", label = L.PASTE_TITLE, actions = { { text = L.CAT_CANCEL, run = forget(function()
+			SC.paste = nil
+			return L.PASTE_CANCELLED
+		end) } } },
+		{ kind = "input", label = L.PASTE_BOX, maxLetters = 2 * Paste.MAX,
+			get = function()
+				return p.text
+			end,
+			set = function(text)
+				p.text, p.result, p.why = text, nil, nil -- a changed string is read again before anything is made
+			end,
+			commit = forget(function(text)
+				p.text = text
+				return readPaste(p)
+			end) },
+	}
+	if p.why then
+		out[#out + 1] = { kind = "note", label = L["PASTE_ERR_" .. p.why]:format(tostring(p.detail or "")) }
+	end
+	if not p.result then
+		return out
+	end
+	out[#out + 1] = { kind = "note", label = L.PASTE_READS_AS:format(p.result.query) }
+	for i, n in ipairs(p.result.notes) do
+		if i > SC.MAX_NOTES then
+			out[#out + 1] = { kind = "note", label = L.PASTE_MORE:format(#p.result.notes - SC.MAX_NOTES) }
+			break
+		end
+		out[#out + 1] = { kind = "note", label = noteText(n) }
+	end
+	previewRows(out, p.result.query, true)
+	out[#out + 1] = { kind = "input", label = L.CAT_NAME, maxLetters = C.MAX_NAME, boxWidth = 200,
+		get = function()
+			return p.name
+		end,
+		set = function(text)
+			p.name = text
+		end,
+		commit = forget(function(text)
+			p.name = text
+			local clean, why = C.CheckName(text)
+			if not clean then
+				return refusal(why, text)
+			end
+			return L.PASTE_NAME_OK:format(clean)
+		end) }
+	out[#out + 1] = { kind = "actions", label = L.PASTE_SAVE_LABEL, actions = { { text = L.PASTE_MAKE, run = forget(make) } } }
+	return out
+end
+
 SB.SettingsWindow.AddPage({ id = "categories", title = L.SET_PAGE_CATEGORIES, rows = function()
-	if SC.draft then
+	if SC.paste then
+		return pasteRows()
+	elseif SC.draft then
 		return editorRows()
 	end
 	return listRows()
