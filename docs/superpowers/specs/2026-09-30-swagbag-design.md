@@ -142,7 +142,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC10.1 With Auctionator loaded, each section header shows the category's total AH value ("Trade Goods — 1,240g"); items show AH value on hover and optionally as an overlay.
 - AC10.2 Without Auctionator, totals use vendor price and the header says "vendor".
 - AC10.3 Price lookups are cached per link for the session, invalidated on Auctionator's price-update callbacks or every 10 min.
-- AC10.4 (week 7) At the bank, an item whose stack is worth money glows gold: 100 g a stack by default, a gold amount, or your top 10% (`prices.worth`, `prices.worthGold`, `prices.worthTop`; `/swagbag worth`). A missing or secret price never glows.
+- AC10.4 (week 7) At the bank, an item whose stack is worth money glows gold: 100 g a stack by default, a gold amount, or your top 10% (`prices.worth`, `prices.worthGold`, `prices.worthTop`; `/swagbag worth`). A missing or secret price never glows. "Your top X %" is worked out again when the bank's contents change during a visit. A secret item link prices by its item ID (never used as a cache key).
 
 #### F11. Low-consumables warning
 - AC11.1 On `CHALLENGE_MODE_START` (and on entering an M+ instance) and on using an M+ teleport spell, SwagBag compares configured consumables against thresholds and prints one on-screen line ("Low: Flask (0), Healing Potion (2/5)"). Nothing prints when all thresholds are met.
@@ -174,10 +174,11 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC16.5 Gold deposit/withdraw, tab purchase, permissions and the log stay in Blizzard's frame, reachable by a "Blizzard guild bank" button on our window.
 - AC16.6 First in-dev check **G1** (§11.3) verifies withdraw, deposit, tab switching and Hearthstone use afterwards, with no blocked actions. If any of these fail, the fallback is **view + search**: SwagBag's window shows contents/search/totals read-only, and Blizzard's guild bank frame stays visible beside it for moving items. This fallback is a setting switch (`guildBank.mode = "full" | "view"`), not a redesign.
 - AC16.7 SwagBag never writes Blizzard's guild bank frame state; tab switching uses `SetCurrentGuildBankTab` only if G1 proves it untainted, otherwise via Blizzard's own tab buttons re-hosted on our window (the bank approach, §5.2).
+- AC16.8 (week 8) A guild item whose data arrives late moves from New to its category by a held full layout, as the alt viewer's does; the regroup waits while the mouse is over the window or an item is on the cursor, and clears that visit's placeholders.
 
 #### F17. Auto-sell junk and auto-repair (week 7)
 - AC17.1 At a vendor, SwagBag sells gray items a vendor pays for, one at a time, never more than 12 per vendor visit (Blizzard's Buyback tab keeps 12; the auto-sell, `/swagbag sell junk` and Sell all share the count); selling past 12 needs a second, explicit yes that says the earlier sales leave the Buyback tab. Default on (`vendor.autoSell`); one chat line says what was sold.
-- AC17.2 Never sold: a locked item, a piece of an equipment set, an item to open or learn, a gray BoE worth more than twice its vendor price at auction, gray gear whose look the account has not collected, and gray gear whose look the client cannot tell (no appearance source, no data yet, a secret answer: asked again at every sale, never remembered). Gear the account can never collect (the client says so) is ordinary junk and sells. Nothing is sold or repaired in combat.
+- AC17.2 Never sold: a locked item, a piece of an equipment set, an item to open or learn, a gray BoE worth more than twice its vendor price at auction, gray gear whose look the account has not collected, and gray gear whose look the client cannot tell (no appearance source, no data yet, a secret answer: asked again at every sale, never remembered). Gear the account can never collect (the client says so) is ordinary junk and sells; rings, necklaces and trinkets have no appearance at all (the NO_LOOK slots) and always sell as junk unless another protection applies. The junk coin on a gray piece may use the look answer cached for its link; a sale check never does. Nothing is sold or repaired in combat.
 - AC17.3 Repair (`vendor.repair`: `own` default, `guild`, `off`) runs after the sale, out of combat; `guild` pays from the guild bank only when its limit and balance cover the cost, else falls back to own gold and says so. The setting never travels in a share string (F20).
 
 #### F18. Item locks (week 7)
@@ -189,7 +190,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 
 #### F20. Profiles and share strings (week 7)
 - AC20.1 Named profiles save and load the account settings, with one step of undo (`/swagbag profile undo`) and a Defaults button. Share strings (`SWAGBAG:1:...`, text only) export settings, optionally with categories; import is Preview first, then Import; a string that is not ours, from a newer version, damaged, too long, or holding a value outside its setting's range or words is refused whole with the reason. Nothing in a string is ever run.
-- AC20.2 Never in a share string, either way: `guildBank.withdrawAnyTab` and `vendor.repair` (the preview names them as never imported). An imported category must compile, may not carry a chat escape (`|T |H |A |K`, `|c` plus eight hex digits, `|cn`), and may not have priority 90 or more, so it cannot outrank Junk, Equipment sets, Keystone & Crests or Reagents.
+- AC20.2 Never in a share string, either way: `guildBank.withdrawAnyTab` and `vendor.repair` (the preview names them as never imported). An imported category must compile, may not carry a chat escape (`|T |H |A |K`, `|c` plus eight hex digits, `|cn`), and never outranks Junk, Equipment sets, Keystone & Crests or Reagents: a priority of 90 or more comes in at 89 and the preview names it (never refused); the priority of those four built-ins is never imported (the preview names it). `|cn` is refused only before an upper-case name and `:` (`herb|cname` is a query).
 
 ### 2.2 v1.1 – v1.3 (roughly monthly)
 
@@ -197,7 +198,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 |---|---|
 | **v1.1** | Remaining focus modes batch 1: PvP, Vendor and AH split into separate modes, Crafting, Cooking, Questing, Leveling, Travel. Worth-money highlight on bank open (fixed threshold default 100 g, or top-X %; delivered week 7, AC10.4). Remaining overlays batch 1: AH value overlay, uncollected transmog (delivered week 7, AC9.4). |
 | **v1.2** | Syndicator provider for alt data (replaces own store when present). Focus modes batch 2: Disenchanting/Salvage, Gear upgrade/Catalyst, Transmog farming, Pet battles, Profession knowledge, Housing. Overlays batch 2: uncollected pet/toy/decor (pet and toy delivered week 7; decor has the green glow only). |
-| **v1.3** | List view (Sorted-style rows with name, count, ilvl, AH value column, sortable). Themes: modern flat; ElvUI-matching (auto-detect ElvUI, use its media). |
+| **v1.3** | List view (Sorted-style rows with name, count, ilvl, AH value column, sortable; delivered for the bags in week 5 and for the bank and the guild bank in week 8: the same rows and columns, one shared order (`bags.list`), a view button that cycles categories, list, grid in every window; the guild bank's list shows each tab's empty slots as one free row). Themes: modern flat; ElvUI-matching (auto-detect ElvUI, use its media). |
 
 ### 2.3 Later (demand-driven)
 
@@ -278,7 +279,7 @@ provider = { name = "Syndicator", priority = 10,
 -- Built-in provider "Own" (priority 0) reads Snapshots.
 ```
 
-The highest-priority available provider wins per call. Providers are wrapped in `ErrorTrap.Guard`; three errors in a session disable a provider with one chat line.
+Syndicator's callbacks are registered when it becomes available, at login or later in the session (week 8; a hook that fails at its load is tried once more a moment later); a late hook announces `SB_ALTDATA_CHANGED`, and the alt viewer re-reads its character only when the answering provider changes (its "shows what was saved when it opened" rule otherwise stands). The highest-priority available provider wins per call. Providers are wrapped in `ErrorTrap.Guard`; three errors in a session disable a provider with one chat line.
 
 ### 3.4 Testability
 
@@ -295,7 +296,7 @@ This page resolves critique Issue 1 using the construction proven in spikes A, A
 | Object | Type | Count | Created | Parent | Moves by |
 |---|---|---|---|---|---|
 | **Bag frame** | plain `Frame`, `SetID(bagID)`, `IsCombinedBagContainer = false` | one per bag ID 0–5, and one per purchased bank tab ID (6–11, 12–16) | login | window scroll child | never |
-| **Slot button** | `ItemButton` with `ContainerFrameItemButtonTemplate`, `SetID(slot)` | one per physical (bag, slot); capacity = max(current size, 38 for bags, 98 for bank tabs) → ≈1,290 | login (≈55 ms measured, hidden by loading screen) | its bag frame, **permanently** | `ClearAllPoints` + `SetPoint` only |
+| **Slot button** | `ItemButton` with `ContainerFrameItemButtonTemplate`, `SetID(slot)` | one per physical (bag, slot); capacity = max(current size, 38 for bags, 98 for bank tabs) → ≈1,290 | login (≈55 ms measured, hidden by loading screen) | its bag frame, **permanently** | `ClearAllPoints` + `SetPoint` only (the list views of the bank and the guild bank also `SetScale` them, legal in combat) |
 | **Placeholder** | plain `Frame` with desaturated icon texture, `EnableMouse(true)` | pooled, created on demand | out of combat preferred; allowed in combat (plain frame) | window scroll child | `SetPoint` |
 | **Section header** | plain `Button` | pooled | on demand | window scroll child | `SetPoint` |
 
@@ -307,7 +308,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 2. **Section truth:** every slot button drawn inside a category section shows the item that section was built for, or it is not in that section. (The spike asserted this after every incremental update with zero violations.)
 3. **Placeholder honesty:** a placeholder never responds to item interaction. Its click shows a tooltip "This item moved or was used — items regroup when you close the bag" and does nothing else. (Spike check `placeholderClickIsHarmless` is the first in-dev verification; see §11.3.)
 4. **Free is real:** empty slots are drawn as their real buttons in the "Free" section, so dropping an item onto Free is a real drop into that slot.
-5. **No motion under the cursor:** a button is never moved while `IsMouseOver()`, while `GetCursorInfo()` holds an item, or while a modifier key relevant to the button is down. Deferred moves retry 300 ms later. SwagBag's own item moves (the mover, week 7) follow it too: an item on the cursor holds every step while the vendor or bank is open; an item whose button is under the mouse holds up to 20 retries, then stays; a moved item leaves a placeholder (§4.3).
+5. **No motion under the cursor:** a button is never moved while `IsMouseOver()`, while `GetCursorInfo()` holds an item, or while a modifier key relevant to the button is down. Deferred moves retry 300 ms later. SwagBag's own item moves (the mover, week 7) follow it too: an item on the cursor holds every step while the vendor or bank is open; an item whose button is under the mouse holds up to 20 retries, then stays; a moved item leaves a placeholder (§4.3). In a list a row under the mouse holds its button too, and a list that falls back to categories (below) waits like any layout. Week 8, all windows: a list row never shows a full-size button, so every button is scaled before a list is drawn; if a scale does not take, that layout draws as categories instead, said once per opening, recorded under "none" (never Safe Mode).
 
 ### 4.3 State transitions while a window is open
 
@@ -688,7 +689,7 @@ Event policy:
 - `PLAYER_EQUIPMENT_CHANGED` → invalidate `equipped`/`upgrade` memos.
 - `BANKFRAME_OPENED/CLOSED`, `PLAYERBANKSLOTS_CHANGED`, `PLAYERBANKBAGSLOTS_CHANGED`, `BANK_TAB_SETTINGS_UPDATED` (feature-detected; registered via `pcall(frame.RegisterEvent)`) → bank model.
 - `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE` are logged for diagnostics only (the manager still exists in 12.1, verified).
-- Secret values: every read from `C_TooltipInfo` is wrapped; `issecretvalue()` → `nil`.
+- Secret values: every read from `C_TooltipInfo` is wrapped; `issecretvalue()` → `nil`. The collections' draw path treats a secret link or name as no answer (no glow, no star, no error); a secret link is never a table key (week 8).
 - Combat: no `CreateFrame`, no `EnsureCapacity` growth, no physical sort, no snapshot writes; everything else proceeds (verified legal).
 
 `/swagbag perf` prints last open/layout/search timings and memo hit rates (P2: always prints something).
@@ -731,7 +732,7 @@ This is what the user pastes into Claude Code. BugGrabber/BugSack compatibility:
 
 ### 10.5 Slash commands (all with feedback, P2)
 
-`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo]` (clear asks first), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added).
+`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo]` (clear asks first; one lock is answered in the singular), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added).
 
 ---
 
@@ -805,6 +806,8 @@ GitHub Actions on push: luacheck, busted, forbidden-token grep. On tag `v*`: Big
 | 3 | Oct 15–21 | M4 bank + warband (V2 first day) · **M4G guild bank (G1 first day)** · M6 overlays + upgrade arrow + Auctionator totals | V2, G1, overlay spot-checks | Bank and guild bank used for real; fallback decided by day 2 if a check fails |
 | 4 | Oct 22–28 | M5 focus modes + signals + pause + consumables warning · quick setup screen · settings pages | V5–V8, V11 in real keys, delves, raid, fishing, gathering | Modes switch correctly in real play |
 | 5 | Oct 29–31 | Hardening: bug fixes from the month, perf pass (§9 budgets), patch-day drill | full checklist | **Daily driver: zero Lua errors for 3 consecutive days** |
+
+The bank-speed part 2 (week 6) is scheduled after session TF1's numbers come back.
 
 ### 12.3 November → v1.0 on CurseForge
 
