@@ -260,6 +260,7 @@ function SW.Render()
 		b:Hide()
 	end
 	for i = 1, SW.used.inputs do
+		SW.inputs[i]:ClearFocus() -- a hidden or re-used box never keeps the keyboard
 		SW.inputs[i]:Hide()
 	end
 	SW.used.labels, SW.used.buttons, SW.used.inputs = 0, 0, 0
@@ -357,6 +358,12 @@ function SW.Show(pageId)
 	SW.Render()
 	return true
 end
+
+frame:HookScript("OnHide", Guard("settings.inputsHide", function()
+	for i = 1, SW.used.inputs do
+		SW.inputs[i]:ClearFocus()
+	end
+end, "none"))
 
 function SW.Hide()
 	frame:Hide()

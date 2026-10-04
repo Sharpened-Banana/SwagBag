@@ -179,7 +179,10 @@ function SC.Save()
 		id, why, detail = C.Create(d.name, d.text)
 		ok = id ~= nil
 		if ok then
-			local _, why2, detail2 = C.Save(id, { enabled = fields.enabled, priority = fields.priority })
+			local ok2, why2, detail2 = C.Save(id, { enabled = fields.enabled, priority = fields.priority })
+			if not ok2 then
+				return refusal(why2, d.name)
+			end
 			if why2 then
 				why, detail = why2, detail2
 			end
@@ -367,7 +370,8 @@ local function valueRow(out, r)
 		rulesChanged(SC.draft)
 	end
 	out[#out + 1] = { kind = "input", label = isNum and L.CAT_VALUE_NUMBER:format(r.name) or L.CAT_VALUE_NAME,
-		boxWidth = 200, maxLetters = 100,
+		boxWidth = 200, maxLetters = C.MAX_QUERY + 20, -- over the limit: a longer paste is refused, not cut
+
 		get = function()
 			return isNum and r.raw or r.value
 		end,
@@ -466,7 +470,7 @@ local function previewRows(out, d)
 	end
 	out[#out + 1] = { kind = "actions", label = L.CAT_SEE, tip = L.CAT_SEE_TIP, actions = {
 		{ text = L.CAT_SHOW_MATCHES, run = forget(function()
-			SC.shown = d.text
+			SC.shown = d.text:match("^%s*(.-)%s*$") -- the command trims it; the close compares with what it stored
 			return run("search " .. d.text)
 		end) },
 		{ text = L.CAT_CLEAR_MATCHES, run = forget(function()
@@ -504,7 +508,7 @@ local function editorRows()
 		pickerRows(out)
 		return out
 	end
-	out[#out + 1] = { kind = "input", label = L.CAT_NAME, maxLetters = C.MAX_NAME, boxWidth = 200,
+	out[#out + 1] = { kind = "input", label = L.CAT_NAME, maxLetters = C.MAX_NAME + 20, boxWidth = 200,
 		get = function()
 			return d.name
 		end,

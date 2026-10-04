@@ -433,4 +433,66 @@ describe("Settings > Categories (week 11)", function()
 		SW.Hide()
 		assert.equal(3, #searched, "nothing shown, nothing cleared")
 	end)
+
+	-- Fix round 1. Mutation: in SettingsCategories' Show matches, `SC.shown = d.text:match("^%s*(.-)%s*$")` -> `SC.shown = d.text`.
+	it("closing the settings window clears Show matches' search for a rule typed with spaces around it (the command trims it)", function()
+		click(L.CAT_EDIT, 2) -- Consumables
+		click(L.CAT_SHOW_TEXT)
+		enter(2, "toy ")
+		click(L.CAT_SHOW_MATCHES)
+		assert.equal("toy", SB.Search.text)
+		SW.Hide()
+		assert.same({ "toy", "" }, searched, "the bags are not left dimmed")
+	end)
+
+	-- Mutation: in SettingsWindow's Render, drop `SW.inputs[i]:ClearFocus()`; or drop the frame's OnHide ClearFocus hook.
+	it("a settings text box that is hidden or re-used, or whose window closes, lets the keyboard go", function()
+		click(L.CAT_NEW_BUTTON)
+		local e = SW.inputs[1]
+		e.calls.ClearFocus = nil
+		SW.Render()
+		assert.truthy(e.calls.ClearFocus, "redraw")
+		e.calls.ClearFocus = nil
+		SW.Hide()
+		assert.truthy(e.calls.ClearFocus, "window closed")
+	end)
+
+	-- Mutation: in SettingsCategories, `maxLetters = C.MAX_NAME + 20` -> `maxLetters = C.MAX_NAME`; or the value box's
+	-- `maxLetters = C.MAX_QUERY + 20` -> `maxLetters = 100`.
+	it("the name box and a value box take more than their limit, so a longer paste is refused with the reason, not cut", function()
+		click(L.CAT_NEW_BUTTON)
+		assert.truthy(SW.inputs[1].calls.SetMaxLetters[1] > C.MAX_NAME)
+		click(L.CAT_ADD_RULE)
+		click(L.CAT_PICK_NAME)
+		assert.truthy(SW.inputs[2].calls.SetMaxLetters[1] > 100)
+		assert.equal(L.CAT_NAME_LONG:format(C.MAX_NAME), enter(1, string.rep("n", 35)))
+	end)
+
+	-- Mutation: in SC.Save, `if not ok2 then return refusal(why2, d.name) end` -> removed.
+	it("a new category whose follow-up save is refused answers that refusal, not Saved", function()
+		click(L.CAT_NEW_BUTTON)
+		enter(1, "Fresh")
+		click(L.CAT_ADD_RULE)
+		click("toy")
+		local real = C.Save
+		C.Save = function()
+			return false, "readonly"
+		end
+		local said = click(L.CAT_SAVE)
+		C.Save = real
+		assert.equal(L.SETTINGS_READONLY, said)
+	end)
+
+	-- Mutation: in Core/Events.lua, call `textBoxes[i]:ClearFocus()` directly, without the per-box trap.
+	it("one text box that errors in ClearFocus does not stop the others letting go", function()
+		local later = false
+		SB.TextBox({ ClearFocus = function()
+			error("boom")
+		end })
+		SB.TextBox({ ClearFocus = function()
+			later = true
+		end })
+		SB.Emit("PLAYER_REGEN_DISABLED")
+		assert.truthy(later)
+	end)
 end)
