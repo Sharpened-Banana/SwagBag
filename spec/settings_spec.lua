@@ -205,6 +205,20 @@ describe("Settings window", function()
 		assert.same({ "worth 500", "worth top 15" }, ran)
 	end)
 
+	-- Week 9 (user pick 8), P1. Mutation: in the sort row's apply, run "sort stacks" whatever the choice.
+	it("bags page: the Sort button row, Blizzard's sort first and selected; each choice runs /swagbag sort", function()
+		SB.Slash.Register("sort", "test", function(arg)
+			ran[#ran + 1] = "sort " .. arg
+			return "ran sort " .. arg
+		end)
+		SW.Show("bags")
+		assert.truthy(SW.selected[button(SB.L.SET_SORT_BLIZZARD)])
+		click(SB.L.SET_SORT_STACKS)
+		click(SB.L.SET_SORT_BLIZZARD)
+		assert.same({ "sort stacks", "sort blizzard" }, ran)
+		assert.equal("ran sort blizzard", SW.lastStatus)
+	end)
+
 	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
 	it("an error in a change is recorded without Safe Mode, and the status line says so", function()
 		SW.Show("bags")

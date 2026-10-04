@@ -80,6 +80,10 @@ Config.Defaults = {
 		-- At a vendor (week 7, user pick 4; Engine/Vendor.lua). autoSell: sell gray junk at every vendor (on).
 		-- repair: "own" (repair with your gold, default) | "guild" (the guild bank first) | "off".
 		vendor = { autoSell = true, repair = "own" },
+		-- mode: what the Sort buttons (bags, bank, warband) do (week 9, user pick 8): "blizzard" (Blizzard's own
+		-- sort, the default) | "stacks" (SwagBag merges partial stacks, then puts each item's partial stack in front
+		-- of its full ones, for TSM posting; Engine/Stacker.lua).
+		sort = { mode = "blizzard" },
 		-- The low-consumables warning (spec 6.6, F11). warn: on by default. watch: nil means the
 		-- default list (Engine/Consumables.lua); the user's edited list is stored here.
 		consumables = { warn = true },

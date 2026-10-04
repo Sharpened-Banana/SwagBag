@@ -99,6 +99,12 @@ local function bagsRows()
 				return v and L.SET_REAGENTS_OWN_DONE or L.SET_REAGENTS_MIXED_DONE
 			end },
 		onOff(L.SET_TITLE_ILVL, "bags.showIlvl", "overlays title"),
+		-- Week 9 (user pick 8): what Sort does; every click runs /swagbag sort.
+		{ kind = "choice", label = L.SET_SORT, tip = L.SET_SORT_TIP, width = 150, get = get("sort.mode"),
+			choices = { { value = "blizzard", text = L.SET_SORT_BLIZZARD }, { value = "stacks", text = L.SET_SORT_STACKS } },
+			apply = function(v)
+				return run("sort " .. v)
+			end },
 		{ kind = "choice", label = L.SET_LIST_SORT, get = function()
 			return SB.Sort.Spec().by
 		end, width = 90, choices = { { value = "value", text = L.LIST_COL_VALUE }, { value = "name", text = L.LIST_COL_NAME },

@@ -1179,6 +1179,18 @@ function W.Sort()
 		W.Flash(L.SORT_AFTER_COMBAT)
 		return false
 	end
+	if SB.Stacker and SB.Config.Get("sort.mode") == "stacks" then
+		-- Week 9 (user pick 8): SwagBag's stacker instead (Engine/Stacker.lua, Stacker.SortButton): the click
+		-- answers in the title, the run's result is one chat line, and the window regroups when it is done
+		-- (held while the mouse is over the items, rule 5).
+		return SB.Stacker.SortButton("bags", buttonBusy, function()
+			return frame:IsShown()
+		end, W.Flash, function()
+			if frame:IsShown() then
+				W.RequestLayout("sort")
+			end
+		end)
+	end
 	local ok, err = A.SortBags()
 	if not ok then
 		if err ~= nil then

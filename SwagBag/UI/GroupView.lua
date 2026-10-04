@@ -459,6 +459,12 @@ function GV.New(cfg)
 		end, cursor
 	end
 
+	-- Week 9: the stacker's P5 check for one slot (Engine/Stacker.lua): an item on the cursor, or the slot's
+	-- button (in a list, its row) under the mouse.
+	function v.Busy(bag, slot)
+		return (busyCheck())(bag, slot)
+	end
+
 	local function anyBusy(keys)
 		local busy, cursor = busyCheck()
 		if cursor then

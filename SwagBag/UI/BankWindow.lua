@@ -456,6 +456,17 @@ function BW.Sort(kind)
 		BW.Flash(L.SORT_AFTER_COMBAT)
 		return false
 	end
+	if SB.Stacker and SB.Config.Get("sort.mode") == "stacks" then
+		-- Week 9 (user pick 8): SwagBag's stacker for this button's own bank type only (kind "bank" or "warband":
+		-- an item never changes bank type), as the bags window does (Stacker.SortButton).
+		return SB.Stacker.SortButton(kind, BW.view.Busy, function()
+			return BW.interaction and frame:IsShown()
+		end, BW.Flash, function()
+			if frame:IsShown() and BW.view.IsOpen() then
+				BW.view.RequestLayout("sort")
+			end
+		end)
+	end
 	local ok, err = A.SortBank(kind)
 	if not ok then
 		if err ~= nil then

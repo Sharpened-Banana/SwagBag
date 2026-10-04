@@ -77,7 +77,7 @@ local VALID = {
 	["focus.resolve"] = words("merge", "priority"), ["focus.peek"] = words("peek", "keep"),
 	["focus.style"] = words("front", "collapse"),
 	["vendor.repair"] = words("own", "guild", "off"), ["theme.name"] = words("blizzard", "flat", "elvui"),
-	["tooltip.counts"] = words("auto", "on", "off"),
+	["tooltip.counts"] = words("auto", "on", "off"), ["sort.mode"] = words("blizzard", "stacks"),
 }
 
 local function valid(path, v)
@@ -108,6 +108,7 @@ local LABELS = {
 	["focus.style"] = "PROFILE_LABEL_FOCUS_STYLE",
 	["vendor.autoSell"] = "SET_VENDOR_SELL", ["vendor.repair"] = "SET_VENDOR_REPAIR",
 	["consumables.warn"] = "SET_WATCH_WARN", ["theme.name"] = "SET_LOOK", ["tooltip.counts"] = "SET_TIP",
+	["sort.mode"] = "SET_SORT",
 }
 local MODES = { mplus = "MODE_MPLUS", raid = "MODE_RAID", delves = "MODE_DELVES", gathering = "MODE_GATHERING",
 	fishing = "MODE_FISHING", market = "MODE_MARKET" }

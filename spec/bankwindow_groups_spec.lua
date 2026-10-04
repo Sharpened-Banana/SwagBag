@@ -315,6 +315,60 @@ describe("BankWindow contents", function()
 		assert.same({ "bank", "warband" }, A.bankSorts)
 	end)
 
+	-- Week 9 (user pick 8): item safety. Mutations: in BW.Sort, skip the Stacker.SortButton branch; or start the
+	-- stacker with kind "warband" for either button.
+	it("with sort stacks, Sort bank stacks the character bank only; the warband bank is never touched", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Stacker.lua")
+		SB.Config.Set("sort.mode", "stacks")
+		A.Put(6, 3, Fixtures.HEALING_POTION, 4)
+		A.Put(12, 3, Fixtures.ORE, 5)
+		openBank()
+		Fake.Fire(BW.sortBankButton, "OnClick")
+		assert.same({}, A.bankSorts)
+		assert.same({ { 6, 3, 6, 1 } }, A.stackMoves)
+		assert.equal(SB.L.STACK_STARTED, BW.frame.title.text)
+		A.Advance(SB.Stacker.DELAY)
+		assert.same({ SB.L.STACK_DONE:format(1, 0) }, A.Lines())
+		assert.equal("sort", BW.view.stats.lastLayoutReason)
+		Fake.Fire(BW.sortWarbandButton, "OnClick")
+		A.Advance(SB.Stacker.DELAY)
+		assert.same({ 6, 3, 6, 1 }, A.stackMoves[1])
+		assert.same({ 12, 3, 12, 1 }, A.stackMoves[2], "the warband bank's own ore, in the warband bank")
+		assert.same({ 9, 15 }, { A.GetSlot(6, 1).count, A.GetSlot(12, 1).count })
+	end)
+
+	-- Week 9: the bank closing stops a stacking run, and the line says so even when the closed bank's slots read
+	-- empty (preflight S4). Mutations: in the Sort button's still(), return true; or in Stacker's step, judge the
+	-- move in flight before the stop (`if stop then` -> `if stop and not m then`).
+	it("closing the bank stops stacking before the next move", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/Stacker.lua")
+		SB.Config.Set("sort.mode", "stacks")
+		A.Put(6, 3, Fixtures.HEALING_POTION, 4)
+		A.Put(6, 4, Fixtures.HERB, 5)
+		openBank()
+		Fake.Fire(BW.sortBankButton, "OnClick")
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		A.Advance(SB.Stacker.DELAY)
+		assert.equal(1, #A.stackMoves)
+		assert.same({ SB.L.STACK_STOP_CLOSED:format(1, 0) }, A.Lines())
+		-- the same with the closed bank's slots reading empty, as the client may answer
+		A.Put(6, 5, Fixtures.HERB, 2)
+		openBank()
+		Fake.Fire(BW.sortBankButton, "OnClick")
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		local get = A.GetSlot
+		A.GetSlot = function(bag, slot)
+			if bag >= 6 then
+				return nil
+			end
+			return get(bag, slot)
+		end
+		A.Advance(SB.Stacker.DELAY)
+		A.GetSlot = get
+		assert.equal(2, #A.stackMoves)
+		assert.equal(SB.L.STACK_STOP_CLOSED:format(0, 0), A.Lines()[2])
+	end)
+
 	it("a second Sort during a settle keeps the first sort's regroup; a sort that changes nothing stops waiting", function()
 		openBank()
 		Fake.Fire(BW.sortBankButton, "OnClick")

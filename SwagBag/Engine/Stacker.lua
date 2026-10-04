@@ -246,6 +246,38 @@ function St.Stop(why)
 	end
 end
 
+-- The Sort buttons' run (week 9; UI/BagsWindow.lua and UI/BankWindow.lua share it, with sort.mode "stacks"):
+-- starts a run for that scope; the click's one answer goes to flash(text) (the window's title: "Stacking...",
+-- or why it cannot start); when the run ends its one chat line is printed, then regroup(). A run that ends
+-- inside Start (its one answer is the chat line already) gets no title. -> ok
+function St.SortButton(kind, busy, still, flash, regroup)
+	local ended = false
+	local ok, why = St.Start({ kind = kind, busy = busy, still = still, done = function(result)
+		ended = true
+		SB.Print(St.ResultText(result))
+		regroup()
+	end })
+	if not ended then
+		flash(ok and L.STACK_STARTED or (why == "busy" and L.MOVER_BUSY) or L.STACK_NOTHING)
+	end
+	return ok
+end
+
+-- /swagbag sort                    what the Sort buttons do
+-- /swagbag sort stacks|blizzard    partial stacks first (SwagBag's stacker) | Blizzard's own sort
+SB.Slash.Register("sort", L.HELP_SORT, function(arg)
+	arg = (arg or ""):lower()
+	if arg == "" then
+		return L.SORT_MODE_STATE:format(SB.Config.Get("sort.mode") == "stacks" and L.SORT_MODE_STACKS or L.SORT_MODE_BLIZZARD)
+	elseif arg ~= "stacks" and arg ~= "blizzard" then
+		return L.SORT_MODE_USAGE
+	end
+	if not SB.Config.Set("sort.mode", arg) then
+		return L.SETTINGS_READONLY
+	end
+	return arg == "stacks" and L.SORT_MODE_STACKS_ON or L.SORT_MODE_BLIZZARD_ON
+end)
+
 function St.ResultText(r)
 	if r.why == "combat" then
 		return L.STACK_STOP_COMBAT:format(r.merged, r.ordered)
