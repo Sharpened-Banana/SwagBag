@@ -175,6 +175,16 @@ describe("Lock warnings (week 10)", function()
 		assert.equal(2, #A.Lines(), "switched off: nothing")
 	end)
 
+	-- A late event after the scrapper's HIDE prints nothing. Mutation: remove `if not LW.scrapper then return end`
+	-- from LW.CheckScrapper.
+	it("a late scrapper event after it closed says nothing", function()
+		SB.Emit("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "scrapper")
+		SB.Emit("PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "scrapper")
+		A.scrapper = { Fixtures.FLASK }
+		SB.Emit("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED")
+		assert.same({}, A.Lines())
+	end)
+
 	-- P2. Mutation: in the lock command, drop the `if not SB.Config.Set("locks.warn", word == "on") then` refusal
 	-- (read-only would answer "now warns").
 	it("/swagbag lock warn says the state, switches it, refuses while read-only, and answers every form", function()
