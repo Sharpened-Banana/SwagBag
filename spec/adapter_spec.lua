@@ -1,4 +1,4 @@
--- luacheck: globals IsInGuild TSM_API
+-- luacheck: globals IsInGuild TSM_API LibStub
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
 -- luacheck: globals Auctionator ColorManager ITEM_QUALITY_COLORS
 -- luacheck: globals PlayerHasToy C_MountJournal C_PetJournal C_HousingCatalog C_TransmogCollection
@@ -428,5 +428,55 @@ describe("Adapter TSM prices (real adapter, stubbed globals)", function()
 		assert.equal(7, A.TSMPrice("ok", "DBMarket"), "no TSMAvailable() asked first")
 		assert.same({ nil, nil, nil, nil }, { A.TSMPrice("boom", "DBMarket"), A.TSMPrice("zero", "DBMarket"),
 			A.TSMPrice("neg", "DBMarket"), A.TSMPrice("text", "DBMarket") })
+	end)
+end)
+
+-- Week 9 (user pick 11): Masque's public API through LibStub, read through the Adapter only. Mutation: in
+-- A.MasqueAdd, make a new group on every call (Masque would list one group per button).
+describe("Adapter Masque (real adapter, stubbed globals)", function()
+	local A, made, added
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+		made, added = {}, {}
+	end)
+
+	after_each(function()
+		LibStub = nil
+	end)
+
+	local function masque(fail)
+		local msq = { Group = function(_, addon, name)
+			made[#made + 1] = addon .. ": " .. name
+			return { AddButton = function(_, button, regions, kind)
+				if fail then
+					error("Masque broke")
+				end
+				added[#added + 1] = { button, regions, kind }
+			end }
+		end }
+		LibStub = setmetatable({}, { __call = function(_, lib, silent)
+			assert(silent == true, "asked silently: no error when Masque is missing")
+			return lib == "Masque" and msq or nil
+		end })
+	end
+
+	it("groups come from LibStub('Masque', true), each made once; buttons join as Item buttons", function()
+		assert.falsy(A.MasqueAvailable())
+		assert.falsy(A.MasqueAdd("Bags", "button1"), "no Masque: nothing")
+		masque()
+		assert.truthy(A.MasqueAvailable())
+		assert.truthy(A.MasqueAdd("Bags", "button1"))
+		assert.truthy(A.MasqueAdd("Bags", "button2"))
+		assert.truthy(A.MasqueAdd("Bank", "button3"))
+		assert.same({ "SwagBag: Bags", "SwagBag: Bank" }, made)
+		assert.same({ "button1", nil, "Item" }, added[1])
+		assert.equal(3, #added)
+	end)
+
+	it("an error inside Masque is no skin, never an error", function()
+		masque(true)
+		assert.falsy(A.MasqueAdd("Bags", "button1"))
 	end)
 end)

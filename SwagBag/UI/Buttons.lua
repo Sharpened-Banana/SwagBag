@@ -99,6 +99,9 @@ local function createButton(bag, slot)
 		SB.Adapter.ClearNewItem(self:GetParent():GetID(), self:GetID())
 	end, "none"))
 	b:Hide()
+	if SB.Skins then -- week 9: Masque's skin, when it is loaded (out of combat: buttons are only made then)
+		SB.Skins.Add(kindOf(bag), b)
+	end
 	Buttons.buttons[bag][slot] = b
 	Buttons.stats.count = Buttons.stats.count + 1
 	return b

@@ -163,6 +163,10 @@ function Report.Build()
 		local ok, currencies, items = pcall(SB.Footer.SeasonText) -- a failure here must not blank the report
 		lines[#lines + 1] = ok and L.REPORT_SEASON:format(tostring(currencies), tostring(items)) or L.REPORT_SEASON_FAILED
 	end
+	local skins = SB.Skins
+	if skins then -- week 9: Masque's skins on SwagBag's buttons
+		lines[#lines + 1] = skins.Available() and L.REPORT_MASQUE:format(skins.count) or L.REPORT_MASQUE_OFF
+	end
 	if SB.Theme and SB.Config.db then
 		lines[#lines + 1] = L.REPORT_LOOK:format(SB.Theme.Current(), tostring(SB.Config.Get("theme.name")))
 	end
