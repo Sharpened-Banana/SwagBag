@@ -132,4 +132,46 @@ describe("Lock warnings (week 10)", function()
 		assert.equal(1, #A.Lines())
 		assert.same({}, SB.ErrorTrap.Recent())
 	end)
+
+	-- Mutations: in LW.TooltipText, `if LW.scrapper then` -> `if false then`; or in the _HIDE listener,
+	-- `LW.scrapper, LW.scrapWarned = false, {}` -> `LW.scrapWarned = {}`.
+	it("while the scrapper is open, a locked item's tooltip says a right-click can put it in; once closed, nothing", function()
+		SB.Emit("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "scrapper")
+		Locks.TooltipLine(tip, Fixtures.FLASK)
+		Locks.TooltipLine(tip, Fixtures.HEALING_POTION)
+		SB.Emit("PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "merchant")
+		Locks.TooltipLine(tip, Fixtures.FLASK)
+		SB.Emit("PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "scrapper")
+		Locks.TooltipLine(tip, Fixtures.FLASK)
+		assert.same({ L.LOCK_WARN_SCRAP, L.LOCK_WARN_SCRAP }, warned)
+		SB.Emit("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "scrapper")
+		A.cursorOther = "targeting"
+		Locks.TooltipLine(tip, Fixtures.FLASK)
+		assert.equal(L.LOCK_WARN_SPELL, warned[3], "a spell waiting comes first: the next click casts it")
+	end)
+
+	-- Mutations: in LW.CheckScrapper, `not LW.scrapWarned[id]` -> `true` (a line at every change); or
+	-- `LW.scrapWarned = seen` -> nothing (an item taken out and put back would never be said again).
+	it("a locked item put in the scrapper: one red chat line; again only once taken out and put back", function()
+		SB.Emit("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "scrapper")
+		A.scrapper = { Fixtures.HEALING_POTION }
+		SB.Emit("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED")
+		assert.same({}, A.Lines(), "not locked")
+		A.scrapper = { Fixtures.HEALING_POTION, Fixtures.FLASK }
+		SB.Emit("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED")
+		A.scrapper = { Fixtures.HEALING_POTION, Fixtures.FLASK, Fixtures.FLASK }
+		SB.Emit("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED")
+		assert.same({ L.LOCK_WARN_SCRAP_ADDED:format("Flask of Alchemical Chaos") }, A.Lines())
+		A.scrapper = { Fixtures.HEALING_POTION }
+		SB.Emit("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED")
+		A.scrapper = { Fixtures.FLASK }
+		SB.Emit("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED")
+		assert.equal(2, #A.Lines(), "taken out and put back: said again")
+		SB.Config.Set("locks.warn", false)
+		A.scrapper = {}
+		SB.Emit("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED")
+		A.scrapper = { Fixtures.FLASK }
+		SB.Emit("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED")
+		assert.equal(2, #A.Lines(), "switched off: nothing")
+	end)
 end)

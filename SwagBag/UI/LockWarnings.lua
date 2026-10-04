@@ -7,14 +7,18 @@
 --   spell: SpellIsTargeting names none, and a click would cast it on the item);
 --   Blizzard's delete box for a locked item (DELETE_ITEM_CONFIRM, the item still on the cursor) gets one red
 --   chat line, and SwagBag's own small note just above the box (its own frame; the box itself is never touched).
+--   The scrapper: SwagBag cannot refuse an item there (a right-click on a bag item is Blizzard's own
+--   UseContainerItem; stopping it would need a click hook, spec 5.3). So while it is open a locked item's
+--   tooltip says a right-click can put it in, and a locked item that lands in a scrapper slot gets one red chat line.
 -- One switch for every warning: locks.warn (default on).
 --   LW.On() -> bool
 --   LW.TooltipText() -> the red tooltip line for a locked item right now, or nil
 --   LW.OnDelete(), LW.ShowNote(), LW.CheckDelete()   the delete box's warning; LW.note (made at SB_LOGIN)
+--   LW.CheckScrapper()   the scrapper's chat line; LW.scrapper (open), LW.scrapWarned (itemID -> true)
 local _, SB = ...
 
 local L = SB.L
-local LW = { NOTE_WIDTH = 300, NOTE_HEIGHT = 24 }
+local LW = { NOTE_WIDTH = 300, NOTE_HEIGHT = 24, scrapper = false, scrapWarned = {} }
 SB.LockWarnings = LW
 
 function LW.On()
@@ -27,6 +31,9 @@ function LW.TooltipText()
 	end
 	if SB.Adapter.SpellTargeting() then
 		return L.LOCK_WARN_SPELL
+	end
+	if LW.scrapper then
+		return L.LOCK_WARN_SCRAP
 	end
 	return nil
 end
@@ -99,3 +106,29 @@ SB.On("BAG_UPDATE_DELAYED", LW.CheckDelete, "none")
 SB.On("SB_LOGIN", function()
 	SB.OutOfCombat(makeNote, "lockwarn.makeNote", "none")
 end, "none")
+
+-- The scrapper: open between PLAYER_INTERACTION_MANAGER_FRAME_SHOW and _HIDE for its interaction.
+SB.On("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", function(_, kind)
+	if SB.Adapter.IsScrapper(kind) then
+		LW.scrapper, LW.scrapWarned = true, {}
+	end
+end, "none")
+SB.On("PLAYER_INTERACTION_MANAGER_FRAME_HIDE", function(_, kind)
+	if SB.Adapter.IsScrapper(kind) then
+		LW.scrapper, LW.scrapWarned = false, {}
+	end
+end, "none")
+
+-- One line per locked item that lands in a slot; said again only after it was taken out and put back.
+function LW.CheckScrapper()
+	local seen = {}
+	for _, id in ipairs(SB.Adapter.ScrapperItemIDs()) do
+		if LW.On() and SB.Locks.Has(id) and not LW.scrapWarned[id] and not seen[id] then
+			SB.Print(L.LOCK_WARN_SCRAP_ADDED:format(SB.Locks.Name(id)))
+		end
+		seen[id] = true
+	end
+	LW.scrapWarned = seen
+end
+
+SB.On("SCRAPPING_MACHINE_PENDING_ITEM_CHANGED", LW.CheckScrapper, "none")

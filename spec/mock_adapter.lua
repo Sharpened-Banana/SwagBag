@@ -149,6 +149,16 @@ function M.New(SB)
 		return m.deletePopup
 	end
 
+	-- Week 10: the scrapper. m.scrapper = { itemID, ... } in its slots; its interaction type is "scrapper".
+	m.scrapper = {}
+	function m.ScrapperItemIDs()
+		return { unpack(m.scrapper) }
+	end
+
+	function m.IsScrapper(interactionType)
+		return interactionType == "scrapper"
+	end
+
 	function m.ClearCursor()
 		m.cursor = nil
 		m.cleared = m.cleared + 1
