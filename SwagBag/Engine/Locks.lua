@@ -197,18 +197,18 @@ SB.Slash.Register("lock", L.HELP_LOCK, function(arg)
 		return L.LOCK_LIST:format(table.concat(names, ", "))
 	elseif arg == "clear" then
 		local n, count = Locks.AskClear()
-		if n == "ask" then
-			return L.LOCK_CLEAR_ASK:format(count)
+		if n == "ask" then -- one lock reads as one (week 8)
+			return count == 1 and L.LOCK_CLEAR_ASK_ONE or L.LOCK_CLEAR_ASK:format(count)
 		elseif not n then
 			return L.SETTINGS_READONLY
 		end
-		return L.LOCK_CLEARED:format(n)
+		return n == 1 and L.LOCK_CLEARED_ONE or L.LOCK_CLEARED:format(n)
 	elseif arg == "undo" then
 		local n, why = Locks.Undo()
 		if not n then
 			return why == "readonly" and L.SETTINGS_READONLY or L.LOCK_UNDO_NONE
 		end
-		return L.LOCK_UNDONE:format(n)
+		return n == 1 and L.LOCK_UNDONE_ONE or L.LOCK_UNDONE:format(n)
 	end
 	return L.LOCK_USAGE
 end)

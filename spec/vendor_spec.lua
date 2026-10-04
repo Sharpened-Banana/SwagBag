@@ -558,9 +558,9 @@ describe("Settings: vendor page (week 7)", function()
 			end
 		end
 		Fake.Fire(unlock, "OnClick")
-		assert.same({ true, SB.L.LOCK_CLEAR_ASK:format(1) }, { SB.Locks.Has(Fixtures.FLASK), SW.lastStatus })
+		assert.same({ true, SB.L.LOCK_CLEAR_ASK_ONE }, { SB.Locks.Has(Fixtures.FLASK), SW.lastStatus })
 		Fake.Fire(unlock, "OnClick")
-		assert.same({ false, SB.L.LOCK_CLEARED:format(1) }, { SB.Locks.Has(Fixtures.FLASK), SW.lastStatus })
+		assert.same({ false, SB.L.LOCK_CLEARED_ONE }, { SB.Locks.Has(Fixtures.FLASK), SW.lastStatus })
 	end)
 
 	-- Ruling R17. Mutation: the page's SB_LOCKS_CHANGED listener never re-draws (`if SW.IsOpen() then` ->
