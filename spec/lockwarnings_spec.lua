@@ -18,6 +18,7 @@ describe("Lock warnings (week 10)", function()
 		Fixtures.SmallBags(A)
 		Fake.Install()
 		Loader.LoadFile(SB, "SwagBag/UI/LockWarnings.lua")
+		SB.Emit("SB_LOGIN") -- makes the delete note, out of combat
 		warned = {}
 		A.TooltipWarning = function(_, text)
 			warned[#warned + 1] = text
@@ -50,5 +51,85 @@ describe("Lock warnings (week 10)", function()
 		Locks.TooltipLine(tip, Fixtures.FLASK)
 		assert.same({}, warned)
 		assert.equal(L.LOCK_TOOLTIP, tip.calls.AddLine[1])
+	end)
+
+	-- Mutations: in LW.OnDelete, `SB.Locks.Has(itemID)` -> `true` (every deleted item would warn); or
+	-- `LW.On() and` -> `true and`.
+	it("deleting a locked item: one red chat line naming it; an unlocked item, an empty cursor or the switch off: none", function()
+		A.cursor = { itemID = Fixtures.FLASK, link = "item:212283" }
+		SB.Emit("DELETE_ITEM_CONFIRM", "Flask of Alchemical Chaos", 3, 1, 0)
+		assert.same({ L.LOCK_WARN_DELETE:format("Flask of Alchemical Chaos") }, A.Lines())
+		A.cursor = { itemID = Fixtures.HEALING_POTION, link = "item:211880" }
+		SB.Emit("DELETE_ITEM_CONFIRM", "Algari Healing Potion", 1, 0, 0)
+		A.cursor = nil
+		SB.Emit("DELETE_ITEM_CONFIRM", "Algari Healing Potion", 1, 0, 0)
+		SB.Config.Set("locks.warn", false)
+		A.cursor = { itemID = Fixtures.FLASK, link = "item:212283" }
+		SB.Emit("DELETE_ITEM_CONFIRM", "Flask of Alchemical Chaos", 3, 1, 0)
+		assert.equal(1, #A.Lines())
+	end)
+
+	-- Mutations: in LW.ShowNote, drop `n:Show()`; or in LW.CheckDelete, drop `note:Hide()`.
+	it("a note sits just above Blizzard's delete box, which is never touched; it goes once the item leaves the cursor", function()
+		local popup = Fake.Strict(Fake.New("Frame", UIParent))
+		A.deletePopup = popup
+		A.cursor = { itemID = Fixtures.FLASK, link = "item:212283" }
+		local note = SB.LockWarnings.note
+		assert.truthy(note, "made at login")
+		SB.Emit("DELETE_ITEM_CONFIRM", "Flask of Alchemical Chaos", 3, 1, 0)
+		assert.falsy(note.shown, "placed a moment later, once Blizzard's box is up")
+		A.Advance(0)
+		assert.truthy(note.shown)
+		assert.equal(L.LOCK_WARN_NOTE, note.text.text)
+		assert.same({ "BOTTOM", popup, "TOP", 0, 4 }, note.points[1])
+		SB.Emit("ITEM_LOCK_CHANGED", 0, 2)
+		assert.truthy(note.shown, "still on the cursor: the box is still up")
+		A.cursor = nil -- No or Esc (Blizzard puts it back), or Yes (deleted)
+		SB.Emit("ITEM_LOCK_CHANGED", 0, 2)
+		assert.falsy(note.shown)
+		assert.same({}, popup.log, "never a call on Blizzard's box")
+	end)
+
+	-- Mutation: in LW.CheckDelete, drop `or not SB.Adapter.DeletePopup()`.
+	it("the note also goes when Blizzard's box is gone, even with the item still on the cursor", function()
+		A.deletePopup = Fake.Strict(Fake.New("Frame", UIParent))
+		A.cursor = { itemID = Fixtures.FLASK, link = "item:212283" }
+		SB.Emit("DELETE_ITEM_CONFIRM", "Flask of Alchemical Chaos", 3, 1, 0)
+		A.Advance(0)
+		local note = SB.LockWarnings.note
+		assert.truthy(note.shown)
+		A.deletePopup = nil -- the box closed; the item is still held
+		SB.Emit("ITEM_LOCK_CHANGED", 0, 2)
+		assert.falsy(note.shown)
+		assert.is_nil(SB.LockWarnings.deleting)
+	end)
+
+	-- Mutation: in the SB_LOGIN listener, call `makeNote()` without SB.OutOfCombat.
+	it("the note's frame is made at login out of combat, never in combat; a login in combat waits for its end", function()
+		local files = { unpack(Env.ENGINE) }
+		files[#files + 1] = "SwagBag/Engine/Locks.lua"
+		local SB2 = Loader.New(files)
+		SB2.Config.Init(nil, nil)
+		Fake.Install() -- Loader.New put the plain stubs back; the fake frames count what is made
+		local before = #Fake.created
+		SB2.Adapter.combat = true
+		Loader.LoadFile(SB2, "SwagBag/UI/LockWarnings.lua")
+		SB2.Emit("SB_LOGIN")
+		assert.is_nil(SB2.LockWarnings.note, "no frame made in combat")
+		assert.equal(before, #Fake.created)
+		SB2.Adapter.combat = false
+		SB2.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.truthy(SB2.LockWarnings.note)
+		assert.falsy(SB2.LockWarnings.note.shown)
+	end)
+
+	-- Mutation: in LW.ShowNote, drop `if not popup then return end`.
+	it("when Blizzard's box is not found, only the chat line: no note, nothing recorded", function()
+		A.cursor = { itemID = Fixtures.FLASK, link = "item:212283" }
+		SB.Emit("DELETE_ITEM_CONFIRM", "Flask of Alchemical Chaos", 3, 1, 0)
+		A.Advance(0)
+		assert.falsy(SB.LockWarnings.note.shown)
+		assert.equal(1, #A.Lines())
+		assert.same({}, SB.ErrorTrap.Recent())
 	end)
 end)

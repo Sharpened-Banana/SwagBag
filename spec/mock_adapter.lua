@@ -143,6 +143,12 @@ function M.New(SB)
 		return m.cursorOther == "targeting"
 	end
 
+	-- Week 10: m.deletePopup = a frame: Blizzard's delete box is shown.
+	m.deletePopup = nil
+	function m.DeletePopup()
+		return m.deletePopup
+	end
+
 	function m.ClearCursor()
 		m.cursor = nil
 		m.cleared = m.cleared + 1

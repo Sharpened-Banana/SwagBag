@@ -997,3 +997,6 @@ L.SET_OTHER_BAGS_TIP = "Two bag addons at once fight over the same bags. Warn at
 -- Lock warnings (week 10): UI/LockWarnings.lua
 L.LOCK_WARN_SPELL = "Locked by you. SwagBag can't stop this spell: press Esc to cancel it."
 L.SET_LOCK_WARN = "Warn before destroying locked items"
+L.LOCK_WARN_DELETE = "|cffff4444%s is locked in SwagBag. SwagBag can't stop Blizzard's delete: click No (or press Esc)"
+	.. " to keep it.|r"
+L.LOCK_WARN_NOTE = "This item is locked in SwagBag."

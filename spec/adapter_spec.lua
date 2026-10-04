@@ -1,6 +1,6 @@
 -- luacheck: globals IsInGuild TSM_API LibStub
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
--- luacheck: globals SpellIsTargeting
+-- luacheck: globals SpellIsTargeting StaticPopup_FindVisible
 -- luacheck: globals Auctionator ColorManager ITEM_QUALITY_COLORS
 -- luacheck: globals PlayerHasToy C_MountJournal C_PetJournal C_HousingCatalog C_TransmogCollection
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
@@ -502,9 +502,9 @@ end)
 -- Week 10 (lock warnings, UI/LockWarnings.lua): what SwagBag reads to warn about a locked item, never to stop
 -- anything.
 describe("Adapter lock-warning helpers (week 10)", function()
-	local A, tip, savedTargeting
+	local A, tip, savedTargeting, savedFindVisible
 	before_each(function()
-		savedTargeting = SpellIsTargeting
+		savedTargeting, savedFindVisible = SpellIsTargeting, StaticPopup_FindVisible
 		local SB = {}
 		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
 		A = SB.Adapter
@@ -515,7 +515,7 @@ describe("Adapter lock-warning helpers (week 10)", function()
 	end)
 
 	after_each(function()
-		SpellIsTargeting = savedTargeting
+		SpellIsTargeting, StaticPopup_FindVisible = savedTargeting, savedFindVisible
 	end)
 
 	-- Mutation: in A.SpellTargeting, `return spellTargeting()` -> `return cursorHeld()`.
@@ -535,5 +535,22 @@ describe("Adapter lock-warning helpers (week 10)", function()
 		A.TooltipWarning(tip, "careful")
 		assert.same({ { "careful", 1, 0.27, 0.27, true } }, tip.lines)
 		assert.has_error(function() A.TooltipWarning({}, "x") end)
+	end)
+
+	-- Mutation: in A.DELETE_POPUPS, keep "DELETE_ITEM" only (a rare item's box would be missed).
+	it("DeletePopup finds Blizzard's shown delete box of any of its four kinds; none, or an error, is nil", function()
+		StaticPopup_FindVisible = nil
+		assert.is_nil(A.DeletePopup(), "no API")
+		local box = {}
+		StaticPopup_FindVisible = function(which)
+			if which == "DELETE_GOOD_QUEST_ITEM" then
+				return box
+			end
+		end
+		assert.equal(box, A.DeletePopup())
+		StaticPopup_FindVisible = function() return nil end
+		assert.is_nil(A.DeletePopup())
+		StaticPopup_FindVisible = function() error("renamed") end
+		assert.is_nil(A.DeletePopup(), "an error is no box")
 	end)
 end)

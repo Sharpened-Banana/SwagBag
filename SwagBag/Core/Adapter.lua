@@ -1287,6 +1287,23 @@ function A.TooltipWarning(tooltip, text)
 	tooltip:AddLine(text, 1, 0.27, 0.27, true)
 end
 
+-- Week 10: Blizzard's delete box, while one of its four kinds is shown (StaticPopup_FindVisible), else nil. Read
+-- only: UI/LockWarnings.lua anchors its own note above it and never calls anything on the box.
+A.DELETE_POPUPS = { "DELETE_ITEM", "DELETE_GOOD_ITEM", "DELETE_QUEST_ITEM", "DELETE_GOOD_QUEST_ITEM" }
+function A.DeletePopup()
+	local find = _G.StaticPopup_FindVisible
+	if type(find) ~= "function" then
+		return nil
+	end
+	for _, which in ipairs(A.DELETE_POPUPS) do
+		local ok, box = pcall(find, which)
+		if ok and box then
+			return box
+		end
+	end
+	return nil
+end
+
 -- "|cffRRGGBB" for a class file name ("MAGE") from the client's class colours, or nil.
 function A.ClassColour(class)
 	local colours = _G.RAID_CLASS_COLORS
@@ -1770,6 +1787,7 @@ A.CHECKS = {
 	{ path = "GetCursorInfo", window = "bags", required = false },
 	{ path = "ClearCursor", window = "bags", required = false },
 	{ path = "SpellIsTargeting", window = "bags", required = false },
+	{ path = "StaticPopup_FindVisible", window = "bags", required = false },
 	{ path = "GameTooltip", window = "bags", required = false },
 	{ path = "C_Item.GetItemInfoInstant", window = "bags", required = true },
 	{ path = "C_Item.GetItemInfo", window = "bags", required = true },
