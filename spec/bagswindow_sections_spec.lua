@@ -2152,10 +2152,6 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.equal(0, W.frame:GetTop() - W.frame.h, "the bottom edge did not move")
 	end)
 
-	-- P5: the whole window moving would slide every item and title button. While the mouse is over
-	-- the window (here the Pause button itself) or an item is on the cursor the view is capped as
-	-- before (W4-22), and the grow retries every 300 ms until the pointer leaves.
-	-- Mutation: in sizeFrame, remove the SB.Debounce("bags.grow", ...) retry.
 	-- Week 10. Three guards hold it (busyCheck, the switch's re-stack and the grow itself); any one is enough.
 	-- Mutation: all three back to CursorItem.
 	it("W4-25: the grow waits while a spell waits for its target; it applies once cast or cancelled", function()
@@ -2168,6 +2164,10 @@ describe("BagsWindow focus modes (spec 6)", function()
 		assert.equal(W.size[2], viewHeight(), "grown")
 	end)
 
+	-- P5: the whole window moving would slide every item and title button. While the mouse is over
+	-- the window (here the Pause button itself) or an item is on the cursor the view is capped as
+	-- before (W4-22), and the grow retries every 300 ms until the pointer leaves.
+	-- Mutation: in sizeFrame, remove the SB.Debounce("bags.grow", ...) retry.
 	it("W4-25: with the mouse on the window the grow waits; it applies once the mouse leaves", function()
 		local top = lowInMode()
 		W.frame.mouseOver = true -- on the Pause button, in the title bar

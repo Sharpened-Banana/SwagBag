@@ -121,6 +121,7 @@ end, "none")
 
 -- One line per locked item that lands in a slot; said again only after it was taken out and put back.
 function LW.CheckScrapper()
+	if not LW.scrapper then return end
 	local seen = {}
 	for _, id in ipairs(SB.Adapter.ScrapperItemIDs()) do
 		if LW.On() and SB.Locks.Has(id) and not LW.scrapWarned[id] and not seen[id] then

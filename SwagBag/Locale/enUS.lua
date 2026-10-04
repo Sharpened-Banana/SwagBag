@@ -771,7 +771,7 @@ L.LOCK_TIP_BODY = "Drag an item here (or click here while holding one) to lock i
 L.LOCK_ADDED = "Locked: %s. SwagBag never sells it, and it shows a small lock."
 L.LOCK_REMOVED = "Unlocked: %s."
 L.LOCK_STATE = "Locked items: %d. Drag an item onto Lock (right of the search box) to lock or unlock it. Type"
-	.. " /swagbag lock list, lock clear or lock undo."
+	.. " /swagbag lock list, lock clear, lock undo or lock warn."
 L.LOCK_NONE = "No item is locked."
 L.LOCK_LIST = "Locked: %s."
 L.LOCK_CLEARED = "Unlocked all items (%d)."
