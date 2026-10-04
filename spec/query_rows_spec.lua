@@ -242,4 +242,67 @@ describe("Rule rows (week 11)", function()
 		assert.equal("WORD", Rows.Problem({ kind = "word", value = "a  b" }))
 		assert.is_nil(Rows.Problem({ kind = "word", value = "trade goods" }))
 	end)
+
+	-- Mutation: in Rows.FromText, drop the `#Rows.ToText(rules) > Rows.MAX_TEXT` check (the canonical text outgrows the cap).
+	it("the length cap is measured on the canonical text, so every rule FromText returns reads back the same", function()
+		local function words(n)
+			local w = {}
+			for i = 1, n do
+				w[i] = "wordwordwor" .. i
+			end
+			return table.concat(w, "|")
+		end
+		local raw = words(36)
+		assert.truthy(#raw <= Rows.MAX_TEXT)
+		assert.same({ nil, "long" }, { Rows.FromText(raw) }) -- canonical "w1 | w2 | ..." is longer than the cap
+		local fit, last = nil, nil
+		for n = 1, 36 do
+			local r = Rows.FromText(words(n))
+			if r then
+				local text = Rows.ToText(r)
+				assert.truthy(#text <= Rows.MAX_TEXT)
+				assert.same(r, Rows.FromText(text), n)
+				fit, last = r, n
+			end
+		end
+		assert.truthy(fit)
+		assert.truthy(last < 36)
+		-- exactly at the cap round-trips; one character over opens as text only
+		local pad = string.rep("a", Rows.MAX_TEXT - #Rows.ToText(fit))
+		local atCap = Rows.ToText(fit):gsub("wordwordwor1 ", "wordwordwor1" .. pad .. " ", 1)
+		assert.equal(Rows.MAX_TEXT, #atCap)
+		local r = Rows.FromText(atCap)
+		assert.truthy(r)
+		assert.same(r, Rows.FromText(Rows.ToText(r)))
+		assert.is_nil((Rows.FromText((atCap:gsub("wordwordwor1", "wordwordwor1a", 1)))))
+	end)
+
+	it("every built-in query means the same after a trip through rows (on real item records)", function()
+		Fixtures.SmallBags(SB.Adapter)
+		SB.Adapter.Put(0, 7, Fixtures.HERB, 40)
+		SB.Adapter.Put(0, 9, Fixtures.TOY, 1)
+		for _, def in ipairs(SB.CategoryDefaults) do
+			local a = Q.Compile(def.query)
+			local b = Q.Compile(Rows.ToText(Rows.FromText(def.query)))
+			for slot = 1, 9 do
+				local rec = SB.Items.Describe(0, slot)
+				if rec then
+					assert.equal(Q.Eval(a, rec), Q.Eval(b, rec), def.id .. " slot " .. slot)
+				end
+			end
+		end
+	end)
+
+	it("hostile input is answered, never an error", function()
+		local inputs = { string.rep("(", 499), string.rep("!", 499), string.rep("\"", 499), string.rep("(a|", 160),
+			"a\0b", "a\1\2\3 & b", "\n\t", string.rep("(", 99) .. "a" .. string.rep(")", 99) }
+		for _, text in ipairs(inputs) do
+			local ok, rules, why = pcall(Rows.FromText, text)
+			assert.truthy(ok, tostring(rules))
+			assert.truthy(rules or why, text)
+			if rules then
+				assert.same(rules, Rows.FromText(Rows.ToText(rules)))
+			end
+		end
+	end)
 end)
