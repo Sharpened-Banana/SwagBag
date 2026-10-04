@@ -17,7 +17,7 @@
 -- changed (Layout.Moves), so a 1,290-slot bank stays inside the spec 9 incremental budget.
 --   local v = SB.GroupView.New(cfg)
 --   v.Layout(reason) -> width, height   full layout (open, Reflow, sort, view toggle)
---   v.RequestLayout(reason) -> bool     the same, held back while an item is on the cursor
+--   v.RequestLayout(reason) -> bool     the same, held back while anything is on the cursor (CursorBusy)
 --                                       or a button that would move is under the mouse (4.3)
 --   v.Changes(groupId, list)            live changes { { bag, slot, kind, icon } }, kind
 --                                       "left" | "arrived" | "added" | "removed" (Layout.Apply)
@@ -445,10 +445,11 @@ function GV.New(cfg)
 	end
 
 	---------------------------------------------------------------------------
-	-- Rule 5: nothing moves under the mouse or while an item is on the cursor
+	-- Rule 5: nothing moves under the mouse or while anything is on the cursor (week 10: a spell waiting
+	-- for its target too, Adapter.CursorBusy)
 	---------------------------------------------------------------------------
 	local function busyCheck()
-		local cursor = SB.Adapter.CursorItem() ~= nil
+		local cursor = SB.Adapter.CursorBusy()
 		return function(bag, slot)
 			if cursor then
 				return true
@@ -619,7 +620,7 @@ function GV.New(cfg)
 	end
 
 	-- A full layout while open (Reflow, sort, view toggle, a tab's first answer): held back,
-	-- retrying every 300 ms, only while an item is on the cursor or a button that would move
+	-- retrying every 300 ms, only while anything is on the cursor (CursorBusy) or a button that would move
 	-- is under the mouse -- the same guard as a redraw or a re-stack (W3-38, spec 4.2 rule 5).
 	-- While the button that held it is still under the mouse, a retry only re-arms: it does not
 	-- read every slot again (week-3 final review), so a held layout costs nothing while it waits.
@@ -678,7 +679,7 @@ function GV.New(cfg)
 	end
 
 	-- Redraw. Buttons that would shift with no change of their own (a group above grew) wait
-	-- while one of them is under the mouse or an item is on the cursor.
+	-- while one of them is under the mouse or anything is on the cursor (CursorBusy).
 	local function redraw(exempt)
 		local pos = positionAll()
 		local others = {}

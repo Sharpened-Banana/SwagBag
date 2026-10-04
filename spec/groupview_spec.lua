@@ -216,6 +216,21 @@ describe("GroupView", function()
 		assert.truthy(at(btn(6, 1))[2] < potionAt[2])
 	end)
 
+	-- Week 10 (P5, week-9 deferred). Mutation: in GroupView's busyCheck, `local cursor = SB.Adapter.CursorBusy()` ->
+	-- `local cursor = SB.Adapter.CursorItem() ~= nil`.
+	it("a spell waiting for its target holds every move and every push too", function()
+		v.Layout("open")
+		local potionAt = at(btn(6, 1))
+		A.cursorOther = "targeting"
+		A.Clear(6, 1)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left", icon = Fixtures.HEALING_POTION } })
+		A.Advance(0.6)
+		assert.same(potionAt, at(btn(6, 1)))
+		A.cursorOther = nil
+		A.Advance(0.3)
+		assert.truthy(at(btn(6, 1))[2] < potionAt[2])
+	end)
+
 	-- Plan D19 (Task 9 turns it on for the bank window). Mutations: drop `freeTile = ...` from
 	-- v.Layout's Build options; delete paintTiles(pos) in renderMoved.
 	it("with cfg.freeTile each group's Free is one tile with its number; a drop on it swaps after the mouse leaves",
