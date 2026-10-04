@@ -26,6 +26,11 @@
 --   Categories.Preview(query) -> matches, total | nil, message     the bags' slots the query matches now
 --   why (all writers): "readonly" | "unknown" | "builtin" | "pinned" | "priority" | "long" | "code" (a chat code
 --     in a rule) | "edge" or a name why. A deleted category's id is never given again (its entry stays, false).
+--   Every writer that changes the stored categories (AddToList and ResetBuiltin too) tells Profiles, so a profile
+--     Undo never puts back categories from before them (Profiles.CategoriesChanged, week 11 final fix).
+--   Categories.NameTaken(name, exceptId) -> true when a category has it (any case), it is a built-in's own or "New" / "Free"
+--   Categories.FreeName(name, also) -> name, or "name (2)", "(3)"...: a name nothing has, also not in `also` (lowercase set)
+--   Categories.FreeId(name, also) -> "u_..." an id no category has, live or deleted, nor in `also` (a set)
 -- Runtime category: { id, name, query, priority, displayOrder, enabled, builtin, source,
 --   itemList = { include = {[itemID]=true}, exclude = {...} }, compiled, hasRule,
 --   fallback, setting, error (compile error text), runtimeError (evaluation error text),
@@ -57,6 +62,13 @@ end
 
 local function list(t, which)
 	return type(t) == "table" and type(t.itemList) == "table" and t.itemList[which] or nil
+end
+
+-- The stored categories changed: a profile Undo keeps them as they are now (Profiles.CategoriesChanged).
+local function changed()
+	if SB.Profiles and SB.Profiles.CategoriesChanged then
+		SB.Profiles.CategoriesChanged()
+	end
 end
 
 local function build(def, edit, builtin)
@@ -318,6 +330,7 @@ function C.AddToList(targetId, itemID)
 		exc[itemID] = nil
 	end
 	prune(target, e)
+	changed()
 	C.Load()
 	return true
 end
@@ -330,6 +343,7 @@ function C.ResetBuiltin(id)
 	if type(db.userEdits) == "table" then
 		db.userEdits[id] = nil
 	end
+	changed()
 	C.Load()
 	return true
 end
@@ -390,23 +404,71 @@ function C.CheckName(name, exceptId)
 	elseif name:find("[%c|]") then
 		return nil, "CHARS" -- "|" starts a chat code (a colour, a link)
 	end
+	if C.NameTaken(name, exceptId) then
+		return nil, "TAKEN"
+	end
+	return name
+end
+
+function C.NameTaken(name, exceptId)
 	C.Ensure()
 	local low = name:lower()
 	if low == SB.L.CAT_NEW:lower() or low == SB.L.CAT_FREE:lower() then
-		return nil, "TAKEN"
+		return true
 	end
 	for _, c in ipairs(C.list) do
 		if c.id ~= exceptId and type(c.name) == "string" and c.name:lower() == low then
-			return nil, "TAKEN"
+			return true
 		end
 	end
 	-- A built-in's own name stays its own after a rename, so its Reset to default never makes two of one name.
 	for _, def in ipairs(SB.CategoryDefaults) do
 		if def.id ~= exceptId and type(def.name) == "string" and def.name:lower() == low then
-			return nil, "TAKEN"
+			return true
+		end
+	end
+	return false
+end
+
+-- A name no category has (an import's, week 11 final fix: it never takes the name of one of yours): the name itself,
+-- else "name (2)", "name (3)"..., cut so it stays within MAX_NAME (never inside a letter of more than one byte).
+function C.FreeName(name, also)
+	also = also or {}
+	if not C.NameTaken(name) and not also[name:lower()] then
+		return name
+	end
+	for n = 2, 999 do
+		local suffix = " (" .. n .. ")"
+		local cut = C.MAX_NAME - #suffix
+		local base = name
+		if #base > cut then
+			while cut > 0 and base:byte(cut + 1) >= 128 and base:byte(cut + 1) < 192 do
+				cut = cut - 1 -- the byte after the cut continues a letter: cut before that letter
+			end
+			base = base:sub(1, cut)
+		end
+		local candidate = base:match("^(.-)%s*$") .. suffix
+		if not C.NameTaken(candidate) and not also[candidate:lower()] then
+			return candidate
 		end
 	end
 	return name
+end
+
+-- An id for a user category: "u_" and the name's letters, else "_2", "_3"... An id a category has, or had (a deleted
+-- one's stays, false), is never given again; nor one in `also` (an import's own ids).
+function C.FreeId(name, also)
+	also = also or {}
+	local db = SB.Config.db
+	local stored = type(db.categories) == "table" and db.categories or {}
+	local slug = (type(name) == "string" and name or ""):lower():gsub("[^%w]+", "_"):gsub("^_+", ""):gsub("_+$", ""):sub(1, 20)
+	local base = "u_" .. (slug ~= "" and slug or "category")
+	local id, n = base, 1
+	while stored[id] ~= nil or C.byId[id] or also[id] do
+		n = n + 1
+		id = base .. "_" .. n
+	end
+	return id
 end
 
 local function queryWhy(query)
@@ -442,13 +504,7 @@ function C.Create(name, query, source)
 	end
 	local db = SB.Config.db
 	db.categories = type(db.categories) == "table" and db.categories or {}
-	local slug = clean:lower():gsub("[^%w]+", "_"):gsub("^_+", ""):gsub("_+$", ""):sub(1, 20)
-	local base = "u_" .. (slug ~= "" and slug or "category")
-	local id, n = base, 1
-	while db.categories[id] ~= nil or C.byId[id] do
-		n = n + 1
-		id = base .. "_" .. n
-	end
+	local id = C.FreeId(clean)
 	local def = { name = clean, query = query, priority = C.USER_PRIORITY, enabled = true,
 		source = source == "import" and "import" or "user" }
 	local err, warnings = check(query)
@@ -461,6 +517,7 @@ function C.Create(name, query, source)
 		def.displayOrder = 5 -- before Keystone & Crests (10): a new category shows first
 	end
 	db.categories[id] = def
+	changed()
 	C.Load()
 	if err then
 		return id, "broken", err
@@ -530,6 +587,7 @@ function C.Save(id, fields)
 		end
 	end
 	prune(c, e)
+	changed()
 	C.Load()
 	if err then
 		return true, kept and "draft" or "broken", err
@@ -578,16 +636,16 @@ function C.Delete(id)
 	-- Focus modes that opened it (spec 6.1): the account's sections and this character's own, both layers.
 	local account = type(Cfg.db.settings.focus) == "table" and type(Cfg.db.settings.focus.sections) == "table"
 		and Cfg.db.settings.focus.sections or {}
-	local changed = false
+	local focusChanged = false
 	for mode in pairs(Cfg.Defaults.settings.focus.sections) do
 		local left = without(account[mode], id)
 		if left then
-			account[mode], changed = left, true
+			account[mode], focusChanged = left, true
 		end
 		local path = "focus.sections." .. mode
 		left = without(Cfg.charDB.overrides[path], id)
 		if left then
-			Cfg.charDB.overrides[path], changed = left, true
+			Cfg.charDB.overrides[path], focusChanged = left, true
 		end
 	end
 	local collapsed = Cfg.UI().collapsed
@@ -596,8 +654,9 @@ function C.Delete(id)
 			windowSet[id] = nil
 		end
 	end
+	changed()
 	C.Load()
-	if changed then
+	if focusChanged then
 		SB.Emit("SB_CONFIG_CHANGED", "focus.sections") -- Focus forgets its section sets; nothing open moves (P5)
 	end
 	return true
@@ -624,6 +683,7 @@ function C.Move(id, step)
 	end
 	order[at], order[to] = order[to], order[at]
 	SB.Config.db.categoryOrder = order
+	changed()
 	C.Load()
 	return true
 end

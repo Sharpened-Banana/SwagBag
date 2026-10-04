@@ -118,14 +118,14 @@ function SC.Edit(id)
 	SC.draft = { id = id, builtin = c.builtin, pinned = C.PINNED[id], fallback = c.fallback, setting = c.setting,
 		name = c.name, text = c.draft or (type(c.query) == "string" and c.query or ""), enabled = c.enabled or c.error ~= nil,
 		priority = c.priority, working = c.draft and c.query, draftError = c.draftError }
-	SC.picking, SC.confirmDelete, SC.confirmReset = nil, nil, nil
+	SC.picking, SC.confirmDelete, SC.confirmReset, SC.paste = nil, nil, nil, nil
 	readText(SC.draft)
 	return L.CAT_EDITING:format(c.name)
 end
 
 function SC.New()
 	SC.draft = { name = "", text = "", enabled = true, priority = C.USER_PRIORITY }
-	SC.picking, SC.confirmDelete, SC.confirmReset = nil, nil, nil
+	SC.picking, SC.confirmDelete, SC.confirmReset, SC.paste = nil, nil, nil, nil
 	readText(SC.draft)
 	return L.CAT_NEW_HINT
 end
@@ -184,6 +184,7 @@ function SC.Save()
 		id, why, detail = C.Create(d.name, d.text)
 		ok = id ~= nil
 		if ok then
+			d.id = id -- made: a refused follow-up save leaves the draft on it, so the next Save saves it, never makes it twice
 			local ok2, why2, detail2 = C.Save(id, { enabled = fields.enabled, priority = fields.priority })
 			if not ok2 then
 				return refusal(why2, d.name)
@@ -693,7 +694,7 @@ local function pasteRows()
 		out[#out + 1] = { kind = "note", label = noteText(n) }
 	end
 	previewRows(out, p.result.query, true)
-	out[#out + 1] = { kind = "input", label = L.CAT_NAME, maxLetters = C.MAX_NAME, boxWidth = 200,
+	out[#out + 1] = { kind = "input", label = L.CAT_NAME, maxLetters = C.MAX_NAME + 20, boxWidth = 200,
 		get = function()
 			return p.name
 		end,

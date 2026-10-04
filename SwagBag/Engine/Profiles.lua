@@ -2,11 +2,15 @@
 -- defensively; the schema stays 2): profiles = { [name] = { settings = <copy>, saved = epoch } },
 -- profile = the name last saved or loaded (shown only), backups.profile = { settings, and after an import
 -- with categories also categories, userEdits, categoryOrder } as they were before the last load, import or
--- reset (one step of undo, ruling R6). A profile is a copy of the account settings the user set
+-- reset (one step of undo, ruling R6; week 11 final fix: any change to the stored categories since, by the category
+-- editor, a drag onto a header or quick setup, drops the categories from it, so Undo then brings back the settings
+-- only and never undoes what the user made since). A profile is a copy of the account settings the user set
 -- (SwagBagDB.settings: only values somebody chose, Config.Get falls back to the defaults); Safe Mode and
 -- the quick-setup flag are this machine's state and never travel. Character overrides stay as they are.
 --   Profiles.List() -> { name }              Profiles.Save(name) / Load(name) / Delete(name) -> ok, why
---   Profiles.Reset() / Undo() -> ok, why     why: "readonly" | "name" | "unknown" | "none"
+--   Profiles.Reset() / Undo() -> ok, why     why: "readonly" | "name" | "unknown" | "none"; Undo answers true,
+--                                            "categories" when it brought the categories back too
+--   Profiles.CategoriesChanged()             the stored categories changed: Undo keeps them (Categories' writers)
 --   Profiles.Export(withCategories) -> text, left   "SWAGBAG:1:" then key=value entries joined by ";"; left: the
 --                                            names of the categories whose rule an import would refuse (week 11:
 --                                            a user category is left out, a built-in's edit loses its rule), so the
@@ -15,7 +19,10 @@
 --                                            loadstring): patterns only; every value is checked
 --   Profiles.Preview(data) -> { line }        what an import would change, each setting by its name in the
 --                                            settings window (Profiles.Label(path), ruling R18)
---   Profiles.Import(data) -> n               apply (current settings kept for Undo); n changes
+--   Profiles.Import(data) -> n               apply (current settings kept for Undo); n changes. An imported category
+--                                            never replaces one of the user's or revives a deleted id: one whose id is
+--                                            taken comes in under a fresh id (the string's order and focus sections
+--                                            follow it), one whose name is taken as "Name (2)"; the preview names them
 -- Share string, version 1. Values: b1 / b0 (boolean), n<number>, s<text> with every character other
 -- than letters, digits, "." "_" "-" written %XX (so spaces and line breaks a paste adds are dropped). Keys:
 --   s.<setting path>            a setting the user set (a known path; the default's type)
@@ -260,6 +267,16 @@ function Pr.Reset()
 	return true
 end
 
+-- The stored categories changed after the backup (a category writer, quick setup's order): Undo must never put the
+-- categories from before them back, so the backup keeps the settings only (week 11 final fix: data safety).
+function Pr.CategoriesChanged()
+	local d = db()
+	local back = d and type(d.backups) == "table" and d.backups.profile
+	if type(back) == "table" then
+		back.withCategories, back.categories, back.userEdits, back.categoryOrder = nil, nil, nil, nil
+	end
+end
+
 function Pr.Undo()
 	local d = db()
 	if SB.Config.readOnly then
@@ -269,12 +286,16 @@ function Pr.Undo()
 		return false, "none"
 	end
 	local back = d.backups.profile
-	if back.withCategories then
+	local withCategories = back.withCategories == true
+	if withCategories then
 		d.categories, d.userEdits = back.categories or {}, back.userEdits or {}
 		d.categoryOrder = back.categoryOrder
 	end
 	replace(back.settings) -- Follow() loads the categories again
 	d.backups.profile = nil
+	if withCategories then
+		return true, "categories"
+	end
 	return true
 end
 
@@ -648,13 +669,13 @@ function Pr.Parse(text)
 end
 
 -- A value as the preview shows it: on / off, a focus mode's sections by their names, else as it is.
-local function show(v, path)
+local function show(v, path, imported)
 	if type(v) == "boolean" then
 		return v and L.OVERLAY_ON or L.OVERLAY_OFF
 	elseif type(v) == "string" and path:match("^focus%.sections%.") and SB.Categories then
 		local names = {}
 		for id in v:gmatch("[^,]+") do
-			names[#names + 1] = SB.Categories.Name(id)
+			names[#names + 1] = imported and imported[id] or SB.Categories.Name(id)
 		end
 		return table.concat(names, ", ")
 	end
@@ -691,16 +712,75 @@ local function labels(paths)
 	return table.concat(out, ", ")
 end
 
+-- How an import's categories land (week 11 final fix: imports never replace a user category). An id the user has, as a
+-- category or a deleted one's (false: never given again), takes a fresh id; a name a category has (any case, a
+-- built-in's own, "New", "Free", or one given earlier in this import) becomes "Name (2)"...
+-- Returns map = { [string's id] = id here }, names = { [string's id] = name here }, added = { name } (sorted).
+local function placement(data)
+	local Cat = SB.Categories
+	Cat.Ensure()
+	local d = db()
+	local stored = type(d.categories) == "table" and d.categories or {}
+	local ids, also, usedNames = {}, {}, {}
+	for id in pairs(data.users) do
+		ids[#ids + 1] = id
+		also[id] = true -- a fresh id never lands on one the string brings
+	end
+	table.sort(ids)
+	local map, names, added = {}, {}, {}
+	for _, id in ipairs(ids) do
+		local name = data.users[id].name
+		if type(name) == "string" then
+			name = Cat.FreeName(name, usedNames)
+			usedNames[name:lower()] = true
+		end
+		local here = id
+		if stored[id] ~= nil or Cat.byId[id] then
+			here = Cat.FreeId(name or id, also)
+			also[here] = true
+		end
+		map[id], names[id] = here, name
+		if here ~= id or name ~= data.users[id].name then
+			added[#added + 1] = name or here
+		end
+	end
+	table.sort(added, function(a, b)
+		return a:lower() < b:lower()
+	end)
+	return map, names, added
+end
+
+-- A focus mode's sections as they name the imported categories here.
+local function remapSections(value, map)
+	local out = {}
+	for sid in value:gmatch("[^,]+") do
+		out[#out + 1] = map[sid] or sid
+	end
+	return table.concat(out, ",")
+end
+
+local function importedValue(path, value, map)
+	if type(value) == "string" and path:match("^focus%.sections%.") then
+		return remapSections(value, map)
+	end
+	return value
+end
+
 function Pr.Preview(data)
 	local lines, paths = {}, {}
+	local map, placedNames, added = placement(data)
+	local imported = {}
+	for id, here in pairs(map) do
+		imported[here] = placedNames[id] or here
+	end
 	for path in pairs(data.settings) do
 		paths[#paths + 1] = path
 	end
 	table.sort(paths)
 	for _, path in ipairs(paths) do
-		local now, new = SB.Config.Get(path), data.settings[path]
+		local now, new = SB.Config.Get(path), importedValue(path, data.settings[path], map)
 		if now ~= new then
-			lines[#lines + 1] = L.PROFILE_PREVIEW_LINE:format(Pr.Label(path), show(now, path), show(new, path))
+			lines[#lines + 1] = L.PROFILE_PREVIEW_LINE:format(Pr.Label(path), show(now, path), show(new, path, imported))
 		end
 	end
 	if watchChanged(data) then
@@ -715,6 +795,9 @@ function Pr.Preview(data)
 	end
 	if nu + ne > 0 or data.order then
 		lines[#lines + 1] = L.PROFILE_PREVIEW_CATEGORIES:format(nu, ne, data.order and L.REPORT_YES or L.REPORT_NO)
+	end
+	if #added > 0 then
+		lines[#lines + 1] = L.PROFILE_PREVIEW_ADDED_NEW:format(table.concat(added, ", "))
 	end
 	if #data.lowered > 0 then
 		local names = {}
@@ -763,10 +846,12 @@ function Pr.Import(data)
 	end
 	local d = db()
 	local withCategories = next(data.users) ~= nil or next(data.edits) ~= nil or data.order ~= nil
+	local map, names = placement(data) -- before anything changes
 	backup(withCategories) -- before anything changes: undo brings it all back (R6)
 	local settings = shareable(d.settings)
 	local n = 0
 	for path, value in pairs(data.settings) do
+		value = importedValue(path, value, map)
 		if SB.Config.Get(path) ~= value then
 			n = n + 1
 		end
@@ -779,8 +864,13 @@ function Pr.Import(data)
 	end
 	for id, def in pairs(data.users) do
 		d.categories = type(d.categories) == "table" and d.categories or {}
-		def.source = "import" -- spec 7.7: a category that came from a share string (ruling R22)
-		d.categories[id] = def
+		local copy = {}
+		for k, v in pairs(def) do
+			copy[k] = v
+		end
+		copy.name = names[id]
+		copy.source = "import" -- spec 7.7: a category that came from a share string (ruling R22)
+		d.categories[map[id]] = copy -- never over one of the user's, never a deleted id (week 11 final fix)
 		n = n + 1
 	end
 	for id, def in pairs(data.edits) do
@@ -789,7 +879,11 @@ function Pr.Import(data)
 		n = n + 1
 	end
 	if data.order then
-		d.categoryOrder = data.order
+		local order = {}
+		for i, oid in ipairs(data.order) do
+			order[i] = map[oid] or oid
+		end
+		d.categoryOrder = order
 		n = n + 1
 	end
 	replace(settings) -- Follow() loads the categories again
@@ -827,7 +921,10 @@ SB.Slash.Register("profile", L.HELP_PROFILE, function(arg)
 		return ok and L.PROFILE_RESET or why(r)
 	elseif verb == "undo" then
 		local ok, r = Pr.Undo()
-		return ok and L.PROFILE_UNDONE or why(r)
+		if ok then
+			return r == "categories" and L.PROFILE_UNDONE_CATEGORIES or L.PROFILE_UNDONE
+		end
+		return why(r)
 	elseif verb == "export" and (rest == "" or rest:lower() == "categories") then
 		local text, left = Pr.Export(rest ~= "")
 		if SB.ShareBox then

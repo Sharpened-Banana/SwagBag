@@ -590,6 +590,59 @@ describe("Settings > Categories (week 11)", function()
 		assert.equal(L.SETTINGS_READONLY, said)
 	end)
 
+	-- Week 11 final fix 3. Mutation: in SC.Save, drop `d.id = id` after Create (the draft stays unbound: the next Save
+	-- makes the category again and is refused, "name taken").
+	it("a new category whose follow-up save was refused is saved by the next Save, not made twice", function()
+		click(L.CAT_NEW_BUTTON)
+		enter(1, "Fresh")
+		click(L.CAT_ADD_RULE)
+		click("toy")
+		local real = C.Save
+		C.Save = function()
+			return false, "readonly"
+		end
+		click(L.CAT_SAVE)
+		C.Save = real
+		assert.equal(L.CAT_SAVED:format("Fresh"), click(L.CAT_SAVE))
+		local n = 0
+		for _, def in pairs(SB.Config.db.categories) do
+			n = n + ((def and def.name == "Fresh") and 1 or 0)
+		end
+		assert.equal(1, n)
+	end)
+
+	-- Week 11 final fix 4. Mutation: in SC.Edit (or SC.New), drop `SC.paste = nil` (the page keeps showing the paste view).
+	it("Edit and New leave the paste view, so the page shows the editor they opened", function()
+		click(L.PASTE_BUTTON)
+		SB.SettingsCategories.Edit("c_gear")
+		assert.is_nil(SB.SettingsCategories.paste)
+		SW.Render()
+		assert.truthy(has(texts(), L.CAT_SAVE), "the editor, not the paste view")
+		click(L.CAT_CANCEL)
+		click(L.PASTE_BUTTON)
+		SB.SettingsCategories.New()
+		assert.is_nil(SB.SettingsCategories.paste)
+		SW.Render()
+		assert.falsy(has(texts(), L.PASTE_MAKE))
+		assert.truthy(has(texts(), L.CAT_SAVE))
+	end)
+
+	-- Week 11 final fix 5. Mutation: in pasteRows, `maxLetters = C.MAX_NAME + 20` -> `maxLetters = C.MAX_NAME`.
+	it("the paste view's name box takes more than a name may hold, so a longer name is refused with the reason", function()
+		click(L.PASTE_BUTTON)
+		enter(1, "#toy")
+		assert.truthy(SW.inputs[2].calls.SetMaxLetters[1] > C.MAX_NAME)
+		assert.equal(L.CAT_NAME_LONG:format(C.MAX_NAME), enter(2, string.rep("n", 35)))
+	end)
+
+	-- Week 11 final fix 6. Mutation: put back "the next time you open them (or press Reflow)" in L.CAT_SAVED.
+	it("the Save answers say the bags use the change at their next full layout, never moving an item under the mouse", function()
+		for _, key in ipairs({ "CAT_SAVED", "CAT_SAVED_WARNED", "PASTE_MADE" }) do
+			assert.truthy(L[key]:find("next full layout", 1, true), key)
+			assert.truthy(L[key]:find("under your mouse", 1, true), key)
+		end
+	end)
+
 	-- Mutation: in Core/Events.lua, call `textBoxes[i]:ClearFocus()` directly, without the per-box trap.
 	it("one text box that errors in ClearFocus does not stop the others letting go", function()
 		local later = false
