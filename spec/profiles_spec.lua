@@ -267,19 +267,54 @@ describe("Profiles (week 7)", function()
 		refused("cu.u_x.query=sx%7CHitem%3A1%7Ch")
 		refused("cu.u_x.query=sx%7CcFFFF0000red")
 		refused("cu.u_x.name=sOK;cu.u_x.priority=n99999")
-		-- Final review fix 9. Mutation: drop the `field == "priority" and value >= Pr.MAX_PRIORITY` branch.
-		refused("cu.u_x.name=sOK;cu.u_x.priority=n90")
-		refused("cu.u_x.name=sOK;cu.u_x.priority=n100")
-		refused("ce.c_other.priority=n95")
-		assert.equal(89, assert(Pr.Parse("SWAGBAG:1:cu.u_x.name=sOK;cu.u_x.priority=n89")).users.u_x.priority)
-		-- Final review fix 8. Mutation: drop `or text:find("|c[nN]")` from escapeCode.
+		-- Final review fix 8, narrowed in week 8: a named colour |cnNAME: is refused.
 		refused("cu.u_x.query=sx%7CcnIQ4%3Aok%7Cr")
 		refused("cu.u_x.query=sx%7CcNIQ4%3Aok%7Cr")
+		refused("cu.u_x.query=sx%7CcnGREEN_FONT_COLOR%3Aok%7Cr")
 		refused("cu.u_x.name=sOK;cu.u_x.inc=s" .. ("9"):rep(300))
 		refused("cu.u_x.priority=n5", "u_x")
 		refused("cu.u_x.name=sa%0Ab")
 		refused("cu.u_x.name=sOK;cu.u_x.inc=s99999999")
 		assert.same({ nil, "notours" }, { Pr.Parse("SWAGBAG:0:s.bags.columns=n14") })
+	end)
+
+	-- Week 8 (week-7 re-review minor: your own priority of 90 or more was refused). Mutation: in Pr.Parse, the
+	-- priority branch returns nil, "type", key again (a string you exported would be refused whole).
+	it("a category priority of 90 or more comes in just below Junk, named in the preview; never refused", function()
+		local data = assert(Pr.Parse("SWAGBAG:1:cu.u_x.name=sMine;cu.u_x.priority=n95;ce.c_gear.priority=n100"))
+		assert.same({ 89, 89, { "c_gear", "u_x" } }, { data.users.u_x.priority, data.edits.c_gear.priority, data.lowered })
+		assert.equal(89, assert(Pr.Parse("SWAGBAG:1:cu.u_x.name=sOK;cu.u_x.priority=n89")).users.u_x.priority)
+		assert.equal(0, #assert(Pr.Parse("SWAGBAG:1:cu.u_x.name=sOK;cu.u_x.priority=n89")).lowered)
+		local lines = Pr.Preview(data)
+		assert.equal(SB.L.PROFILE_PREVIEW_LOWERED:format("Gear, Mine"), lines[2])
+		SB.Config.db.categories = { u_y = { name = "Herbs first", query = "herb", priority = 99 } }
+		local own = assert(Pr.Parse(Pr.Export(true)), "your own export is never refused")
+		assert.equal(89, own.users.u_y.priority)
+	end)
+
+	-- Week 8, ruling Q6. Mutation: drop the `prefix == "ce" and PINNED[id]` branch (Junk would come in at 89).
+	it("a priority edit of Junk, Sets, Keystone or Reagents is not imported, named once; a repeat names an id once", function()
+		local data = assert(Pr.Parse("SWAGBAG:1:ce.c_junk.priority=n90;ce.c_junk.priority=n50;ce.c_sets.enabled=b0;"
+			.. "ce.c_sets.priority=n99;cu.u_x.name=sMine;cu.u_x.priority=n95;cu.u_x.priority=n96"))
+		assert.is_nil(data.edits.c_junk)
+		assert.is_nil(data.edits.c_sets.priority)
+		assert.same({ "c_junk", "c_sets" }, data.pinned)
+		assert.same({ "u_x" }, data.lowered)
+		local lines = Pr.Preview(data)
+		assert.equal(SB.L.PROFILE_PREVIEW_PINNED:format("Junk, Equipment sets"), lines[3])
+		assert.equal(SB.L.PROFILE_PREVIEW_LOWERED:format("Mine"), lines[2])
+		assert.equal(3, #lines)
+		assert.truthy(Pr.Import(data))
+		assert.equal(90, SB.Categories.Get("c_junk").priority)
+	end)
+
+	-- Week 8 (week-7 re-review minor). Mutation: in escapeCode, `"|c[nN][%u_][%u%d_]*:"` -> `"|c[nN]"` (the
+	-- week-7 rule: "herb|cname" was refused).
+	it("an OR right before a word starting with n is a query, not a colour code", function()
+		for _, q in ipairs({ "herb%7Ccname", "ore%7CcNuts", "cloth%7Ccn" }) do
+			local data = assert(Pr.Parse("SWAGBAG:1:cu.u_x.query=s" .. q), q)
+			assert.truthy(SB.Query.Compile(data.users.u_x.query).fn, q)
+		end
 	end)
 
 	it("a scale built from small steps is no change against your own string; a damaged order exports", function()

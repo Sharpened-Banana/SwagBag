@@ -102,6 +102,17 @@ describe("Locks (week 7)", function()
 			L.LOCK_UNDONE:format(2), L.LOCK_UNDO_NONE, L.SETTINGS_READONLY }, A.Lines())
 	end)
 
+	-- Week 8 (week-7 re-review minor: "all 1 locks"). Mutation: in the lock command, drop
+	-- `count == 1 and L.LOCK_CLEAR_ASK_ONE or `.
+	it("one lock reads as one: the question, the answer and the undo", function()
+		Locks.Toggle(Fixtures.FLASK)
+		SB.Slash.Dispatch("lock clear")
+		SB.Slash.Dispatch("lock clear")
+		SB.Slash.Dispatch("lock undo")
+		assert.same({ SB.L.LOCK_CLEAR_ASK_ONE, "Unlocked the 1 locked item.", "Lock restored: 1." }, A.Lines())
+		assert.truthy(Locks.Has(Fixtures.FLASK))
+	end)
+
 	-- Final review fix 2: a lock made between the two presses starts the question over.
 	it("a lock or unlock between the two presses starts the question over", function()
 		Locks.Toggle(Fixtures.HEALING_POTION)

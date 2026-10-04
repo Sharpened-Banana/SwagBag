@@ -434,14 +434,18 @@ local function numbers(text)
 	return out
 end
 
--- A real chat escape opener in a query: |T |H |A |K, |c with eight hex digits, or |cn / |cN (a named colour,
--- |cnNAME:). Every other "|" is the OR operator ("herb|cloth").
+-- A real chat escape opener in a query: |T |H |A |K, |c with eight hex digits, or a named colour: |cn (or |cN)
+-- followed by an upper-case name and ":" (|cnIQ4:, |cnGREEN_FONT_COLOR:; week 8, the narrowest rule that
+-- still catches it). Every other "|" is the OR operator ("herb|cloth", "herb|cname").
 local function escapeCode(text)
-	return text:find("|[THAK]") ~= nil or text:find("|c%x%x%x%x%x%x%x%x") ~= nil or text:find("|c[nN]") ~= nil
+	return text:find("|[THAK]") ~= nil or text:find("|c%x%x%x%x%x%x%x%x") ~= nil
+		or text:find("|c[nN][%u_][%u%d_]*:") ~= nil
 end
 
 -- A user category id has the shape SwagBag makes (u_...), which is never a built-in or a section id
 -- (new, free, c_...); an edit may only name a built-in category.
+local PINNED = { c_junk = true, c_sets = true, c_keystone = true, c_reagents = true }
+
 local function idOk(prefix, id)
 	if prefix == "cu" then
 		return id:match("^u_[%w_]+$") ~= nil
@@ -482,7 +486,9 @@ local function parseWatch(text)
 end
 
 -- data = { settings = { [path] = value }, watch, users = { [id] = def }, edits = { [id] = def }, order,
---          skipped = { path }, ignored = { path } (NEVER settings) }
+--          skipped = { path }, ignored = { path } (NEVER settings), lowered = { id } (a priority of 90 or
+--          more, imported as MAX_PRIORITY - 1, week 8; user categories and built-in edits other than the four
+--          below), pinned = { id } (a priority edit of Junk, Sets, Keystone or Reagents: not imported) }
 function Pr.Parse(text)
 	if type(text) ~= "string" then
 		return nil, "empty"
@@ -502,7 +508,8 @@ function Pr.Parse(text)
 		return nil, "toolong"
 	end
 	local known = knownPaths()
-	local data = { settings = {}, users = {}, edits = {}, skipped = {}, ignored = {} }
+	local data = { settings = {}, users = {}, edits = {}, skipped = {}, ignored = {}, lowered = {}, pinned = {} }
+	local seenLowered, seenPinned = {}, {}
 	local count, cats = 0, {}
 	for entry in body:gmatch("[^;]+") do
 		count = count + 1
@@ -574,8 +581,22 @@ function Pr.Parse(text)
 				return nil, "type", key
 			elseif kind == "number" and math.abs(value) > Pr.MAX_NUM then
 				return nil, "type", key
+			elseif field == "priority" and prefix == "ce" and PINNED[id] then
+				-- Junk, Sets, Keystone and Reagents keep their rank here (week 8, ruling Q6): the edit is not
+				-- imported, and the preview names it, once
+				if not seenPinned[id] then
+					seenPinned[id] = true
+					data.pinned[#data.pinned + 1] = id
+				end
 			elseif field == "priority" and value >= Pr.MAX_PRIORITY then
-				return nil, "type", key -- an imported category never outranks Junk, Sets, Keystone or Reagents
+				-- an imported category never outranks Junk, Sets, Keystone or Reagents (week 7), but a string the
+				-- user exported is never refused for it either (week 8): it comes in just below them, and the
+				-- preview names it, once
+				into[id][field] = Pr.MAX_PRIORITY - 1
+				if not seenLowered[id] then
+					seenLowered[id] = true
+					data.lowered[#data.lowered + 1] = id
+				end
 			elseif field == "query" and not SB.Query.Compile(value).fn then
 				return nil, "type", key
 			else
@@ -591,7 +612,14 @@ function Pr.Parse(text)
 		end
 	end
 	table.sort(data.skipped)
+	for id in pairs(seenPinned) do
+		if data.edits[id] and next(data.edits[id]) == nil then
+			data.edits[id] = nil -- the ignored priority was all of that edit
+		end
+	end
 	table.sort(data.ignored)
+	table.sort(data.lowered)
+	table.sort(data.pinned)
 	return data
 end
 
@@ -663,6 +691,21 @@ function Pr.Preview(data)
 	end
 	if nu + ne > 0 or data.order then
 		lines[#lines + 1] = L.PROFILE_PREVIEW_CATEGORIES:format(nu, ne, data.order and L.REPORT_YES or L.REPORT_NO)
+	end
+	if #data.lowered > 0 then
+		local names = {}
+		for i, id in ipairs(data.lowered) do
+			local def = data.users[id]
+			names[i] = (def and def.name) or (SB.Categories and SB.Categories.Name(id)) or id
+		end
+		lines[#lines + 1] = L.PROFILE_PREVIEW_LOWERED:format(table.concat(names, ", "))
+	end
+	if #data.pinned > 0 then
+		local names = {}
+		for i, id in ipairs(data.pinned) do
+			names[i] = (SB.Categories and SB.Categories.Name(id)) or id
+		end
+		lines[#lines + 1] = L.PROFILE_PREVIEW_PINNED:format(table.concat(names, ", "))
 	end
 	if #data.skipped > 0 then
 		lines[#lines + 1] = L.PROFILE_PREVIEW_SKIPPED:format(table.concat(data.skipped, ", "))
