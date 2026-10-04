@@ -1084,6 +1084,99 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal(text, GW.viewButton.text)
 		assert.equal(reason, GW.view.stats.lastLayoutReason)
 	end)
+
+	-- Week 8 (the week-5 gap, as the alt viewer's F22). Mutation: in GuildBankWindow.lua, drop the
+	-- SB.On("ITEM_DATA_LOAD_RESULT", onItemLoaded, "bank") registration (the item stays in New).
+	it("a guild item whose data has not loaded waits in New and moves to its category once it loads", function()
+		A.guild.slots[1][3] = { itemID = Fixtures.UNLOADED }
+		openVault()
+		answerQueries()
+		A.Advance(0.3)
+		assert.equal("- New (1)", header("tab1:new").text.text, "pending: New")
+		A.items[Fixtures.UNLOADED] = { name = "Chest of Tests", classID = A.ITEM_CLASS.Armor, subclassID = 4,
+			equipLoc = "INVTYPE_CHEST", quality = 3, ilvl = 270, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
+		assert.equal("- New (1)", header("tab1:new").text.text, "debounced: not yet")
+		A.Advance(GW.LOADED_DELAY)
+		assert.equal("- New (0)", header("tab1:new").text.text)
+		assert.equal("- BoE gear (1)", header("tab1:c_boe").text.text)
+		assert.equal("loaded", GW.view.stats.lastLayoutReason)
+	end)
+
+	-- P5. Mutation: in onItemLoaded's debounced function, call GW.view.Layout instead of GW.view.RequestLayout.
+	it("that regroup waits while a guild button that would move is under the mouse, then lands", function()
+		A.guild.slots[1][3] = { itemID = Fixtures.UNLOADED }
+		openVault()
+		answerQueries()
+		A.Advance(0.3)
+		button(1, 3).mouseOver = true
+		A.items[Fixtures.UNLOADED] = { name = "Chest of Tests", classID = A.ITEM_CLASS.Armor, subclassID = 4,
+			equipLoc = "INVTYPE_CHEST", quality = 3, ilvl = 270, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("GET_ITEM_INFO_RECEIVED", Fixtures.UNLOADED, true)
+		A.Advance(GW.LOADED_DELAY + SB.GroupView.RETRY)
+		assert.equal("- New (1)", header("tab1:new").text.text, "held under the mouse")
+		button(1, 3).mouseOver = false
+		A.Advance(SB.GroupView.RETRY)
+		assert.equal("- New (0)", header("tab1:new").text.text, "landed once the mouse left")
+	end)
+
+	-- Week 8 ruling Q1. The full layout clears placeholders and can slide another item under the cursor, so
+	-- the regroup also waits while the window's scroll frame is under the mouse, a gap or placeholder
+	-- included (not a moving button). Mutation: in onItemLoaded's `land`, drop the `scroll:IsMouseOver()` check.
+	it("that regroup also waits while the mouse is anywhere over the guild window's items, then runs once", function()
+		A.guild.slots[1][3] = { itemID = Fixtures.UNLOADED }
+		openVault()
+		answerQueries()
+		A.Advance(0.3)
+		GW.scroll.mouseOver = true -- over a gap: no button that would move is under it
+		button(1, 3).mouseOver = false
+		A.items[Fixtures.UNLOADED] = { name = "Chest of Tests", classID = A.ITEM_CLASS.Armor, subclassID = 4,
+			equipLoc = "INVTYPE_CHEST", quality = 3, ilvl = 270, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, true)
+		local requests, request = 0, GW.view.RequestLayout
+		GW.view.RequestLayout = function(reason)
+			requests = requests + 1
+			return request(reason)
+		end
+		A.Advance(GW.LOADED_DELAY + SB.GroupView.RETRY * 3)
+		assert.equal("- New (1)", header("tab1:new").text.text, "held while the mouse is over the window")
+		assert.equal(0, requests)
+		GW.scroll.mouseOver = false
+		A.Advance(SB.GroupView.RETRY)
+		assert.equal("- New (0)", header("tab1:new").text.text, "landed once the mouse left")
+		assert.equal("loaded", GW.view.stats.lastLayoutReason)
+		assert.equal(1, requests, "one layout, not one per retry")
+	end)
+
+	-- Week 8 ruling Q5. Mutation: in onItemLoaded, drop `success == false or` from the first guard.
+	it("item data that failed to load (success false) lays nothing out and keeps the item pending", function()
+		A.guild.slots[1][3] = { itemID = Fixtures.UNLOADED }
+		openVault()
+		answerQueries()
+		A.Advance(0.3)
+		A.items[Fixtures.UNLOADED] = { name = "Chest of Tests", classID = A.ITEM_CLASS.Armor, subclassID = 4,
+			equipLoc = "INVTYPE_CHEST", quality = 3, ilvl = 270, maxStack = 1, bind = "equip" }
+		local reason = GW.view.stats.lastLayoutReason
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.UNLOADED, false)
+		A.Advance(GW.LOADED_DELAY)
+		assert.equal(reason, GW.view.stats.lastLayoutReason)
+		assert.equal("- New (1)", header("tab1:new").text.text)
+		assert.truthy(GW.pending[Fixtures.UNLOADED])
+	end)
+
+	-- Mutation: in the guild window's OnHide handler, drop the GW.pending reset.
+	it("closing the guild bank forgets the items it was waiting on; data for another item lays nothing out", function()
+		A.guild.slots[1][3] = { itemID = Fixtures.UNLOADED }
+		openVault()
+		answerQueries()
+		assert.truthy(GW.pending[Fixtures.UNLOADED])
+		local reason = GW.view.stats.lastLayoutReason
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", Fixtures.HERB, true)
+		A.Advance(GW.LOADED_DELAY)
+		assert.equal(reason, GW.view.stats.lastLayoutReason)
+		GW.Close()
+		assert.same({}, GW.pending)
+	end)
 end)
 
 describe("GuildBankWindow load order", function()

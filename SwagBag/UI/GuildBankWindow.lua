@@ -28,6 +28,11 @@
 -- only tabs answered this visit that are still viewable (W3-34).
 -- Hiding SwagBag's window (Esc, the X) while the vault is open makes Blizzard's guild bank
 -- visible again; nothing re-shrinks it until the next visit.
+-- Items whose data the client has not loaded yet (after a patch the item cache is empty) are
+-- described as pending and wait in New. Week 8 (the week-5 gap, as the alt viewer's F22): while the
+-- window is open, item data arriving for one of them lays the window out again (debounced,
+-- LOADED_DELAY) through GroupView's RequestLayout, held while a button that would move is under the
+-- mouse or an item is on the cursor (P5), so they move into their categories. Closing forgets them.
 local _, SB = ...
 
 local L = SB.L
@@ -50,6 +55,8 @@ local GW = {
 	BAG_BASE = 100, -- guild tab N is bag 100 + N in layout keys
 	QUERY_GAP = 0.3, -- seconds between two tab queries (and the wait if no answer comes)
 	SNAPSHOT_DELAY = 1,
+	LOADED_DELAY = 0.3, -- item data arriving for a pending item: regroup this long after the last one
+	pending = {}, -- [itemID] = true: an item shown while its data had not loaded (it waits in New)
 	HEADER = 80,
 	COLUMNS_H = 18, -- the list's column bar under the deposit line (week 8), shown while a list is drawn
 	scaleWarned = false, -- the list's F6 fallback was said this opening
@@ -468,6 +475,15 @@ local function sizeFrame(width, height)
 	clampScroll()
 end
 
+-- A guild slot's record; one whose item data has not loaded yet is remembered (it waits in New).
+local function recordOf(info, bag, slot, tab)
+	local record = info and SB.Items.DescribeLink(info, bag, slot, tab) or nil
+	if record and record.pending then
+		GW.pending[record.itemID] = true
+	end
+	return record
+end
+
 local function describe(bag, slot)
 	local tab = tabOf(bag)
 	local info = GW.cache[tab] and GW.cache[tab][slot]
@@ -475,7 +491,7 @@ local function describe(bag, slot)
 	if button then
 		SB.GuildButtons.Paint(button, info)
 	end
-	local record = info and SB.Items.DescribeLink(info, bag, slot, tab) or nil
+	local record = recordOf(info, bag, slot, tab)
 	if SB.Overlays then
 		SB.Overlays.Apply(button, record, bag)
 	end
@@ -635,7 +651,7 @@ function GW.Refresh()
 						B.Paint(button, b)
 					end
 					if GW.view.IsOpen() then
-						local record = b and SB.Items.DescribeLink(b, bag, slot, tab) or nil
+						local record = recordOf(b, bag, slot, tab)
 						GW.view.SetRecord(bag, slot, record)
 						if SB.Overlays then
 							SB.Overlays.Apply(button, record, bag)
@@ -787,6 +803,7 @@ frame:SetScript("OnHide", Guard("guild.hide", function(self)
 		return
 	end
 	GW.queue, GW.querying, GW.scaleWarned = {}, nil, false
+	GW.pending = {} -- item data arriving while closed lays nothing out
 	if GW.interaction then -- the vault is still open: make Blizzard's guild bank visible again
 		host.Restore()
 	end
@@ -903,6 +920,31 @@ SB.On("GUILDBANK_UPDATE_TABS", function()
 		GW.view.RequestLayout("tabs")
 	end
 end, "bank")
+
+-- Item data arriving for a pending item (week 8): the tabs as read, laid out again so it leaves New for
+-- its category; RequestLayout holds it (retrying every 300 ms) while a button that would move is under
+-- the mouse or an item is on the cursor (P5). The search follows through onUpdated. The full layout
+-- also clears placeholders and can slide a different item under the cursor, so it waits as well while
+-- the scroll frame itself is under the mouse (as the bags' area hold, W4-13).
+local function onItemLoaded(_, itemID, success)
+	if success == false or not GW.pending[itemID] or not GW.view.IsOpen() then
+		return
+	end
+	GW.pending[itemID] = nil
+	local function land()
+		if not (frame:IsShown() and GW.view.IsOpen()) then
+			return
+		end
+		if scroll:IsMouseOver() then
+			SB.Debounce("guild.loaded", SB.GroupView.RETRY, land, "bank")
+			return
+		end
+		GW.view.RequestLayout("loaded")
+	end
+	SB.Debounce("guild.loaded", GW.LOADED_DELAY, land, "bank")
+end
+SB.On("ITEM_DATA_LOAD_RESULT", onItemLoaded, "bank")
+SB.On("GET_ITEM_INFO_RECEIVED", onItemLoaded, "bank")
 
 SB.On("GUILDBANK_ITEM_LOCK_CHANGED", function()
 	if GW.interaction then
