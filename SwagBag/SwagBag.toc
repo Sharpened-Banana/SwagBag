@@ -2,7 +2,7 @@
 ## Title: SwagBag
 ## Notes: Bags that set themselves up, show what matters, and never break.
 ## Author: lonezebra
-## Version: 0.10.0
+## Version: 0.11.0
 ## SavedVariables: SwagBagDB
 ## SavedVariablesPerCharacter: SwagBagCharDB
 ## OptionalDeps: Auctionator, Syndicator, ElvUI, TradeSkillMaster, Masque
@@ -30,6 +30,7 @@ Engine/GridLayout.lua
 Engine/Query/Lexer.lua
 Engine/Query/Parser.lua
 Engine/Query/Query.lua
+Engine/Query/Rows.lua
 Engine/Crests.lua
 Engine/Keywords.lua
 Engine/Search.lua

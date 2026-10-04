@@ -13,11 +13,13 @@
 --   Query.Pretty(ast) -> canonical text; Parse(Pretty(ast)) gives the same tree
 --   Query.FormatError(err) -> "Expected a value after "&" at character 6"
 --   Query.FormatWarning(w) -> "Unknown keyword "#potin" matches nothing (character 7)"
+--   Query.MAX_QUERY = 500   the longest rule SwagBag keeps: a category's, a share string's, a paste's (week 11: one
+--                           constant, read by Rows, Categories, Paste and Profiles)
 -- Tri-state (Kleene): AND is false if any part is false, else nil if any is nil;
 -- OR is true if any part is true, else nil if any is nil; NOT nil is nil.
 local _, SB = ...
 
-local Q = { keywords = {}, nextId = 0 }
+local Q = { keywords = {}, nextId = 0, MAX_QUERY = 500 }
 SB.Query = Q
 
 local RANK = { static = 1, instance = 2, volatile = 3 }
