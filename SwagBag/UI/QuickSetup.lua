@@ -119,6 +119,9 @@ function QS.Apply()
 	local order = QS.Order(display, QS.picked)
 	if order then
 		C.db.categoryOrder = order
+		if SB.Profiles and SB.Profiles.CategoriesChanged then
+			SB.Profiles.CategoriesChanged() -- a profile Undo never puts an older order back over this one
+		end
 	end
 	C.Set("setup.done", true)
 	-- The settings are saved; a refresh error must not turn that into "failed".

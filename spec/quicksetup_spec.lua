@@ -99,6 +99,21 @@ describe("Quick setup", function()
 		assert.same({ "Set up for M+, Gold-making. Change anything later: type /swagbag." }, A.Lines())
 	end)
 
+	-- Week 11 final fix 1. Mutation: in QS.Apply, drop the Profiles.CategoriesChanged call (a profile Undo would then
+	-- put an imported string's category order back over the order quick setup wrote).
+	it("Apply's new category order drops the categories from the profiles' one step of undo", function()
+		local told = 0
+		SB.Profiles = { CategoriesChanged = function()
+			told = told + 1
+		end }
+		login()
+		pick("mplus")
+		pick("gold")
+		Fake.Fire(QS.applyButton, "OnClick")
+		assert.equal("table", type(SB.Config.db.categoryOrder))
+		assert.equal(1, told)
+	end)
+
 	it("AC7.2: Skip keeps the defaults, says so, and closes", function()
 		login()
 		Fake.Fire(QS.skipButton, "OnClick")

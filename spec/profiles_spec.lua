@@ -262,13 +262,122 @@ describe("Profiles (week 7)", function()
 		SB.Config.db.categories.u_old = { name = "Old", query = "herb", priority = 58, displayOrder = 55 }
 		SB.Config.db.userEdits.c_junk = { name = "Trash" }
 		SB.Categories.Load()
-		local data = assert(Pr.Parse("SWAGBAG:1:cu.u_new.name=sNew;cu.u_new.query=sore;cu.u_new.priority=n57;"
+		local data = assert(Pr.Parse("SWAGBAG:1:cu.u_new.name=sOres;cu.u_new.query=sore;cu.u_new.priority=n57;"
 			.. "cu.u_new.displayOrder=n56;ce.c_junk.name=sJunk2;co=sc_junk%2Cu_new"))
 		assert.truthy(Pr.Import(data))
-		assert.same({ "New", "Junk2" }, { SB.Categories.Name("u_new"), SB.Categories.Name("c_junk") })
+		assert.same({ "Ores", "Junk2" }, { SB.Categories.Name("u_new"), SB.Categories.Name("c_junk") })
 		assert.truthy(Pr.Undo())
 		assert.same({ "Old", "Trash" }, { SB.Categories.Name("u_old"), SB.Categories.Name("c_junk") })
 		assert.same({ true, true }, { SB.Config.db.categories.u_new == nil, SB.Config.db.categoryOrder == nil })
+	end)
+
+	-- Week 11 final fix 1 (data safety). Mutation: in Profiles.CategoriesChanged, return before clearing the
+	-- backup's categories (Undo would wipe Mine, bring Junk's old name back and revive the deleted u_old's id).
+	it("undo after an import keeps what the category editor changed since: it then brings back the settings only", function()
+		local Cat, db = SB.Categories, SB.Config.db
+		db.categories.u_old = { name = "Old", query = "herb", priority = 58 }
+		Cat.Load()
+		C.Set("bags.columns", 10)
+		assert.truthy(Pr.Import(assert(Pr.Parse("SWAGBAG:1:s.bags.columns=n14;cu.u_new.name=sOres;cu.u_new.query=sore"))))
+		local mine = assert(Cat.Create("Mine", "toy"))
+		assert.truthy(Cat.Save("c_junk", { name = "Trash" }))
+		assert.truthy(Cat.Delete("u_old"))
+		assert.same({ true }, { Pr.Undo() }, "the answer does not say categories")
+		assert.equal(10, C.Get("bags.columns"), "the settings come back")
+		assert.same({ "Mine", "Trash", "Ores" }, { Cat.Name(mine), Cat.Name("c_junk"), Cat.Name("u_new") })
+		assert.equal(false, db.categories.u_old, "a deleted id stays deleted, never given again")
+		assert.truthy(Cat.Get(mine), "made after the import: kept")
+	end)
+
+	-- Week 11 final fix 1. Mutation: drop the CategoriesChanged call from any one writer (Create, Save, Delete, Move,
+	-- ResetBuiltin, AddToList): its row fails.
+	it("every category writer drops the categories from the one step of undo", function()
+		local Cat, db = SB.Categories, SB.Config.db
+		local writers = {
+			Create = function() return Cat.Create("Fresh", "toy") end,
+			Save = function() return Cat.Save("c_gear", { name = "Kit" }) end,
+			Delete = function() return Cat.Delete("u_x") end,
+			Move = function() return Cat.Move("c_gear", 1) end,
+			ResetBuiltin = function() return Cat.ResetBuiltin("c_junk") end,
+			AddToList = function() return Cat.AddToList("c_gear", 12345) end,
+		}
+		for name, write in pairs(writers) do
+			db.categories = { u_x = { name = "X", query = "herb" } }
+			db.userEdits = { c_junk = { name = "Trash" } }
+			db.categoryOrder = nil
+			Cat.Load()
+			assert.truthy(Pr.Import(assert(Pr.Parse("SWAGBAG:1:cu.u_y.name=sY;cu.u_y.query=sore"))), name)
+			assert.truthy(db.backups.profile.withCategories, name)
+			assert.truthy(write(), name)
+			local back = db.backups.profile
+			assert.same({ nil, nil, nil, nil }, { back.withCategories, back.categories, back.userEdits, back.categoryOrder },
+				name)
+			assert.equal("table", type(back.settings), name .. ": the settings stay undoable")
+		end
+	end)
+
+	-- Week 11 final fix 1. Mutation: in Pr.Undo, return `true` alone (the answer would not say the categories came back).
+	it("undo right after an import (no category changed since) still brings the categories back, and says so", function()
+		SB.Config.db.categories.u_old = { name = "Old", query = "herb" }
+		SB.Categories.Load()
+		assert.truthy(Pr.Import(assert(Pr.Parse("SWAGBAG:1:cu.u_new.name=sNew;cu.u_new.query=sore;co=su_new"))))
+		SB.Slash.Dispatch("profile undo")
+		assert.same({ SB.L.PROFILE_UNDONE_CATEGORIES }, A.Lines())
+		assert.same({ true, true }, { SB.Config.db.categories.u_new == nil, SB.Config.db.categoryOrder == nil })
+		assert.equal("Old", SB.Categories.Name("u_old"))
+	end)
+
+	-- Week 11 final fix 2 (data safety). Mutations: in Pr.Import, store each category under its own id
+	-- (`d.categories[id] = ...`); or drop the order / focus-section remap; or keep the imported name as it is.
+	it("an import never replaces your category or revives a deleted id: it comes in as new, its name made free", function()
+		local Cat, db = SB.Categories, SB.Config.db
+		db.categories.u_potions = { name = "Potions", query = "potion", priority = 60, itemList = { include = { [5512] = true } } }
+		db.categories.u_gone = false
+		db.categoryOrder = { "u_potions", "c_junk" }
+		Cat.Load()
+		local data = assert(Pr.Parse("SWAGBAG:1:cu.u_potions.name=sPotions;cu.u_potions.query=sflask;"
+			.. "cu.u_gone.name=sGone;cu.u_gone.query=sore;cu.u_potions_2.name=sPOTIONS;cu.u_potions_2.query=sherb;"
+			.. "cu.u_kit.name=sgear;cu.u_kit.query=stoy;co=su_gone%2Cu_potions%2Cu_potions_2%2Cc_junk;"
+			.. "s.focus.sections.mplus=su_potions%2Cc_junk"))
+		local lines = Pr.Preview(data)
+		local added = SB.L.PROFILE_PREVIEW_ADDED_NEW:format("gear (2), Gone, Potions (2), POTIONS (3)")
+		local found = false
+		for _, l in ipairs(lines) do
+			found = found or l == added
+		end
+		assert.truthy(found, table.concat(lines, "\n"))
+		assert.truthy(Pr.Import(data))
+		local yours = db.categories.u_potions
+		assert.same({ "Potions", "potion", 60, true }, { yours.name, yours.query, yours.priority, yours.itemList.include[5512] })
+		assert.equal(false, db.categories.u_gone, "a deleted id is never revived")
+		local byName = {}
+		for id, def in pairs(db.categories) do
+			if type(def) == "table" then
+				byName[def.name] = id
+			end
+		end
+		local p2, p3, gone = byName["Potions (2)"], byName["POTIONS (3)"], byName["Gone"]
+		assert.same({ "flask", "herb", "ore", "toy" }, { db.categories[p2].query, db.categories[p3].query,
+			db.categories[gone].query, db.categories[byName["gear (2)"]].query })
+		assert.same({ true, true, true }, { p2 ~= "u_potions", p3 ~= "u_potions", gone ~= "u_gone" })
+		assert.equal("import", db.categories[p2].source)
+		assert.same({ gone, p2, p3, "c_junk" }, db.categoryOrder, "the imported order names the imported ones")
+		assert.equal(p2 .. ",c_junk", C.Get("focus.sections.mplus"), "the imported focus sections too")
+		assert.same({ "Potions", "Potions (2)", "POTIONS (3)" }, { Cat.Name("u_potions"), Cat.Name(p2), Cat.Name(p3) })
+	end)
+
+	-- Week 11 final fix 2. Mutation: in Categories.FreeName, drop the cut to C.MAX_NAME (the name would grow past it).
+	it("a taken name made free keeps within a category name's length", function()
+		local long = string.rep("a", SB.Categories.MAX_NAME)
+		SB.Config.db.categories.u_long = { name = long, query = "herb" }
+		SB.Categories.Load()
+		assert.truthy(Pr.Import(assert(Pr.Parse("SWAGBAG:1:cu.u_long.name=s" .. long .. ";cu.u_long.query=sore"))))
+		local names = {}
+		for _, def in pairs(SB.Config.db.categories) do
+			names[#names + 1] = def.name
+		end
+		table.sort(names)
+		assert.same({ string.rep("a", SB.Categories.MAX_NAME - 4) .. " (2)", long }, names)
 	end)
 
 	-- Security fix round 1. Mutations: drop the Query.Compile check; drop idOk(); drop the length / "|" check;
