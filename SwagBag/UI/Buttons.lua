@@ -254,12 +254,14 @@ local placeholderParent = {} -- [placeholder] = the frame it was acquired in
 local placeholderWindow = {} -- [placeholder] = the ErrorTrap window of its scripts (W3-23)
 Buttons.PLACEHOLDER_ALPHA = 0.5
 
+local placeholderText = {} -- [placeholder] = the tooltip text its window gave it (nil: the bags')
+
 local function placeholderTip(self)
 	if not GameTooltip then
 		return
 	end
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-	GameTooltip:SetText(SB.L.PLACEHOLDER_TIP, 1, 1, 1, 1, true)
+	GameTooltip:SetText(placeholderText[self] or SB.L.PLACEHOLDER_TIP, 1, 1, 1, 1, true)
 	GameTooltip:Show()
 end
 
@@ -290,11 +292,12 @@ local function createPlaceholder(parent)
 end
 
 -- A shown placeholder of `size` at TOPLEFT offset (x, y) inside parent. window: the ErrorTrap
--- window of its scripts (default "bags").
-function Buttons.AcquirePlaceholder(parent, icon, size, x, y, window)
+-- window of its scripts (default "bags"). tip: the tooltip text for a window whose items regroup when
+-- it closes (the bank's, the guild bank's); the bags' placeholders say "close the bag" (L.PLACEHOLDER_TIP).
+function Buttons.AcquirePlaceholder(parent, icon, size, x, y, window, tip)
 	local p = table.remove(Buttons.placeholderPool) or createPlaceholder(parent)
 	p:SetParent(parent)
-	placeholderParent[p], placeholderWindow[p] = parent, window
+	placeholderParent[p], placeholderWindow[p], placeholderText[p] = parent, window, tip
 	p:SetSize(size, size)
 	p.icon:SetTexture(icon)
 	p:ClearAllPoints()
@@ -311,7 +314,7 @@ function Buttons.ReleasePlaceholders(parent)
 		local p = Buttons.placeholdersInUse[i]
 		if parent == nil or placeholderParent[p] == parent then
 			p:Hide()
-			placeholderParent[p], placeholderWindow[p] = nil, nil
+			placeholderParent[p], placeholderWindow[p], placeholderText[p] = nil, nil, nil
 			table.remove(Buttons.placeholdersInUse, i)
 			Buttons.placeholderPool[#Buttons.placeholderPool + 1] = p
 		end

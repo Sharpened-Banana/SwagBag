@@ -122,6 +122,18 @@ describe("Placeholders (spec 4.2 rule 3, check V4)", function()
 		assert.falsy(SB.SafeMode.IsOn("bank"))
 	end)
 
+	-- Week 8 ruling. Mutation: in Buttons.lua placeholderTip, `placeholderText[self] or ` -> ``.
+	it("a window's own tooltip text rides along; a reused placeholder goes back to the bags' text", function()
+		local p = SB.Buttons.AcquirePlaceholder(fakeFrame("Frame"), 1, 37, 0, 0, "bank", "moved: close the bank")
+		p.scripts.OnEnter(p)
+		assert.equal("moved: close the bank", tip.text)
+		SB.Buttons.ReleasePlaceholders()
+		local q = SB.Buttons.AcquirePlaceholder(fakeFrame("Frame"), 1, 37, 0, 0)
+		assert.equal(p, q)
+		q.scripts.OnEnter(q)
+		assert.equal(SB.L.PLACEHOLDER_TIP, tip.text)
+	end)
+
 	it("OnEnter shows the tooltip, and does nothing without GameTooltip", function()
 		local p = SB.Buttons.AcquirePlaceholder(fakeFrame("Frame"), 1, 37, 0, 0)
 		p.scripts.OnEnter(p)

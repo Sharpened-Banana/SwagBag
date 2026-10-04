@@ -57,6 +57,24 @@ local GV = { SLOT = 37, GAP = 4, PAD = 4, SECTION_HEADER = 20, SECTION_GAP = 6, 
 	LIST_ROW = 24, LIST_GAP = 2, LIST_WIDTH = 480, LIST_NEW_ROWS = 8, ROW_TEXT_GAP = 4, SCALE_EPSILON = 0.001 }
 SB.GroupView = GV
 
+-- Shared by the bank and guild bank windows (week 8): the view button's order (each click shows the
+-- next one) and the button's label for it, and a column click's save-and-answer (the bags window keeps
+-- its own, with the /swagbag list extras).
+GV.VIEW_NEXT = { sections = "list", list = "grid", grid = "sections" }
+GV.VIEW_BUTTON = { sections = SB.L.VIEW_TO_SECTIONS, list = SB.L.VIEW_TO_LIST, grid = SB.L.VIEW_TO_GRID }
+
+-- Sort every list by `by` (again: the other way round; Engine/Sort.lua), saved in bags.list. flash(text)
+-- answers in the window's title (P2). Returns false while the settings are read-only.
+function GV.SortList(by, flash)
+	local spec = SB.Sort.Next(SB.Sort.Spec(), by)
+	if not SB.Sort.Save(spec.by, spec.desc) then
+		flash(SB.L.SETTINGS_READONLY)
+		return false
+	end
+	flash(SB.ListRows.SortedText(spec))
+	return true
+end
+
 local function keyOf(bag, slot)
 	return SB.Layout.Key(bag, slot)
 end
@@ -327,7 +345,7 @@ function GV.New(cfg)
 		local ghosts = {}
 		for _, p in ipairs(pos.placeholders) do
 			if p.shown then
-				B.AcquirePlaceholder(child, p.icon, isList() and GV.LIST_ROW or GV.SLOT, p.x, p.y, window)
+				B.AcquirePlaceholder(child, p.icon, isList() and GV.LIST_ROW or GV.SLOT, p.x, p.y, window, cfg.goneTip)
 				ghosts[#ghosts + 1] = { x = p.x + GV.LIST_ROW + GV.ROW_TEXT_GAP, y = p.y }
 			end
 		end

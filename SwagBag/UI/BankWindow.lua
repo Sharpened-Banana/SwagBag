@@ -272,8 +272,7 @@ BW.blizzardButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -5)
 -- Contents: two groups in one GroupView
 ---------------------------------------------------------------------------
 -- The view button's order, as in the bags window: each click shows the next one.
-local VIEW_NEXT = { sections = "list", list = "grid", grid = "sections" }
-local VIEW_BUTTON = { sections = L.VIEW_TO_SECTIONS, list = L.VIEW_TO_LIST, grid = L.VIEW_TO_GRID }
+local VIEW_NEXT, VIEW_BUTTON = SB.GroupView.VIEW_NEXT, SB.GroupView.VIEW_BUTTON
 local VIEW_FLASH = { sections = L.BANK_VIEW_SECTIONS, list = L.BANK_VIEW_LIST, grid = L.BANK_VIEW_GRID }
 
 function BW.View()
@@ -399,6 +398,7 @@ BW.view = SB.GroupView.New({
 		SB.BagsWindow.DropOnSection(sectionId)
 	end,
 	rows = BW.rows,
+	goneTip = L.LIST_BANK_GONE_TIP, -- a placeholder's tooltip (the rows' ghosts say it through BW.rows)
 	onListFailed = function() -- F6: said once per opening; the bank shows categories
 		if not BW.scaleWarned then
 			BW.scaleWarned = true
@@ -501,13 +501,7 @@ end
 -- A click on a column of the list: sort every list by it (Engine/Sort.lua), answered in the title (P2).
 -- The drawn lists regroup through SB_LIST_SORTED (below), held while the mouse is over the items.
 function BW.SortList(by)
-	local spec = SB.Sort.Next(SB.Sort.Spec(), by)
-	if not SB.Sort.Save(spec.by, spec.desc) then
-		BW.Flash(L.SETTINGS_READONLY)
-		return false
-	end
-	BW.Flash(SB.ListRows.SortedText(spec))
-	return true
+	return SB.GroupView.SortList(by, BW.Flash)
 end
 
 -- Config is not initialized while this file loads, so the view label is set in BW.Open().
