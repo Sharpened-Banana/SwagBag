@@ -974,3 +974,20 @@ L.SET_PRICE_TSM_TIP = "DBMarket: TSM's market value on your realm (the default).
 -- Masque skins (week 9, user pick 11): UI/Skins.lua
 L.REPORT_MASQUE = "Masque: %d buttons skinned"
 L.REPORT_MASQUE_OFF = "Masque: not loaded"
+
+-- Another bag addon on at the same time (week 9, user pick 11b): Core/Report.lua
+L.OTHER_BAGS_WARN = "Another bag addon is on too: %s. Two bag addons fight over the same bags. Keep one: type"
+	.. " /swagbag safe on to let it handle your bags and bank, or disable one in the AddOns list. SwagBag switches"
+	.. " nothing off by itself. (/swagbag otherbags off stops this line.)"
+L.REPORT_OTHER_BAGS = "Other bag addons on: %s"
+L.HELP_OTHER_BAGS = "otherbags [on|off]: a chat line at login while another bag addon is on too"
+L.OTHER_BAGS_STATE = "Warning at login about other bag addons: %s. Type /swagbag otherbags on or otherbags off."
+L.OTHER_BAGS_USAGE = "Use /swagbag otherbags, otherbags on, or otherbags off."
+L.OTHER_BAGS_ON = "SwagBag warns at login while another bag addon is on too."
+L.OTHER_BAGS_OFF = "No more warning at login about other bag addons. /swagbag report still names them."
+L.SET_OTHER_BAGS = "Other bag addons"
+L.SET_OTHER_BAGS_WARN = "Warn at login"
+L.SET_OTHER_BAGS_QUIET = "Don't warn"
+L.SET_OTHER_BAGS_TIP = "Two bag addons at once fight over the same bags. Warn at login: one chat line names the other"
+	.. " one while it is on (never in Safe Mode). Don't warn: no line; /swagbag report still names it. SwagBag never"
+	.. " switches an addon off. Bag modules inside UI suites (KkthnxUI, NDui, GW2_UI, Tukui) are not recognised."

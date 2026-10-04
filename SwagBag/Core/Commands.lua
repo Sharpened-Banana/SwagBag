@@ -1,4 +1,4 @@
--- SwagBag slash commands: safe, report, check, reset, free (week 3), debug.
+-- SwagBag slash commands: safe, report, check, reset, free (week 3), debug, otherbags (week 9).
 -- (help lives in Core/Slash.lua; search is registered by UI/SearchBox.lua.)
 local _, SB = ...
 
@@ -38,6 +38,20 @@ Slash.Register("safe", L.HELP_SAFE, function(arg)
 		return Commands.SetSafe(arg, not SM.IsOn(arg))
 	end
 	return L.SAFE_USAGE
+end)
+
+-- /swagbag otherbags [on|off] (week 9): the login line about another bag addon (Core/Report.lua).
+Slash.Register("otherbags", L.HELP_OTHER_BAGS, function(arg)
+	arg = (arg or ""):lower()
+	if arg == "" then
+		return L.OTHER_BAGS_STATE:format(SB.Config.Get("bags.warnOtherAddons") and L.OVERLAY_ON or L.OVERLAY_OFF)
+	elseif arg ~= "on" and arg ~= "off" then
+		return L.OTHER_BAGS_USAGE
+	end
+	if not SB.Config.Set("bags.warnOtherAddons", arg == "on") then
+		return L.SETTINGS_READONLY
+	end
+	return arg == "on" and L.OTHER_BAGS_ON or L.OTHER_BAGS_OFF
 end)
 
 Slash.Register("report", L.HELP_REPORT, function()

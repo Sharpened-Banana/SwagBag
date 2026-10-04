@@ -91,6 +91,37 @@ function A.AddOnState(name)
 	return loaded, version
 end
 
+-- Week 9 (user pick 11b): other bag replacements that fight SwagBag over the same bags, by the folder name
+-- C_AddOns reports them loaded under (A.AddOnState), and ElvUI only while its own bags module is on
+-- (ElvUI[1].private.bags.enable; ElvUI without its bags is fine). Read only: SwagBag never disables an addon.
+A.OTHER_BAG_ADDONS = { "Baganator", "Bagnon", "Combuctor", "AdiBags", "ArkInventory", "BetterBags", "LiteBag",
+	"Sorted", "GudaBags", "Inventorian", "EllesmereUIBags", "EnhanceQoLBags" }
+
+function A.ElvUIBagsOn()
+	local ok, on = pcall(function()
+		local E = A.Resolve("ElvUI")
+		E = type(E) == "table" and E[1]
+		local private = type(E) == "table" and E.private
+		local bags = type(private) == "table" and private.bags
+		return type(bags) == "table" and bags.enable == true
+	end)
+	return ok and on == true
+end
+
+-- The names of the other bag addons that are on now, in A.OTHER_BAG_ADDONS order, then "ElvUI".
+function A.OtherBagAddons()
+	local out = {}
+	for _, name in ipairs(A.OTHER_BAG_ADDONS) do
+		if A.AddOnState(name) then
+			out[#out + 1] = name
+		end
+	end
+	if A.ElvUIBagsOn() then
+		out[#out + 1] = "ElvUI"
+	end
+	return out
+end
+
 ---------------------------------------------------------------------------
 -- Containers and items
 ---------------------------------------------------------------------------
