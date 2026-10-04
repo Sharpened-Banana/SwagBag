@@ -1304,6 +1304,33 @@ function A.DeletePopup()
 	return nil
 end
 
+-- Week 10: the scrapper, in PLAYER_INTERACTION_MANAGER_FRAME_SHOW / _HIDE.
+function A.IsScrapper(interactionType)
+	local PIT = Enum and Enum.PlayerInteractionType
+	return PIT ~= nil and PIT.ScrappingMachine ~= nil and interactionType == PIT.ScrappingMachine
+end
+
+-- Week 10: the item IDs in the scrapper's slots (Blizzard numbers them from 0), read only: SwagBag never adds,
+-- removes or scraps anything. A slot that is empty, fails or holds a secret ID is skipped.
+A.SCRAP_SLOTS = 9
+function A.ScrapperItemIDs()
+	local S = _G.C_ScrappingMachineUI
+	local out = {}
+	if not (S and S.GetCurrentPendingScrapItemLocationByIndex and C_Item and C_Item.GetItemID) then
+		return out
+	end
+	for index = 0, A.SCRAP_SLOTS - 1 do
+		local ok, loc = pcall(S.GetCurrentPendingScrapItemLocationByIndex, index)
+		if ok and loc then
+			local okID, id = pcall(C_Item.GetItemID, loc)
+			if okID and type(id) == "number" and not isSecret(id) then
+				out[#out + 1] = id
+			end
+		end
+	end
+	return out
+end
+
 -- "|cffRRGGBB" for a class file name ("MAGE") from the client's class colours, or nil.
 function A.ClassColour(class)
 	local colours = _G.RAID_CLASS_COLORS
@@ -1788,6 +1815,8 @@ A.CHECKS = {
 	{ path = "ClearCursor", window = "bags", required = false },
 	{ path = "SpellIsTargeting", window = "bags", required = false },
 	{ path = "StaticPopup_FindVisible", window = "bags", required = false },
+	{ path = "C_ScrappingMachineUI.GetCurrentPendingScrapItemLocationByIndex", window = "bags", required = false },
+	{ path = "C_Item.GetItemID", window = "bags", required = false },
 	{ path = "GameTooltip", window = "bags", required = false },
 	{ path = "C_Item.GetItemInfoInstant", window = "bags", required = true },
 	{ path = "C_Item.GetItemInfo", window = "bags", required = true },

@@ -1,6 +1,6 @@
 -- luacheck: globals IsInGuild TSM_API LibStub
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
--- luacheck: globals SpellIsTargeting StaticPopup_FindVisible
+-- luacheck: globals SpellIsTargeting StaticPopup_FindVisible C_ScrappingMachineUI C_Item issecretvalue Enum
 -- luacheck: globals Auctionator ColorManager ITEM_QUALITY_COLORS
 -- luacheck: globals PlayerHasToy C_MountJournal C_PetJournal C_HousingCatalog C_TransmogCollection
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
@@ -502,9 +502,10 @@ end)
 -- Week 10 (lock warnings, UI/LockWarnings.lua): what SwagBag reads to warn about a locked item, never to stop
 -- anything.
 describe("Adapter lock-warning helpers (week 10)", function()
-	local A, tip, savedTargeting, savedFindVisible
+	local A, tip, savedTargeting, savedFindVisible, savedScrap, savedItem, savedSecret, savedEnum
 	before_each(function()
 		savedTargeting, savedFindVisible = SpellIsTargeting, StaticPopup_FindVisible
+		savedScrap, savedItem, savedSecret, savedEnum = C_ScrappingMachineUI, C_Item, issecretvalue, Enum
 		local SB = {}
 		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
 		A = SB.Adapter
@@ -516,6 +517,7 @@ describe("Adapter lock-warning helpers (week 10)", function()
 
 	after_each(function()
 		SpellIsTargeting, StaticPopup_FindVisible = savedTargeting, savedFindVisible
+		C_ScrappingMachineUI, C_Item, issecretvalue, Enum = savedScrap, savedItem, savedSecret, savedEnum
 	end)
 
 	-- Mutation: in A.SpellTargeting, `return spellTargeting()` -> `return cursorHeld()`.
@@ -552,5 +554,32 @@ describe("Adapter lock-warning helpers (week 10)", function()
 		assert.is_nil(A.DeletePopup())
 		StaticPopup_FindVisible = function() error("renamed") end
 		assert.is_nil(A.DeletePopup(), "an error is no box")
+	end)
+
+	-- Mutation: in A.ScrapperItemIDs, `for index = 0, A.SCRAP_SLOTS - 1 do` -> `for index = 1, A.SCRAP_SLOTS do`.
+	it("ScrapperItemIDs reads the scrapper's nine slots, numbered from 0; empty, broken and secret ones are skipped", function()
+		C_ScrappingMachineUI, C_Item = nil, nil
+		assert.same({}, A.ScrapperItemIDs(), "no API")
+		local asked, slots = {}, { [0] = { id = 211880 }, [3] = { id = 5 }, [8] = { id = 212283 } }
+		C_ScrappingMachineUI = { GetCurrentPendingScrapItemLocationByIndex = function(i)
+			asked[#asked + 1] = i
+			if i == 4 then
+				error("broken")
+			end
+			return slots[i]
+		end }
+		C_Item = { GetItemID = function(loc) return loc.id end }
+		issecretvalue = function(v) return v == 5 end
+		assert.same({ 211880, 212283 }, A.ScrapperItemIDs())
+		assert.same({ 0, 1, 2, 3, 4, 5, 6, 7, 8 }, asked)
+	end)
+
+	-- Mutation: in A.IsScrapper, `PIT.ScrappingMachine` -> `PIT.GuildBanker` (both places).
+	it("IsScrapper is true for the scrapper's interaction only", function()
+		Enum = nil
+		assert.falsy(A.IsScrapper(40), "no Enum")
+		Enum = { PlayerInteractionType = { ScrappingMachine = 40, GuildBanker = 10 } }
+		assert.truthy(A.IsScrapper(40))
+		assert.falsy(A.IsScrapper(10))
 	end)
 end)
