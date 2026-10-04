@@ -73,6 +73,18 @@ describe("Mover (week 7)", function()
 		assert.same({ 1 }, usedSlots())
 	end)
 
+	-- Week 9 (preflight S5): GetCursorInfo answers more than items. Mutation: in step, `if A.CursorBusy() then`
+	-- -> `if A.CursorItem() ~= nil then`.
+	it("waits while anything else is on the cursor too (money, a spell, a merchant's item), however long", function()
+		A.cursorOther = "merchant"
+		start(items(1))
+		A.Advance(Mover.RETRY * (Mover.MAX_WAITS + 5))
+		assert.same({}, usedSlots(), "waited")
+		A.cursorOther = nil
+		A.Advance(Mover.RETRY)
+		assert.same({ 1 }, usedSlots())
+	end)
+
 	-- Mutation: in step, `if run.waits <= Mover.MAX_WAITS` -> `if true` (the run never ends). An item on the
 	-- cursor is waited for without a limit (the vendor closing ends the run).
 	it("an item the mouse never leaves stays where it is; the run goes on with the next", function()

@@ -293,3 +293,86 @@ describe("Adapter collections (week 7)", function()
 		assert.is_nil(A.AppearanceKnown("item:2"), "a secret answer")
 	end)
 end)
+
+-- Week 9 (user pick 8): the stacker's one game call. Mutation: in A.MoveStack, drop the put-back pickup.
+describe("Adapter.MoveStack (real adapter, stubbed globals)", function()
+	local A, calls, cursor
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+		calls, cursor = {}, nil
+		GetCursorInfo = function()
+			if cursor then
+				return "item", 211880, "item:211880"
+			end
+		end
+	end)
+
+	after_each(function()
+		GetCursorInfo, ClearCursor, C_Container, issecretvalue = nil, nil, nil, nil
+	end)
+
+	-- keep: what the drop leaves on the cursor (true: the rest that did not fit).
+	local function game(keep)
+		C_Container = { PickupContainerItem = function(bag, slot)
+			calls[#calls + 1] = { bag, slot }
+			if #calls == 1 then
+				cursor = true
+			elseif #calls == 2 then
+				cursor = keep or nil
+			else
+				cursor = nil
+			end
+		end }
+	end
+
+	it("picks up and drops with the game's own call, puts back what is left, never starts with an item held", function()
+		assert.falsy(A.MoveStack(0, 2, 0, 1), "no API")
+		game(false)
+		assert.truthy(A.MoveStack(0, 2, 0, 1))
+		assert.same({ { 0, 2 }, { 0, 1 } }, calls)
+		calls = {}
+		game(true)
+		assert.truthy(A.MoveStack(0, 4, 0, 2))
+		assert.same({ { 0, 4 }, { 0, 2 }, { 0, 4 } }, calls, "the rest goes back where it came from")
+		assert.is_nil(cursor)
+		calls, cursor = {}, true
+		assert.falsy(A.MoveStack(0, 4, 0, 2), "the user holds an item")
+		assert.same({}, calls)
+	end)
+
+	it("a throwing pickup is reported and the cursor is cleared", function()
+		local cleared = 0
+		ClearCursor = function() cleared = cleared + 1 cursor = nil end
+		C_Container = { PickupContainerItem = function(bag)
+			if bag == 9 then
+				error("refused")
+			end
+			cursor = true
+		end }
+		local ok, err = A.MoveStack(0, 1, 9, 1)
+		assert.equal(false, ok)
+		assert.truthy(err)
+		assert.equal(1, cleared, "nothing stays on the cursor")
+	end)
+
+	-- P5 (preflight S5): GetCursorInfo answers more than items. Mutation: in A.MoveStack, guard with
+	-- `A.CursorItem() ~= nil` instead of `A.CursorBusy()`.
+	it("CursorBusy sees anything on the cursor (money, a spell, a merchant's item, a secret item ID); no move starts", function()
+		assert.falsy(A.CursorBusy(), "no API")
+		game(false)
+		issecretvalue = function(v) return v == 999 end
+		for _, held in ipairs({ { "money", 500 }, { "spell", 1 }, { "merchant", 3 }, { "item", 999 } }) do
+			GetCursorInfo = function() return held[1], held[2] end
+			assert.is_nil(A.CursorItem(), held[1])
+			assert.truthy(A.CursorBusy(), held[1])
+			assert.falsy(A.MoveStack(0, 2, 0, 1), held[1])
+		end
+		assert.same({}, calls)
+		GetCursorInfo = function() return nil end
+		assert.falsy(A.CursorBusy(), "nothing held")
+		GetCursorInfo = function() error("broken") end
+		assert.falsy(A.CursorBusy(), "an error is no answer")
+	end)
+end)

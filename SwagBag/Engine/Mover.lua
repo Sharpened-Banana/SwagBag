@@ -9,7 +9,7 @@
 --             done = fn(result) }              result = { moved = { item... }, left = n, skipped = n,
 --                                              kept = n, why = nil | "combat" | "closed" | "stuck" | "error" }
 --   Mover.Busy() -> bool
---   Mover.IsBusy(bag, slot) -> bool   spec 4.2 rule 5: an item is on the cursor, or that slot's button is
+--   Mover.IsBusy(bag, slot) -> bool   spec 4.2 rule 5: anything is on the cursor, or that slot's button is
 --                                     under the mouse in the open bags window
 -- Each step runs out of combat only (combat stops the run: nothing is queued) and only while still()
 -- says yes. The slot must still hold the same item (item ID and link), else it is skipped: it was used
@@ -33,7 +33,7 @@ function Mover.Busy()
 end
 
 function Mover.IsBusy(bag, slot)
-	if SB.Adapter.CursorItem() ~= nil then
+	if SB.Adapter.CursorBusy() then
 		return true
 	end
 	local W = SB.BagsWindow
@@ -104,7 +104,7 @@ step = function(run)
 	if not same(item) then
 		return skip(run) -- used or moved by hand: nothing to do
 	end
-	if A.CursorItem() ~= nil then
+	if A.CursorBusy() then -- week 9: money, a spell or a merchant's item on the cursor count too
 		return later(run, Mover.RETRY) -- the user is moving an item by hand: wait, however long it takes
 	end
 	if Mover.IsBusy(item.bag, item.slot) then
@@ -140,7 +140,7 @@ step = function(run)
 end
 
 function Mover.Start(job)
-	if Mover.run then
+	if Mover.run or (SB.Stacker and SB.Stacker.Busy()) then -- week 9: one run moves items at a time
 		return false, "busy"
 	end
 	if SB.Adapter.InCombat() then
