@@ -814,6 +814,16 @@ local function renderMoved(oldPos, newPos)
 	return newPos.width, newPos.height
 end
 
+-- Final review item 6 (the user's rule, spec AC3.3): an item that came into the bags and was not hovered yet
+-- (Inventory.IsUnseen) goes to New at every full layout, whatever its category and whatever the focus mode;
+-- every other item to its category (nil, a pending item, is New too).
+local function assignOf(record)
+	if SB.Inventory and SB.Inventory.IsUnseen(record.bag, record.slot) then
+		return nil
+	end
+	return SB.Categorizer.Assign(record)
+end
+
 local function layoutSections(bags)
 	local A, B = SB.Adapter, SB.Buttons
 	local slots = {}
@@ -834,7 +844,7 @@ local function layoutSections(bags)
 		slots = SB.Sort.DisplayOrder(slots, SB.Sort.Spec(), SB.Sort.Value)
 	end
 	-- New is hidden while empty unless bags.newAlways (ruling W4-15); the bank windows never hide it.
-	W.state = SB.Layout.Build(slots, SB.Categorizer.Assign, SB.Categories.SectionOrder(),
+	W.state = SB.Layout.Build(slots, assignOf, SB.Categories.SectionOrder(),
 		{ columns = isList() and 1 or columns(),
 			newRows = isList() and W.LIST_NEW_ROWS or SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
 			family = SB.Adapter.BagFamily, hideEmptyNew = not SB.Config.Get("bags.newAlways") })

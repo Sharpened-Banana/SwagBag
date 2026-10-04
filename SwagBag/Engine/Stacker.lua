@@ -25,7 +25,7 @@
 -- another reason (being posted at the Auction House, mailed or traded) is left out of the run. Each step plans
 -- again from the slots as they are, so an item used or moved by hand meanwhile is simply read as it is now.
 -- Every step runs in its own "none" trap (the first one too, not the Sort click's): an error is recorded,
--- never Safe Mode, and ends the run with its one line. No OnUpdate.
+-- never Safe Mode, and ends the run with its own line (STACK_STOP_ERROR, not the "stuck" one). No OnUpdate.
 local _, SB = ...
 
 local L = SB.L
@@ -283,6 +283,8 @@ function St.ResultText(r)
 		return L.STACK_STOP_COMBAT:format(r.merged, r.ordered)
 	elseif r.why == "closed" then
 		return L.STACK_STOP_CLOSED:format(r.merged, r.ordered)
+	elseif r.why == "error" then
+		return L.STACK_STOP_ERROR:format(r.merged, r.ordered) -- final review item 3: not the "did not move" line
 	elseif r.why ~= nil then
 		return L.STACK_STOP_STUCK:format(r.merged, r.ordered)
 	end

@@ -1,5 +1,6 @@
 -- luacheck: globals IsInGuild TSM_API LibStub
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
+-- luacheck: globals SpellIsTargeting
 -- luacheck: globals Auctionator ColorManager ITEM_QUALITY_COLORS
 -- luacheck: globals PlayerHasToy C_MountJournal C_PetJournal C_HousingCatalog C_TransmogCollection
 -- The REAL Adapter.lua (not the mock): cursor and sort helpers added in week 2; equipped items (week 3).
@@ -310,7 +311,7 @@ describe("Adapter.MoveStack (real adapter, stubbed globals)", function()
 	end)
 
 	after_each(function()
-		GetCursorInfo, ClearCursor, C_Container, issecretvalue = nil, nil, nil, nil
+		GetCursorInfo, ClearCursor, C_Container, issecretvalue, SpellIsTargeting = nil, nil, nil, nil, nil
 	end)
 
 	-- keep: what the drop leaves on the cursor (true: the rest that did not fit).
@@ -374,6 +375,23 @@ describe("Adapter.MoveStack (real adapter, stubbed globals)", function()
 		assert.falsy(A.CursorBusy(), "nothing held")
 		GetCursorInfo = function() error("broken") end
 		assert.falsy(A.CursorBusy(), "an error is no answer")
+	end)
+
+	-- Final review (item 2, P5): a spell waiting for its target (the cursor is a targeting hand, GetCursorInfo
+	-- says nothing) is busy too: a click on a slot would cast it on the item. Mutation: in A.CursorBusy, drop
+	-- `or spellTargeting()`.
+	it("CursorBusy is true while a spell waits for its target; no move starts; an error is no answer", function()
+		game(false)
+		GetCursorInfo = function() return nil end
+		SpellIsTargeting = function() return true end
+		assert.truthy(A.CursorBusy())
+		assert.falsy(A.MoveStack(0, 2, 0, 1))
+		assert.same({}, calls)
+		SpellIsTargeting = function() return false end
+		assert.falsy(A.CursorBusy())
+		SpellIsTargeting = function() error("broken") end
+		assert.falsy(A.CursorBusy(), "an error is no answer")
+		assert.truthy(A.MoveStack(0, 2, 0, 1), "moves again")
 	end)
 end)
 

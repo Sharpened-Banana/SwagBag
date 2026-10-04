@@ -145,6 +145,22 @@ describe("Buttons: Blizzard's blue new-item glow", function()
 		assert.truthy(b.newitemglowAnim.calls.Stop, "newitemglowAnim stopped")
 	end)
 
+	-- Final review item 6: the same post-hook (no new script on the secure button, no click hook) tells the
+	-- Inventory the item was seen, first, so an error later in the hook cannot keep it in New. Mutation: delete
+	-- the SB.Inventory.Seen call in the OnEnter hook.
+	it("hovering a button marks its item seen (it joins its category at the next open), even if the flag errors", function()
+		A.Put(0, 9, Fixtures.HERB, 5)
+		SB.eventFrame:Fire("BAG_UPDATE", 0)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.1)
+		assert.truthy(SB.Inventory.IsUnseen(0, 9))
+		A.ClearNewItem = function()
+			error("flag broke")
+		end
+		Fake.Fire(B.Get(0, 9), "OnEnter")
+		assert.falsy(SB.Inventory.IsUnseen(0, 9))
+	end)
+
 	-- Mutation: pass the bare function to HookScript instead of SB.ErrorTrap.Guard(...).
 	it("an error while clearing is recorded without Safe Mode, and the glow is still hidden", function()
 		local b = glowing(0, 3)

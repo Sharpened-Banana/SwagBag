@@ -26,10 +26,12 @@
 -- vendor, by priority) | "auctionator" | "tsm" | "vendor" (that one, the vendor for what it has no price for,
 -- or for everything while it is not loaded). Header totals, the list's Value column and the gold glow ask
 -- Prices.Value, so they follow the choice.
---   Prices.AuctionValue(link, itemID) -> copper | nil   ruling R0: the highest price any loaded auction source
+--   Prices.AuctionValue(link, itemID, recheck) -> copper | nil   ruling R0: the highest price any loaded auction source
 --                                      (Auctionator, TSM) gives, whatever prices.source says; the vendor's
 --                                      "gray BoE worth more than twice at auction" rule and Sell all's Auction
---                                      House sentence ask it, so a gold-maker who shows vendor prices keeps them
+--                                      House sentence ask it, so a gold-maker who shows vendor prices keeps them.
+--                                      recheck = true (the sell path, final review item 1): a cached "no price"
+--                                      is not trusted; the sources are worked out again and asked
 --   Prices.Choice() -> provider name | nil (auto);  Prices.TSMString() -> one of Adapter.TSM_PRICES
 --   Prices.SourceText() -> "Auctionator" | "TSM (DBMarket)" | "Vendor"   for /swagbag price and the report
 -- A change of either setting drops the cache and refreshes the open windows' totals once. A provider with
@@ -187,7 +189,7 @@ local function auctionSources()
 	return P.auction
 end
 
-function P.AuctionValue(link, itemID)
+function P.AuctionValue(link, itemID, recheck)
 	if SB.Adapter.IsSecret(link) then
 		link = nil
 	end
@@ -200,8 +202,11 @@ function P.AuctionValue(link, itemID)
 	end
 	local now = fresh()
 	local hit = P.ahCache[key]
-	if hit and (hit[2] == nil or now <= hit[2]) then
+	if hit and (hit[2] == nil or now <= hit[2]) and (hit[1] or not recheck) then
 		return hit[1] or nil
+	end
+	if recheck then
+		P.auction = nil -- the sell path: an auction addon loaded since the list was made is asked too
 	end
 	local best, missAge
 	for _, p in ipairs(auctionSources()) do

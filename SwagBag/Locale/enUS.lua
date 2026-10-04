@@ -928,6 +928,8 @@ L.STACK_STOP_COMBAT = "Stacking stopped: combat started (stacks merged: %d, move
 L.STACK_STOP_CLOSED = "Stacking stopped: the window closed (stacks merged: %d, moved first: %d)."
 L.STACK_STOP_STUCK = "Stacking stopped: an item did not move as expected (stacks merged: %d, moved first: %d). Nothing"
 	.. " was lost; press Sort to try again."
+L.STACK_STOP_ERROR = "Stacking stopped: SwagBag hit an error (stacks merged: %d, moved first: %d). Nothing was lost;"
+	.. " it was recorded: type /swagbag report."
 L.STACK_STARTED = "Stacking..."
 L.STACK_NOTHING = "Nothing to stack: each item has at most one partial stack, and it is already first."
 L.HELP_SORT = "sort [stacks|blizzard]: what Sort does: partial stacks first (for TSM posting), or Blizzard's sort"

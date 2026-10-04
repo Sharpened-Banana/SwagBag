@@ -163,6 +163,20 @@ describe("ListRows", function()
 		assert.equal(SB.L.LIST_EMPTY_TIP, GameTooltip.text)
 	end)
 
+	-- Final review item 6: in a list the row is what the user hovers (its button is small), so the row's hover
+	-- marks the item seen too, before the tooltip (an error there cannot skip it). Mutation: delete the
+	-- SB.Inventory.Seen call in itemTip.
+	it("hovering a filled row marks its item seen, even when the tooltip errors", function()
+		local seen = {}
+		SB.Inventory.Seen = function(bag, slot) seen[#seen + 1] = bag .. ":" .. slot end
+		local button = Fake.New("ItemButton", parent)
+		rows.Paint(button, 0, 1, record(1))
+		rows.Place(button, 32, -40, 400, 24, true)
+		A.SlotTooltip = function() error("tooltip broke") end
+		Fake.Fire(rows.rows[button], "OnEnter")
+		assert.same({ "0:1" }, seen)
+	end)
+
 	-- F3 (D23 precedent): a hover is cosmetic, so one glitch never takes the bags away.
 	-- Mutation: trap the row scripts under the window argument ("bags").
 	it("an error in a row's tooltip is trapped as \"none\", whatever the window (never a Lua error)", function()
