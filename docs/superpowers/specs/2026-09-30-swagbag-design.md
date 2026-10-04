@@ -112,9 +112,10 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC5.4 A keystroke after the 150 ms debounce re-evaluates 200 slots in ≤ 4 ms.
 
 #### F6. Visual rule builder (category editor)
-- AC6.1 A category can be created/edited with rows of `[keyword] [operator] [value]`, grouped in AND/OR blocks with a NOT toggle. "Advanced" reveals the text; both round-trip losslessly.
-- AC6.2 Saving runs `Validate`; broken categories are saved as disabled with the error shown, never silently dropped.
-- AC6.3 Paste-string import accepts a Syndicator/Baganator-syntax string and previews what it matches before saving.
+- AC6.1 A category can be created/edited with rows of `[keyword] [operator] [value]`, grouped in AND/OR blocks with a NOT toggle. "Advanced" reveals the text; both round-trip losslessly. Week 11 (v0.11.0): the rows are two levels (groups of rows; All of these / Any of these; Not on a row and on a group; with several groups, all or any); a rule nested deeper, a double Not, more than 40 rows or 10 groups opens as text only with the reason; "losslessly" means the same tree (`Query.Pretty`'s spelling) both ways, and a rule not changed in the rows is saved as typed; the keyword lists are the §7.3 families; a name typed in a row is always quoted. Advanced (the rule as text) takes the whole query language and is saved as typed (the rows never limit a power user). Text typed but not read is read first by any click on the rows, and never lost.
+- AC6.2 Saving runs `Validate` and says its warnings for a changed rule (§7.9). A rule with an error is never dropped. A category whose rule works keeps it in use, and on (§7.5 #3), and the broken text is kept as its draft: said at Save, shown in the list as `(your change has an error: the rule before it is used)`, opened in the editor with its error and "Back to the working rule"; a fix replaces the rule. A category with no rule that works (a new one) is saved with `enabled = false`, said at Save, shown as `(off: its rule has an error)` in the list and in the report's Broken list (§7.10). Fixed and saved, it is on again, also when the editor sends no On/Off (Reagents). A Save never regroups the open bags: they use the change at their next full layout (an open or Reflow), never moving an item under the mouse (§4.2 #5), and the Save answer says so. Save refuses while a row the user changed is not finished, naming it.
+- AC6.3 Paste-string import accepts a Syndicator/Baganator-syntax string and previews what it matches before saving. Week 11: the paste mapping (the week-11 plan's table: gold amounts, `!!`, an open `(` translated; unknown `#keywords`, name words, `upgrade`/`bop`, keywords that others start with, item levels noted; quotes, chat codes, unreadable syntax and over 500 characters refused whole, positioned in the pasted text, and a paste its gold amounts grow past 500 refused with its own message; never a partial save); the result is previewed (count and Show matches) and made a new user category "From Baganator" (the next free "From Baganator 2", ...; `source = "import"`, priority 88).
+- AC6.4 (week 11) Settings > Categories (after the everyday settings pages; nothing new in the bag window or the quick setup) lists every category in display order with its priority, Edit, Up and Down, and New category; a new category is On, priority 88, first; names have 1–30 characters, no `|`, unique (also against New and Free and every built-in's own name, any case, even after that built-in is renamed); rules at most 500 characters (one constant, `Query.MAX_QUERY`), no chat code, and the text boxes take more than their limit so a longer text is refused with its length, never cut; priorities 1–89 in steps, none for the four pinned built-ins (Junk, Equipment sets, Keystone & Crests, Reagents); Delete (user categories only) asks once more and takes the id out of the order, every focus mode (account and this character) and this character's collapsed sections, without re-stacking the open bags, and the id is never given again; Reset to default asks once more, removes a built-in's whole diff, dragged items included, and goes back to the list; Show matches' search is taken out of the bags when the settings window closes, if it is still theirs; every SwagBag text box lets the keyboard go when combat starts.
 
 #### F7. First-run wizard and tour
 - AC7.1 On first login with SwagBag, a 4-step wizard runs: playstyle (M+ / Raid / Gold / Casual / Collector, multi-select) → preset categories and focus modes → layout (columns, scale, look) → gold settings (Auctionator detected or not; threshold).
@@ -193,6 +194,9 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 #### F20. Profiles and share strings (week 7)
 - AC20.1 Named profiles save and load the account settings, with one step of undo (`/swagbag profile undo`) and a Defaults button. Share strings (`SWAGBAG:1:...`, text only) export settings, optionally with categories; import is Preview first, then Import; a string that is not ours, from a newer version, damaged, too long, or holding a value outside its setting's range or words is refused whole with the reason. Nothing in a string is ever run.
 - AC20.2 Never in a share string, either way: `guildBank.withdrawAnyTab` and `vendor.repair` (the preview names them as never imported). An imported category must compile, may not carry a chat escape (`|T |H |A |K`, `|c` plus eight hex digits, `|cn`), and never outranks Junk, Equipment sets, Keystone & Crests or Reagents: a priority of 90 or more comes in at 89 and the preview names it (never refused); the priority of those four built-ins is never imported (the preview names it). `|cn` is refused only before an upper-case name and `:` (`herb|cname` is a query).
+- AC20.3 (week 11) An export with categories leaves out a rule an import would refuse (broken, or holding a chat code) and names its category, so the user's own string is never refused; a string from elsewhere holding a broken category is still refused at import. One chat-code check (`Query.EscapeCode`) and one pinned list serve share strings and the category editor.
+- AC20.4 (week 11, data safety) **An import never replaces a user category.** An imported category whose id is one the user has, as a category or as a deleted one's (never given again), comes in under a fresh id, and the string's category order and focus sections follow it; one whose name a category already has (any case, a built-in's own name, New, Free) comes in as "Name (2)", "Name (3)"... within the 30-character limit. The preview names them ("Added as new, next to yours (yours stay as they are): ...").
+- AC20.5 (week 11, data safety) **Undo brings the categories back only if nothing changed them since.** The one step of undo after an import with categories holds the categories, built-in edits and order from before it; any later change to them (the category editor's Create, Save, Delete, Move, Reset to default, a drag onto a header, quick setup's order) drops that part, so Undo then brings back the settings only and never undoes what the user made since. Its answer says which: settings only (`Your categories stay as they are.`), or settings, categories and category order.
 
 ### 2.2 v1.1 – v1.3 (roughly monthly)
 
@@ -507,7 +511,7 @@ op       := "=" | "<" | "<=" | ">" | ">="
 
 Precedence: `!` > `&` > `|`; parentheses override. `~` is a synonym for `!` and `||` for `|` (Syndicator spellings). Whitespace around operators is ignored. A bare term is resolved in this order: a single all-digit word `N` or a single `N-M` word is an item-level test (`level`, `range`); otherwise a registered keyword if one exists (keyword match); **else** a name-text match. `#word` forces keyword. A quoted string is always text. The parser records the character span of every node for error display.
 
-Unknown-keyword policy: a bare word that is not a registered keyword is a text match (Syndicator behaviour); the rule builder shows a hint "matching item names containing 'potin' — did you mean `potion`?" when it is within edit distance 1 of a keyword.
+Unknown-keyword policy: a bare word that is not a registered keyword is a text match (Syndicator behaviour); the rule builder shows a hint "matching item names containing 'potin' — did you mean `potion`?" when it is within edit distance 1 of a keyword **or two neighbouring letters swapped** (`flsk` → `flask`, `ptoion` → `potion`; week 11, in the category editor).
 
 ### 7.3 Keyword table (v1.0)
 
@@ -542,7 +546,7 @@ Verified against Syndicator v284 by desk spike F (`docs/research/2026-10-syndica
 
 1. **Adjacent words are one phrase in both.** `healing potion` is one term; use `&` for conjunction. (Not a divergence; kept for clarity. The builder auto-quotes values containing operators, which handles the critique's `Metal & Stone` case.)
 2. **Precedence is the same** (`!` > `&` > `|`, parentheses group). `~` is accepted as a synonym for `!`, and `||` for `|`.
-3. **Errors are shown, not swallowed.** Syndicator silently ignores unbalanced parentheses and stray operators; we mark the category invalid and keep the previous compiled version active. Exception: an **unknown `#keyword` is a warning, not an error**. It evaluates `false`, as in Syndicator, so imported OR-lists of alternative spellings keep working.
+3. **Errors are shown, not swallowed.** Syndicator silently ignores unbalanced parentheses and stray operators; we mark the category invalid and keep the previous compiled version active. Week 11: this holds for the category editor too: a broken change of a rule that works keeps that rule in use, and on, and is stored as the category's `draft` until fixed or dropped ("Back to the working rule"). Exception: an **unknown `#keyword` is a warning, not an error**. It evaluates `false`, as in Syndicator, so imported OR-lists of alternative spellings keep working.
 4. **Undefined branches are defined.** Numeric comparisons on items lacking the field (ilvl on a potion) evaluate `false`, not `nil`.
 5. **Tri-state**: items with unloaded data evaluate `nil` and are held in New rather than mis-filed (Syndicator also passes "unknown" through).
 6. **`#` is keyword-only in both** (exact keyword: no prefix expansion, no name text). Confirmed by spike F; the `=word` fallback is dropped.
@@ -552,6 +556,7 @@ Verified against Syndicator v284 by desk spike F (`docs/research/2026-10-syndica
 10. **Same word, different meaning:** `upgrade` (ours: has an upgrade track; theirs: is an upgrade for this character) and `bop` (ours: bind type; theirs: currently bound). Both are explained in the editor's keyword help.
 11. **A comparison after a multi-word phrase** (`a b ilvl>5`) is a positioned `AND_BEFORE_COMPARISON` error for us; Syndicator treats the whole string as a name search that matches nothing.
 12. **Keyword vocabulary.** Syndicator's English spellings used by published category strings are registered as aliases: `equipment`, `bwe`, `tradeable loot`, `tradable loot`, `tradeskill`, `profession`, `profession equipment`, `battle pet(s)`, `off-hand`/`off hand`/`held in off-hand`, `main hand`, `two-hand`, `one-hand`, `trash`, `account bound`, `warbound until equipped`, `helm`, `cloak`, `bracers`, `gloves`, `belt`, `boots`. Subclass and detail keywords we do not have yet (`elemental`, `optional reagents`, `finishing reagents`, `crafting reagent`, `open`, `socket`, expansion and profession names) are unknown `#keywords` (rule 3) until they are registered.
+13. **At paste** (week 11, AC6.3): a Baganator search pasted into Settings > Categories is translated where the two differ (gold amounts, `!!`, an open `(`), and every other difference above is named in the paste view before anything is made.
 
 ### 7.6 Default category set (first run, display order)
 
@@ -568,7 +573,7 @@ category = { id = "c_gear", name = L["Gear"], query = "gear", compiled = <runtim
              source = "builtin" | "user" | "import" }
 ```
 
-A category made by importing a share string (F20) is stored with `source = "import"`.
+A category made by importing a share string (F20) is stored with `source = "import"`; so is one made from a pasted Baganator search (week 11). A user category's id is `u_<name>` (`_2`, `_3`... when taken), never one a category has or a deleted category had (AC20.4).
 
 Assignment for one slot record:
 1. Manual **exclude** lists are consulted first (an excluded item cannot land in that category).
@@ -591,11 +596,11 @@ The categorizer's per-item memo is keyed by the category set's strongest class; 
 
 ### 7.9 Validation
 
-`Validate(compiled)` runs the closure tree with three synthetic leaf behaviours — all leaves `true`, all `false`, all `nil` — and asserts the combinators return without error and produce a value in `{true,false,nil}`. It also walks the AST for unknown keywords (flagged as text), operators without numbers, and empty groups. Results are shown in the editor before save.
+`Validate(compiled)` runs the closure tree with three synthetic leaf behaviours — all leaves `true`, all `false`, all `nil` — and asserts the combinators return without error and produce a value in `{true,false,nil}`. It also walks the AST for unknown keywords (flagged as text), operators without numbers, and empty groups. Results are shown in the editor before save. Week 11: Save runs `Validate`, and the editor's preview lists every warning, not only the first.
 
 ### 7.10 Error display
 
-Parse errors return `{position, expected, got}`. The search box underlines the span in red and shows "Expected a value after `>` at character 12". The rule builder marks the row. A category that fails to compile is saved with `enabled = false` and `error = "..."`, shows a warning triangle in the list, and never affects other categories.
+Parse errors return `{position, expected, got}`. The search box underlines the span in red and shows "Expected a value after `>` at character 12". The rule builder marks the row. A category that fails to compile is saved with `enabled = false` and `error = "..."`, is marked in the list with **text**, `(off: its rule has an error)`, not a warning triangle (week 11: no icon to depend on), and never affects other categories. A category whose saved change has an error while its rule before it stays in use reads `(your change has an error: the rule before it is used)`. "The rule builder marks the row": a row with an empty value, a quote in a name or a non-number shows a note under it; a rule with an error opens as text with its error.
 
 ---
 
@@ -635,6 +640,10 @@ SwagBagDB = {
 --   sort.mode = "blizzard" | "stacks", prices.source = "auto" | "auctionator" | "tsm" | "vendor",
 --   prices.tsm = "DBMarket" | "DBMinBuyout" | "DBRegionMarketAvg" | "DBRegionSaleAvg", bags.warnOtherAddons = true.
 -- Week 10 (schema stays 2): locks.warn = true (explicit default; a boolean in share strings).
+-- Week 11 (schema stays 2, no new key): the category editor writes categories, userEdits and categoryOrder only,
+--   with two optional values inside them, read defensively: a category's draft (a change of its rule saved with an
+--   error while the rule before it stays in use) and categories[id] = false (a deleted user category: its id is never
+--   given again). backups.profile drops its categories part when they change after an import (AC20.5).
 SwagBagCharDB = { schemaVersion = 1, overrides = { ["modes.enabled.mplus"] = false, ... },
                   ui = { positions = {}, collapsed = {}, wizardDone = true } }
 ```
@@ -748,7 +757,7 @@ This is what the user pastes into Claude Code. BugGrabber/BugSack compatibility:
 
 ### 10.5 Slash commands (all with feedback, P2)
 
-`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo|warn [on|off]]` (clear asks first; one lock is answered in the singular; `warn` says or switches the destroy warnings), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added); week 9: `sort [stacks|blizzard]`, `price [auto|auctionator|tsm [<price>]|vendor|string <price>]`, `otherbags [on|off]`.
+`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo|warn [on|off]]` (clear asks first; one lock is answered in the singular; `warn` says or switches the destroy warnings), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added); week 9: `sort [stacks|blizzard]`, `price [auto|auctionator|tsm [<price>]|vendor|string <price>]`, `otherbags [on|off]`; week 11: `settings categories` opens Settings > Categories.
 
 ---
 
@@ -811,7 +820,7 @@ GitHub Actions on push: luacheck, busted, forbidden-token grep. On tag `v*`: Big
 
 | In (by Oct 31) | Deferred to November (v1.0 publish) |
 |---|---|
-| F1 bags, F2 bank + warband, **F16 guild bank (full, with view fallback)**, F3 category + grid + collapse, F4 default categories + drag-to-assign, F5 search, F8 six core focus modes (+ pause), F9 overlays incl. upgrade arrow, F10 Auctionator totals, F11 consumables warning, F12 Safe Mode + report, F14 Blizzard look, F15 simple settings, a **one-screen quick setup** (playstyle → preset) | F6 visual rule builder (largest UI build), F7 full wizard + interactive tour, F13 offline alt bags/banks view and tooltip alt counts (bank snapshots are still *captured* in October so data exists when the view lands) |
+| F1 bags, F2 bank + warband, **F16 guild bank (full, with view fallback)**, F3 category + grid + collapse, F4 default categories + drag-to-assign, F5 search, F8 six core focus modes (+ pause), F9 overlays incl. upgrade arrow, F10 Auctionator totals, F11 consumables warning, F12 Safe Mode + report, F14 Blizzard look, F15 simple settings, a **one-screen quick setup** (playstyle → preset), **F6 visual rule builder** (moved in: delivered in week 11, v0.11.0) | F7 full wizard + interactive tour, F13 offline alt bags/banks view and tooltip alt counts (bank snapshots are still *captured* in October so data exists when the view lands) |
 
 ### 12.2 Schedule (daily testing; each week ends with a working build)
 
@@ -848,6 +857,8 @@ M7 rule builder + full wizard + tour (≈2 weeks) · M8 offline alt view + toolt
 | Rule builder UI is too large for M7 | Med / Med | Ship keyword picker + text with validation first; nested groups second; both in M7 but ordered |
 | SavedVariables bloat on many alts | Low / Med | Measured budget; cap + purge UI |
 | Schema migration bug loses categories | Med / High | Backup before migrate; diff-based built-ins; newer-schema refusal; busted migration tests |
+| A share string or a profile Undo overwrites the user's categories (week 11) | Med / High | An import never replaces a user category or revives a deleted id (AC20.4); Undo brings categories back only if nothing changed them since (AC20.5); an export leaves out a rule an import would refuse and names it (AC20.3) |
+| Baganator's gold amounts differ from SwagBag's (week 11 paste) | Med / Low | Compared per item with SwagBag's price (auction, else vendor), said in the paste view; checked in-game (G6) |
 | Other addons touching our buttons (CanIMogIt, Pawn, TSM) | Med / Low | Buttons are standard `ContainerFrameItemButtonTemplate`; we expose nothing special; overlays in our own frame level |
 | Secret values poison tooltip-derived collection overlays (v1.1+) | Med / Low | `issecretvalue()` → `nil`; overlay hidden |
 | Developer loop stalls (user availability) | Med / High | Milestones are testing-sized; Claude prepares scripted guides so each evening is productive |
