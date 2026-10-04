@@ -3,8 +3,9 @@
 --                                      user (Engine/Locks.lua, Task 5), an item to open or learn
 --                                      (Collections.Learn: caches, unlearned toys, mounts, pets, decor,
 --                                      knowledge), gear whose look the account has not collected
---                                      (Collections.Uncollected, Task 8), or a gray BoE item Auctionator prices
---                                      above twice the vendor
+--                                      (Collections.Uncollected, Task 8), or a gray BoE item an auction source
+--                                      (Auctionator or TSM, whichever is loaded, whatever the price source:
+--                                      Prices.AuctionValue, week 9 ruling R0) prices above twice the vendor
 --   Vendor.Junk() -> { item }          gray items a vendor pays for, not protected, not held by the client
 --                                      (being moved or traded), loaded; bags order. item = { bag, slot,
 --                                      itemID, link, count, price } (price: copper per unit)
@@ -47,15 +48,17 @@ function V.Money(copper)
 	return L.VENDOR_MONEY_C:format(c)
 end
 
--- A gray item that binds when equipped and that Auctionator prices above twice what a vendor pays (R19: a
--- gold-maker sells those at the Auction House, not to a vendor). No Auctionator price: no such protection.
+-- A gray item that binds when equipped and that an auction source prices above twice what a vendor pays (R19:
+-- a gold-maker sells those at the Auction House, not to a vendor). Week 9 ruling R0: every loaded auction
+-- source is asked (Auctionator, TSM; the highest answer counts), even when the price source is "Vendor". No
+-- auction addon loaded, or none knows the item: no such protection.
 local function worthMoreAtAuction(r)
 	if r.quality ~= 0 or r.bind ~= "equip" or r.isBound or not SB.Prices then
 		return false
 	end
-	local ah, source = SB.Prices.Value(r.link, r.itemID, false)
+	local ah = SB.Prices.AuctionValue(r.link, r.itemID)
 	local info = SB.Adapter.GetItemInfo(r.itemID)
-	return source ~= nil and source ~= "Vendor" and type(ah) == "number" and ah > 2 * (info and info.sellPrice or 0)
+	return type(ah) == "number" and ah > 2 * (info and info.sellPrice or 0)
 end
 
 -- fast = true: a draw (the overlays' junk coin, week 8) may use cached look answers; the sell path never

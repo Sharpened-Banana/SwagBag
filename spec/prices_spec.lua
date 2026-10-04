@@ -3,7 +3,7 @@ local Fixtures = dofile("spec/fixtures/items.lua")
 
 local FILES = {
 	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
-	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua",
+	"SwagBag/Core/Slash.lua", "SwagBag/Engine/Items.lua", "SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua",
 	"SwagBag/Engine/Query/Query.lua", "SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Layout.lua",
 	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua",
 }
@@ -61,6 +61,109 @@ describe("Prices (spec F10, 3.3)", function()
 		assert.equal("Auctionator", P.Source())
 		assert.same({ 42000, "Auctionator" }, { P.Value(HERB_LINK, Fixtures.HERB) })
 		assert.same({ 250000, "Vendor" }, { P.Value(RING_LINK, Fixtures.BOE_RING) })
+	end)
+
+	-- Week 9 (user pick 10). Mutations: give TSM a priority above Auctionator's; or in active() drop the choice
+	-- check (every available provider answers, whatever the setting).
+	it("by default Auctionator answers, else TSM, else the vendor; prices.source picks one, the vendor fills in", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		A.tsm = { prices = { DBMarket = { [HERB_LINK] = 30000 } } }
+		P.Invalidate()
+		assert.same({ "TSM", 30000 }, { P.Source(), (P.Value(HERB_LINK, Fixtures.HERB)) }, "no Auctionator: TSM")
+		A.auctionator = { prices = { [HERB_LINK] = 42000 } }
+		P.Invalidate()
+		assert.same({ "Auctionator", 42000 }, { P.Source(), (P.Value(HERB_LINK, Fixtures.HERB)) }, "both: Auctionator")
+		SB.Config.Set("prices.source", "tsm")
+		assert.same({ "TSM", 30000 }, { P.Source(), (P.Value(HERB_LINK, Fixtures.HERB)) })
+		assert.same({ 250000, "Vendor" }, { P.Value(RING_LINK, Fixtures.BOE_RING) }, "what TSM has no price for")
+		SB.Config.Set("prices.source", "vendor")
+		assert.same({ "Vendor", 1500 }, { P.Source(), (P.Value(HERB_LINK, Fixtures.HERB)) })
+		SB.Config.Set("prices.source", "auctionator")
+		A.auctionator = nil
+		P.Invalidate()
+		assert.same({ "Vendor", 1500 }, { P.Source(), (P.Value(HERB_LINK, Fixtures.HERB)) }, "the chosen one is not loaded")
+	end)
+
+	-- Mutations: the TSM provider asks for "DBMarket" whatever the setting; or the SB_CONFIG_CHANGED listener
+	-- does not drop the cache.
+	it("TSM's price string follows the setting; a new source or string drops the cache and refreshes the totals", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		local refreshed = 0
+		SB.On("SB_PRICES_CHANGED", function() refreshed = refreshed + 1 end)
+		A.tsm = { prices = { DBMarket = { [HERB_LINK] = 30000 }, DBMinBuyout = { [HERB_LINK] = 25000 } } }
+		SB.Config.Set("prices.source", "tsm")
+		assert.equal(30000, P.Value(HERB_LINK, Fixtures.HERB))
+		SB.Config.Set("prices.tsm", "DBMinBuyout")
+		assert.equal(25000, P.Value(HERB_LINK, Fixtures.HERB))
+		assert.same({ HERB_LINK, "DBMinBuyout" }, A.tsmCalls[#A.tsmCalls])
+		A.Advance(P.REFRESH_DELAY)
+		assert.equal(1, refreshed, "one refresh after the burst")
+		assert.equal("TSM (DBMinBuyout)", P.SourceText())
+		SB.Config.Set("prices.source", "auto")
+		assert.equal("TSM (DBMinBuyout)", P.SourceText(), "auto, no Auctionator: TSM")
+		A.tsm = nil
+		P.Invalidate()
+		assert.equal("Vendor", P.SourceText())
+	end)
+
+	-- Preflight S2: TSM's data may load after the first lookup. Mutation: in P.Value, `if hit and (hit[3] == nil
+	-- or now <= hit[3]) then` -> `if hit then` (a TSM "no price" kept for the cache's 10 minutes).
+	it("a TSM 'no price' is kept 30 seconds only, so TSM data that arrives after login is used", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		A.tsm = { prices = { DBMarket = {} } }
+		P.Invalidate()
+		assert.same({ 1500, "Vendor" }, { P.Value(HERB_LINK, Fixtures.HERB) })
+		A.tsm.prices.DBMarket[HERB_LINK] = 30000
+		assert.same({ 1500, "Vendor" }, { P.Value(HERB_LINK, Fixtures.HERB) }, "kept a moment")
+		A.Advance(P.MISS_AGE + 1)
+		assert.same({ 30000, "TSM" }, { P.Value(HERB_LINK, Fixtures.HERB) })
+	end)
+
+	-- Ruling R0. Mutations: in P.AuctionValue, `best = math.max(best or v, v)` -> `best = best or v` (the first
+	-- source's answer); or in P.Invalidate, `P.ahCache, P.auction = {}, nil` -> `P.auction = nil`.
+	it("AuctionValue asks every loaded auction source whatever prices.source says; the highest answers", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		SB.Config.Set("prices.source", "vendor")
+		A.auctionator = { prices = { [HERB_LINK] = 42000 } }
+		A.tsm = { prices = { DBMarket = { [HERB_LINK] = 30000 } } }
+		P.Invalidate()
+		assert.same({ 1500, "Vendor" }, { P.Value(HERB_LINK, Fixtures.HERB) }, "what the windows show")
+		assert.equal(42000, P.AuctionValue(HERB_LINK, Fixtures.HERB))
+		A.auctionator.prices[HERB_LINK] = 20000
+		P.Invalidate()
+		assert.equal(30000, P.AuctionValue(HERB_LINK, Fixtures.HERB), "TSM's is the higher one now")
+		A.auctionator, A.tsm = nil, nil
+		P.Invalidate()
+		assert.is_nil(P.AuctionValue(HERB_LINK, Fixtures.HERB), "no auction addon: no auction price, never the vendor's")
+	end)
+
+	-- Mutation: in the price command, set prices.source without checking Config.Set's answer.
+	it("/swagbag price says where prices come from, picks a source and TSM's price, and refuses the rest", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		local L = SB.L
+		local function run(line)
+			local _, feedback = SB.Slash.Run(line)
+			return feedback
+		end
+		assert.equal(L.PRICE_STATE:format(L.PRICE_CHOICE_AUTO, "Vendor"), run("price"))
+		A.tsm = { prices = {} }
+		assert.equal(L.PRICE_SET:format(L.PRICE_CHOICE_TSM:format("DBMarket")), run("price tsm"))
+		assert.equal("tsm", SB.Config.Get("prices.source"))
+		assert.equal(L.PRICE_SET:format(L.PRICE_CHOICE_TSM:format("DBRegionMarketAvg")), run("price TSM dbregionmarketavg"))
+		assert.equal("DBRegionMarketAvg", SB.Config.Get("prices.tsm"))
+		assert.equal(L.PRICE_SET:format(L.PRICE_CHOICE_AUCTIONATOR) .. " " .. L.PRICE_NOT_LOADED:format("Auctionator"),
+			run("price auctionator"))
+		assert.equal(L.PRICE_SET:format(L.PRICE_CHOICE_VENDOR), run("price vendor"))
+		assert.equal(L.PRICE_SET:format(L.PRICE_CHOICE_AUTO), run("price auto"))
+		assert.equal(L.PRICE_TSM_SET:format("DBMinBuyout"), run("price string dbminbuyout"))
+		assert.same({ "auto", "DBMinBuyout" }, { SB.Config.Get("prices.source"), SB.Config.Get("prices.tsm") },
+			"price string: TSM's price only, never the source")
+		assert.equal(L.PRICE_USAGE, run("price string"))
+		assert.equal(L.PRICE_USAGE, run("price tsm dbanything"))
+		assert.equal(L.PRICE_USAGE, run("price auctionhouse"))
+		SB.Config.readOnly = true
+		assert.equal(L.SETTINGS_READONLY, run("price tsm"))
+		assert.equal("auto", SB.Config.Get("prices.source"))
 	end)
 
 	-- Mutation: register the bare function instead of the Guard-wrapped one in the SB_LOGIN handler.

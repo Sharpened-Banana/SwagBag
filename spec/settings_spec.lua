@@ -219,6 +219,22 @@ describe("Settings window", function()
 		assert.equal("ran sort blizzard", SW.lastStatus)
 	end)
 
+	-- Week 9 (user pick 10), P1. The TSM price row changes TSM's price only, never the source (preflight S7).
+	-- Mutations: in the TSM price row's apply, run "price string" without the name; or run "price tsm " .. v.
+	it("bank page: the price source rows, Auto and DBMarket first and selected; each choice runs /swagbag price", function()
+		SB.Slash.Register("price", "test", function(arg)
+			ran[#ran + 1] = "price " .. arg
+			return "ran price " .. arg
+		end)
+		SW.Show("bank")
+		assert.truthy(SW.selected[button(SB.L.SET_PRICE_AUTO)])
+		assert.truthy(SW.selected[button("DBMarket")])
+		click("TSM")
+		click("DBMinBuyout")
+		click(SB.L.SET_PRICE_VENDOR)
+		assert.same({ "price tsm", "price string DBMinBuyout", "price vendor" }, ran)
+	end)
+
 	-- Mutation: run row.apply directly instead of through ErrorTrap.Run in act().
 	it("an error in a change is recorded without Safe Mode, and the status line says so", function()
 		SW.Show("bags")

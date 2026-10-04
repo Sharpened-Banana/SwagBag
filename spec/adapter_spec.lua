@@ -1,4 +1,4 @@
--- luacheck: globals IsInGuild
+-- luacheck: globals IsInGuild TSM_API
 -- luacheck: globals GetCursorInfo ClearCursor C_Container C_Item ItemLocation GetInventoryItemLink GetAverageItemLevel issecretvalue
 -- luacheck: globals Auctionator ColorManager ITEM_QUALITY_COLORS
 -- luacheck: globals PlayerHasToy C_MountJournal C_PetJournal C_HousingCatalog C_TransmogCollection
@@ -374,5 +374,59 @@ describe("Adapter.MoveStack (real adapter, stubbed globals)", function()
 		assert.falsy(A.CursorBusy(), "nothing held")
 		GetCursorInfo = function() error("broken") end
 		assert.falsy(A.CursorBusy(), "an error is no answer")
+	end)
+end)
+
+-- Week 9 (user pick 10): TSM's public addon API, read through the Adapter only. TSM_API errors on a name it does
+-- not have, so the fake does too. Mutations: in A.TSMPrice drop the TSM_PRICE_OK check; or drop the isSecret(link)
+-- check.
+describe("Adapter TSM prices (real adapter, stubbed globals)", function()
+	local A, asked
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+		asked = {}
+	end)
+
+	after_each(function()
+		TSM_API, issecretvalue = nil, nil
+	end)
+
+	local function tsm(fns)
+		TSM_API = setmetatable(fns, { __index = function(_, k) error("TSM_API has no " .. tostring(k)) end })
+	end
+
+	it("prices through ToItemString and GetCustomPriceValue, only for the price strings SwagBag offers", function()
+		assert.falsy(A.TSMAvailable(), "not loaded")
+		tsm({ ToItemString = function(link) return "i:" .. link:match("item:(%d+)") end })
+		assert.falsy(A.TSMAvailable(), "an API without GetCustomPriceValue")
+		tsm({ ToItemString = function(link) return "i:" .. link:match("item:(%d+)") end,
+			GetCustomPriceValue = function(priceString, itemString)
+				asked[#asked + 1] = priceString .. " " .. itemString
+				return itemString == "i:7" and 12345.6 or nil
+			end })
+		assert.truthy(A.TSMAvailable())
+		assert.same({ 12345, nil }, { A.TSMPrice("item:7", "DBMarket"), A.TSMPrice("item:8", "DBMinBuyout") })
+		assert.same({ "DBMarket i:7", "DBMinBuyout i:8" }, asked)
+		assert.is_nil(A.TSMPrice("item:7", "vendorsell * 1000"), "a price string SwagBag does not offer")
+		assert.equal(2, #asked)
+		issecretvalue = function(v) return v == "item:7" end
+		assert.is_nil(A.TSMPrice("item:7", "DBMarket"), "a secret link")
+		assert.equal(2, #asked)
+	end)
+
+	-- Preflight S11, S12. Mutations: in A.TSMPrice, `v > 0` -> `v >= 0`; or drop `tsmApi = tsmApi or tsm()`
+	-- (a price asked before TSMAvailable() finds no TSM).
+	it("TSM is found at the first price asked; an error, zero, a negative or a non-number from TSM is no price", function()
+		tsm({ ToItemString = function(link) return link end, GetCustomPriceValue = function(_, itemString)
+			if itemString == "boom" then
+				error("TSM broke")
+			end
+			return ({ ok = 7, zero = 0, neg = -5, text = "12" })[itemString]
+		end })
+		assert.equal(7, A.TSMPrice("ok", "DBMarket"), "no TSMAvailable() asked first")
+		assert.same({ nil, nil, nil, nil }, { A.TSMPrice("boom", "DBMarket"), A.TSMPrice("zero", "DBMarket"),
+			A.TSMPrice("neg", "DBMarket"), A.TSMPrice("text", "DBMarket") })
 	end)
 end)

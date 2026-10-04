@@ -306,6 +306,20 @@ function M.New(SB)
 		m.auctionatorCallback = cb
 	end
 
+	-- TradeSkillMaster (week 9): m.tsm = { prices = { [priceString] = { [link] = copper } } } while "loaded"; nil
+	-- otherwise. m.tsmCalls = { { link, priceString } } per price asked.
+	m.tsm = nil
+	m.tsmCalls = {}
+	function m.TSMAvailable()
+		return m.tsm ~= nil
+	end
+
+	function m.TSMPrice(link, priceString)
+		m.tsmCalls[#m.tsmCalls + 1] = { link, priceString }
+		local list = m.tsm and m.tsm.prices[priceString]
+		return list and list[link] or nil
+	end
+
 	-- Focus signals (week 4): m.instance = { instanceType, difficultyID }; m.challengeMode true |
 	-- false | nil (no API); m.delve; m.spellNames[spellID] = lower-case name; m.fishingLoot;
 	-- m.lootSource ("GameObject", "Creature", ... or nil); m.professions ({ herb, ore, skin } or nil).

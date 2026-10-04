@@ -148,6 +148,16 @@ describe("Profiles (week 7)", function()
 		assert.is_nil(Pr.Parse("SWAGBAG:1:s.sort.mode=sshuffle"))
 	end)
 
+	-- Week 9 (user pick 10). Mutation: drop `["prices.tsm"] = ...` from VALID.
+	it("the price source and TSM's price string travel; a price string SwagBag does not offer is refused", function()
+		C.Set("prices.source", "tsm")
+		C.Set("prices.tsm", "DBMinBuyout")
+		local data = assert(Pr.Parse(Pr.Export(false)))
+		assert.same({ "tsm", "DBMinBuyout" }, { data.settings["prices.source"], data.settings["prices.tsm"] })
+		assert.is_nil(Pr.Parse("SWAGBAG:1:s.prices.tsm=sDBAnything"))
+		assert.is_nil(Pr.Parse("SWAGBAG:1:s.prices.source=sauctioneer"))
+	end)
+
 	-- Week 8. Mutation: drop "list" from guildBank.view's words in VALID.
 	it("the guild bank's list view travels in a share string", function()
 		C.Set("guildBank.view", "list")

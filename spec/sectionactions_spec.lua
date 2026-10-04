@@ -140,6 +140,20 @@ describe("Section actions (week 7)", function()
 			.. " 0c. " .. SB.L.SECTION_SELL_KEEPS, StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
 	end)
 
+	-- Week 9 ruling R0: the Auction House sentence does not follow the price source. Mutation: in SA.Sellable,
+	-- `local ah = P and not P.Bound(r) and P.AuctionValue(r.link, r.itemID)` -> `local ah = P and P.Value(r.link,
+	-- r.itemID, P.Bound(r))`.
+	it("with Vendor chosen as the price source, Sell all's question still names the Auction House value", function()
+		SB.Config.Set("prices.source", "vendor")
+		A.auctionator = { prices = { ["item:" .. Fixtures.HERB] = 1000 } }
+		assert.same({ 10, "Vendor" }, { SB.Prices.Value("item:" .. Fixtures.HERB, Fixtures.HERB) },
+			"the windows show the vendor's")
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SA.Entries("c_tradegoods")[1].run()
+		assert.equal("Sell 5 items from Trade Goods for about 10s 0c? At the Auction House they are worth about 10g 0s"
+			.. " 0c. " .. SB.L.SECTION_SELL_KEEPS, StaticPopupDialogs.SWAGBAG_SELL_ALL.text)
+	end)
+
 	-- Mutations: SA.SellConfirmed skips the atVendor() check; MERCHANT_CLOSED stops hiding the question.
 	it("a vendor that closes takes the question down; a Yes that still arrives sells nothing and says so", function()
 		SB.eventFrame:Fire("MERCHANT_SHOW")

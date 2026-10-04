@@ -338,6 +338,40 @@ describe("Vendor (week 7)", function()
 		assert.same({ 6, 9 }, sold())
 	end)
 
+	-- Week 9 (user pick 10, ruling R0): every loaded auction source is asked, and any one above twice keeps the
+	-- item. Mutation: in P.AuctionValue, `best = math.max(best or v, v)` -> `best = best or v` (Auctionator's 150
+	-- would decide).
+	it("a gray BoE stays when TSM prices it above twice its vendor price, even while Auctionator answers less", function()
+		Loader.LoadFile(SB, "SwagBag/Providers/TSM.lua")
+		A.AddItem(GRAY_BOE, { name = "Rusted Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
+		A.Put(0, 8, GRAY_BOE, 1)
+		A.auctionator = { prices = { ["item:" .. GRAY_BOE] = 150 } }
+		A.tsm = { prices = { DBMarket = { ["item:" .. GRAY_BOE] = 900 } } }
+		SB.Inventory.ScanAll()
+		visit()
+		assert.same({ 6 }, sold())
+	end)
+
+	-- Ruling R0 (gold-maker safety): the protection does not follow the price source. Mutation: in
+	-- worthMoreAtAuction, `SB.Prices.AuctionValue(r.link, r.itemID)` -> `SB.Prices.Value(r.link, r.itemID, false)`.
+	it("with Vendor chosen, a gray BoE Auctionator prices above twice its vendor price stays; with no auction addon it sells", function()
+		A.AddItem(GRAY_BOE, { name = "Rusted Sabre", classID = A.ITEM_CLASS.Weapon, subclassID = 7,
+			equipLoc = "INVTYPE_WEAPON", quality = 0, ilvl = 5, maxStack = 1, bind = "equip", sellPrice = 100 })
+		A.Put(0, 8, GRAY_BOE, 1)
+		A.auctionator = { prices = { ["item:" .. GRAY_BOE] = 500 } }
+		SB.Config.Set("prices.source", "vendor")
+		assert.same({ 100, "Vendor" }, { SB.Prices.Value("item:" .. GRAY_BOE, GRAY_BOE) }, "the windows show the vendor's")
+		SB.Inventory.ScanAll()
+		visit()
+		assert.same({ 6 }, sold())
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		A.auctionator = nil
+		SB.Prices.Invalidate()
+		visit()
+		assert.same({ 6, 8 }, sold())
+	end)
+
 	-- Ruling R19: a gray piece whose look the account lacks is a transmog, not junk. Mutation: Vendor.Protected
 	-- drops `or SB.Collections.Uncollected(r) ~= nil`.
 	it("never sells gray gear whose look the account has not collected", function()
