@@ -1363,6 +1363,61 @@ function A.AuctionatorOnUpdate(cb)
 end
 
 ---------------------------------------------------------------------------
+-- TradeSkillMaster (optional price source, week 9, user pick 10; Providers/TSM.lua). Only its public addon
+-- API: TSM_API.ToItemString(link) -> TSM's item string, and TSM_API.GetCustomPriceValue(priceString,
+-- itemString) -> copper or nil. TSM_API raises an error on a name it does not have, so every read is
+-- pcall'd (A.Resolve is). TSM offers no "prices changed" callback in that API: the price cache's 10-minute
+-- age (Engine/Prices.lua) is what refreshes TSM prices. Only the price strings below are ever asked
+-- (a share string cannot make SwagBag evaluate a custom formula).
+---------------------------------------------------------------------------
+A.TSM_PRICES = { "DBMarket", "DBMinBuyout", "DBRegionMarketAvg", "DBRegionSaleAvg" }
+local TSM_PRICE_OK = {}
+for _, name in ipairs(A.TSM_PRICES) do
+	TSM_PRICE_OK[name] = true
+end
+
+local function tsm()
+	local okR, api = pcall(A.Resolve, "TSM_API")
+	if not okR or type(api) ~= "table" or isSecret(api) then
+		return nil
+	end
+	local okF, toItem, value = pcall(function()
+		return api.ToItemString, api.GetCustomPriceValue
+	end)
+	if okF and type(toItem) == "function" and type(value) == "function" then
+		return { toItem = toItem, value = value }
+	end
+	return nil
+end
+
+-- Resolved when availability is asked (once per price-cache fill), as for Auctionator, or at the first price
+-- asked before that (lazily, so a price never depends on the call order).
+local tsmApi
+
+function A.TSMAvailable()
+	tsmApi = tsm()
+	return tsmApi ~= nil
+end
+
+-- Copper per unit by one of A.TSM_PRICES, or nil (no price, not loaded, a secret link, an error, 0 or less).
+function A.TSMPrice(link, priceString)
+	tsmApi = tsmApi or tsm()
+	local api = tsmApi
+	if not api or type(link) ~= "string" or isSecret(link) or not TSM_PRICE_OK[priceString] then
+		return nil
+	end
+	local okS, itemString = pcall(api.toItem, link)
+	if not okS or type(itemString) ~= "string" or isSecret(itemString) then
+		return nil
+	end
+	local ok, v = pcall(api.value, priceString, itemString)
+	if ok and type(v) == "number" and not isSecret(v) and v == v and v > 0 and v < math.huge then
+		return math.floor(v)
+	end
+	return nil
+end
+
+---------------------------------------------------------------------------
 -- Syndicator (optional alt data, spec 3.3; Providers/Syndicator.lua). Read only, through its
 -- public API: Syndicator.API.IsReady, .GetAllCharacters, .GetByCharacterFullName, .GetWarband,
 -- .GetInventoryInfoByItemID, and Syndicator.CallbackRegistry:RegisterCallback(event, fn, owner).

@@ -33,6 +33,12 @@ if grep -rnE '(^|[^[:alnum:]_])(C_[A-Z][A-Za-z]*|Enum\.)' SwagBag | grep -v '^Sw
 	fail "C_* or Enum named outside SwagBag/Core/Adapter.lua (comments included)"
 fi
 
+# Week 9: other addons' API globals that SwagBag reads (TradeSkillMaster's TSM_API, Masque through LibStub) are
+# named only in the Adapter too, comments included.
+if grep -rnE '(^|[^[:alnum:]_])(TSM_API|LibStub)([^[:alnum:]_]|$)' SwagBag | grep -v '^SwagBag/Core/Adapter.lua:'; then
+	fail "TSM_API or LibStub named outside SwagBag/Core/Adapter.lua (comments included)"
+fi
+
 echo "== 4/5 TOC"
 luajit scripts/toc_check.lua || fail "TOC"
 

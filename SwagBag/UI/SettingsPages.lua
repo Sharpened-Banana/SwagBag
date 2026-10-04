@@ -122,6 +122,15 @@ local function bagsRows()
 end
 
 -- Bank and guild bank -----------------------------------------------------
+-- TSM's price strings, from the one list SwagBag offers (Adapter.TSM_PRICES).
+local function tsmChoices()
+	local list = {}
+	for _, name in ipairs(SB.Adapter.TSM_PRICES) do
+		list[#list + 1] = { value = name, text = name }
+	end
+	return list
+end
+
 local function bankRows()
 	return {
 		{ kind = "choice", label = L.SET_BANK_FRAME, get = get("bank.blizzardFrame"),
@@ -164,6 +173,20 @@ local function bankRows()
 				return run("worth top " .. SB.Config.Get("prices.worthTop"))
 			end
 			return run("worth " .. v)
+		end },
+		-- Week 9 (user pick 10): who prices items, and TSM's price; every click runs /swagbag price.
+		{ kind = "choice", label = L.SET_PRICE_SOURCE, tip = L.SET_PRICE_SOURCE_TIP, width = 90, get = get("prices.source"),
+			choices = { { value = "auto", text = L.SET_PRICE_AUTO }, { value = "auctionator", text = "Auctionator" },
+				{ value = "tsm", text = "TSM" }, { value = "vendor", text = L.SET_PRICE_VENDOR } },
+			apply = function(v)
+				return run("price " .. v)
+			end },
+		-- TSM's price only (/swagbag price string): it never switches where prices come from (preflight S7).
+		{ kind = "choice", label = L.SET_PRICE_TSM, tip = L.SET_PRICE_TSM_TIP, width = 130, get = function()
+			return SB.Prices.TSMString()
+		end, choices = tsmChoices(),
+		apply = function(v)
+			return run("price string " .. v)
 		end },
 		{ kind = "note", label = L.SET_BANK_NOTE },
 	}

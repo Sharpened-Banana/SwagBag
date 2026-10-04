@@ -5,7 +5,7 @@
 ## Version: 0.9.0
 ## SavedVariables: SwagBagDB
 ## SavedVariablesPerCharacter: SwagBagCharDB
-## OptionalDeps: Auctionator, Syndicator, ElvUI
+## OptionalDeps: Auctionator, Syndicator, ElvUI, TradeSkillMaster
 ## X-License: All Rights Reserved
 
 
@@ -55,6 +55,7 @@ Engine/Profiles.lua
 
 # Providers
 Providers/Auctionator.lua
+Providers/TSM.lua
 Providers/Syndicator.lua
 
 # UI

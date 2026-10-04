@@ -39,15 +39,17 @@ local function item(bag, slot, r)
 		price = info and info.sellPrice or 0 }
 end
 
--- The section's items a vendor pays for and SwagBag may sell. value: what one is worth to SwagBag
--- (Auctionator's price, else the vendor's; Engine/Prices.lua), for the question's Auction House sentence.
+-- The section's items a vendor pays for and SwagBag may sell. value: what one is worth at auction (the highest
+-- price a loaded auction source gives, whatever the price source: Prices.AuctionValue, week 9 ruling R0), else
+-- the vendor's, for the question's Auction House sentence.
 function SA.Sellable(id)
 	local P, out = SB.Prices, {}
 	for _, c in ipairs(SB.BagsWindow.SectionSlots(id)) do
 		local r = c.record
 		local it = item(c.bag, c.slot, r)
 		if not r.pending and not r.hasNoValue and not r.isLocked and it.price > 0 and not SB.Vendor.Protected(r) then
-			it.value = P and P.Value(r.link, r.itemID, P.Bound(r)) or it.price
+			local ah = P and not P.Bound(r) and P.AuctionValue(r.link, r.itemID)
+			it.value = ah or it.price
 			out[#out + 1] = it
 		end
 	end

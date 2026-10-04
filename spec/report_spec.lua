@@ -129,6 +129,13 @@ describe("Report", function()
 		assert.truthy(SB.Report.Build():find("\nPrices: Auctionator, 412 cached", 1, true))
 	end)
 
+	-- Week 9. Mutation: Report uses Prices.Source() even when SourceText exists.
+	it("names TSM's price string when TSM answers", function()
+		SB.Checks.last = {}
+		SB.Prices = { Source = function() return "TSM" end, SourceText = function() return "TSM (DBMarket)" end, cached = 7 }
+		assert.truthy(SB.Report.Build():find("\nPrices: TSM (DBMarket), 7 cached", 1, true))
+	end)
+
 	it("Hash is stable, order-independent and changes with content", function()
 		local h1 = SB.Report.Hash({ bags = { columns = 12 }, x = "a" })
 		local h2 = SB.Report.Hash({ x = "a", bags = { columns = 12 } })

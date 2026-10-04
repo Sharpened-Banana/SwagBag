@@ -123,7 +123,8 @@ function Report.Build()
 		end
 	end
 	if SB.Prices then
-		lines[#lines + 1] = L.REPORT_PRICES:format(tostring(SB.Prices.Source() or L.REPORT_NONE), SB.Prices.cached)
+		local source = (SB.Prices.SourceText or SB.Prices.Source)() -- week 9: TSM names its price string
+		lines[#lines + 1] = L.REPORT_PRICES:format(tostring(source or L.REPORT_NONE), SB.Prices.cached)
 	end
 	if SB.Snapshots and SB.Config.db then -- spec 8.4 budgets, check V10
 		local chars, guilds = SB.Snapshots.Count()
