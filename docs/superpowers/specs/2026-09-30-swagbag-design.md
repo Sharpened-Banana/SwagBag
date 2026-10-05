@@ -118,23 +118,23 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC6.4 (week 11) Settings > Categories (after the everyday settings pages; nothing new in the bag window or the quick setup) lists every category in display order with its priority, Edit, Up and Down, and New category; a new category is On, priority 88, first; names have 1–30 characters, no `|`, unique (also against New and Free and every built-in's own name, any case, even after that built-in is renamed); rules at most 500 characters (one constant, `Query.MAX_QUERY`), no chat code, and the text boxes take more than their limit so a longer text is refused with its length, never cut; priorities 1–89 in steps, none for the four pinned built-ins (Junk, Equipment sets, Keystone & Crests, Reagents); Delete (user categories only) asks once more and takes the id out of the order, every focus mode (account and this character) and this character's collapsed sections, without re-stacking the open bags, and the id is never given again; Reset to default asks once more, removes a built-in's whole diff, dragged items included, and goes back to the list; Show matches' search is taken out of the bags when the settings window closes, if it is still theirs; every SwagBag text box lets the keyboard go when combat starts.
 
 #### F7. First-run wizard and tour
-- AC7.1 On first login with SwagBag, a 4-step wizard runs: playstyle (M+ / Raid / Gold / Casual / Collector, multi-select) → preset categories and focus modes → layout (columns, scale, look) → gold settings (Auctionator detected or not; threshold).
-- AC7.2 "Skip" applies the defaults and says so.
-- AC7.3 `/swagbag tour` runs an interactive tour of the bag window (headers, collapse, peek, search, modes, sort, Safe Mode) at any time.
+- AC7.1 On first login with SwagBag, a 4-step wizard runs: playstyle (M+ / Raid / Gold / Casual / Collector, multi-select) → preset categories and focus modes → layout (columns, scale, look) → gold settings (Auctionator detected or not; threshold). Week 12 (v0.12.0): the wizard is the quick setup screen grown in place (one window; the done flag is `settings.setup.done`, account-wide). Four steps, one screen each (What do you play? / What that turns on / How your bags look / Gold), Back, Next and Skip on every step, Finish on the last; nothing is written before Finish. A first run starts from the defaults, a re-run from the settings as they are and last time's styles (`setup.styles`). Step 2 lists every built-in focus mode, the picked styles' switches and category moves; step 3 slots per row, size, and the looks whose addon is loaded; step 4 the price source found (or vendor prices), the gold glow (Off / 50g / 100g / 500g / 1000g, or the top % set) and selling junk. Combat makes it step aside and come back as it was (inside an instance, when the player leaves it). A user who finished the quick setup is never shown it by itself. Deferred to v1.1: seeding the consumables watch list per role (AC11.2).
+- AC7.2 "Skip" applies the defaults and says so. Week 12: Skip is on every step and writes only `setup.done`; on a re-run it says the current settings are kept.
+- AC7.3 `/swagbag tour` runs an interactive tour of the bag window (headers, collapse, peek, search, modes, sort, Safe Mode) at any time. Week 12: seven notes (headers, collapse and drag, focus modes and peek, search, the mode title and Pause, Sort, Safe Mode), each next to its part with a gold frame (beside the window when the part is not drawn); Back, Next, End tour, Esc; it opens the bags, refuses in combat or Safe Mode, ends with one line when the bags close or combat starts, and never moves, sorts or lays out anything. Finish offers it once ("Show me around" / "No thanks"; any other close says how to get it later): after each Finish, not after Skip, not in combat, not in Safe Mode and not inside an instance. `/swagbag tour` or `/swagbag setup` while the offer shows answers it.
 - AC7.4 `/swagbag setup` re-runs the wizard.
 
 #### F8. Focus modes (6 core)
 - AC8.1 Built-in modes M+, Raid, Delves, Gathering, Fishing, and AH/Vendor/Bank are ON by default and switch automatically.
 - AC8.2 Entering a Mythic+ dungeon moves the M+ mode's sections to the top, right under New, within one `BAG_UPDATE_DELAYED` or `PLAYER_ENTERING_WORLD` cycle, and leaves every section open or collapsed as the user set it (the default `front` style, D15). With the `collapse` style it collapses every section except the M+ mode's set instead. Leaving restores the previous order or state.
 - AC8.3 With the `collapse` style, clicking a collapsed header in a mode peeks it (expanded until the window closes or mode changes). A small pin on the peeked header, or the option "Keep open until mode changes", makes it sticky. Default is peek. In the `front` style a header click is the user's own collapse or expand, saved as such; there is no peek or pin.
-- AC8.4 Overlapping modes expand the union of their sections (default). The option "Strict priority" uses combat > activity > location.
+- AC8.4 Overlapping modes expand the union of their sections (default). The option "Strict priority" uses combat > activity > location; week 12: a mode of the user's own that they switched on by hand (AC8.7) comes first of all (manual > combat > activity > location).
 - AC8.5 The current mode is shown in the window title ("SwagBag — M+") and a click on it opens the mode's section list for editing.
 - AC8.6 Gathering detection uses a spell-ID allowlist; opening a chest or archaeology never triggers it.
-- AC8.7 Users can create a custom mode: name, trigger (manual, or any built-in signal), and section set.
+- AC8.7 Users can create a custom mode: name, trigger (manual, or any built-in signal), and section set. Week 12: up to 10 modes of your own, named 1 to 24 characters (not a built-in mode's name or id, unique in any case, no chat codes); the trigger is "only when I switch it on" or one of in a Mythic+ key, a dungeon, a raid, a delve, a battleground or arena, fishing, gathering, at a vendor, the auction house, the bank; sections with the built-ins' editor. A manual mode is on for the session only (`/swagbag mode on <name>`, `off [<name>]`, or its line in Settings > Focus modes; its switch is session state, not a setting), needs no "Switch by themselves", and Pause stops it. Merge as the built-ins; strict priority manual > combat > activity > location. Delete asks once more and its id is never given again; "This character only" covers them. Share strings never carry them (F20).
 
 #### F9. Core overlays
 - AC9.1 ilvl, upgrade track and an **upgrade arrow** on gear; keystone level and dungeon on the keystone; stack count; junk coin; BoE / Warbound badge. All from `C_Item` / `C_Container` APIs; no tooltip parsing.
-- AC9.2 Each overlay has an on/off switch; the wizard's playstyle sets the defaults.
+- AC9.2 Each overlay has an on/off switch; the wizard's playstyle sets the defaults. Week 12: a picked style's settings are written as explicit values at Finish (so they hold even when they equal the default); Gold's glow only when it is off.
 - AC9.4 (week 7) Three more marks, each with its switch: a soft green glow on an item to open or learn (`overlays.learn`: caches, toys, mounts, pets, decor not yet owned, profession knowledge items); a small padlock on an item the user locked (`overlays.lock`); a purple `*` on gear whose look the account has not collected, and on a toy, mount or pet while the green glow is not drawn (`overlays.uncollected`). The `*` sits at the right edge between the upgrade arrow and the stack count, and the padlock at the left edge between the item-level and track texts: no mark covers another. The junk coin is never drawn on an item SwagBag will not sell (locked, in an equipment set, to open or learn, an uncollected or unknown look, worth more at auction).
 - AC9.3 Upgrade arrow: shown on equippable gear the character can use whose item level (`C_Item.GetCurrentItemLevel`) is higher than the lowest-ilvl item currently equipped in the matching slot(s) (both rings/trinkets compared; two-hand vs main+off-hand compared by summed ilvl). If Pawn is installed, an optional "Use Pawn" setting replaces the ilvl rule with `PawnIsContainerItemAnUpgrade`. Re-evaluated on `PLAYER_EQUIPMENT_CHANGED`.
 
@@ -147,7 +147,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 
 #### F11. Low-consumables warning
 - AC11.1 On `CHALLENGE_MODE_START` (and on entering an M+ instance) and on using an M+ teleport spell, SwagBag compares configured consumables against thresholds and prints one on-screen line ("Low: Flask (0), Healing Potion (2/5)"). Nothing prints when all thresholds are met.
-- AC11.2 The watch list is editable (drag item onto the list; set threshold) and the wizard seeds it per role.
+- AC11.2 The watch list is editable (drag item onto the list; set threshold) and the wizard seeds it per role (deferred to v1.1: the week-12 wizard does not seed it).
 
 #### F12. Safe Mode and diagnostics
 - AC12.1 Any Lua error inside a SwagBag refresh/layout/event path switches that window (bags or bank) to Blizzard's frames immediately, including in combat, and prints one line: "SwagBag hit an error and switched to Blizzard bags. Type /swagbag report."
@@ -194,6 +194,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 #### F20. Profiles and share strings (week 7)
 - AC20.1 Named profiles save and load the account settings, with one step of undo (`/swagbag profile undo`) and a Defaults button. Share strings (`SWAGBAG:1:...`, text only) export settings, optionally with categories; import is Preview first, then Import; a string that is not ours, from a newer version, damaged, too long, or holding a value outside its setting's range or words is refused whole with the reason. Nothing in a string is ever run.
 - AC20.2 Never in a share string, either way: `guildBank.withdrawAnyTab` and `vendor.repair` (the preview names them as never imported). An imported category must compile, may not carry a chat escape (`|T |H |A |K`, `|c` plus eight hex digits, `|cn`), and never outranks Junk, Equipment sets, Keystone & Crests or Reagents: a priority of 90 or more comes in at 89 and the preview names it (never refused); the priority of those four built-ins is never imported (the preview names it). `|cn` is refused only before an upper-case name and `:` (`herb|cname` is a query).
+- AC20.6 (week 12) Share strings do not carry modes of your own: an export names them as left out; an import skips their entries (`m.` entries, `focus.*.m_` paths) and never makes a mode; the preview names them as skipped. The preview's "Ranked just below Junk" line names a category by the name it comes in under (AC20.4).
 - AC20.3 (week 11) An export with categories leaves out a rule an import would refuse (broken, or holding a chat code) and names its category, so the user's own string is never refused; a string from elsewhere holding a broken category is still refused at import. One chat-code check (`Query.EscapeCode`) and one pinned list serve share strings and the category editor.
 - AC20.4 (week 11, data safety) **An import never replaces a user category.** An imported category whose id is one the user has, as a category or as a deleted one's (never given again), comes in under a fresh id, and the string's category order and focus sections follow it; one whose name a category already has (any case, a built-in's own name, New, Free) comes in as "Name (2)", "Name (3)"... within the 30-character limit. The preview names them ("Added as new, next to yours (yours stay as they are): ...").
 - AC20.5 (week 11, data safety) **Undo brings the categories back only if nothing changed them since.** The one step of undo after an import with categories holds the categories, built-in edits and order from before it; any later change to them (the category editor's Create, Save, Delete, Move, Reset to default, a drag onto a header, quick setup's order) drops that part, so Undo then brings back the settings only and never undoes what the user made since. Its answer says which: settings only (`Your categories stay as they are.`), or settings, categories and category order.
@@ -445,7 +446,7 @@ All handlers are `O(1)` table writes plus one `Focus.Recompute()` that touches a
 
 `c_wue` (Warbound until equipped, §7.6) joins every mode set that contains `c_boe` (today only AH/Vendor/Bank). `c_sets` (Equipment sets, §7.6) joins every mode set that contains Gear. A mode whose sections the user edited before week 7 keeps their choice (only explicit values are stored): add Equipment sets in the mode editor.
 
-Every built-in mode's section set is editable; "Reset to default" is next to it (P1). Users create custom modes with the same editor: name, trigger (choose from the signal list, or "manual only"), sections.
+Every built-in mode's section set is editable; "Reset to default" is next to it (P1). Users create custom modes with the same editor: name, trigger (choose from the signal list, or "manual only"), sections (AC8.7). A mode of your own's class follows its trigger (manual > combat > activity > location in strict priority).
 
 ### 6.4 State machine
 
@@ -473,7 +474,7 @@ Applying a mode never moves a button relative to its own section header; section
 ### 6.5 Cost budget
 
 - Signal handler: ≤ 0.1 ms average, ≤ 2 ms worst.
-- `Recompute`: ≤ 0.5 ms for 30 modes.
+- `Recompute`: ≤ 0.5 ms for 30 modes (week 12: measured by the suite with the six built-ins and ten modes of your own).
 - `Apply` with the window open: ≤ 5 ms (header restack only).
 - Zero cost while no window is open and no signal fires. No polling, no `OnUpdate`.
 
@@ -609,7 +610,7 @@ Parse errors return `{position, expected, got}`. The search box underlines the s
 ### 8.1 Files
 
 - `SwagBagDB` (account-wide, `## SavedVariables`): settings, categories, modes, snapshots for all characters, warband snapshot.
-- `SwagBagCharDB` (`## SavedVariablesPerCharacter`): per-character overrides and per-character UI state only (window positions, collapse state, wizard-done flag).
+- `SwagBagCharDB` (`## SavedVariablesPerCharacter`): per-character overrides and per-character UI state only (window positions, collapse state). The setup-done flag is account-wide: `settings.setup.done` in `SwagBagDB` (this machine's state, never shared by a profile or share string).
 
 ### 8.2 Schema (v1)
 
@@ -644,8 +645,12 @@ SwagBagDB = {
 --   with two optional values inside them, read defensively: a category's draft (a change of its rule saved with an
 --   error while the rule before it stays in use) and categories[id] = false (a deleted user category: its id is never
 --   given again). backups.profile drops its categories part when they change after an import (AC20.5).
+-- Week 12 (schema stays 2, no migration, all read defensively): settings.setup.styles (a string such as "mplus,gold", written
+--   at Finish; under setup, like setup.done, so profiles never save, load or share it); SwagBagDB.modes[id] = { name, trigger, n }
+--   or false (a deleted mode: its id is never given again; damaged entries skipped, an unknown trigger reads as manual, ten at
+--   most); a mode of your own's focus.on.<m_id> and focus.sections.<m_id> are ordinary settings.
 SwagBagCharDB = { schemaVersion = 1, overrides = { ["modes.enabled.mplus"] = false, ... },
-                  ui = { positions = {}, collapsed = {}, wizardDone = true } }
+                  ui = { positions = {}, collapsed = {} } }
 ```
 
 ### 8.3 Snapshot format
@@ -757,7 +762,7 @@ This is what the user pastes into Claude Code. BugGrabber/BugSack compatibility:
 
 ### 10.5 Slash commands (all with feedback, P2)
 
-`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo|warn [on|off]]` (clear asks first; one lock is answered in the singular; `warn` says or switches the destroy warnings), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added); week 9: `sort [stacks|blizzard]`, `price [auto|auctionator|tsm [<price>]|vendor|string <price>]`, `otherbags [on|off]`; week 11: `settings categories` opens Settings > Categories.
+`/swagbag` (opens settings), `help`, `setup`, `tour`, `safe [on|off|bags|bank]`, `report`, `check`, `perf`, `reset`, `mode [pause|resume|list|style [front|collapse]]`, `snapshot` (prints snapshot ages), `search <query>` (applies to the open window and reports match count); week 7: `sell [on|off|junk]`, `repair [own|guild|off]`, `lock [list|clear|undo|warn [on|off]]` (clear asks first; one lock is answered in the singular; `warn` says or switches the destroy warnings), `worth [<gold>|top <percent>|off]`, `profile [save|load|delete <name>|reset|undo|export [categories]|import]`, `overlays` (learn, lock, uncollected added); week 9: `sort [stacks|blizzard]`, `price [auto|auctionator|tsm [<price>]|vendor|string <price>]`, `otherbags [on|off]`; week 11: `settings categories` opens Settings > Categories; week 12: `setup` runs the wizard, `tour` runs the tour, `mode on <name>`, `mode off [<name>]` switch the modes of your own that you switch by hand.
 
 ---
 
@@ -820,7 +825,7 @@ GitHub Actions on push: luacheck, busted, forbidden-token grep. On tag `v*`: Big
 
 | In (by Oct 31) | Deferred to November (v1.0 publish) |
 |---|---|
-| F1 bags, F2 bank + warband, **F16 guild bank (full, with view fallback)**, F3 category + grid + collapse, F4 default categories + drag-to-assign, F5 search, F8 six core focus modes (+ pause), F9 overlays incl. upgrade arrow, F10 Auctionator totals, F11 consumables warning, F12 Safe Mode + report, F14 Blizzard look, F15 simple settings, a **one-screen quick setup** (playstyle → preset), **F6 visual rule builder** (moved in: delivered in week 11, v0.11.0) | F7 full wizard + interactive tour, F13 offline alt bags/banks view and tooltip alt counts (bank snapshots are still *captured* in October so data exists when the view lands) |
+| F1 bags, F2 bank + warband, **F16 guild bank (full, with view fallback)**, F3 category + grid + collapse, F4 default categories + drag-to-assign, F5 search, F8 six core focus modes (+ pause), F9 overlays incl. upgrade arrow, F10 Auctionator totals, F11 consumables warning, F12 Safe Mode + report, F14 Blizzard look, F15 simple settings, a **one-screen quick setup** (playstyle → preset), **F6 visual rule builder** (moved in: delivered in week 11, v0.11.0), **F7 full wizard + interactive tour** (moved in: delivered in week 12, v0.12.0, with AC8.7 and AC9.2) | F13 offline alt bags/banks view and tooltip alt counts (bank snapshots are still *captured* in October so data exists when the view lands) |
 
 ### 12.2 Schedule (daily testing; each week ends with a working build)
 
