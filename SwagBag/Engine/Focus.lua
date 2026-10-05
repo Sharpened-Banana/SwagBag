@@ -30,6 +30,23 @@
 -- A writer whose value is already in force writes nothing (no SB_CONFIG_CHANGED, so no re-stack:
 -- week-4 deferred M5).
 --   Focus.ListLines() -> { lines }               one chat line per mode (/swagbag mode list)
+-- Week 12 (AC8.7): the user's own modes, next to the six built-ins (Focus.All() lists both, built-ins first):
+--   Focus.TRIGGERS                               when one switches on: "manual" (only when the user says so), or one
+--                                                of the built-in signals (a key, a dungeon, a raid, a delve, PvP,
+--                                                fishing, gathering, a vendor, the auction house, the bank)
+--   Focus.CheckName(name, exceptId) -> name | nil, why   why: "empty" | "long" | "code" | "builtin" | "taken"
+--   Focus.CreateMode(name, trigger) -> id | nil, why     why also "readonly" | "full" | "trigger"
+--   Focus.RenameMode(id, name), Focus.SetTrigger(id, trigger), Focus.DeleteMode(id) -> ok, why ("unknown" too)
+--   Focus.SetManual(id, on) -> ok, why           a manual mode on or off, for this session ("notmanual")
+--   Focus.Mode(id), Focus.NameOf(id), Focus.FindMode(name) -> id, Focus.IsCustom(id), Focus.ManualOn(id)
+-- Stored account-wide in SwagBagDB.modes (schema 2, no migration, read defensively: Focus.LoadCustom):
+-- modes[id] = { name, trigger, n = the order it was made in }; a deleted one stays false, so its id (m_<name>) is
+-- never given again (another character's own sections can still name it). A mode's on/off and sections are the
+-- ordinary settings focus.on.<id> and focus.sections.<id>, so "This character only" and profiles treat them as the
+-- built-ins'. A manual mode is on only while the user has switched it on (this session: a log out or reload ends it);
+-- it needs neither "Switch by themselves" (focus.auto) nor its own On switch (focus.on, which governs triggered
+-- modes), but Pause stops it like every mode. In strict priority a manual
+-- mode the user switched on decides first, then combat > activity > location; within a class, built-ins first.
 -- No announce while paused; Resume recomputes silently (the title and the view change, no chat line).
 -- A view change with the same active set (bank opens, professions arrive) emits and keeps peeks and pins.
 -- The windows hear SB_FOCUS_CHANGED(reason) whenever what is open may have changed: the active set
@@ -44,7 +61,7 @@ local _, SB = ...
 local Focus = { signals = {}, overrides = {}, paused = false, key = "", viewKey = "", active = {} }
 SB.Focus = Focus
 
-local CLASS_RANK = { combat = 3, activity = 2, location = 1 }
+local CLASS_RANK = { manual = 4, combat = 3, activity = 2, location = 1 }
 
 -- The six v1.0 modes (spec 6.3, AC8.1), in "user order" for strict priority within a class.
 Focus.MODES = {
@@ -74,6 +91,145 @@ for _, m in ipairs(Focus.MODES) do
 	byId[m.id] = m
 end
 Focus.byId = byId
+
+-- Week 12 (AC8.7): what a mode of the user's can switch on with. class decides strict priority, as for the built-ins.
+Focus.TRIGGERS = {
+	{ id = "manual", name = "TRIGGER_MANUAL", class = "manual" },
+	{ id = "mplus", name = "TRIGGER_MPLUS", class = "activity", test = function(s)
+		return s.challengeMode == true
+	end },
+	{ id = "dungeon", name = "TRIGGER_DUNGEON", class = "activity", test = function(s)
+		return s.instanceType == "party"
+	end },
+	{ id = "raid", name = "TRIGGER_RAID", class = "activity", test = function(s)
+		return s.instanceType == "raid"
+	end },
+	{ id = "delve", name = "TRIGGER_DELVE", class = "activity", test = function(s)
+		return s.delve == true
+	end },
+	{ id = "pvp", name = "TRIGGER_PVP", class = "activity", test = function(s)
+		return s.instanceType == "pvp" or s.instanceType == "arena"
+	end },
+	{ id = "fishing", name = "TRIGGER_FISHING", class = "activity", test = function(s)
+		return s.fishing == true
+	end },
+	{ id = "gathering", name = "TRIGGER_GATHERING", class = "activity", test = function(s)
+		return s.gathering == true
+	end },
+	{ id = "vendor", name = "TRIGGER_VENDOR", class = "location", test = function(s)
+		return s.merchantOpen == true
+	end },
+	{ id = "auction", name = "TRIGGER_AUCTION", class = "location", test = function(s)
+		return s.auctionOpen == true
+	end },
+	{ id = "bank", name = "TRIGGER_BANK", class = "location", test = function(s)
+		return s.bankOpen == true
+	end },
+}
+local TRIGGER = {}
+for _, t in ipairs(Focus.TRIGGERS) do
+	TRIGGER[t.id] = t
+end
+Focus.MAX_CUSTOM, Focus.MAX_NAME = 10, 24
+Focus.custom, Focus.manual = {}, {} -- the user's modes (made order), and the manual ones switched on now
+local customById = {}
+
+-- A mode by id: a built-in, or one of the user's.
+local function mode(id)
+	return byId[id] or customById[id]
+end
+Focus.Mode = mode
+
+function Focus.IsCustom(id)
+	return customById[id] ~= nil
+end
+
+function Focus.NameOf(id)
+	local m = mode(id)
+	if not m then
+		return tostring(id)
+	end
+	return m.custom and m.name or SB.L[m.name]
+end
+
+-- Built-ins first, then the user's modes in the order they were made.
+function Focus.All()
+	local out = {}
+	for _, m in ipairs(Focus.MODES) do
+		out[#out + 1] = m
+	end
+	for _, m in ipairs(Focus.custom) do
+		out[#out + 1] = m
+	end
+	return out
+end
+
+function Focus.ManualOn(id)
+	return Focus.manual[id] == true
+end
+
+local function cleanName(name)
+	name = type(name) == "string" and name:match("^%s*(.-)%s*$") or ""
+	if name == "" then
+		return nil, "empty"
+	elseif #name > Focus.MAX_NAME then
+		return nil, "long"
+	elseif name:find("[%c|]") then
+		return nil, "code"
+	end
+	return name
+end
+
+-- The user's modes as stored, read defensively: a damaged entry is skipped, an unknown trigger reads as manual, and
+-- no more than MAX_CUSTOM are used. Called by Refresh (every focus setting change, a new Init) and the writers.
+function Focus.LoadCustom()
+	local list, stored = {}, SB.Config.db and SB.Config.db.modes
+	for id, def in pairs(type(stored) == "table" and stored or {}) do
+		if type(id) == "string" and #id <= 40 and id:match("^m_[%w_]+$") and type(def) == "table"
+			and cleanName(def.name) == def.name then
+			local t = TRIGGER[def.trigger] or TRIGGER.manual
+			local mid = id
+			list[#list + 1] = { id = id, name = def.name, custom = true, triggerId = t.id, class = t.class,
+				n = tonumber(def.n) or 0, trigger = t.test or function()
+					return Focus.manual[mid] == true
+				end }
+		end
+	end
+	table.sort(list, function(a, b)
+		if a.n ~= b.n then
+			return a.n < b.n
+		end
+		return a.id < b.id
+	end)
+	-- A name already taken (an earlier mode of the user's, or a built-in's name or id, in any case) is skipped.
+	local taken = {}
+	for _, m in ipairs(Focus.MODES) do
+		taken[SB.L[m.name]:lower()], taken[m.id] = true, true
+	end
+	local kept = {}
+	for _, m in ipairs(list) do
+		local low = m.name:lower()
+		if not taken[low] then
+			taken[low] = true
+			kept[#kept + 1] = m
+		end
+	end
+	list = kept
+	while #list > Focus.MAX_CUSTOM do
+		table.remove(list)
+	end
+	customById = {}
+	for _, m in ipairs(list) do
+		customById[m.id] = m
+	end
+	Focus.custom = list
+	for id in pairs(Focus.manual) do
+		local m = customById[id]
+		if not (m and m.triggerId == "manual") then
+			Focus.manual[id] = nil -- a mode that is gone, or no longer manual, is not "switched on"
+		end
+	end
+end
 
 -- Gathering opens only the materials of the gathering professions the character has
 -- (spec 6.2 "professions"); without that signal it opens all three.
@@ -119,13 +275,19 @@ function Focus.Sections(id, raw)
 	return out
 end
 
+-- With "Switch by themselves" off only the user's manual modes can be on: the user switched them on.
 function Focus.Active()
 	local out = {}
-	if cfg("focus.auto") == false then
-		return out
-	end
+	local auto = cfg("focus.auto") ~= false
 	for _, m in ipairs(Focus.MODES) do
-		if Focus.IsEnabled(m.id) and m.trigger(Focus.signals) then
+		if auto and Focus.IsEnabled(m.id) and m.trigger(Focus.signals) then
+			out[#out + 1] = m.id
+		end
+	end
+	for _, m in ipairs(Focus.custom) do
+		-- A manual mode ignores focus.on (that switch governs triggered modes): switched on by the user, it applies.
+		local manual = m.class == "manual"
+		if (auto or manual) and (manual or Focus.IsEnabled(m.id)) and m.trigger(Focus.signals) then
 			out[#out + 1] = m.id
 		end
 	end
@@ -139,7 +301,7 @@ local function decidingOf(active)
 	end
 	local best
 	for _, id in ipairs(active) do
-		if not best or CLASS_RANK[byId[id].class] > CLASS_RANK[byId[best].class] then
+		if not best or CLASS_RANK[mode(id).class] > CLASS_RANK[mode(best).class] then
 			best = id
 		end
 	end
@@ -159,7 +321,7 @@ local function viewKeyOf(active)
 	end
 	local parts = {}
 	for _, id in ipairs(decidingOf(active)) do
-		local m = byId[id]
+		local m = mode(id)
 		if m.expandAll and m.expandAll(Focus.signals) then
 			parts[#parts + 1] = "all"
 		end
@@ -193,7 +355,7 @@ local function computeExpanded()
 	end
 	local set = { new = true }
 	for _, id in ipairs(deciding()) do
-		local m = byId[id]
+		local m = mode(id)
 		if m.expandAll and m.expandAll(Focus.signals) then
 			return nil
 		end
@@ -221,7 +383,7 @@ local function computeFront()
 	end
 	local list, seen = {}, { new = true, free = true }
 	for _, id in ipairs(deciding()) do
-		local m = byId[id]
+		local m = mode(id)
 		if m.expandAll and m.expandAll(Focus.signals) then
 			return nil
 		end
@@ -340,9 +502,9 @@ function Focus.WindowClosed()
 end
 
 local function label(ids)
-	local L, names = SB.L, {}
+	local names = {}
 	for _, id in ipairs(ids) do
-		names[#names + 1] = L[byId[id].name]
+		names[#names + 1] = Focus.NameOf(id)
 	end
 	return table.concat(names, " + ")
 end
@@ -390,6 +552,7 @@ end
 local overridesStyle = nil
 
 function Focus.Refresh(reason)
+	Focus.LoadCustom()
 	invalidate()
 	local style = Focus.Style()
 	if overridesStyle ~= nil and style ~= overridesStyle then
@@ -437,7 +600,7 @@ end
 -- Each returns true, or false plus "unknown" (no such mode) or "readonly" (a newer
 -- schema: nothing is written).
 local function refuse(id)
-	if not byId[id] then
+	if not mode(id) then
 		return "unknown"
 	elseif SB.Config.readOnly then
 		return "readonly"
@@ -506,6 +669,182 @@ function Focus.ResetSections(id)
 end
 
 ---------------------------------------------------------------------------
+-- Week 12 (AC8.7): the user's own modes. Each writer refuses while read-only, writing nothing; a change emits
+-- SB_CONFIG_CHANGED("focus.modes"), which the listener below turns into a Refresh (the modes are read again).
+---------------------------------------------------------------------------
+local function stored()
+	local d = SB.Config.db
+	if type(d.modes) ~= "table" then
+		d.modes = {}
+	end
+	return d.modes
+end
+
+local function modesChanged()
+	SB.Emit("SB_CONFIG_CHANGED", "focus.modes")
+end
+
+-- A name the user's mode may have: trimmed, 1 to 24 characters, no chat code, not a built-in mode's name or id (any
+-- case), not another of the user's modes (exceptId: the mode being renamed).
+function Focus.CheckName(name, exceptId)
+	local clean, why = cleanName(name)
+	if not clean then
+		return nil, why
+	end
+	local low = clean:lower()
+	for _, m in ipairs(Focus.MODES) do
+		if low == SB.L[m.name]:lower() or low == m.id then
+			return nil, "builtin"
+		end
+	end
+	for _, m in ipairs(Focus.custom) do
+		if m.id ~= exceptId and low == m.name:lower() then
+			return nil, "taken"
+		end
+	end
+	return clean
+end
+
+-- m_<the name in lower case, letters and digits>, then _2, _3...: never an id the user's modes have or had.
+local function freeId(name, taken)
+	local slug = name:lower():gsub("[^%w]+", "_"):gsub("^_+", ""):gsub("_+$", ""):sub(1, 20)
+	if slug == "" then
+		slug = "mode"
+	end
+	local id, n = "m_" .. slug, 1
+	while taken[id] ~= nil do
+		n = n + 1
+		id = "m_" .. slug .. "_" .. n
+	end
+	return id
+end
+
+function Focus.CreateMode(name, trigger)
+	trigger = trigger or "manual"
+	if SB.Config.readOnly then
+		return nil, "readonly"
+	elseif not TRIGGER[trigger] then
+		return nil, "trigger"
+	end
+	local clean, why = Focus.CheckName(name)
+	if not clean then
+		return nil, why
+	elseif #Focus.custom >= Focus.MAX_CUSTOM then
+		return nil, "full"
+	end
+	local modes, n = stored(), 0
+	for _, def in pairs(modes) do
+		if type(def) == "table" and type(def.n) == "number" and def.n > n then
+			n = def.n
+		end
+	end
+	local id = freeId(clean, modes)
+	modes[id] = { name = clean, trigger = trigger, n = n + 1 }
+	-- Its switch and its (empty) sections are explicit values from the start, so "This character only" can copy them.
+	local settings = SB.Config.db.settings
+	settings.focus = type(settings.focus) == "table" and settings.focus or {}
+	for kind, v in pairs({ on = true, sections = "" }) do
+		settings.focus[kind] = type(settings.focus[kind]) == "table" and settings.focus[kind] or {}
+		settings.focus[kind][id] = v
+	end
+	modesChanged()
+	return id
+end
+
+local function ownMode(id)
+	if not customById[id] then
+		return "unknown"
+	elseif SB.Config.readOnly then
+		return "readonly"
+	end
+end
+
+function Focus.RenameMode(id, name)
+	local why = ownMode(id)
+	if why then
+		return false, why
+	end
+	local clean
+	clean, why = Focus.CheckName(name, id)
+	if not clean then
+		return false, why
+	end
+	stored()[id].name = clean
+	modesChanged()
+	return true
+end
+
+function Focus.SetTrigger(id, trigger)
+	local why = ownMode(id)
+	if why then
+		return false, why
+	elseif not TRIGGER[trigger] then
+		return false, "trigger"
+	end
+	stored()[id].trigger = trigger
+	modesChanged()
+	return true
+end
+
+-- The mode goes, with its on/off and its sections (the account's and this character's own); its id stays taken.
+function Focus.DeleteMode(id)
+	local why = ownMode(id)
+	if why then
+		return false, why
+	end
+	local C = SB.Config
+	stored()[id] = false
+	local focus = type(C.db.settings.focus) == "table" and C.db.settings.focus or {}
+	for _, kind in ipairs({ "on", "sections" }) do
+		if type(focus[kind]) == "table" then
+			focus[kind][id] = nil
+		end
+		C.charDB.overrides["focus." .. kind .. "." .. id] = nil
+	end
+	Focus.manual[id] = nil
+	modesChanged()
+	return true
+end
+
+-- A manual mode on or off (this session). Returns true, changed; or false, why.
+function Focus.SetManual(id, on)
+	local m = customById[id]
+	if not m then
+		return false, "unknown"
+	elseif m.triggerId ~= "manual" then
+		return false, "notmanual"
+	end
+	if (Focus.manual[id] == true) == (on == true) then
+		return true, false
+	end
+	Focus.manual[id] = on and true or nil
+	Focus.Recompute("signal")
+	return true, true
+end
+
+-- A mode by its name as shown (any case, spaces around ignored), built-in or the user's.
+function Focus.FindMode(name)
+	local low = type(name) == "string" and name:match("^%s*(.-)%s*$"):lower() or ""
+	for _, m in ipairs(Focus.All()) do
+		if Focus.NameOf(m.id):lower() == low then
+			return m.id
+		end
+	end
+	return nil
+end
+
+-- The user's modes' names (for /swagbag mode on and the share-string note).
+function Focus.CustomNames(manualOnly)
+	local out = {}
+	for _, m in ipairs(Focus.custom) do
+		if not manualOnly or m.triggerId == "manual" then
+			out[#out + 1] = m.name
+		end
+	end
+	return out
+end
+
+---------------------------------------------------------------------------
 -- /swagbag mode [pause|resume|list|style [front|collapse]] (spec 10.5). Every form answers (P2).
 ---------------------------------------------------------------------------
 local function sectionNames(id)
@@ -525,11 +864,51 @@ function Focus.ListLines()
 	for _, id in ipairs(Focus.active) do
 		active[id] = true
 	end
-	for _, m in ipairs(Focus.MODES) do
-		lines[#lines + 1] = L.MODE_LIST_LINE:format(L[m.name], Focus.IsEnabled(m.id) and L.OVERLAY_ON or L.OVERLAY_OFF,
+	for _, m in ipairs(Focus.All()) do
+		local name, on = Focus.NameOf(m.id), Focus.IsEnabled(m.id)
+		if m.triggerId == "manual" then -- week 12: the user's manual mode says so, and whether it is switched on
+			name, on = L.MODE_LIST_MANUAL:format(name), Focus.manual[m.id] == true
+		end
+		lines[#lines + 1] = L.MODE_LIST_LINE:format(name, on and L.OVERLAY_ON or L.OVERLAY_OFF,
 			active[m.id] and L.MODE_ACTIVE or "", sectionNames(m.id))
 	end
 	return lines
+end
+
+-- /swagbag mode on <name> | off [<name>] (week 12, AC8.7): the user's manual modes. Every form answers (P2).
+local function manualList()
+	local names = Focus.CustomNames(true)
+	return #names > 0 and table.concat(names, ", ") or SB.L.REPORT_NONE
+end
+
+local function manualCommand(word, rest)
+	local L = SB.L
+	if rest == "" and word == "on" then
+		return L.MODE_MANUAL_USAGE:format(manualList())
+	elseif rest == "" then
+		local off = {}
+		for _, m in ipairs(Focus.custom) do
+			if Focus.manual[m.id] then
+				off[#off + 1] = m.name
+				Focus.SetManual(m.id, false)
+			end
+		end
+		return #off > 0 and L.MODE_MANUAL_ALL_OFF:format(table.concat(off, ", ")) or L.MODE_MANUAL_NONE_ON
+	end
+	local id = Focus.FindMode(rest)
+	if not id then
+		return L.MODE_MANUAL_UNKNOWN:format(rest, manualList())
+	end
+	local name = Focus.NameOf(id)
+	local ok, changed = Focus.SetManual(id, word == "on")
+	if not ok then
+		return L.MODE_MANUAL_AUTO:format(name)
+	elseif word == "off" then
+		return changed and L.MODE_MANUAL_OFF:format(name) or L.MODE_MANUAL_ALREADY_OFF:format(name)
+	elseif not changed then
+		return L.MODE_MANUAL_ALREADY_ON:format(name)
+	end
+	return Focus.paused and { L.MODE_MANUAL_ON:format(name), L.MODE_MANUAL_PAUSED } or L.MODE_MANUAL_ON:format(name)
 end
 
 -- /swagbag mode style [front|collapse]: the style now, or switch it. A wrong word gets the style now
@@ -551,6 +930,8 @@ SB.Slash.Register("mode", SB.L.HELP_MODE, function(arg)
 	local word, rest = arg:match("^(%S*)%s*(.-)%s*$")
 	if word == "style" then
 		return styleCommand(rest)
+	elseif word == "on" or word == "off" then
+		return manualCommand(word, rest)
 	end
 	if arg == "pause" then
 		return Focus.Pause() and L.MODE_PAUSED or L.MODE_ALREADY_PAUSED
