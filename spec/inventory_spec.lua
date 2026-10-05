@@ -13,7 +13,6 @@ describe("Inventory", function()
 		R = Inv.R
 		Fixtures.SmallBags(A)
 		SB.Emit("SB_LOGIN")
-		SB.eventFrame:Fire("PLAYER_ENTERING_WORLD", true, false)
 		Fixtures.Settle(SB) -- the login settle is over (hotfix 0.11.1)
 		calls = {}
 		Inv.OnChanged(function(mask, changes) calls[#calls + 1] = { mask = mask, changes = changes } end)
@@ -515,5 +514,137 @@ describe("Inventory: login and loading screens never flood New", function()
 		A.Put(0, 12, Fixtures.HERB, 3)
 		flushAll()
 		assert.truthy(Inv.IsUnseen(0, 12))
+	end)
+
+	-- Fix round 1, item 1: a "known" secret slot (loot in a key) that reads empty for a moment during the settle
+	-- after zoning out keeps its marker. Mutation: in Inventory.ScanBag, clear Inv.hidden[k] on every readable
+	-- read (`if not secret then`), as in dfaa81e.
+	it("loot taken while secret that reads empty for a moment while zoning out is unseen when it reads", function()
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.Put(0, 12, Fixtures.HERB, 4, { secretID = true })
+		flushAll()
+		enterWorld(false, false)
+		local loot = A.slots[0][12]
+		A.slots[0][12] = nil -- the loading screen: the slot reads empty
+		flushAll()
+		loot.secretID = nil
+		A.slots[0][12] = loot
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 12))
+		assert.truthy(Inv.IsNew(0, 12))
+	end)
+
+	-- A "base" marker kept through an empty read does not outlive the settle: later loot into that slot arrives.
+	-- Mutation: in Inv.EndSettle, drop the loop that forgets the markers of slots held through an empty read.
+	it("a slot secret at login that reads empty during the settle takes real loot afterwards", function()
+		A.slots[0][1].secretID = true
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		A.slots[0][1] = nil -- the potions are gone (read empty) during the settle
+		flushAll()
+		settle()
+		A.Put(0, 1, Fixtures.HERB, 2)
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 1))
+	end)
+
+	-- Item 2: each flush during the settle waits SETTLE_QUIET again. Mutation: in Inventory.Flush, delete the
+	-- Inv.Quiet() call.
+	it("the settle waits for the bags to be quiet: a flush restarts the wait", function()
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		local restore = hideBackpack()
+		A.Advance(2.5)
+		flushAll() -- still empty
+		A.Advance(2.5) -- 5 s after the world loaded, 2.6 s after the last flush
+		assert.truthy(Inv.settling)
+		restore()
+		flushAll()
+		assert.equal(0, unseenCount())
+	end)
+
+	-- Item 2: a quiet timer from an earlier settle does not end a newer one. Mutation: in Inv.Quiet, drop the
+	-- `gen == settleGen` check.
+	it("a quiet timer from an earlier settle does not end a newer settle", function()
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		A.Advance(2)
+		enterWorld(false, false) -- another loading screen
+		A.Advance(1.5) -- the first settle's timer has fired
+		assert.truthy(Inv.settling)
+		local restore = hideBackpack()
+		flushAll()
+		restore()
+		flushAll()
+		assert.equal(0, unseenCount())
+	end)
+
+	-- Item 2: if the world never loads, the login settle ends SETTLE_LOGIN_MAX after the login scan.
+	-- Mutation: in Inv.Settle, use math.huge instead of Inv.SETTLE_LOGIN_MAX.
+	it("without PLAYER_ENTERING_WORLD the login settle ends at its cap", function()
+		SB.Emit("SB_LOGIN")
+		A.Advance(Inv.SETTLE_LOGIN_MAX - 1)
+		A.Put(0, 12, Fixtures.HERB, 3)
+		flushAll()
+		assert.falsy(Inv.IsUnseen(0, 12), "still the login settle")
+		A.Advance(2)
+		A.Put(0, 13, Fixtures.JUNK, 1)
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 13))
+	end)
+
+	-- Item 3: outside a settle, a flush that would bring in more than half the stacks now in the bags, and at least
+	-- FLOOD_MIN of them, is the client's late data: it marks nothing. Mutation: in markUnseen, drop the flood guard.
+	local function fillBag(bag, size, n, id)
+		A.SetBagSize(bag, size)
+		for slot = 1, n do
+			A.Put(bag, slot, id, 1)
+		end
+	end
+
+	it("late login data after the settle: a flush that fills most of the bags marks nothing", function()
+		fillBag(2, 30, 30, Fixtures.ORE)
+		local saved1, saved2 = A.slots[1], A.slots[2]
+		A.slots[1], A.slots[2] = {}, {}
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.slots[1], A.slots[2] = saved1, saved2 -- 32 of 38 stacks read only now
+		flushAll()
+		assert.equal(0, unseenCount())
+		assert.equal(0, newCount())
+		A.Put(0, 12, Fixtures.HERB, 3)
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 12), "the next real loot still arrives")
+	end)
+
+	it("a 20-stack mailbox Take-All into well-filled bags still arrives", function()
+		fillBag(2, 30, 30, Fixtures.ORE) -- 38 stacks
+		fillBag(3, 30, 0, Fixtures.ORE)
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		for slot = 1, 20 do
+			A.Put(3, slot, Fixtures.HERB, 1)
+		end
+		flushAll() -- 20 of 58 stacks: not more than half
+		assert.equal(20, unseenCount())
+	end)
+
+	-- Item 4: the `new` keyword keeps an item through a settle like New does. Mutation: in markUnseen, drop the
+	-- settle's new-keyword carry pool.
+	it("zoning: an item new this session that reads empty and comes back is still new", function()
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.Put(0, 12, Fixtures.HERB, 4)
+		flushAll()
+		assert.truthy(Inv.IsNew(0, 12))
+		enterWorld(false, false)
+		local restore = hideBackpack()
+		flushAll()
+		assert.falsy(Inv.IsNew(0, 12))
+		restore()
+		flushAll()
+		assert.truthy(Inv.IsNew(0, 12), "back, still new")
+		assert.falsy(Inv.IsNew(0, 1), "what was there before is not")
 	end)
 end)
