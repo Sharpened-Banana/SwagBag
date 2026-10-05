@@ -24,6 +24,10 @@
 --   item, so it changes nothing when it reads again with that item. What it holds when it reads is an arrival
 --   only if the slot's item was known when it went secret ("known"); a slot already secret at a login scan or
 --   during a settle ("base") holds what was there before.
+--   A secret slot that reads empty during the settle keeps its marker until the settle ends (a loading screen can
+--   blank it for a moment). The `new` keyword (newSet) carries through a settle like New does.
+--   Outside a settle, a flush that would bring in FLOOD_MIN stacks or more, and more than half the stacks in the
+--   bags, is late login data (a cold client can be slower than the settle): nothing in it arrives.
 --   A bag whose size first reads (0 before) holds nothing that arrived: a bag can be put on only when empty, so its
 --   contents are the client's late data. A bag size that reads 0 while the bag holds items is unreadable (a bag
 --   with items cannot be taken off): the bag keeps its items.
@@ -42,8 +46,10 @@ local Inv = {
 	unseen = {}, -- ["bag:slot"] = itemID: bags items that arrived and were not hovered yet (see the header)
 	pending = {}, -- [itemID] = true while waiting for item data
 	hidden = {}, -- ["bag:slot"] = "known" | "base": the slot's item ID reads secret (see the header)
+	heldEmpty = {}, -- ["bag:slot"] = true: a hidden slot read empty during the settle; its marker waits
 	settling = false, -- true during the settle (see the header)
 	settleCarry = {}, -- [itemID] = n: unseen stacks that read empty during the settle and may come back
+	settleNewCarry = {}, -- [itemID] = n: the same for the `new` keyword (newSet)
 	scanned = false,
 	failsafeArmed = false,
 	DEBOUNCE = 0.05,
@@ -51,6 +57,8 @@ local Inv = {
 	SETTLE_QUIET = 3, -- seconds with no flush that end the settle once the world is loaded
 	SETTLE_MAX = 15, -- the settle ends at most this long after PLAYER_ENTERING_WORLD
 	SETTLE_LOGIN_MAX = 120, -- and at most this long after the login scan if the world never loads
+	FLOOD_MIN = 20, -- outside a settle, a flush bringing in at least this many stacks, more than half the bags, is
+	-- the client's late data, not loot (see the header)
 }
 SB.Inventory = Inv
 
@@ -136,12 +144,15 @@ function Inv.ScanBag(bag)
 		local revealed
 		if secret then -- not empty: keep the last known item (see the header)
 			snap = old[slot]
+			Inv.heldEmpty[k] = nil
 			if Inv.hidden[k] == nil then
 				Inv.hidden[k] = (Inv.scanned and not Inv.settling) and "known" or "base"
 			end
+		elseif snap == nil and Inv.settling and Inv.hidden[k] then
+			Inv.heldEmpty[k] = true -- an empty read in a loading screen: the marker waits (forgotten when it ends)
 		else
 			revealed = Inv.hidden[k]
-			Inv.hidden[k] = nil
+			Inv.hidden[k], Inv.heldEmpty[k] = nil, nil
 		end
 		new[slot] = snap
 		local r = Inv.DiffSlot(old[slot], snap)
@@ -149,9 +160,10 @@ function Inv.ScanBag(bag)
 			local change = { bag = bag, slot = slot, reasons = r, fresh = fresh, revealed = revealed }
 			changes[#changes + 1] = change
 			mask = Inv.Or(mask, r)
-			if r == Inv.R.ITEM then -- whatever was unseen here left (Flush carries it if it only moved)
+			if r == Inv.R.ITEM then -- whatever was unseen (or new) here left (Flush carries it if it only moved)
 				change.wasUnseen = Inv.unseen[k]
 				Inv.unseen[k] = nil
+				change.wasNew = Inv.newSet[k] and old[slot] and old[slot].itemID or nil
 			end
 			if r == Inv.R.ITEM and Inv.scanned then
 				if snap == nil then -- the item left: the client's own flag for the slot goes too (W4-15)
@@ -201,9 +213,40 @@ local function totals(set)
 	return out
 end
 
+local function stacks(set)
+	local n = 0
+	for bag in pairs(set) do
+		for slot = 1, Inv.Size(bag) do
+			if Inv.GetSlot(bag, slot) then
+				n = n + 1
+			end
+		end
+	end
+	return n
+end
+
+-- During the settle, a stack that comes back after reading empty is still new (the `new` keyword), like New.
+local function carryNew(changes)
+	local pool = Inv.settleNewCarry
+	for _, c in ipairs(changes) do
+		if c.wasNew then
+			pool[c.wasNew] = (pool[c.wasNew] or 0) + 1
+		end
+	end
+	for _, c in ipairs(changes) do
+		local k, s = key(c.bag, c.slot), c.reasons == Inv.R.ITEM and Inv.GetSlot(c.bag, c.slot)
+		if s and not Inv.newSet[k] and (pool[s.itemID] or 0) > 0 then
+			pool[s.itemID] = pool[s.itemID] - 1
+			Inv.newSet[k] = true
+		end
+	end
+end
+
 -- After a flush: a bags slot that gained a stack is unseen when the bags now hold more of the item than before
 -- (it came from outside), or when an unseen stack of the item left a slot in the same flush (it only moved).
--- During the settle, the carry pool lasts from flush to flush (see the header).
+-- During the settle, the carry pools last from flush to flush (see the header). Outside it, a flush that would
+-- bring in FLOOD_MIN stacks or more, and more than half the stacks now in the bags, is the client's late login
+-- data: nothing in it arrives (a mailbox Take-All or a vendor spree never fills half the bags).
 local function markUnseen(changes, set, before)
 	local after = totals(set)
 	local carried = Inv.settling and Inv.settleCarry or {}
@@ -212,17 +255,32 @@ local function markUnseen(changes, set, before)
 			carried[c.wasUnseen] = (carried[c.wasUnseen] or 0) + 1
 		end
 	end
+	local arrivals = {}
 	for _, c in ipairs(changes) do
 		local s = c.reasons == Inv.R.ITEM and set[c.bag] and Inv.GetSlot(c.bag, c.slot)
 		if s then
 			local id = s.itemID
 			if canArrive(c) and (after[id] or 0) > (before[id] or 0) then
-				Inv.unseen[key(c.bag, c.slot)] = id
+				arrivals[#arrivals + 1] = c
 			elseif (carried[id] or 0) > 0 then
 				carried[id] = carried[id] - 1
 				Inv.unseen[key(c.bag, c.slot)] = id
 			end
 		end
+	end
+	if not Inv.settling and #arrivals >= Inv.FLOOD_MIN and #arrivals * 2 > stacks(set) then
+		for _, c in ipairs(changes) do
+			if c.reasons == Inv.R.ITEM then
+				Inv.newSet[key(c.bag, c.slot)] = nil
+			end
+		end
+		return
+	end
+	for _, c in ipairs(arrivals) do
+		Inv.unseen[key(c.bag, c.slot)] = Inv.GetSlot(c.bag, c.slot).itemID
+	end
+	if Inv.settling then
+		carryNew(changes)
 	end
 end
 
@@ -359,7 +417,11 @@ local settleGen = 0
 
 function Inv.EndSettle()
 	Inv.settling, Inv.settleUntil = false, nil
-	Inv.settleCarry = {}
+	Inv.settleCarry, Inv.settleNewCarry = {}, {}
+	for k in pairs(Inv.heldEmpty) do -- still empty after the loading screen: the slot is empty
+		Inv.hidden[k] = nil
+	end
+	Inv.heldEmpty = {}
 	settleGen = settleGen + 1
 end
 
@@ -377,7 +439,7 @@ end
 
 function Inv.Settle(worldLoaded)
 	if not Inv.settling then
-		Inv.settleCarry = {}
+		Inv.settleCarry, Inv.settleNewCarry = {}, {}
 	end
 	Inv.settling, Inv.worldLoaded = true, worldLoaded == true
 	Inv.settleUntil = SB.Adapter.Now() + (worldLoaded and Inv.SETTLE_MAX or Inv.SETTLE_LOGIN_MAX)
@@ -391,7 +453,7 @@ end
 -- Initial full scan (no "new" marking). Called on SB_LOGIN; the settle starts here.
 function Inv.ScanAll()
 	Inv.Settle(false)
-	Inv.hidden = {}
+	Inv.hidden, Inv.heldEmpty = {}, {}
 	for _, bag in ipairs(Inv.TrackedBags()) do
 		Inv.ScanBag(bag)
 	end
