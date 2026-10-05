@@ -224,11 +224,10 @@ describe("Quick setup", function()
 		assert.truthy(QS.IsOpen())
 	end)
 
-	it("AC7.4: /swagbag setup shows it again; /swagbag tour answers (P2)", function()
+	it("AC7.4: /swagbag setup shows it again (P2)", function()
 		SB.Slash.Dispatch("setup")
 		assert.truthy(QS.IsOpen())
-		SB.Slash.Dispatch("tour")
-		assert.same({ SB.L.QS_OPENED, SB.L.TOUR_LATER }, A.Lines())
+		assert.same({ SB.L.QS_OPENED }, A.Lines())
 	end)
 
 	-- Week 6, D18. Mutation: delete the pauseNote SetText.
@@ -532,6 +531,68 @@ describe("Quick setup", function()
 		end
 		assert.equal(6, shown)
 		table.remove(SB.Focus.MODES)
+	end)
+
+	-- AC7.3 (week 12). Mutation: in finish(), drop `QS.offer:Show()`.
+	it("after Finish the tour is offered once: Show me around starts it, No thanks or Esc say how to get it later", function()
+		local started = 0
+		SB.Tour = { Start = function()
+			started = started + 1
+			return "TOUR STARTED"
+		end }
+		QS.Show()
+		finishWizard()
+		assert.falsy(QS.IsOpen())
+		assert.truthy(QS.offer.shown)
+		Fake.Fire(QS.tourButton, "OnClick")
+		assert.falsy(QS.offer.shown)
+		assert.equal(1, started)
+		assert.same({ SB.L.WIZ_DONE_NONE, "TOUR STARTED" }, A.Lines())
+		QS.Show()
+		finishWizard()
+		Fake.Fire(QS.noTourButton, "OnClick")
+		QS.Show()
+		finishWizard()
+		QS.offer:Hide() -- Esc
+		QS.Show()
+		Fake.Fire(QS.skipButton, "OnClick")
+		assert.falsy(QS.offer.shown, "Skip offers nothing")
+		local lines = A.Lines()
+		assert.same({ SB.L.WIZ_DONE_NONE, SB.L.WIZ_TOUR_LATER, SB.L.WIZ_DONE_NONE, SB.L.WIZ_TOUR_LATER,
+			SB.L.QS_SKIPPED_KEPT }, { lines[3], lines[4], lines[5], lines[6], lines[7] })
+		assert.equal(1, started)
+	end)
+
+	-- Mutation: in finish(), drop `and not SB.Adapter.InCombat()`.
+	it("no tour offer in combat; combat starting while it is offered takes it away, with how to get it later", function()
+		SB.Tour = { Start = function() return "TOUR STARTED" end }
+		A.combat = true
+		SB.Slash.Dispatch("setup")
+		finishWizard()
+		assert.falsy(QS.offer.shown)
+		A.combat = false
+		QS.Show()
+		finishWizard()
+		assert.truthy(QS.offer.shown)
+		A.combat = true
+		SB.eventFrame:Fire("PLAYER_REGEN_DISABLED")
+		assert.falsy(QS.offer.shown)
+		local lines = A.Lines()
+		assert.equal(SB.L.WIZ_TOUR_LATER, lines[#lines])
+	end)
+
+	-- Controller ruling Y7. Mutation: in finish(), drop `and not SB.SafeMode.IsOn("bags")`.
+	it("no tour offer while the bags are in Safe Mode (the tour would only refuse)", function()
+		SB.Tour = { Start = function() return "TOUR STARTED" end }
+		SB.SafeMode.Enable("bags", "manual")
+		QS.Show()
+		finishWizard()
+		assert.falsy(QS.IsOpen())
+		assert.falsy(QS.offer.shown)
+		SB.SafeMode.Disable("bags")
+		QS.Show()
+		finishWizard()
+		assert.truthy(QS.offer.shown)
 	end)
 
 	it("only plain frames", function()

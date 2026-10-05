@@ -94,6 +94,7 @@ UI/Themes.lua
 UI/TooltipCounts.lua
 UI/SettingsCategories.lua
 UI/QuickSetup.lua
+UI/Tour.lua
 UI/DebugV1.lua
 
 # Start-up (keep last)
