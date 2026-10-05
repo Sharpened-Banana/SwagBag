@@ -1975,7 +1975,7 @@ describe("BagsWindow focus modes (spec 6)", function()
 	it("/swagbag mode with an unknown word answers with the status and the usage", function()
 		F.SetSignal("challengeMode", true)
 		SB.Slash.Dispatch("mode fly")
-		assert.same({ "Focus mode now: M+. Type /swagbag mode pause, resume, list or style.", SB.L.MODE_USAGE }, A.Lines())
+		assert.same({ "Focus mode now: M+. Type /swagbag mode pause, resume, list, style, on <your mode> or off.", SB.L.MODE_USAGE }, A.Lines())
 	end)
 
 	it("AC8.5: the title names the mode, before the item level", function()
@@ -2058,7 +2058,7 @@ describe("BagsWindow focus modes (spec 6)", function()
 		SB.Slash.Dispatch("mode resume")
 		SB.Slash.Dispatch("mode resume")
 		local lines = A.Lines()
-		assert.same({ "Focus mode now: M+. Type /swagbag mode pause, resume, list or style.", SB.L.MODE_PAUSED,
+		assert.same({ "Focus mode now: M+. Type /swagbag mode pause, resume, list, style, on <your mode> or off.", SB.L.MODE_PAUSED,
 			SB.L.MODE_ALREADY_PAUSED, SB.L.MODE_RESUMED, SB.L.MODE_NOT_PAUSED }, lines)
 		SB.Slash.Dispatch("mode list")
 		lines = A.Lines()

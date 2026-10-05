@@ -524,7 +524,7 @@ local function emit(reason)
 end
 
 -- Re-evaluate the triggers. A different active set ends every peek and pin and tells the windows.
-function Focus.Recompute(reason)
+function Focus.Recompute(reason, quiet)
 	invalidate()
 	local active = Focus.Active()
 	local key = table.concat(active, ",")
@@ -539,7 +539,7 @@ function Focus.Recompute(reason)
 	end
 	Focus.key, Focus.active, Focus.overrides = key, active, {}
 	Focus.viewKey = viewKeyOf(active)
-	if cfg("focus.announce") and not Focus.paused then
+	if cfg("focus.announce") and not Focus.paused and not quiet then
 		SB.Print(SB.L.FOCUS_ANNOUNCE:format(#active > 0 and label(deciding()) or SB.L.FOCUS_NONE))
 	end
 	emit(reason or "signal")
@@ -818,7 +818,7 @@ function Focus.SetManual(id, on)
 		return true, false
 	end
 	Focus.manual[id] = on and true or nil
-	Focus.Recompute("signal")
+	Focus.Recompute("signal", true) -- the user's own command answers; no "Focus mode:" line on top (P2)
 	return true, true
 end
 
@@ -890,8 +890,11 @@ local function manualCommand(word, rest)
 		for _, m in ipairs(Focus.custom) do
 			if Focus.manual[m.id] then
 				off[#off + 1] = m.name
-				Focus.SetManual(m.id, false)
+				Focus.manual[m.id] = nil
 			end
+		end
+		if #off > 0 then
+			Focus.Recompute("signal", true) -- once: one re-stack, no in-between states
 		end
 		return #off > 0 and L.MODE_MANUAL_ALL_OFF:format(table.concat(off, ", ")) or L.MODE_MANUAL_NONE_ON
 	end
