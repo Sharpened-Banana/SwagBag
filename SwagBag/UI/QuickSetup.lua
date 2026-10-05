@@ -9,6 +9,7 @@
 -- Back, Next and Skip on every step, Finish on the last. Nothing is written before Finish (Engine/Setup.lua keeps the
 -- draft): Skip keeps SwagBag's defaults (or the settings as they are) and says so (AC7.2); Esc or the X is "later",
 -- nothing saved. When combat starts the wizard steps aside and comes back where it was when combat ends.
+-- After Finish (out of combat) a small note offers the tour (AC7.3, UI/Tour.lua): "Show me around" or "No thanks".
 -- All writes refuse while the settings are read-only (a newer schema), with that reason.
 local _, SB = ...
 
@@ -311,7 +312,7 @@ end
 -- Finish / Skip answer in chat (P2); a refusal also shows on the screen, which stays open. An error runs under "none"
 -- (a settings glitch never takes the bags away): the status line and chat say it failed, and the error is recorded
 -- for /swagbag report.
-local function finish(fn)
+local function finish(fn, offer)
 	local ok, feedback = SB.ErrorTrap.Run("setup.finish", "none", fn, QS.draft)
 	if not ok then
 		feedback = L.SETTINGS_FAILED
@@ -320,6 +321,9 @@ local function finish(fn)
 	frame.status:SetText(feedback)
 	if ok and not SB.Config.readOnly then
 		QS.Close("done")
+		if offer and SB.Tour and not SB.Adapter.InCombat() and not SB.SafeMode.IsOn("bags") then
+			QS.offer:Show() -- the tour, offered once at the end (AC7.3)
+		end
 	end
 end
 
@@ -333,7 +337,7 @@ local function go(step)
 end
 
 QS.finishButton = button(frame, 120, nil, nil, L.WIZ_FINISH, function()
-	finish(Setup.Finish)
+	finish(Setup.Finish, true)
 end)
 QS.finishButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 12)
 QS.nextButton = button(frame, 120, nil, nil, L.WIZ_NEXT, function()
@@ -380,6 +384,45 @@ function QS.Close(how)
 	frame:Hide()
 end
 
+-- The tour offer after Finish (week 12, AC7.3): a small note of its own, so the wizard is closed by then. "Show me
+-- around" starts the tour and says what it said; "No thanks", Esc, the X or combat starting say how to get it later.
+local offer = CreateFrame("Frame", "SwagBagTourOffer", UIParent, "BackdropTemplate")
+offer:SetFrameStrata("DIALOG")
+offer:SetToplevel(true)
+offer:SetClampedToScreen(true)
+offer:EnableMouse(true)
+offer:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+offer:SetBackdropColor(0.06, 0.06, 0.08, 0.97)
+offer:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
+offer:SetSize(360, 110)
+offer:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+offer:Hide()
+QS.offer = offer
+table.insert(UISpecialFrames, "SwagBagTourOffer")
+offer.text = text(offer, "GameFontHighlight", 14, -14, 332)
+offer.text:SetText(L.WIZ_TOUR_ASK)
+QS.tourButton = button(offer, 150, 14, -72, L.WIZ_TOUR_YES, function()
+	QS.offerAnswered = true
+	offer:Hide()
+	SB.Print(SB.Tour.Start())
+end)
+QS.noTourButton = button(offer, 150, 196, -72, L.WIZ_TOUR_NO, function()
+	offer:Hide()
+end)
+if SB.Theme then
+	SB.Theme.Window(offer, "dialog")
+	SB.Theme.Text(offer.text, "body")
+end
+offer:SetScript("OnHide", Guard("setup.offerHide", function(self)
+	if self:IsShown() then
+		return
+	end
+	if not QS.offerAnswered then
+		SB.Print(L.WIZ_TOUR_LATER)
+	end
+	QS.offerAnswered = nil
+end, "none"))
+
 -- A fresh draft from the settings as they are (a re-run starts from the styles picked last time), at step 1.
 function QS.Show()
 	QS.draft, QS.step, QS.combatHidden = Setup.New(), 1, false
@@ -425,6 +468,9 @@ end
 -- does not come back when combat ends: it keeps the draft and returns when the player leaves the instance, or
 -- when they type /swagbag setup (which resumes the kept draft).
 SB.On("PLAYER_REGEN_DISABLED", function()
+	if offer:IsShown() then
+		offer:Hide() -- no tour in a fight; the line says how to get it later
+	end
 	if frame:IsShown() then
 		QS.combatHidden = true
 		QS.Close("combat")
@@ -465,8 +511,4 @@ SB.Slash.Register("setup", L.HELP_SETUP, function()
 		QS.Show()
 	end
 	return L.QS_OPENED
-end)
-
-SB.Slash.Register("tour", L.HELP_TOUR, function()
-	return L.TOUR_LATER
 end)
