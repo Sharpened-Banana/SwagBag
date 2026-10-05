@@ -391,6 +391,8 @@ describe("Quick setup", function()
 		SB.eventFrame:Fire("PLAYER_REGEN_DISABLED")
 		assert.falsy(QS.IsOpen())
 		assert.same({ SB.L.WIZ_COMBAT_HIDDEN }, A.Lines())
+		assert.equal("Setup steps aside during the fight; it comes back where you were when combat ends.",
+			SB.L.WIZ_COMBAT_HIDDEN)
 		assert.same({}, SB.Config.db.settings, "nothing is saved")
 		A.combat = false
 		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
@@ -426,7 +428,9 @@ describe("Quick setup", function()
 		assert.equal(3, QS.step)
 		assert.truthy(QS.lit[QS.columnButtons[16]])
 		assert.truthy(QS.draft.styles.gold)
-		assert.same({ SB.L.WIZ_COMBAT_HIDDEN }, A.Lines(), "one line, once")
+		assert.same({ SB.L.WIZ_COMBAT_HIDDEN_RUN }, A.Lines(), "one line, once")
+		assert.equal("Setup steps aside during the fight; it comes back where you were when you leave the dungeon or raid."
+			.. " Type /swagbag setup to bring it back sooner.", SB.L.WIZ_COMBAT_HIDDEN_RUN)
 	end)
 
 	it("combat inside an instance: /swagbag setup resumes the kept draft; outside, combat ending brings it back", function()
@@ -451,7 +455,7 @@ describe("Quick setup", function()
 		assert.truthy(QS.IsOpen(), "outside an instance: back when combat ends")
 	end)
 
-	-- Gold glow visibility. Mutation: in Setup.Value, skip the preset (return get(key)) for "prices.worth".
+	-- Gold glow visibility. Mutation: in paintStep4, `value("prices.worth")` -> `SB.Config.Get("prices.worth")`.
 	it("step 4: Gold would switch the gold glow on, and shows it; choosing Off there writes Off, with no amount", function()
 		SB.Config.Set("prices.worth", "off")
 		SB.Config.Set("prices.worthGold", 250)
@@ -479,6 +483,55 @@ describe("Quick setup", function()
 		assert.falsy(QS.lit[QS.worthButtons.off])
 		Fake.Fire(QS.finishButton, "OnClick")
 		assert.equal("fixed", SB.Config.Get("prices.worth"))
+	end)
+
+	-- Review fix 2. Mutation: QS frame `frame:SetSize(580, 400)` -> `frame:SetSize(580, 360)`.
+	it("step 2 with every style picked: the lowest row ends above the status line", function()
+		QS.Show()
+		for _, s in ipairs(QS.STYLES) do
+			pick(s.id)
+		end
+		step(2)
+		local lowest, rows = 0, 0
+		for _, b in ipairs(QS.switchButtons) do
+			if b.shown then
+				rows = rows + 1
+				local y = -b.points[1][5] -- below the step panel's top
+				lowest = math.max(lowest, 60 + y + b.h) -- the panel starts 60 below the frame's top
+			end
+		end
+		assert.truthy(rows >= 17, "six modes and the picks' switches")
+		local statusBottom = 44 -- status: anchored 44 above the frame's bottom, up to two lines (24) tall
+		assert.truthy(lowest <= QS.frame.h - statusBottom - 24, lowest .. " vs " .. QS.frame.h)
+	end)
+
+	-- Review fix 3. Mutation: in QS.Paint, drop the skipButton:SetText line.
+	it("Skip says what it keeps: the defaults on a first run, your settings on a re-run", function()
+		QS.Show()
+		assert.equal("Skip (use defaults)", QS.skipButton.text)
+		assert.equal("Nothing is saved until Finish. Skip keeps SwagBag's defaults.", QS.frame.status.text)
+		SB.Config.Set("setup.done", true)
+		QS.Show()
+		assert.equal("Skip (keep my settings)", QS.skipButton.text)
+		assert.equal("Nothing is saved until Finish. Skip keeps your current settings.", QS.frame.status.text)
+		step(2)
+		assert.equal("Nothing is saved until Finish. Skip keeps your current settings.", QS.frame.status.text)
+	end)
+
+	-- Review fix 4. Mutation: in Setup.Switches, drop the `not m.custom and not m.id:match("^m_")` test.
+	it("step 2 lists the built-in modes only, not the user's own", function()
+		table.insert(SB.Focus.MODES, { id = "m_farming", class = "activity", name = "MODE_MPLUS", custom = true })
+		QS.Show()
+		step(2)
+		for _, b in ipairs(QS.switchButtons) do
+			assert.falsy(b.shown and b.key == "focus.on.m_farming")
+		end
+		local shown = 0
+		for _, b in ipairs(QS.switchButtons) do
+			shown = shown + (b.shown and 1 or 0)
+		end
+		assert.equal(6, shown)
+		table.remove(SB.Focus.MODES)
 	end)
 
 	it("only plain frames", function()

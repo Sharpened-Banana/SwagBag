@@ -179,7 +179,9 @@ function Setup.Switches(d)
 		end
 	end
 	for _, m in ipairs(SB.Focus and SB.Focus.MODES or {}) do
-		add("focus.on." .. m.id)
+		if not m.custom and not m.id:match("^m_") then -- the user's own modes are managed in Settings
+			add("focus.on." .. m.id)
+		end
 	end
 	for _, p in ipairs(Setup.Preset(d.styles, get)) do
 		if type(p[2]) == "boolean" then
