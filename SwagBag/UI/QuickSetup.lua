@@ -309,6 +309,10 @@ function QS.Paint()
 	QS.finishButton:SetShown(QS.step == QS.STEPS)
 end
 
+local function inInstance()
+	return SB.Adapter.InstanceInfo().instanceType ~= nil
+end
+
 -- Finish / Skip answer in chat (P2); a refusal also shows on the screen, which stays open. An error runs under "none"
 -- (a settings glitch never takes the bags away): the status line and chat say it failed, and the error is recorded
 -- for /swagbag report.
@@ -321,7 +325,7 @@ local function finish(fn, offer)
 	frame.status:SetText(feedback)
 	if ok and not SB.Config.readOnly then
 		QS.Close("done")
-		if offer and SB.Tour and not SB.Adapter.InCombat() and not SB.SafeMode.IsOn("bags") then
+		if offer and SB.Tour and not SB.Adapter.InCombat() and not inInstance() and not SB.SafeMode.IsOn("bags") then
 			QS.offer:Show() -- the tour, offered once at the end (AC7.3)
 		end
 	end
@@ -423,9 +427,19 @@ offer:SetScript("OnHide", Guard("setup.offerHide", function(self)
 	QS.offerAnswered = nil
 end, "none"))
 
+-- The tour offer was answered some other way (the tour started by its command, or the wizard opened again): it goes
+-- away without the "type /swagbag tour any time" line, which would be wrong or doubled.
+function QS.AnswerOffer()
+	if offer:IsShown() then
+		QS.offerAnswered = true
+		offer:Hide()
+	end
+end
+
 -- A fresh draft from the settings as they are (a re-run starts from the styles picked last time), at step 1.
 function QS.Show()
-	QS.draft, QS.step, QS.combatHidden = Setup.New(), 1, false
+	QS.AnswerOffer()
+	QS.draft, QS.step, QS.combatHidden, QS.waiting = Setup.New(), 1, false, false
 	frame.status:SetText(QS.Hint())
 	QS.Paint()
 	frame:Show()
@@ -451,16 +465,15 @@ function QS.TryShow()
 		QS.waiting = false
 		return
 	end
+	if frame:IsShown() or QS.combatHidden then
+		return -- already open (the user typed /swagbag setup), or stepped aside with a draft: never reset it
+	end
 	if SB.Adapter.InCombat() or SB.Adapter.InstanceInfo().instanceType then
 		QS.waiting = true
 		return
 	end
 	QS.waiting = false
 	QS.Show()
-end
-
-local function inInstance()
-	return SB.Adapter.InstanceInfo().instanceType ~= nil
 end
 
 -- Combat starts while the wizard is open: it steps aside (it never covers a fight) and comes back where it was, with
