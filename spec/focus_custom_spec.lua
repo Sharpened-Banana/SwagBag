@@ -102,12 +102,11 @@ describe("Focus modes of your own (week 12)", function()
 	-- Mutation: in Focus.Active, `(auto or m.class == "manual")` -> `auto`.
 	it("with Switch by themselves off, only a manual mode you switched on applies; Pause stops it too", function()
 		local farm = F.CreateMode("Farm")
-		local dump = F.CreateMode("Vendor dump", "vendor")
+		F.CreateMode("Vendor dump", "vendor")
 		C.Set("focus.auto", false)
 		F.SetSignal("merchantOpen", true)
 		F.SetManual(farm, true)
 		assert.same({ farm }, F.Active())
-		assert.truthy(dump)
 		F.Pause()
 		assert.equal(L.FOCUS_PAUSED, F.Label())
 		assert.is_nil(F.Front())
@@ -152,6 +151,7 @@ describe("Focus modes of your own (week 12)", function()
 		F.SetEnabled(id, true)
 		C.CharOverride("focus.sections." .. id, true)
 		F.SetSections(id, { "c_ore" })
+		C.CharOverride("focus.on." .. id, true)
 		F.SetManual(id, true)
 		events = {}
 		assert.truthy(F.DeleteMode(id))
@@ -159,6 +159,7 @@ describe("Focus modes of your own (week 12)", function()
 		assert.is_nil(C.db.settings.focus.sections[id])
 		assert.is_nil(C.db.settings.focus.on[id])
 		assert.is_nil(C.charDB.overrides["focus.sections." .. id])
+		assert.is_nil(C.charDB.overrides["focus.on." .. id])
 		assert.same({}, F.Active())
 		assert.is_nil(F.Mode(id))
 		assert.same({ "settings" }, events, "the open bags follow once")
@@ -283,5 +284,39 @@ describe("Focus modes of your own (week 12)", function()
 		} }, nil)
 		assert.same({ "m_a", "m_e" }, { F.custom[1].id, F.custom[2].id })
 		assert.equal(2, #F.custom)
+	end)
+
+	-- Mutation: in Categories.Delete, drop the `for path in pairs(Cfg.charDB.overrides) do` loop.
+	it("deleting a category also cleans a character-only sections override of a mode that is gone from the account", function()
+		SB.Categories.Load()
+		local cat = SB.Categories.Create("Pots", "potion")
+		C.charDB.overrides["focus.sections.m_gone"] = "c_ore," .. cat
+		assert.truthy(SB.Categories.Delete(cat))
+		assert.equal("c_ore", C.charDB.overrides["focus.sections.m_gone"])
+	end)
+
+	-- P2. Mutation: in Focus.SetManual, `Focus.Recompute("signal", true)` -> `Focus.Recompute("signal")`; and in
+	-- manualCommand, drop the `Focus.manual[m.id] = nil` bulk clear in favour of SetManual per mode.
+	it("with Mode changes in chat on, /swagbag mode on and a bulk off each say one line, and off re-stacks once", function()
+		C.Set("focus.announce", true)
+		local a, b = F.CreateMode("Farm"), F.CreateMode("Fish")
+		local lines = {}
+		SB.Print = function(text)
+			lines[#lines + 1] = text
+		end
+		local function run(line)
+			lines = {}
+			local _, answer = SB.Slash.Run(line)
+			return answer
+		end
+		assert.equal(L.MODE_MANUAL_ON:format("Farm"), run("mode on farm"))
+		assert.same({}, lines, "no Focus mode: line on top of the answer")
+		run("mode on fish")
+		events = {}
+		assert.equal(L.MODE_MANUAL_ALL_OFF:format("Farm, Fish"), run("mode off"))
+		assert.same({}, lines)
+		assert.same({ "signal" }, events, "one change, one re-stack")
+		assert.same({}, F.Active())
+		assert.truthy(a and b)
 	end)
 end)
