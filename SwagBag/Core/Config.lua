@@ -90,9 +90,11 @@ Config.Defaults = {
 		-- The low-consumables warning (spec 6.6, F11). warn: on by default. watch: nil means the
 		-- default list (Engine/Consumables.lua); the user's edited list is stored here.
 		consumables = { warn = true },
-		-- done: the quick setup screen was applied or skipped (UI/QuickSetup.lua); account-wide,
+		-- done: the setup wizard was finished or skipped (UI/QuickSetup.lua); account-wide,
 		-- like the settings it sets, so it shows once per account, not once per character.
-		setup = { done = false },
+		-- styles (week 12): the playstyles picked at the last Finish ("mplus,gold"), so /swagbag setup starts from
+		-- them. This machine's state, like done: never in a profile or a share string (Engine/Profiles.lua KEEP).
+		setup = { done = false, styles = "" },
 		-- name: the look of SwagBag's own windows (UI/Theme.lua): "blizzard" (the default, AC14.1) |
 		-- "flat" | "elvui" (UI/Themes.lua).
 		theme = { name = "blizzard" },
