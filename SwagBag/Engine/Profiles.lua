@@ -23,6 +23,8 @@
 --                                            never replaces one of the user's or revives a deleted id: one whose id is
 --                                            taken comes in under a fresh id (the string's order and focus sections
 --                                            follow it), one whose name is taken as "Name (2)"; the preview names them
+-- The user's own focus modes (week 12, AC8.7) are not in share strings: their settings are no known path, so an
+-- export leaves them out (its answer names the modes) and an import skips them, as any unknown entry.
 -- Share string, version 1. Values: b1 / b0 (boolean), n<number>, s<text> with every character other
 -- than letters, digits, "." "_" "-" written %XX (so spaces and line breaks a paste adds are dropped). Keys:
 --   s.<setting path>            a setting the user set (a known path; the default's type)
@@ -193,6 +195,23 @@ local function replace(settings)
 	local new = shareable(settings)
 	for k in pairs(KEEP) do
 		new[k] = SB.Config.Copy(old[k])
+	end
+	-- Week 12: the user's own focus modes live outside share strings and profiles; their switches and sections stay as
+	-- they are now, so loading, resetting or undoing never strips a mode of its sections (character overrides are
+	-- the character's own and are not touched here).
+	local oldFocus = type(old.focus) == "table" and old.focus or {}
+	for _, m in ipairs(SB.Focus and SB.Focus.custom or {}) do
+		for _, kind in ipairs({ "on", "sections" }) do
+			local v
+			if type(oldFocus[kind]) == "table" then
+				v = oldFocus[kind][m.id]
+			end
+			if v ~= nil then
+				new.focus = type(new.focus) == "table" and new.focus or {}
+				new.focus[kind] = type(new.focus[kind]) == "table" and new.focus[kind] or {}
+				new.focus[kind][m.id] = SB.Config.Copy(v)
+			end
+		end
 	end
 	d.settings = new
 	SB.Emit("SB_CONFIG_CHANGED", nil)
@@ -803,7 +822,8 @@ function Pr.Preview(data)
 		local names = {}
 		for i, id in ipairs(data.lowered) do
 			local def = data.users[id]
-			names[i] = (def and def.name) or (SB.Categories and SB.Categories.Name(id)) or id
+			-- week 12 (week-11 deferred): the name it comes in under ("Mine (2)"), as the Added line says
+			names[i] = placedNames[id] or (def and def.name) or (SB.Categories and SB.Categories.Name(id)) or id
 		end
 		lines[#lines + 1] = L.PROFILE_PREVIEW_LOWERED:format(table.concat(names, ", "))
 	end
@@ -930,11 +950,16 @@ SB.Slash.Register("profile", L.HELP_PROFILE, function(arg)
 		if SB.ShareBox then
 			SB.ShareBox.ShowExport(text)
 		end
-		local said = rest ~= "" and L.PROFILE_EXPORTED_CATEGORIES or L.PROFILE_EXPORTED
+		local said = { rest ~= "" and L.PROFILE_EXPORTED_CATEGORIES or L.PROFILE_EXPORTED }
 		if #left > 0 then
-			return { said, L.PROFILE_EXPORT_LEFT_OUT:format(table.concat(left, ", ")) } -- one answer, two lines
+			said[#said + 1] = L.PROFILE_EXPORT_LEFT_OUT:format(table.concat(left, ", ")) -- one answer, two lines
 		end
-		return said
+		-- Week 12 (AC8.7): the user's own focus modes never travel; the answer says so, naming them.
+		local modes = SB.Focus and SB.Focus.CustomNames and SB.Focus.CustomNames() or {}
+		if #modes > 0 then
+			said[#said + 1] = L.PROFILE_EXPORT_MODES:format(table.concat(modes, ", "))
+		end
+		return #said == 1 and said[1] or said
 	elseif verb == "import" and rest == "" then
 		if SB.ShareBox then
 			SB.ShareBox.ShowImport()
