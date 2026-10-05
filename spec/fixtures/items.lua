@@ -58,4 +58,11 @@ function Fixtures.SmallBags(m)
 	m.Put(0, 6, Fixtures.JUNK, 3)
 end
 
+-- Hotfix 0.11.1: after SB_LOGIN (or Inventory.ScanAll), the world loads and the bags settle; only then do items
+-- arrive (Inventory's header). A whole number of seconds keeps later timer sums exact.
+function Fixtures.Settle(SB)
+	SB.eventFrame:Fire("PLAYER_ENTERING_WORLD", true, false)
+	SB.Adapter.Advance(SB.Inventory.SETTLE_QUIET + 1)
+end
+
 return Fixtures

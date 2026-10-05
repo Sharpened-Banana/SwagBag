@@ -274,6 +274,19 @@ function A.GetSlot(bag, slot)
 	}
 end
 
+-- True when the slot holds an item whose ID (or whose whole record) is a secret value (Midnight, in an instance):
+-- GetSlot reads that slot as empty, but it is not (hotfix 0.11.1: the Inventory keeps its last known item).
+function A.SlotIsSecret(bag, slot)
+	local ok, info = pcall(C_Container.GetContainerItemInfo, bag, slot)
+	if not ok or info == nil then
+		return false
+	end
+	if isSecret(info) then
+		return true
+	end
+	return type(info) == "table" and info.itemID ~= nil and isSecret(info.itemID)
+end
+
 -- Instant (always cached) item facts.
 function A.GetItemInstant(item)
 	local ok, itemID, _, _, equipLoc, icon, classID, subclassID = pcall(C_Item.GetItemInfoInstant, item)

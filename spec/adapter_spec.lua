@@ -106,6 +106,27 @@ describe("Adapter.EquippedItems (real adapter, stubbed globals)", function()
 		issecretvalue = nil
 	end)
 
+	-- Hotfix 0.11.1: a slot whose item ID is secret reads empty in GetSlot but is not empty.
+	-- Mutation: in A.SlotIsSecret, return false when the item ID is secret (drop `isSecret(info.itemID)`).
+	it("SlotIsSecret: true for an item whose ID or record is secret; false for an empty, readable or broken slot", function()
+		local infos = { [1] = { itemID = "S" }, [2] = { itemID = 5 }, [4] = "SECRET" }
+		C_Container = { GetContainerItemInfo = function(_, slot)
+			if slot == 5 then
+				error("cannot read")
+			end
+			return infos[slot]
+		end }
+		issecretvalue = function(v) return v == "S" or v == "SECRET" end
+		assert.is_nil(A.GetSlot(0, 1), "GetSlot reads it as empty")
+		assert.equal(true, A.SlotIsSecret(0, 1))
+		assert.equal(false, A.SlotIsSecret(0, 2), "readable")
+		assert.equal(false, A.SlotIsSecret(0, 3), "empty")
+		assert.equal(true, A.SlotIsSecret(0, 4), "the whole record")
+		assert.equal(false, A.SlotIsSecret(0, 5), "an error")
+		issecretvalue = nil
+		assert.equal(false, A.SlotIsSecret(0, 1), "no secrets outside Midnight")
+	end)
+
 	-- M3 (final review). Mutation: in A.IsWarboundUntilEquip, drop the isSecret(v) check.
 	it("IsWarboundUntilEquip: true only for a plain true; a secret answer is false", function()
 		assert.equal(false, A.IsWarboundUntilEquip(0, 1), "no API")

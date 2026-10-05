@@ -130,6 +130,7 @@ describe("BagsWindow category view", function()
 		Loader.LoadFile(SB, "SwagBag/UI/Overlays.lua")
 		W = SB.BagsWindow
 		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB) -- hotfix 0.11.1: the login settle is over, items can arrive
 	end)
 
 	after_each(function()
@@ -2495,6 +2496,7 @@ for _, style in ipairs({ "front", "collapse" }) do
 			Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
 			W, F = SB.BagsWindow, SB.Focus
 			SB.Emit("SB_LOGIN")
+			Fixtures.Settle(SB) -- hotfix 0.11.1: the login settle is over, items can arrive
 		end)
 
 		after_each(function()

@@ -118,6 +118,7 @@ describe("Buttons: Blizzard's blue new-item glow", function()
 		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
 		B = SB.Buttons
 		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB) -- hotfix 0.11.1: the login settle is over, items can arrive
 	end)
 
 	after_each(function()
@@ -223,6 +224,7 @@ describe("Inventory and the client's new-item flag", function()
 	-- Mutation: delete `SB.Adapter.ClearNewItem(bag, slot)` in Inventory.ScanBag.
 	it("an item that leaves its slot is no longer new, and the client's flag for the slot is cleared", function()
 		Inv.ScanAll()
+		Fixtures.Settle(SB) -- hotfix 0.11.1: the login settle is over, items can arrive
 		A.Put(0, 7, Fixtures.HERB, 5)
 		Inv.ScanBag(0)
 		assert.truthy(Inv.IsNew(0, 7))
