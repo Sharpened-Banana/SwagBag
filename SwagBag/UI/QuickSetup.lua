@@ -37,7 +37,7 @@ frame:RegisterForDrag("LeftButton")
 frame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
 frame:SetBackdropColor(0.06, 0.06, 0.08, 0.97)
 frame:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
-frame:SetSize(580, 360)
+frame:SetSize(580, 400)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
 frame:Hide()
 QS.frame = frame
@@ -302,6 +302,7 @@ function QS.Paint()
 	elseif QS.step == 4 then
 		paintStep4()
 	end
+	QS.skipButton:SetText(SB.Config.Get("setup.done") and L.QS_SKIP_KEPT or L.QS_SKIP)
 	QS.backButton:SetShown(QS.step > 1)
 	QS.nextButton:SetShown(QS.step < QS.STEPS)
 	QS.finishButton:SetShown(QS.step == QS.STEPS)
@@ -322,9 +323,13 @@ local function finish(fn)
 	end
 end
 
+function QS.Hint()
+	return SB.Config.Get("setup.done") and L.WIZ_HINT_KEPT or L.WIZ_HINT
+end
+
 local function go(step)
 	QS.step = math.max(1, math.min(QS.STEPS, step))
-	frame.status:SetText(L.WIZ_HINT)
+	frame.status:SetText(QS.Hint())
 end
 
 QS.finishButton = button(frame, 120, nil, nil, L.WIZ_FINISH, function()
@@ -378,7 +383,7 @@ end
 -- A fresh draft from the settings as they are (a re-run starts from the styles picked last time), at step 1.
 function QS.Show()
 	QS.draft, QS.step, QS.combatHidden = Setup.New(), 1, false
-	frame.status:SetText(L.WIZ_HINT)
+	frame.status:SetText(QS.Hint())
 	QS.Paint()
 	frame:Show()
 end
@@ -411,6 +416,10 @@ function QS.TryShow()
 	QS.Show()
 end
 
+local function inInstance()
+	return SB.Adapter.InstanceInfo().instanceType ~= nil
+end
+
 -- Combat starts while the wizard is open: it steps aside (it never covers a fight) and comes back where it was, with
 -- everything picked, when combat ends. Nothing is saved meanwhile. Inside an instance (a run, a raid, a delve) it
 -- does not come back when combat ends: it keeps the draft and returns when the player leaves the instance, or
@@ -419,7 +428,7 @@ SB.On("PLAYER_REGEN_DISABLED", function()
 	if frame:IsShown() then
 		QS.combatHidden = true
 		QS.Close("combat")
-		SB.Print(L.WIZ_COMBAT_HIDDEN)
+		SB.Print(inInstance() and L.WIZ_COMBAT_HIDDEN_RUN or L.WIZ_COMBAT_HIDDEN)
 	end
 end, "none")
 
@@ -428,10 +437,6 @@ function QS.Resume()
 	QS.combatHidden = false
 	QS.Paint()
 	frame:Show()
-end
-
-local function inInstance()
-	return SB.Adapter.InstanceInfo().instanceType ~= nil
 end
 
 SB.On("PLAYER_REGEN_ENABLED", function()
