@@ -32,6 +32,7 @@ describe("BankWindow contents", function()
 		BW = Env.LoadBank(SB)
 		B = SB.Buttons
 		SB.Emit("SB_LOGIN") -- the pool and the session scan; the bank reads 0 slots away from a banker
+		Fixtures.Settle(SB) -- hotfix 0.11.1: the login settle is over, items can arrive
 		A.SetBagSize(6, 8)
 		A.SetBagSize(12, 8)
 		A.Put(6, 1, Fixtures.HEALING_POTION, 5)

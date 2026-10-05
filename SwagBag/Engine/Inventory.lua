@@ -13,8 +13,21 @@
 -- here). It arrives when a slot gains an item stack AND the bags hold more of that item than before the flush
 -- (loot, a purchase, mail, a trade, a bank withdrawal, crafting); a move or a split inside the bags, and Blizzard's
 -- sort, add nothing, and an unseen item moved inside the bags stays unseen in its new slot. An item whose ID
--- was secret when it came (the Adapter reads that slot as empty) arrives when it becomes readable. Session only:
--- the login scan and a /reload mark nothing. The bags window puts unseen items in New at every full layout,
+-- was secret when it came arrives when it becomes readable. Session only: the login scan and a /reload mark nothing.
+-- Hotfix 0.11.1 (the user's `New (133)` after a fresh client start): what is in the bags when the player gets
+-- control is never unseen, whenever the client fills them in.
+--   The settle: from the login scan, and from every PLAYER_ENTERING_WORLD (login, /reload, a loading screen),
+--   until SETTLE_QUIET seconds pass with no flush (at most SETTLE_MAX after the world loaded), a flush updates the
+--   model without anything arriving: slots that read empty and fill again are not loot. An unseen item that reads
+--   empty and comes back during the settle stays unseen (the settle's carry pool).
+--   A secret slot (Adapter.SlotIsSecret: an item whose ID is a secret value) is not empty: it keeps its last known
+--   item, so it changes nothing when it reads again with that item. What it holds when it reads is an arrival
+--   only if the slot's item was known when it went secret ("known"); a slot already secret at a login scan or
+--   during a settle ("base") holds what was there before.
+--   A bag whose size first reads (0 before) holds nothing that arrived: a bag can be put on only when empty, so its
+--   contents are the client's late data. A bag size that reads 0 while the bag holds items is unreadable (a bag
+--   with items cannot be taken off): the bag keeps its items.
+-- The bags window puts unseen items in New at every full layout,
 -- whatever the focus mode (UI/BagsWindow.lua). Blizzard's own new-item flag is not used: SwagBag clears it
 -- when the bags close (W4-15), so it cannot carry an item to the next open.
 --   Inv.IsUnseen(bag, slot) -> bool;  Inv.Seen(bag, slot)
@@ -28,10 +41,16 @@ local Inv = {
 	newSet = {}, -- ["bag:slot"] = true for items that arrived this session
 	unseen = {}, -- ["bag:slot"] = itemID: bags items that arrived and were not hovered yet (see the header)
 	pending = {}, -- [itemID] = true while waiting for item data
+	hidden = {}, -- ["bag:slot"] = "known" | "base": the slot's item ID reads secret (see the header)
+	settling = false, -- true during the settle (see the header)
+	settleCarry = {}, -- [itemID] = n: unseen stacks that read empty during the settle and may come back
 	scanned = false,
 	failsafeArmed = false,
 	DEBOUNCE = 0.05,
 	FAILSAFE = 0.25,
+	SETTLE_QUIET = 3, -- seconds with no flush that end the settle once the world is loaded
+	SETTLE_MAX = 15, -- the settle ends at most this long after PLAYER_ENTERING_WORLD
+	SETTLE_LOGIN_MAX = 120, -- and at most this long after the login scan if the world never loads
 }
 SB.Inventory = Inv
 
@@ -77,29 +96,69 @@ local function snapshot(bag, slot)
 	return { itemID = s.itemID, link = s.link, count = s.count, isLocked = s.isLocked }
 end
 
+local function isBagsBag(bag)
+	for _, id in ipairs(SB.Adapter.GetBagIDs("bags")) do
+		if id == bag then
+			return true
+		end
+	end
+	return false
+end
+
+-- Can this change bring an item into the bags (see the header)? Not a bag's first contents, not what a slot held
+-- since a login scan or a settle, and during the settle only what came while a known slot was secret.
+local function canArrive(c)
+	if c.fresh or c.revealed == "base" then
+		return false
+	end
+	return not Inv.settling or c.revealed == "known"
+end
+
 -- Rescan one bag. Returns mask, changes.
 function Inv.ScanBag(bag)
-	local size = SB.Adapter.NumSlots(bag)
+	local A = SB.Adapter
+	local size = A.NumSlots(bag)
 	local oldSize = Inv.sizes[bag] or 0
 	local old = Inv.slots[bag] or {}
+	if size == 0 and oldSize > 0 and next(old) ~= nil and isBagsBag(bag) then
+		return 0, {} -- unreadable now: a bag with items in it cannot be taken off (see the header)
+	end
+	local fresh = oldSize == 0 and size > 0 and Inv.scanned and isBagsBag(bag) or nil
 	local new, changes = {}, {}
 	local mask = size ~= oldSize and Inv.R.SIZE or 0
 	for slot = 1, math.max(size, oldSize) do
-		local snap = slot <= size and snapshot(bag, slot) or nil
+		local k = key(bag, slot)
+		local snap, secret = nil, false
+		if slot <= size then
+			snap = snapshot(bag, slot)
+			secret = snap == nil and A.SlotIsSecret(bag, slot)
+		end
+		local revealed
+		if secret then -- not empty: keep the last known item (see the header)
+			snap = old[slot]
+			if Inv.hidden[k] == nil then
+				Inv.hidden[k] = (Inv.scanned and not Inv.settling) and "known" or "base"
+			end
+		else
+			revealed = Inv.hidden[k]
+			Inv.hidden[k] = nil
+		end
 		new[slot] = snap
 		local r = Inv.DiffSlot(old[slot], snap)
 		if r ~= 0 then
-			local change = { bag = bag, slot = slot, reasons = r }
+			local change = { bag = bag, slot = slot, reasons = r, fresh = fresh, revealed = revealed }
 			changes[#changes + 1] = change
 			mask = Inv.Or(mask, r)
 			if r == Inv.R.ITEM then -- whatever was unseen here left (Flush carries it if it only moved)
-				change.wasUnseen = Inv.unseen[key(bag, slot)]
-				Inv.unseen[key(bag, slot)] = nil
+				change.wasUnseen = Inv.unseen[k]
+				Inv.unseen[k] = nil
 			end
 			if r == Inv.R.ITEM and Inv.scanned then
-				Inv.newSet[key(bag, slot)] = snap ~= nil or nil
 				if snap == nil then -- the item left: the client's own flag for the slot goes too (W4-15)
-					SB.Adapter.ClearNewItem(bag, slot)
+					Inv.newSet[k] = nil
+					A.ClearNewItem(bag, slot)
+				else -- a new stack here: new if it came (or moved), not if it is the client's late data
+					Inv.newSet[k] = canArrive(change) or nil
 				end
 			end
 		end
@@ -144,8 +203,10 @@ end
 
 -- After a flush: a bags slot that gained a stack is unseen when the bags now hold more of the item than before
 -- (it came from outside), or when an unseen stack of the item left a slot in the same flush (it only moved).
+-- During the settle, the carry pool lasts from flush to flush (see the header).
 local function markUnseen(changes, set, before)
-	local after, carried = totals(set), {}
+	local after = totals(set)
+	local carried = Inv.settling and Inv.settleCarry or {}
 	for _, c in ipairs(changes) do
 		if c.wasUnseen then
 			carried[c.wasUnseen] = (carried[c.wasUnseen] or 0) + 1
@@ -155,7 +216,7 @@ local function markUnseen(changes, set, before)
 		local s = c.reasons == Inv.R.ITEM and set[c.bag] and Inv.GetSlot(c.bag, c.slot)
 		if s then
 			local id = s.itemID
-			if (after[id] or 0) > (before[id] or 0) then
+			if canArrive(c) and (after[id] or 0) > (before[id] or 0) then
 				Inv.unseen[key(c.bag, c.slot)] = id
 			elseif (carried[id] or 0) > 0 then
 				carried[id] = carried[id] - 1
@@ -174,6 +235,9 @@ function Inv.Flush(source)
 	Inv.dirty = {}
 	Inv.failsafeArmed = false
 	failsafeGen = failsafeGen + 1
+	if Inv.settling and Inv.settleUntil and SB.Adapter.Now() >= Inv.settleUntil then
+		Inv.EndSettle() -- the cap (see Inv.Settle)
+	end
 	local mask, all = 0, {}
 	local set = bagsSet()
 	local before = Inv.scanned and totals(set)
@@ -186,6 +250,9 @@ function Inv.Flush(source)
 	end
 	if before then
 		markUnseen(all, set, before)
+	end
+	if Inv.settling and Inv.worldLoaded then
+		Inv.Quiet() -- the bags are still filling: the settle waits for them to be quiet
 	end
 	if mask ~= 0 then
 		Inv.lastFlush = source
@@ -284,8 +351,47 @@ function Inv.ScanKind(kind, visit)
 	end
 end
 
--- Initial full scan (no "new" marking). Called on SB_LOGIN.
+-- The settle (see the header). Inv.Settle(false) starts it at the login scan: it lasts until the world loads (at
+-- most SETTLE_LOGIN_MAX). Inv.Settle(true) at every PLAYER_ENTERING_WORLD: it lasts until SETTLE_QUIET seconds pass
+-- with no flush (each flush waits again), at most SETTLE_MAX. The caps are checked by the clock at a flush, so no
+-- timer is left waiting once the settle is over.
+local settleGen = 0
+
+function Inv.EndSettle()
+	Inv.settling, Inv.settleUntil = false, nil
+	Inv.settleCarry = {}
+	settleGen = settleGen + 1
+end
+
+function Inv.Quiet()
+	settleGen = settleGen + 1
+	local gen = settleGen
+	SB.Adapter.After(Inv.SETTLE_QUIET, function()
+		SB.ErrorTrap.Run("inventory.settle", "bags", function()
+			if gen == settleGen then
+				Inv.EndSettle()
+			end
+		end)
+	end)
+end
+
+function Inv.Settle(worldLoaded)
+	if not Inv.settling then
+		Inv.settleCarry = {}
+	end
+	Inv.settling, Inv.worldLoaded = true, worldLoaded == true
+	Inv.settleUntil = SB.Adapter.Now() + (worldLoaded and Inv.SETTLE_MAX or Inv.SETTLE_LOGIN_MAX)
+	if worldLoaded then
+		Inv.Quiet()
+	else
+		settleGen = settleGen + 1 -- before the world loads, a quiet timer from an earlier settle ends nothing
+	end
+end
+
+-- Initial full scan (no "new" marking). Called on SB_LOGIN; the settle starts here.
 function Inv.ScanAll()
+	Inv.Settle(false)
+	Inv.hidden = {}
 	for _, bag in ipairs(Inv.TrackedBags()) do
 		Inv.ScanBag(bag)
 	end
@@ -393,6 +499,13 @@ SB.On("GET_ITEM_INFO_RECEIVED", onItemLoaded, "bags")
 
 SB.On("SB_LOGIN", function()
 	Inv.ScanAll()
+end, "bags")
+
+-- Login, /reload, or any loading screen: the bags may read empty or secret for a moment and fill again.
+SB.On("PLAYER_ENTERING_WORLD", function()
+	if Inv.scanned then
+		Inv.Settle(true)
+	end
 end, "bags")
 
 SB.On("BANKFRAME_OPENED", function()

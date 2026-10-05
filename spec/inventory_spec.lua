@@ -13,6 +13,8 @@ describe("Inventory", function()
 		R = Inv.R
 		Fixtures.SmallBags(A)
 		SB.Emit("SB_LOGIN")
+		SB.eventFrame:Fire("PLAYER_ENTERING_WORLD", true, false)
+		Fixtures.Settle(SB) -- the login settle is over (hotfix 0.11.1)
 		calls = {}
 		Inv.OnChanged(function(mask, changes) calls[#calls + 1] = { mask = mask, changes = changes } end)
 	end)
@@ -275,6 +277,243 @@ describe("Inventory", function()
 		assert.falsy(Inv.IsUnseen(0, 12), "nothing readable yet")
 		A.slots[0][12].secretID = nil
 		flush()
+		assert.truthy(Inv.IsUnseen(0, 12))
+	end)
+end)
+
+-- Hotfix 0.11.1 (the user's report: after a fresh client start, `- New (133)`, every item in the bags in New).
+-- What is in the bags when the player gets control is never unseen: at PLAYER_LOGIN the client may not have
+-- filled the bags yet, and around a loading screen (login, /reload, zoning into or out of an instance) slots can
+-- read empty or secret and then fill again. Spec AC3.3.
+describe("Inventory: login and loading screens never flood New", function()
+	local SB, A, Inv
+	before_each(function()
+		SB = Loader.New(FILES)
+		A, Inv = SB.Adapter, SB.Inventory
+		Fixtures.SmallBags(A)
+		A.SetBagSize(1, 4)
+		A.Put(1, 1, Fixtures.HERB, 20)
+		A.Put(1, 2, Fixtures.BOE_RING, 1)
+	end)
+
+	local function fire(event, ...)
+		SB.eventFrame:Fire(event, ...)
+	end
+
+	local function flushAll()
+		for _, bag in ipairs(A.GetBagIDs("bags")) do
+			fire("BAG_UPDATE", bag)
+		end
+		fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.1)
+	end
+
+	local function unseenCount()
+		local n = 0
+		for _ in pairs(Inv.unseen) do
+			n = n + 1
+		end
+		return n
+	end
+
+	local function newCount()
+		local n = 0
+		for _ in pairs(Inv.newSet) do
+			n = n + 1
+		end
+		return n
+	end
+
+	-- The client's bag data is not there yet: every slot of the backpack reads empty (its size is known).
+	local function hideBackpack()
+		local saved = A.slots[0]
+		A.slots[0] = {}
+		return function()
+			A.slots[0] = saved
+		end
+	end
+
+	local function enterWorld(isLogin, isReload)
+		fire("PLAYER_ENTERING_WORLD", isLogin == true, isReload == true)
+	end
+
+	local function settle()
+		A.Advance(Inv.SETTLE_QUIET + 0.1)
+	end
+
+	-- (a) Mutation: in Inventory.lua canArrive, `return not Inv.settling or ...` -> `return true` (no settle).
+	it("fresh login: the bags read empty at PLAYER_LOGIN and fill after it: nothing is unseen or new", function()
+		local restore = hideBackpack()
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		restore()
+		flushAll()
+		assert.equal(0, unseenCount(), "what was in the bags at login")
+		assert.equal(0, newCount(), "the `new` keyword too")
+		settle()
+		A.Put(0, 12, Fixtures.HERB, 3) -- looted after the settle
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 12), "a real arrival after the settle is still unseen (d)")
+		assert.equal(1, unseenCount())
+	end)
+
+	-- (a) The bags fill during the loading screen, between PLAYER_LOGIN and PLAYER_ENTERING_WORLD.
+	-- Mutation: in Inventory.ScanAll, do not start the settle (Inv.settling stays false until the world loads).
+	it("fresh login: bags that fill before the loading screen ends are not unseen", function()
+		local restore = hideBackpack()
+		SB.Emit("SB_LOGIN")
+		restore()
+		flushAll()
+		assert.equal(0, unseenCount())
+		A.Advance(5)
+		flushAll()
+		enterWorld(true, false)
+		settle()
+		assert.equal(0, unseenCount())
+		A.Put(0, 12, Fixtures.HERB, 3)
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 12))
+	end)
+
+	-- (a) An equipped bag whose size reads 0 at login and whose contents come in later, whenever that is: a bag
+	-- can be put on only when it is empty, so what a bag holds when its size first reads is not an arrival.
+	-- Mutation: in Inventory.ScanBag, drop the `fresh` flag (a bag's late contents arrive).
+	it("a bag whose size reads 0 at login and fills later, even after the settle, adds nothing to New", function()
+		A.SetBagSize(1, 0)
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		settle()
+		A.Advance(30)
+		A.SetBagSize(1, 4)
+		flushAll()
+		assert.equal(20, Inv.GetSlot(1, 1).count)
+		assert.equal(0, unseenCount())
+		assert.equal(0, newCount())
+	end)
+
+	-- A bag holding items cannot be taken off, so a size that reads 0 while the model holds items is unreadable,
+	-- not an empty bag: its items are kept, and they are not new when the size reads again.
+	-- Mutation: in Inventory.ScanBag, drop the unreadable-size guard.
+	it("a bag's size reading 0 for a moment while it holds items neither empties it nor floods New", function()
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		settle()
+		A.SetBagSize(1, 0)
+		flushAll()
+		assert.equal(4, Inv.Size(1))
+		assert.equal(Fixtures.HERB, Inv.GetSlot(1, 1).itemID)
+		settle()
+		A.SetBagSize(1, 4)
+		flushAll()
+		assert.equal(0, unseenCount())
+	end)
+
+	-- (b) Midnight: a slot whose item ID reads secret is not empty. Its last known item stays; when it reads
+	-- again with the same item, nothing came. Mutation: in Inventory.ScanBag, drop the SlotIsSecret check (a
+	-- secret slot reads as empty, as before the hotfix).
+	it("a slot that goes secret and readable again with the same item is not unseen", function()
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		settle()
+		A.slots[0][1].secretID = true -- the healing potions, in a Mythic+ key
+		flushAll()
+		assert.equal(Fixtures.HEALING_POTION, Inv.GetSlot(0, 1).itemID, "kept while secret")
+		A.slots[0][1].secretID = nil
+		flushAll()
+		assert.falsy(Inv.IsUnseen(0, 1))
+		assert.falsy(Inv.IsNew(0, 1))
+		A.slots[0][1].secretID = true
+		flushAll()
+		A.Put(0, 1, Fixtures.HERB, 2, { secretID = true }) -- the potions drunk, herbs looted into the slot, all secret
+		flushAll()
+		A.slots[0][1].secretID = nil
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 1), "what came while the slot was secret")
+	end)
+
+	-- (b) /reload (or a login) inside a key: what a secret slot holds at the login scan is not known, and it was
+	-- there before the session: not new when it reads. Mutation: in Inventory.ScanBag, record every secret slot as
+	-- "known" (never "base").
+	it("a slot that is secret at the login scan is not unseen when it reads, after the settle too", function()
+		A.slots[0][1].secretID = true
+		SB.Emit("SB_LOGIN")
+		enterWorld(false, true)
+		settle()
+		A.slots[0][1].secretID = nil
+		flushAll()
+		assert.equal(Fixtures.HEALING_POTION, Inv.GetSlot(0, 1).itemID)
+		assert.falsy(Inv.IsUnseen(0, 1))
+	end)
+
+	-- (b) The intent of week 9 stays: an item looted while secret arrives when it reads, even if that is during
+	-- the settle after zoning out of the instance. Mutation: in markUnseen, never let a change arrive while
+	-- settling (drop the `c.revealed == "known"` case).
+	it("an item looted while secret is unseen when it reads, even during the settle after zoning out", function()
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		settle()
+		A.Put(0, 12, Fixtures.HERB, 4, { secretID = true })
+		flushAll()
+		assert.falsy(Inv.IsUnseen(0, 12), "nothing readable yet")
+		enterWorld(false, false) -- the key is over: out of the instance
+		A.slots[0][12].secretID = nil
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 12))
+	end)
+
+	-- (c) Zoning (a loading screen): slots read empty, then fill again. Nothing comes; what was unseen stays
+	-- unseen. Mutations: delete the PLAYER_ENTERING_WORLD handler in Inventory.lua; or mutation (a) above.
+	it("zoning: bags that read empty and fill again add nothing to New", function()
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		settle()
+		A.Put(0, 12, Fixtures.HERB, 4) -- looted before the zone
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 12))
+		enterWorld(false, false)
+		local restore = hideBackpack()
+		flushAll()
+		restore()
+		flushAll()
+		assert.equal(1, unseenCount())
+		settle()
+		A.Put(0, 13, Fixtures.JUNK, 1)
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 13), "after the settle, arrivals are unseen again")
+	end)
+
+	-- (c) Mutation: in Inventory.Flush, drop the settle's carry pool (an unseen item that read empty during the
+	-- loading screen and came back in a later flush would be seen).
+	it("zoning: an unseen item that reads empty and comes back in a later flush stays unseen", function()
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		settle()
+		A.Put(0, 12, Fixtures.HERB, 4)
+		flushAll()
+		enterWorld(false, false)
+		local restore = hideBackpack()
+		flushAll()
+		assert.falsy(Inv.IsUnseen(0, 12), "not there now")
+		restore()
+		flushAll()
+		assert.truthy(Inv.IsUnseen(0, 12), "back, still unseen")
+	end)
+
+	-- (c) The settle ends at last even if the bags keep changing. Mutation: in Inventory.Flush, drop the cap check.
+	it("a settle that keeps getting flushes ends at the cap", function()
+		SB.Emit("SB_LOGIN")
+		enterWorld(true, false)
+		for _ = 1, math.ceil(Inv.SETTLE_MAX / 1) + 1 do
+			A.Put(0, 15, Fixtures.JUNK, 1)
+			flushAll()
+			A.Advance(0.5)
+			A.Clear(0, 15)
+			flushAll()
+			A.Advance(0.5)
+		end
+		assert.falsy(Inv.settling)
+		A.Put(0, 12, Fixtures.HERB, 3)
+		flushAll()
 		assert.truthy(Inv.IsUnseen(0, 12))
 	end)
 end)

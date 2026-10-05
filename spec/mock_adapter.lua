@@ -485,6 +485,11 @@ function M.AddContainers(m)
 		}
 	end
 
+	function m.SlotIsSecret(bag, slot)
+		local s = slotOf(bag, slot)
+		return s ~= nil and s.secretID == true
+	end
+
 	function m.GetItemInstant(itemID)
 		local it = m.items[itemID]
 		if not it then
