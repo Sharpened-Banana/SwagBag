@@ -637,7 +637,20 @@ function C.Delete(id)
 	local account = type(Cfg.db.settings.focus) == "table" and type(Cfg.db.settings.focus.sections) == "table"
 		and Cfg.db.settings.focus.sections or {}
 	local focusChanged = false
+	local modes = {}
 	for mode in pairs(Cfg.Defaults.settings.focus.sections) do
+		modes[mode] = true
+	end
+	for mode in pairs(account) do
+		modes[mode] = true -- week 12: the user's own focus modes too (AC8.7)
+	end
+	for path in pairs(Cfg.charDB.overrides) do
+		local mode = type(path) == "string" and path:match("^focus%.sections%.(.+)$")
+		if mode then
+			modes[mode] = true
+		end
+	end
+	for mode in pairs(modes) do
 		local left = without(account[mode], id)
 		if left then
 			account[mode], focusChanged = left, true
