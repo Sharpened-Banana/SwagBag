@@ -81,21 +81,25 @@ function Setup.Preset(picked, get)
 	return out
 end
 
--- Pure: the display order with the promoted styles' categories moved up, or nil when none moves.
+-- Pure: the display order with the promoted styles' categories moved up, or nil when none moves. Only ids in the
+-- display list move; one that Keystone & Crests could not be put after (it is not listed) goes at the end, never lost.
 function Setup.Order(display, promote)
-	local up = {}
+	local listed, up, moved, out = {}, {}, {}, {}
+	for _, id in ipairs(display) do
+		listed[id] = true
+	end
 	for _, s in ipairs(Setup.STYLES) do
 		for _, id in ipairs(promote[s.id] and PROMOTE[s.id] or {}) do
-			up[#up + 1] = id
+			if listed[id] and not moved[id] then
+				up[#up + 1] = id
+				moved[id] = true
+			end
 		end
 	end
 	if #up == 0 then
 		return nil
 	end
-	local moved, out = {}, {}
-	for _, id in ipairs(up) do
-		moved[id] = true
-	end
+	local placed = false
 	for _, id in ipairs(display) do
 		if not moved[id] then
 			out[#out + 1] = id
@@ -103,7 +107,13 @@ function Setup.Order(display, promote)
 				for _, u in ipairs(up) do
 					out[#out + 1] = u
 				end
+				placed = true
 			end
+		end
+	end
+	if not placed then
+		for _, u in ipairs(up) do
+			out[#out + 1] = u
 		end
 	end
 	return out
@@ -215,10 +225,13 @@ function Setup.Plan(d)
 		add(key)
 	end
 	table.sort(keys)
+	-- The amount only means something while the glow is "fixed": picked and then switched Off or to the top %, it is
+	-- not written.
+	local fixed = Setup.Value(d, "prices.worth") == "fixed"
 	local out = {}
 	for _, key in ipairs(keys) do
 		local v = Setup.Value(d, key)
-		if preset[key] ~= nil or v ~= get(key) then
+		if (preset[key] ~= nil or v ~= get(key)) and (key ~= "prices.worthGold" or fixed) then
 			out[#out + 1] = { key, v }
 		end
 	end
