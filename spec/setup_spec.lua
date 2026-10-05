@@ -63,6 +63,29 @@ describe("Setup wizard: the draft and Finish (week 12)", function()
 		assert.is_nil(S.Order(display, { gold = false }))
 	end)
 
+	-- Controller ruling (week 12 review). Mutations: in Setup.Order, drop the `if not placed then` append (a promoted
+	-- category is lost when Keystone & Crests is not listed); or drop the `listed[id]` check (an id that is not in
+	-- the display list is added).
+	it("Order never loses a promoted category (no Keystone & Crests listed) and never adds one that is not listed", function()
+		assert.same({ "c_consumables", "c_gear", "c_tradegoods", "c_boe" },
+			S.Order({ "c_consumables", "c_boe", "c_gear", "c_tradegoods" }, { gold = true }))
+		assert.same({ "c_keystone", "c_tradegoods", "c_gear" },
+			S.Order({ "c_keystone", "c_gear", "c_tradegoods" }, { gold = true }), "c_boe is not listed: not added")
+		assert.is_nil(S.Order({ "c_keystone", "c_gear" }, { gold = true }), "nothing listed moves")
+	end)
+
+	-- Y6. Mutation: in Setup.Plan, drop `(key ~= "prices.worthGold" or fixed)`.
+	it("the plan writes the glow's amount only while the glow is fixed", function()
+		local d = S.New()
+		S.Set(d, "prices.worth", "fixed")
+		S.Set(d, "prices.worthGold", 500)
+		assert.same({ { "prices.worthGold", 500 } }, S.Plan(d), "fixed is the default: only the amount changed")
+		S.Set(d, "prices.worth", "off")
+		assert.same({ { "prices.worth", "off" } }, S.Plan(d), "the amount is not written for Off")
+		S.Set(d, "prices.worth", "top")
+		assert.same({ { "prices.worth", "top" } }, S.Plan(d), "nor for the top %")
+	end)
+
 	-- AC7.4 (a re-run starts from the settings as they are). Mutation: in Setup.New, drop the `if STYLE[id] then` check
 	-- (a damaged or unknown word becomes a picked style).
 	it("a new draft starts from the styles picked last time and every setting as it is now", function()
@@ -134,7 +157,8 @@ describe("Setup wizard: the draft and Finish (week 12)", function()
 		S.Toggle(d, "gold")
 		S.Set(d, "bags.columns", 14)
 		bags.open = true
-		assert.equal("Set up for M+, Gold-making. Change anything later: type /swagbag.", S.Finish(d))
+		assert.equal("Set up for M+, Gold-making. Change anything later: type /swagbag."
+			.. " Settings are saved when you log out or /reload.", S.Finish(d)) -- Y14
 		assert.equal(true, C.Get("setup.done"))
 		assert.equal("mplus,gold", C.Get("setup.styles"))
 		assert.equal(14, C.Get("bags.columns"))

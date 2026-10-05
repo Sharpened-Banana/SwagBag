@@ -278,6 +278,7 @@ describe("Blizzard values on the guild window and quick setup (AC14.1)", functio
 
 	it("the quick setup window is a dialog with the old numbers", function()
 		SB.BagsWindow = { RequestLayout = function() end, RefreshTitle = function() end, IsOpen = function() return false end }
+		Loader.LoadFile(SB, "SwagBag/Engine/Setup.lua") -- week 12: the wizard's draft
 		Loader.LoadFile(SB, "SwagBag/UI/QuickSetup.lua")
 		local f = SB.QuickSetup.frame
 		assert.same({ 0.06, 0.06, 0.08, 0.97 }, f.calls.SetBackdropColor)

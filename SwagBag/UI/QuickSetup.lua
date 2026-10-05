@@ -1,149 +1,28 @@
--- SwagBag quick setup (spec 12.1: "a one-screen quick setup (playstyle -> preset)"; the full
--- four-step wizard and the tour are November, F7). Shown once, a few seconds after the first
--- login with this build, on any character (settings are account-wide). /swagbag setup shows it
--- again (AC7.4); /swagbag tour says when the tour arrives.
---   Pick any of M+, Raid, Gold-making, Casual, Collector, and the slots per row, then:
---   Apply  sets each picked style's preset and says what it did
---   Skip   keeps SwagBag's defaults and says so (AC7.2)
---   Esc / the X  "later": nothing is saved; it opens again at the next login, and says so
--- Presets only switch things ON for the chosen styles (every focus mode is on by default) and
--- move categories up; Casual (without M+ or Raid) is the one that switches two things off.
+-- SwagBag setup wizard (spec F7: AC7.1, AC7.2, AC7.4; week 12, from the week-4 quick setup). Shown once, a few
+-- seconds after the first login, on any character (settings are account-wide); a user who finished or skipped the
+-- quick setup before (setup.done) never sees it again unless they type /swagbag setup (AC7.4), which shows it filled
+-- in with the settings as they are. Four short steps, one screen each:
+--   1 What do you play?   M+, Raid, Gold-making, Casual, Collector: pick any, or none
+--   2 What that turns on  every focus mode and what the picked styles switch (AC9.2), each a click to switch
+--   3 Layout              slots per row, the bags' size, the look
+--   4 Gold                where prices come from (found or not), the gold glow at the bank, selling junk
+-- Back, Next and Skip on every step, Finish on the last. Nothing is written before Finish (Engine/Setup.lua keeps the
+-- draft): Skip keeps SwagBag's defaults (or the settings as they are) and says so (AC7.2); Esc or the X is "later",
+-- nothing saved. When combat starts the wizard steps aside and comes back where it was when combat ends.
 -- All writes refuse while the settings are read-only (a newer schema), with that reason.
 local _, SB = ...
 
 local L = SB.L
 local Guard = SB.ErrorTrap.Guard
-local QS = { picked = {}, columns = 12, styleButtons = {}, columnButtons = {}, DELAY = 3 }
+local Setup = SB.Setup
+local QS = { step = 1, STEPS = 4, styleButtons = {}, columnButtons = {}, scaleButtons = {}, lookButtons = {},
+	worthButtons = {}, sellButtons = {}, switchButtons = {}, MAX_SWITCHES = 18, DELAY = 3 }
 SB.QuickSetup = QS
 
-QS.STYLES = {
-	{ id = "mplus", name = "QS_MPLUS" }, { id = "raid", name = "QS_RAID" }, { id = "gold", name = "QS_GOLD" },
-	{ id = "casual", name = "QS_CASUAL" }, { id = "collector", name = "QS_COLLECTOR" },
-}
-QS.COLUMNS = { 10, 12, 14 }
-
--- Categories a style moves up, right after Keystone & Crests (spec 7.6: "Gold promotes Trade
--- Goods and BoE gear").
-local PROMOTE = { gold = { "c_tradegoods", "c_boe" }, collector = { "c_collect" } }
-
--- Pure: the settings each style sets, given everything picked. Returns { { path, value } }.
-function QS.Preset(picked)
-	local out = {}
-	local function set(path, value)
-		out[#out + 1] = { path, value }
-	end
-	if picked.mplus then
-		set("focus.on.mplus", true)
-		set("consumables.warn", true)
-		set("overlays.keystone", true)
-		set("overlays.track", true)
-	end
-	if picked.raid then
-		set("focus.on.raid", true)
-		set("consumables.warn", true)
-		set("overlays.upgrade", true)
-	end
-	if picked.gold then
-		set("prices.headerTotals", true)
-	end
-	if picked.casual and not picked.mplus and not picked.raid then
-		set("consumables.warn", false)
-		set("overlays.track", false)
-	end
-	return out
-end
-
--- Pure: the category display order with the picked styles' categories moved up.
-function QS.Order(display, picked)
-	local up = {}
-	for _, s in ipairs(QS.STYLES) do
-		for _, id in ipairs(picked[s.id] and PROMOTE[s.id] or {}) do
-			up[#up + 1] = id
-		end
-	end
-	if #up == 0 then
-		return nil
-	end
-	local moved, out = {}, {}
-	for _, id in ipairs(up) do
-		moved[id] = true
-	end
-	for _, id in ipairs(display) do
-		if not moved[id] then
-			out[#out + 1] = id
-			if id == "c_keystone" then
-				for _, u in ipairs(up) do
-					out[#out + 1] = u
-				end
-			end
-		end
-	end
-	return out
-end
-
-local function names(picked)
-	local out = {}
-	for _, s in ipairs(QS.STYLES) do
-		if picked[s.id] then
-			out[#out + 1] = L[s.name]
-		end
-	end
-	return out
-end
-
--- The open windows follow at once, as after a profile load (SB.FollowSettings, Core/Init.lua; week 7,
--- ruling R12). No Focus.Refresh here: the focus.* writes above went through Config.Set, whose
--- SB_CONFIG_CHANGED Focus already listens to.
-local function refresh()
-	SB.FollowSettings("setup")
-end
-
--- Apply the picked styles. Returns the feedback line.
-function QS.Apply()
-	local C = SB.Config
-	local list = names(QS.picked)
-	if #list == 0 then
-		return L.QS_PICK_FIRST
-	end
-	if C.readOnly then
-		return L.SETTINGS_READONLY
-	end
-	for _, p in ipairs(QS.Preset(QS.picked)) do
-		C.Set(p[1], p[2])
-	end
-	C.Set("bags.columns", QS.columns)
-	local display = {}
-	for _, c in ipairs(SB.Categories.display) do
-		display[#display + 1] = c.id
-	end
-	local order = QS.Order(display, QS.picked)
-	if order then
-		C.db.categoryOrder = order
-		if SB.Profiles and SB.Profiles.CategoriesChanged then
-			SB.Profiles.CategoriesChanged() -- a profile Undo never puts an older order back over this one
-		end
-	end
-	C.Set("setup.done", true)
-	-- The settings are saved; a refresh error must not turn that into "failed".
-	local refreshed = SB.ErrorTrap.Run("setup.refresh", "none", refresh)
-	QS.Close("done")
-	local line = L.QS_APPLIED:format(table.concat(list, ", "))
-	if not refreshed then
-		line = line .. " " .. L.QS_REFRESH_NOTE
-	end
-	return line
-end
-
--- First run: "keeps its defaults". A re-run (/swagbag setup after earlier edits): "keeps your
--- current settings", since the defaults are no longer what is set.
-function QS.Skip()
-	local rerun = SB.Config.Get("setup.done") == true
-	if not SB.Config.Set("setup.done", true) then
-		return L.SETTINGS_READONLY
-	end
-	QS.Close("done")
-	return rerun and L.QS_SKIPPED_KEPT or L.QS_SKIPPED
-end
+QS.STYLES = Setup.STYLES
+QS.COLUMNS = { 10, 12, 14, 16 }
+QS.SCALES = { 0.8, 0.9, 1.0, 1.1, 1.25 }
+QS.WORTH = { "off", 50, 100, 500, 1000, "top" } -- "top" is shown only while it is the setting now
 
 ---------------------------------------------------------------------------
 -- The screen (plain frames only; it can open in combat)
@@ -158,7 +37,7 @@ frame:RegisterForDrag("LeftButton")
 frame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
 frame:SetBackdropColor(0.06, 0.06, 0.08, 0.97)
 frame:SetBackdropBorderColor(0.35, 0.35, 0.4, 1)
-frame:SetSize(560, 250)
+frame:SetSize(580, 360)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
 frame:Hide()
 QS.frame = frame
@@ -171,125 +50,320 @@ frame:SetScript("OnDragStop", Guard("setup.dragStop", function()
 	frame:StopMovingOrSizing()
 end, "none"))
 
-frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-frame.title:SetPoint("TOPLEFT", 14, -12)
+local function text(parent, template, x, y, width)
+	local fs = parent:CreateFontString(nil, "OVERLAY", template)
+	fs:SetPoint("TOPLEFT", x, y)
+	if width then
+		fs:SetWidth(width)
+		fs:SetJustifyH("LEFT")
+		fs:SetWordWrap(true)
+	end
+	return fs
+end
+
+frame.title = text(frame, "GameFontNormalLarge", 14, -12)
 frame.title:SetText(L.QS_TITLE)
-frame.intro = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-frame.intro:SetPoint("TOPLEFT", 14, -40)
-frame.intro:SetText(L.QS_INTRO)
-frame.columnsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-frame.columnsLabel:SetPoint("TOPLEFT", 14, -110)
-frame.columnsLabel:SetText(L.SET_COLUMNS)
--- Week 6 (D18): what the Pause button on the bags is for, before the user meets it.
-frame.pauseNote = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-frame.pauseNote:SetPoint("TOPLEFT", 14, -160)
-frame.pauseNote:SetWidth(532)
-frame.pauseNote:SetJustifyH("LEFT")
-frame.pauseNote:SetWordWrap(true)
-frame.pauseNote:SetText(L.QS_PAUSE_NOTE)
+frame.stepLabel = text(frame, "GameFontNormal", 14, -38)
 frame.status = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 frame.status:SetPoint("BOTTOMLEFT", 14, 44)
-frame.status:SetText(L.QS_HINT)
-if SB.Theme then -- the look (UI/Theme.lua); the Blizzard theme keeps exactly the values above (AC14.1)
-	SB.Theme.Window(frame, "dialog")
-	SB.Theme.Text(frame.title, "titleLarge")
-	SB.Theme.Text(frame.intro, "body")
-	SB.Theme.Text(frame.columnsLabel, "label")
-	SB.Theme.Text(frame.pauseNote, "small")
-	SB.Theme.Text(frame.status, "small")
+frame.status:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
+frame.status:SetJustifyH("LEFT")
+frame.status:SetText(L.WIZ_HINT)
+
+-- One panel per step, under the step's name; only the current one is shown.
+frame.steps = {}
+for i = 1, QS.STEPS do
+	local p = CreateFrame("Frame", nil, frame)
+	p:SetPoint("TOPLEFT", 0, -60)
+	p:SetPoint("BOTTOMRIGHT", 0, 64)
+	p:Hide()
+	frame.steps[i] = p
 end
+local step1, step2, step3, step4 = frame.steps[1], frame.steps[2], frame.steps[3], frame.steps[4]
+
+frame.intro = text(step1, "GameFontHighlight", 14, -4, 552)
+frame.intro:SetText(L.QS_INTRO)
+-- Week 6 (D18): what the Pause button on the bags is for, before the user meets it.
+frame.pauseNote = text(step1, "GameFontHighlightSmall", 14, -90, 552)
+frame.pauseNote:SetText(L.QS_PAUSE_NOTE)
+frame.switchNote = text(step2, "GameFontHighlight", 14, -4, 552)
+frame.switchNote:SetText(L.WIZ_SWITCH_NOTE)
+frame.columnsLabel = text(step3, "GameFontNormal", 14, -4)
+frame.columnsLabel:SetText(L.SET_COLUMNS)
+frame.scaleLabel = text(step3, "GameFontNormal", 14, -60)
+frame.scaleLabel:SetText(L.SET_SCALE)
+frame.lookLabel = text(step3, "GameFontNormal", 14, -116)
+frame.lookLabel:SetText(L.SET_LOOK)
+frame.prices = text(step4, "GameFontHighlight", 14, -4, 552)
+frame.worthLabel = text(step4, "GameFontNormal", 14, -52)
+frame.worthLabel:SetText(L.SET_WORTH)
+frame.sellLabel = text(step4, "GameFontNormal", 14, -108)
+frame.sellLabel:SetText(L.SET_VENDOR_SELL)
 
 local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", 2, 2)
 
-local function paint()
+-- A wizard button: fn() runs under ErrorTrap "none", then the screen is drawn again.
+local function button(parent, width, x, y, label, fn)
+	local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+	b:SetSize(width, 22)
+	if x then
+		b:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+	end
+	if label then
+		b:SetText(label)
+	end
+	b:SetScript("OnClick", Guard("setup.click", function()
+		fn()
+		QS.Paint()
+	end, "none"))
+	if SB.Theme then
+		SB.Theme.Button(b)
+	end
+	return b
+end
+
+-- QS.lit[button]: drawn selected (a picked style, the choice in force).
+QS.lit = {}
+local function highlight(b, on)
+	QS.lit[b] = on or nil
+	if on then
+		b:LockHighlight()
+	else
+		b:UnlockHighlight()
+	end
+end
+
+local function value(key)
+	return Setup.Value(QS.draft, key)
+end
+
+-- Step 1: the styles.
+for i, s in ipairs(QS.STYLES) do
+	QS.styleButtons[s.id] = button(step1, 100, 14 + (i - 1) * 106, -40, nil, function()
+		Setup.Toggle(QS.draft, s.id)
+	end)
+end
+
+-- Step 2: one button per switch, in two columns; the text says the switch and its state, a click switches it.
+for i = 1, QS.MAX_SWITCHES do
+	local b
+	b = button(step2, 270, 14 + ((i - 1) % 2) * 280, -44 - math.floor((i - 1) / 2) * 24, nil, function()
+		if b.key then
+			Setup.Set(QS.draft, b.key, not value(b.key))
+		end
+	end)
+	QS.switchButtons[i] = b
+end
+
+-- Step 3: slots per row, size, look.
+for i, n in ipairs(QS.COLUMNS) do
+	QS.columnButtons[n] = button(step3, 56, 14 + (i - 1) * 60, -22, tostring(n), function()
+		Setup.Set(QS.draft, "bags.columns", n)
+	end)
+end
+for i, n in ipairs(QS.SCALES) do
+	QS.scaleButtons[n] = button(step3, 56, 14 + (i - 1) * 60, -78, L.SET_PERCENT:format(math.floor(n * 100 + 0.5)), function()
+		Setup.Set(QS.draft, "bags.scale", n)
+	end)
+end
+
+-- The looks there are (UI/Theme.lua), each made the first time it is drawn: a look whose addon is not loaded is left
+-- out, unless it is the one set now.
+local function lookButton(id, i)
+	local b = QS.lookButtons[id]
+	if not b then
+		b = button(step3, 120, nil, nil, SB.Theme.Name(id), function()
+			Setup.Set(QS.draft, "theme.name", id)
+		end)
+		QS.lookButtons[id] = b
+	end
+	b:ClearAllPoints()
+	b:SetPoint("TOPLEFT", step3, "TOPLEFT", 14 + (i - 1) * 126, -134)
+	return b
+end
+
+-- Step 4: the gold glow and selling junk.
+local function worthText(v)
+	if v == "off" then
+		return L.SET_OFF
+	elseif v == "top" then
+		return L.SET_WORTH_TOP:format(SB.Config.Get("prices.worthTop"))
+	end
+	return L.WIZ_WORTH_GOLD:format(v)
+end
+for i, v in ipairs(QS.WORTH) do
+	QS.worthButtons[v] = button(step4, 84, 14 + (i - 1) * 88, -70, nil, function()
+		if v == "off" or v == "top" then
+			Setup.Set(QS.draft, "prices.worth", v)
+		else
+			Setup.Set(QS.draft, "prices.worth", "fixed")
+			Setup.Set(QS.draft, "prices.worthGold", v)
+		end
+	end)
+end
+for i, v in ipairs({ true, false }) do
+	QS.sellButtons[v] = button(step4, 84, 14 + (i - 1) * 88, -126, v and L.SET_ON or L.SET_OFF, function()
+		Setup.Set(QS.draft, "vendor.autoSell", v)
+	end)
+end
+
+-- Where prices come from: the auction addon SwagBag found, or what a vendor pays.
+local function pricesLine()
+	local P = SB.Prices
+	local source = P and P.Source()
+	if source and source ~= "Vendor" then
+		return L.WIZ_PRICES_FROM:format(P.SourceText())
+	end
+	return L.WIZ_PRICES_VENDOR
+end
+
+local function paintStep2()
+	local keys = Setup.Switches(QS.draft)
+	for i, b in ipairs(QS.switchButtons) do
+		local key = keys[i]
+		b.key = key
+		if key then
+			local on = value(key) == true
+			b:SetText(L.WIZ_SWITCH:format(Setup.Label(key), on and L.SET_ON or L.SET_OFF))
+			highlight(b, on)
+			b:Show()
+		else
+			b:Hide()
+		end
+	end
+end
+
+local function paintStep3()
+	for n, b in pairs(QS.columnButtons) do
+		highlight(b, value("bags.columns") == n)
+	end
+	for n, b in pairs(QS.scaleButtons) do
+		highlight(b, value("bags.scale") == n)
+	end
+	local T, shown, i = SB.Theme, {}, 0
+	if T and T.order then
+		for _, id in ipairs(T.order) do
+			if T.Available(id) or id == value("theme.name") then
+				i = i + 1
+				local b = lookButton(id, i)
+				highlight(b, value("theme.name") == id)
+				b:Show()
+				shown[id] = true
+			end
+		end
+	end
+	for id, b in pairs(QS.lookButtons) do
+		if not shown[id] then
+			b:Hide()
+		end
+	end
+	frame.lookLabel:SetShown(i > 0)
+end
+
+local function paintStep4()
+	frame.prices:SetText(pricesLine())
+	local mode, gold = value("prices.worth"), value("prices.worthGold")
+	for v, b in pairs(QS.worthButtons) do
+		b:SetText(worthText(v))
+		if v == "off" or v == "top" then
+			highlight(b, mode == v)
+		else
+			highlight(b, mode == "fixed" and gold == v)
+		end
+	end
+	QS.worthButtons.top:SetShown(SB.Config.Get("prices.worth") == "top")
+	for v, b in pairs(QS.sellButtons) do
+		highlight(b, value("vendor.autoSell") == v)
+	end
+end
+
+local STEP_NAMES = { "WIZ_STEP1", "WIZ_STEP2", "WIZ_STEP3", "WIZ_STEP4" }
+
+function QS.Paint()
+	local d = QS.draft
+	if not d then
+		return
+	end
+	frame.stepLabel:SetText(L.WIZ_STEP:format(QS.step, QS.STEPS, L[STEP_NAMES[QS.step]]))
+	for i, p in ipairs(frame.steps) do
+		p:SetShown(i == QS.step)
+	end
 	for _, s in ipairs(QS.STYLES) do
 		local b = QS.styleButtons[s.id]
-		local on = QS.picked[s.id] == true
+		local on = d.styles[s.id] == true
 		b:SetText(on and L.QS_STYLE_ON:format(L[s.name]) or L[s.name])
-		if on then
-			b:LockHighlight()
-		else
-			b:UnlockHighlight()
-		end
+		highlight(b, on)
 	end
-	for n, b in pairs(QS.columnButtons) do
-		if n == QS.columns then
-			b:LockHighlight()
-		else
-			b:UnlockHighlight()
-		end
+	if QS.step == 2 then
+		paintStep2()
+	elseif QS.step == 3 then
+		paintStep3()
+	elseif QS.step == 4 then
+		paintStep4()
 	end
-end
-QS.Paint = paint
-
-for i, s in ipairs(QS.STYLES) do
-	local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-	b:SetSize(100, 24)
-	b:SetPoint("TOPLEFT", frame, "TOPLEFT", 14 + (i - 1) * 106, -70)
-	b:SetScript("OnClick", Guard("setup.style", function()
-		QS.picked[s.id] = not QS.picked[s.id] or nil
-		paint()
-	end, "none"))
-	QS.styleButtons[s.id] = b
+	QS.backButton:SetShown(QS.step > 1)
+	QS.nextButton:SetShown(QS.step < QS.STEPS)
+	QS.finishButton:SetShown(QS.step == QS.STEPS)
 end
 
-for i, n in ipairs(QS.COLUMNS) do
-	local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-	b:SetSize(56, 22)
-	b:SetPoint("TOPLEFT", frame, "TOPLEFT", 14 + (i - 1) * 60, -130)
-	b:SetText(tostring(n))
-	b:SetScript("OnClick", Guard("setup.columns", function()
-		QS.columns = n
-		paint()
-	end, "none"))
-	QS.columnButtons[n] = b
-end
-
--- Apply / Skip answer in chat (P2); a refusal also shows on the screen, which stays open. An
--- error runs under "none" (a settings glitch never takes the bags away): the status line and
--- chat say it failed, and the error is recorded for /swagbag report.
+-- Finish / Skip answer in chat (P2); a refusal also shows on the screen, which stays open. An error runs under "none"
+-- (a settings glitch never takes the bags away): the status line and chat say it failed, and the error is recorded
+-- for /swagbag report.
 local function finish(fn)
-	local ok, feedback = SB.ErrorTrap.Run("setup.finish", "none", fn)
+	local ok, feedback = SB.ErrorTrap.Run("setup.finish", "none", fn, QS.draft)
 	if not ok then
 		feedback = L.SETTINGS_FAILED
 	end
 	SB.Print(feedback)
 	frame.status:SetText(feedback)
+	if ok and not SB.Config.readOnly then
+		QS.Close("done")
+	end
 end
 
-QS.applyButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-QS.applyButton:SetSize(120, 24)
-QS.applyButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 12)
-QS.applyButton:SetText(L.QS_APPLY)
-QS.applyButton:SetScript("OnClick", Guard("setup.apply", function()
-	finish(QS.Apply)
-end, "none"))
-QS.skipButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-QS.skipButton:SetSize(160, 24)
-QS.skipButton:SetPoint("RIGHT", QS.applyButton, "LEFT", -8, 0)
-QS.skipButton:SetText(L.QS_SKIP)
-QS.skipButton:SetScript("OnClick", Guard("setup.skip", function()
-	finish(QS.Skip)
-end, "none"))
-if SB.Theme then
-	for _, b in pairs(QS.styleButtons) do
-		SB.Theme.Button(b)
-	end
-	for _, b in pairs(QS.columnButtons) do
-		SB.Theme.Button(b)
-	end
-	SB.Theme.Button(QS.applyButton)
-	SB.Theme.Button(QS.skipButton)
+local function go(step)
+	QS.step = math.max(1, math.min(QS.STEPS, step))
+	frame.status:SetText(L.WIZ_HINT)
 end
 
--- Closing without Apply or Skip (Esc, the X) is "later": it says when the screen comes back.
--- The OnHide guard comes first (Alt+Z hides UIParent while this frame stays shown).
+QS.finishButton = button(frame, 120, nil, nil, L.WIZ_FINISH, function()
+	finish(Setup.Finish)
+end)
+QS.finishButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 12)
+QS.nextButton = button(frame, 120, nil, nil, L.WIZ_NEXT, function()
+	go(QS.step + 1)
+end)
+QS.nextButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 12)
+QS.backButton = button(frame, 90, nil, nil, L.WIZ_BACK, function()
+	go(QS.step - 1)
+end)
+QS.backButton:SetPoint("RIGHT", QS.nextButton, "LEFT", -8, 0)
+QS.skipButton = button(frame, 160, nil, nil, L.QS_SKIP, function()
+	finish(Setup.Skip)
+end)
+QS.skipButton:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 14, 12)
+if SB.Theme then -- the look (UI/Theme.lua); the Blizzard theme keeps exactly the values above (AC14.1)
+	SB.Theme.Window(frame, "dialog")
+	SB.Theme.Text(frame.title, "titleLarge")
+	for _, fs in ipairs({ frame.intro, frame.switchNote, frame.prices }) do
+		SB.Theme.Text(fs, "body")
+	end
+	for _, fs in ipairs({ frame.stepLabel, frame.columnsLabel, frame.scaleLabel, frame.lookLabel, frame.worthLabel,
+		frame.sellLabel }) do
+		SB.Theme.Text(fs, "label")
+	end
+	SB.Theme.Text(frame.pauseNote, "small")
+	SB.Theme.Text(frame.status, "small")
+end
+
+-- Closing without Finish or Skip (Esc, the X) is "later": it says when the screen comes back. Stepping aside for
+-- combat says its own line. The OnHide guard comes first (Alt+Z hides UIParent while this frame stays shown).
 frame:SetScript("OnHide", Guard("setup.hide", function(self)
 	if self:IsShown() then
 		return
 	end
-	if QS.closing ~= "done" then
+	if not QS.closing then
 		-- Once setup is done it never comes back by itself, so do not promise it will.
 		SB.Print(SB.Config.Get("setup.done") and L.QS_LATER_KEPT or L.QS_LATER)
 	end
@@ -301,10 +375,11 @@ function QS.Close(how)
 	frame:Hide()
 end
 
+-- A fresh draft from the settings as they are (a re-run starts from the styles picked last time), at step 1.
 function QS.Show()
-	QS.picked, QS.columns = {}, SB.Config.Get("bags.columns")
-	frame.status:SetText(L.QS_HINT)
-	paint()
+	QS.draft, QS.step, QS.combatHidden = Setup.New(), 1, false
+	frame.status:SetText(L.WIZ_HINT)
+	QS.Paint()
 	frame:Show()
 end
 
@@ -312,8 +387,8 @@ function QS.IsOpen()
 	return frame:IsShown()
 end
 
--- First login with this build: show it a few seconds after the loading screen, unless the
--- settings are read-only or the bags are in Safe Mode (then the bags are Blizzard's anyway).
+-- First login with this build: show it a few seconds after the loading screen, unless the settings are read-only, the
+-- bags are in Safe Mode (then the bags are Blizzard's anyway), or setup is done (a user of the quick setup).
 SB.On("SB_LOGIN", function()
 	if SB.Config.Get("setup.done") or SB.Config.readOnly then
 		return
@@ -321,8 +396,8 @@ SB.On("SB_LOGIN", function()
 	SB.Debounce("setup.show", QS.DELAY, QS.TryShow, "none")
 end, "none")
 
--- Not in combat and not inside an instance (a popup there would cover the fight or the run):
--- wait, and try again when combat ends or the zone changes. /swagbag setup opens at once.
+-- Not in combat and not inside an instance (a popup there would cover the fight or the run): wait, and try again when
+-- combat ends or the zone changes. /swagbag setup opens at once.
 function QS.TryShow()
 	if SB.SafeMode.IsOn("bags") or SB.Config.readOnly or SB.Config.Get("setup.done") then
 		QS.waiting = false
@@ -336,16 +411,54 @@ function QS.TryShow()
 	QS.Show()
 end
 
-local function retry()
-	if QS.waiting then
+-- Combat starts while the wizard is open: it steps aside (it never covers a fight) and comes back where it was, with
+-- everything picked, when combat ends. Nothing is saved meanwhile. Inside an instance (a run, a raid, a delve) it
+-- does not come back when combat ends: it keeps the draft and returns when the player leaves the instance, or
+-- when they type /swagbag setup (which resumes the kept draft).
+SB.On("PLAYER_REGEN_DISABLED", function()
+	if frame:IsShown() then
+		QS.combatHidden = true
+		QS.Close("combat")
+		SB.Print(L.WIZ_COMBAT_HIDDEN)
+	end
+end, "none")
+
+-- Show the draft kept while the wizard stepped aside, at the step it was.
+function QS.Resume()
+	QS.combatHidden = false
+	QS.Paint()
+	frame:Show()
+end
+
+local function inInstance()
+	return SB.Adapter.InstanceInfo().instanceType ~= nil
+end
+
+SB.On("PLAYER_REGEN_ENABLED", function()
+	if QS.combatHidden then
+		if not inInstance() then
+			QS.Resume()
+		end
+	elseif QS.waiting then
 		QS.TryShow()
 	end
-end
-SB.On("PLAYER_REGEN_ENABLED", retry, "none")
-SB.On("PLAYER_ENTERING_WORLD", retry, "none")
+end, "none")
+SB.On("PLAYER_ENTERING_WORLD", function()
+	if QS.combatHidden then
+		if not inInstance() and not SB.Adapter.InCombat() then
+			QS.Resume()
+		end
+	elseif QS.waiting then
+		QS.TryShow()
+	end
+end, "none")
 
 SB.Slash.Register("setup", L.HELP_SETUP, function()
-	QS.Show()
+	if QS.combatHidden then
+		QS.Resume()
+	else
+		QS.Show()
+	end
 	return L.QS_OPENED
 end)
 
