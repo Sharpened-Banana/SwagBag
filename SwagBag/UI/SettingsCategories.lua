@@ -720,6 +720,8 @@ SB.SettingsWindow.AddPage({ id = "categories", title = L.SET_PAGE_CATEGORIES, ro
 		return editorRows()
 	end
 	return listRows()
+end, onLeave = function()
+	SC.confirmDelete, SC.confirmReset = nil, nil
 end })
 
 -- Closing the settings window takes Show matches' search out of the bags again, so they are not left dimmed: only

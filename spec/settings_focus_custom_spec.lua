@@ -172,6 +172,50 @@ describe("Settings: focus modes of your own (week 12)", function()
 		assert.truthy(SW.selected[rowButton(L.SET_EDIT_MODE, "M+")])
 	end)
 
+	-- Final review, data safety. Mutation: in SettingsFocus, drop the page's leave hook (an armed Delete survives the
+	-- window closing or the page changing, and one later click deletes the mode).
+	it("an armed Delete is forgotten when the window closes or the page changes", function()
+		local id = F.CreateMode("Farming")
+		SW.Render()
+		click(L.SET_EDIT_MODE, "Farming")
+		click(L.SET_CUSTOM_DELETE_LABEL, L.SET_CUSTOM_DELETE)
+		SW.Hide()
+		SW.Show("focus")
+		click(L.SET_CUSTOM_DELETE_LABEL, L.SET_CUSTOM_DELETE)
+		assert.truthy(F.Mode(id), "closed and reopened: one click only asks")
+		SW.AddPage({ id = "stub", title = "Stub", rows = function() return {} end })
+		SW.Show("stub")
+		SW.Show("focus")
+		assert.truthy(rowButton(L.SET_CUSTOM_DELETE_LABEL, L.SET_CUSTOM_DELETE), "another page and back: asks again")
+		click(L.SET_CUSTOM_DELETE_LABEL, L.SET_CUSTOM_DELETE)
+		assert.truthy(F.Mode(id))
+	end)
+
+	-- Mutation: leave SF.creating / SF.renameText out of the leave hook.
+	it("a half-made mode and a rename in the box are forgotten when the window closes", function()
+		F.CreateMode("Farming")
+		SW.Render()
+		SB.SettingsFocus.creating = { name = "", trigger = "manual" }
+		SB.SettingsFocus.renameText = "half"
+		SW.Hide()
+		assert.is_nil(SB.SettingsFocus.creating)
+		assert.is_nil(SB.SettingsFocus.renameText)
+	end)
+
+	-- Final review. Mutation: wrap the manual row's label in layered() again.
+	it("a manual mode's switch is session state: no (this character) label even with overrides", function()
+		F.CreateMode("Farming")
+		SB.Config.CharOverrideMany(SB.SettingsFocus.Paths(), true)
+		local manual = L.SET_MODE_LABEL:format("Farming (you switch it)")
+		local found
+		for _, row in ipairs(SW.byId.focus.rows()) do
+			if row.label == manual then
+				found = true
+			end
+		end
+		assert.truthy(found)
+	end)
+
 	-- Ruling: a manual mode ignores focus.on, so its line has no On button. Mutation: in the mode list, make the
 	-- manual branch's choices `{ SET_ON, SET_OFF }` (an On switch that does nothing).
 	it("a manual mode's line has no On / Off switch (it would do nothing): only Switched on / Off", function()

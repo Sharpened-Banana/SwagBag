@@ -142,6 +142,9 @@ function Tour.Start()
 	elseif not W.IsOpen() and not W.Open() then
 		return L.TOUR_NO_BAGS
 	end
+	if SB.QuickSetup and SB.QuickSetup.AnswerOffer then
+		SB.QuickSetup.AnswerOffer() -- started by the command while the offer shows: the offer is answered
+	end
 	Tour.step = 1
 	show()
 	return L.TOUR_STARTED

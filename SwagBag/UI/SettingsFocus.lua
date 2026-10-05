@@ -327,7 +327,8 @@ local function rows()
 		local name = modeName(m.id)
 		if m.triggerId == "manual" then
 			-- Week 12: a manual mode of the user's is switched on and off here, for this session.
-			out[#out + 1] = { kind = "choice", label = layered(L.SET_MODE_LABEL:format(L.MODE_LIST_MANUAL:format(name))),
+			-- Session state, not a layered setting: no "(this character)" label.
+			out[#out + 1] = { kind = "choice", label = L.SET_MODE_LABEL:format(L.MODE_LIST_MANUAL:format(name)),
 				tip = L.SET_MANUAL_TIP:format(name),
 				choices = { { value = true, text = L.SET_MANUAL_ON }, { value = false, text = L.SET_OFF } },
 				get = function()
@@ -377,7 +378,9 @@ local function rows()
 	return forgetting(out)
 end
 
-SB.SettingsWindow.AddPage({ id = "focus", title = L.SET_PAGE_FOCUS, rows = rows })
+SB.SettingsWindow.AddPage({ id = "focus", title = L.SET_PAGE_FOCUS, rows = rows, onLeave = function()
+	SF.confirmDelete, SF.creating, SF.renameText = nil, nil, nil
+end })
 
 -- Open the page at one mode's sections (the Pause button's right-click, AC8.5).
 function SF.Edit(modeId)

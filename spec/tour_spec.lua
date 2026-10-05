@@ -45,6 +45,21 @@ describe("The guided tour (week 12)", function()
 		return T.frame.points[1] and T.frame.points[1][2]
 	end
 
+	-- Final review. Mutation: in Tour.Start, drop the SB.QuickSetup.AnswerOffer() call.
+	it("started while the tour offer is showing: the offer is answered once, and a refused start leaves it", function()
+		local answered = 0
+		SB.QuickSetup = { AnswerOffer = function() answered = answered + 1 end }
+		A.combat = true
+		assert.equal(L.TOUR_COMBAT, T.Start())
+		assert.equal(0, answered)
+		A.combat = false
+		assert.equal(L.TOUR_STARTED, T.Start())
+		assert.equal(1, answered)
+		SB.QuickSetup = nil
+		T.End("ended")
+		assert.equal(L.TOUR_STARTED, T.Start())
+	end)
+
 	-- AC7.3. Mutation: in firstHeader, `if h:GetParent() == W.child then` -> `if true then` (the bank's header would be
 	-- pointed at).
 	it("AC7.3: /swagbag tour opens the bags and puts the first note next to the bags' first section header", function()

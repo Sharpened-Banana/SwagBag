@@ -265,6 +265,37 @@ describe("Settings > Categories (week 11)", function()
 		assert.equal(P:format("Keystone & Crests", 95), labels()[3])
 	end)
 
+	-- Final review, data safety. Mutation: in SettingsCategories, drop `SC.confirmDelete, SC.confirmReset = nil, nil` from
+	-- the page's leave hook (a "sure?" armed before the window closed or the page changed deletes on one later click).
+	it("an armed Delete is forgotten when the window closes or the page changes", function()
+		C.Create("Mine", "toy")
+		SW.Render()
+		click(L.CAT_EDIT, 1)
+		click(L.CAT_DELETE)
+		SW.Hide()
+		SW.Show("categories")
+		click(L.CAT_DELETE)
+		assert.truthy(C.Get("u_mine"), "closed and reopened: one click only asks")
+		SW.AddPage({ id = "stub", title = "Stub", rows = function() return {} end })
+		SW.Show("stub")
+		SW.Show("categories")
+		click(L.CAT_DELETE)
+		assert.truthy(C.Get("u_mine"), "another page and back: one click only asks")
+	end)
+
+	-- Mutation: as above, for Reset to default.
+	it("an armed Reset to default is forgotten when the window closes", function()
+		click(L.CAT_EDIT, 3) -- Gear
+		click("+10")
+		click(L.CAT_SAVE)
+		click(L.CAT_EDIT, 3)
+		click(L.SET_RESET_DEFAULT)
+		SW.Hide()
+		SW.Show("categories")
+		click(L.SET_RESET_DEFAULT)
+		assert.truthy(SB.Config.db.userEdits.c_gear, "one click after reopening only asks")
+	end)
+
 	-- Mutations: in SettingsCategories' previewRows, `return run("search " .. text)` -> `return run("search")`; or
 	-- `for _, w in ipairs(SB.Query.Validate(SB.Query.Compile(text)).warnings) do` ->
 	-- `for _, w in ipairs({ SB.Query.Validate(SB.Query.Compile(text)).warnings[1] }) do` (the first warning only).

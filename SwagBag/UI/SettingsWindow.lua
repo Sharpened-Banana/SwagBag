@@ -347,10 +347,21 @@ function SW.Render()
 	child:SetHeight(-y)
 end
 
+-- A page may carry onLeave: what it forgets when the window closes or another page opens (an armed "sure?", a draft
+-- name). The next click after coming back must ask again, never act on a question from before.
+local function leave(page)
+	if page and page.onLeave then
+		page.onLeave()
+	end
+end
+
 -- Show the window at a page (default: the last one shown, else the first).
 function SW.Show(pageId)
 	local before = SW.current
 	SW.current = (pageId and SW.byId[pageId] and pageId) or SW.current or (SW.pages[1] and SW.pages[1].id)
+	if before and SW.current ~= before then
+		leave(SW.byId[before]) -- a page left behind forgets its "sure?" questions
+	end
 	if not (frame:IsShown() and SW.current == before) then -- re-showing the open page keeps its scroll
 		scroll:SetVerticalScroll(0)
 	end
@@ -358,6 +369,12 @@ function SW.Show(pageId)
 	SW.Render()
 	return true
 end
+
+frame:HookScript("OnHide", Guard("settings.pagesLeave", function()
+	for _, page in ipairs(SW.pages) do
+		leave(page)
+	end
+end, "none"))
 
 frame:HookScript("OnHide", Guard("settings.inputsHide", function()
 	for i = 1, SW.used.inputs do

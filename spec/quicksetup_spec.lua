@@ -428,7 +428,7 @@ describe("Quick setup", function()
 		assert.truthy(QS.lit[QS.columnButtons[16]])
 		assert.truthy(QS.draft.styles.gold)
 		assert.same({ SB.L.WIZ_COMBAT_HIDDEN_RUN }, A.Lines(), "one line, once")
-		assert.equal("Setup steps aside during the fight; it comes back where you were when you leave the dungeon or raid."
+		assert.equal("Setup steps aside during the fight; it comes back where you were when you leave the instance."
 			.. " Type /swagbag setup to bring it back sooner.", SB.L.WIZ_COMBAT_HIDDEN_RUN)
 	end)
 
@@ -579,6 +579,69 @@ describe("Quick setup", function()
 		assert.falsy(QS.offer.shown)
 		local lines = A.Lines()
 		assert.equal(SB.L.WIZ_TOUR_LATER, lines[#lines])
+	end)
+
+	-- Final review. Mutation: in finish(), drop `and not inInstance()`.
+	it("no tour offer when Finish runs inside an instance", function()
+		SB.Tour = { Start = function() return "TOUR STARTED" end }
+		A.instance = { instanceType = "party", difficultyID = 8 }
+		QS.Show()
+		finishWizard()
+		assert.falsy(QS.IsOpen())
+		assert.falsy(QS.offer.shown)
+		A.instance = {}
+		QS.Show()
+		finishWizard()
+		assert.truthy(QS.offer.shown)
+	end)
+
+	-- Final review. Mutation: in QS.Show, drop `QS.AnswerOffer()` (the offer's Hide says "later" on top of the wizard).
+	it("/swagbag setup while the tour is offered answers the offer: it goes, with no 'later' line", function()
+		SB.Tour = { Start = function() return "TOUR STARTED" end }
+		QS.Show()
+		finishWizard()
+		assert.truthy(QS.offer.shown)
+		local before = #A.Lines()
+		SB.Slash.Dispatch("setup")
+		assert.falsy(QS.offer.shown)
+		assert.truthy(QS.IsOpen())
+		for i = before + 1, #A.Lines() do
+			assert.falsy(A.Lines()[i] == SB.L.WIZ_TOUR_LATER)
+		end
+		assert.is_nil(QS.offerAnswered, "the flag is spent by the hide")
+	end)
+
+	-- Final review. Mutation: in AnswerOffer, drop `QS.offerAnswered = true`.
+	it("AnswerOffer (the tour started by its command) hides the offer without the 'later' line; nothing offered, nothing done", function()
+		SB.Tour = { Start = function() return "TOUR STARTED" end }
+		QS.AnswerOffer()
+		assert.same({}, A.Lines())
+		QS.Show()
+		finishWizard()
+		local before = #A.Lines()
+		QS.AnswerOffer()
+		assert.falsy(QS.offer.shown)
+		assert.equal(before, #A.Lines())
+	end)
+
+	-- Final review. Mutation: in QS.TryShow, drop the `frame:IsShown() or QS.combatHidden` early return.
+	it("first run waiting, then the user opened /swagbag setup: a later zone change leaves the open draft alone", function()
+		A.instance = { instanceType = "party", difficultyID = 8 }
+		login()
+		assert.truthy(QS.waiting)
+		SB.Slash.Dispatch("setup")
+		assert.falsy(QS.waiting, "opening it clears the wait")
+		pick("gold")
+		step(2)
+		A.instance = {}
+		SB.eventFrame:Fire("PLAYER_ENTERING_WORLD")
+		SB.eventFrame:Fire("PLAYER_REGEN_ENABLED")
+		assert.equal(2, QS.step)
+		assert.truthy(QS.draft.styles.gold)
+		QS.waiting = true -- even a wait left behind
+		QS.TryShow()
+		assert.equal(2, QS.step)
+		assert.truthy(QS.draft.styles.gold)
 	end)
 
 	-- Controller ruling Y7. Mutation: in finish(), drop `and not SB.SafeMode.IsOn("bags")`.
