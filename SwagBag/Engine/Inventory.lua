@@ -38,7 +38,8 @@
 -- 0.13.2 diagnostics (the New flood after a vendor visit; the cause is not known yet): Inv.newLog keeps the last
 -- NEW_LOG_MAX entries, session only, for /swagbag report (Core/Report.lua). It only watches: nothing in it changes
 -- what arrives. Counts only, written at a flush with NEW_LOG_CHANGES or more item changes in the bags or
--- NEW_LOG_ARRIVALS or more arrivals, at a settle's start and end, and at a rescan of a kind (Inv.ScanKind):
+-- NEW_LOG_ARRIVALS or more arrivals, at a settle's start and end, and at a rescan of a kind (Inv.ScanKind) that
+-- changed an item in the bags (it should never):
 --   { kind = "flush", at, source, settling, left, came, arrivals, marked, stacks, guarded,
 --     revealed = { known, base }, fresh, bags = { bag IDs, ascending }, secret }
 --   { kind = "settle", at, phase = "start" | "end", world, reason = "login" | "world" | "quiet" | "cap" | "login cap" }
@@ -70,7 +71,7 @@ local Inv = {
 	FLOOD_MIN = 20, -- outside a settle, a flush bringing in at least this many stacks, more than half the bags, is
 	-- the client's late data, not loot (see the header)
 	newLog = {}, -- 0.13.2 diagnostics (see the header)
-	NEW_LOG_MAX = 10,
+	NEW_LOG_MAX = 20,
 	NEW_LOG_CHANGES = 5,
 	NEW_LOG_ARRIVALS = 3,
 	NEW_HINT_MIN = 20,
@@ -507,7 +508,9 @@ function Inv.ScanKind(kind, visit)
 		end
 	end)
 	Inv.scanned = was
-	logNew({ kind = "scankind", scanned = kind, changes = itemChanges })
+	if itemChanges > 0 then -- a bank rescan that changed no bags slot writes nothing (it would fill the ring)
+		logNew({ kind = "scankind", scanned = kind, changes = itemChanges })
+	end
 	if not ok then
 		error(err, 0)
 	end

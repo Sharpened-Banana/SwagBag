@@ -775,24 +775,28 @@ describe("Inventory: the New log", function()
 		assert.same({ "end", "login cap" }, { s[#s].phase, s[#s].reason })
 	end)
 
-	-- Mutation: in Inv.ScanKind, drop the scankind log entry.
-	it("a rescan of a kind is logged with its bag changes", function()
+	-- Mutations: in Inv.ScanKind, drop the `itemChanges > 0` condition (a zero-change rescan is logged); drop the
+	-- scankind log entry (a rescan that changed a bags slot is not logged).
+	it("a rescan of a kind is logged only when it changed an item in the bags", function()
 		SB.Emit("SB_LOGIN")
 		Inv.ScanKind("bank", true)
+		assert.equal(0, #entries("scankind"), "a bank rescan with no bags changes writes nothing")
+		A.Put(0, 12, Fixtures.HERB, 3)
+		Inv.ScanKind("bags")
 		local k = entries("scankind")
 		assert.equal(1, #k)
-		assert.same({ "bank", 0 }, { k[1].scanned, k[1].changes })
+		assert.same({ "bags", 1 }, { k[1].scanned, k[1].changes })
 	end)
 
-	-- Mutation: in the log's push, drop the `table.remove(log, 1)` (the ring grows past 10).
-	it("the ring keeps only the last 10 entries", function()
+	-- Mutation: in the log's push, drop the `table.remove(log, 1)` (the ring grows past 20).
+	it("the ring keeps only the last 20 entries", function()
 		SB.Emit("SB_LOGIN")
-		for i = 1, 12 do
+		for i = 1, 22 do
 			A.Advance(1)
 			Inv.Settle(i % 2 == 0)
 		end
-		assert.equal(10, #Inv.newLog)
-		assert.equal(12, Inv.newLog[10].at)
+		assert.equal(20, #Inv.newLog)
+		assert.equal(22, Inv.newLog[20].at)
 		assert.equal(3, Inv.newLog[1].at)
 	end)
 
