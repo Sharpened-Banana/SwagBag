@@ -648,6 +648,143 @@ describe("GroupView", function()
 		assert.truthy(pushedMs, "no change pushed the warband group")
 		assert.truthy(pushedMs <= 5, ("the push took %.2f ms"):format(pushedMs))
 	end)
+
+	-- Week 13: optional hooks a window uses to own its folds, give headers room, tips and controls.
+	describe("window hooks", function()
+		it("groupClosed decides a fold without touching the saved set", function()
+			-- mutation: positionAll ignores cfg.groupClosed
+			f.cfg.groupClosed = function(gid) return gid == "warband" end
+			v.Layout("open")
+			assert.falsy(btn(12, 1).shown)
+			assert.falsy(btn(12, 2).shown)
+			assert.truthy(btn(6, 1).shown)
+			assert.is_nil(next(v.Collapsed("#")))
+		end)
+
+		it("groupClosed nil falls back to the saved set", function()
+			-- mutation: nil is treated as false
+			f.cfg.groupClosed = function() return nil end
+			v.Collapsed("#").warband = true
+			v.Layout("open")
+			assert.falsy(btn(12, 1).shown)
+			assert.truthy(btn(6, 1).shown)
+		end)
+
+		it("groupClosed false opens a group the saved set folds", function()
+			f.cfg.groupClosed = function() return false end
+			v.Collapsed("#").warband = true
+			v.Layout("open")
+			assert.truthy(btn(12, 1).shown)
+		end)
+
+		it("a header click the window handles restacks without saving", function()
+			-- mutation: the click also toggles the saved set
+			local folded, asked = false, {}
+			f.cfg.groupClosed = function(gid) return gid == "warband" and folded end
+			f.cfg.toggleGroup = function(gid)
+				asked[#asked + 1] = gid
+				folded = not folded
+				return true
+			end
+			v.Layout("open")
+			assert.truthy(btn(12, 1).shown)
+			header("#warband").scripts.OnClick(header("#warband"))
+			assert.same({ "warband" }, asked)
+			assert.is_nil(next(v.Collapsed("#")))
+			assert.falsy(btn(12, 1).shown, "the restack drew the fold")
+			header("#warband").scripts.OnClick(header("#warband"))
+			assert.truthy(btn(12, 1).shown)
+		end)
+
+		it("a header click the window declines toggles the saved set", function()
+			local asked = 0
+			f.cfg.toggleGroup = function() asked = asked + 1 return false end
+			v.Layout("open")
+			header("#warband").scripts.OnClick(header("#warband"))
+			assert.equal(1, asked)
+			assert.equal(true, v.Collapsed("#").warband)
+			assert.falsy(btn(12, 1).shown)
+		end)
+
+		it("a section header click never asks the window", function()
+			local asked = 0
+			f.cfg.toggleGroup = function() asked = asked + 1 return true end
+			v.Layout("open")
+			header("warband:c_ore").scripts.OnClick(header("warband:c_ore"))
+			assert.equal(0, asked)
+			assert.equal(true, SB.Config.UI().collapsed["bank:warband"].c_ore)
+		end)
+
+		it("groupInset narrows that header only", function()
+			-- mutation: the inset is ignored, or applied to every header
+			f.cfg.groupInset = function(gid) return gid == "warband" and 200 or 0 end
+			v.Layout("open")
+			assert.equal(header("#bank").w - 200, header("#warband").w)
+		end)
+
+		it("onHeaders gets every group header after each draw", function()
+			local calls = {}
+			f.cfg.onHeaders = function(list) calls[#calls + 1] = list end
+			v.Layout("open")
+			assert.equal(1, #calls)
+			assert.equal(2, #calls[1])
+			assert.equal("bank", calls[1][1].id)
+			assert.equal("warband", calls[1][2].id)
+			assert.truthy(calls[1][2].y < 0)
+			assert.equal(calls[1], v.GroupHeaders())
+			v.ToggleSection("bank", "c_herbs")
+			assert.equal(2, #calls)
+			assert.equal(2, #calls[2])
+			v.Clear()
+			assert.equal(3, #calls)
+			assert.same({}, calls[3])
+			assert.same({}, v.GroupHeaders())
+		end)
+
+		it("GroupHeaders is empty before any draw", function()
+			assert.same({}, v.GroupHeaders())
+		end)
+
+		it("groupTip runs on enter and the tooltip hides on leave", function()
+			-- mutation: OnLeave never hides, or hides a tooltip another frame owns
+			local tipped = {}
+			f.cfg.groupTip = function(gid, h) tipped[#tipped + 1] = { gid, h } end
+			v.Layout("open")
+			local h = header("#warband")
+			h.scripts.OnEnter(h)
+			assert.equal("warband", tipped[1][1])
+			assert.equal(h, tipped[1][2])
+			GameTooltip.GetOwner = function() return h end
+			GameTooltip.shown = true
+			h.scripts.OnLeave(h)
+			assert.falsy(GameTooltip.shown)
+			GameTooltip.GetOwner = function() return header("#bank") end
+			GameTooltip.shown = true
+			h.scripts.OnLeave(h)
+			assert.truthy(GameTooltip.shown, "another frame's tooltip stays")
+			local s = header("warband:c_ore")
+			assert.equal(1, #tipped)
+			s.scripts.OnEnter(s)
+			assert.equal(1, #tipped, "a section header has no group tip")
+		end)
+
+		it("a groupTip error is trapped as this window", function()
+			f.cfg.groupTip = function() error("tip boom") end
+			v.Layout("open")
+			local h = header("#bank")
+			h.scripts.OnEnter(h)
+			assert.truthy(true)
+		end)
+
+		it("the guild bank's views are unchanged", function()
+			v.Layout("open")
+			assert.equal(v.pos.width - 2 * SB.GroupView.PAD, header("#bank").w)
+			assert.equal(v.pos.width - 2 * SB.GroupView.PAD, header("#warband").w)
+			assert.is_nil(header("#bank").scripts.OnEnter(header("#bank")))
+			header("#bank").scripts.OnClick(header("#bank"))
+			assert.equal(true, v.Collapsed("#").bank)
+		end)
+	end)
 end)
 
 describe("GroupView randomized (Park-Miller): hover holds across groups, section truth after every drain", function()
