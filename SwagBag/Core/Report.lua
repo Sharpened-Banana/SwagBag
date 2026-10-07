@@ -141,9 +141,11 @@ function Report.Build()
 				lines[#lines + 1] = L.REPORT_NEW_SCANKIND:format(e.at, tostring(e.scanned), e.changes)
 			else
 				local bagList = #e.bags > 0 and table.concat(e.bags, ",") or L.REPORT_NONE
+				local open = e.open and #e.open > 0 and table.concat(e.open, ",") or L.REPORT_NONE
 				lines[#lines + 1] = L.REPORT_NEW_FLUSH:format(e.at, tostring(e.source),
 					e.settling and L.REPORT_NEW_SETTLING or "", e.left, e.came, e.arrivals, e.marked, e.stacks,
-					e.guarded and L.REPORT_NEW_GUARDED or "", bagList, e.revealed.known, e.revealed.base, e.fresh, e.secret)
+					e.total or 0, e.guarded and L.REPORT_NEW_GUARDED or "", open, bagList, e.revealed.known,
+					e.revealed.base, e.fresh, e.secret)
 			end
 		end
 	end
