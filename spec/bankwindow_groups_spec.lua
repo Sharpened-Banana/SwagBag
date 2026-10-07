@@ -713,6 +713,35 @@ describe("BankWindow contents", function()
 		assert.falsy(BW.reagentsBox.shown)
 		assert.falsy(BW.reagentsLabel.shown)
 	end)
+	-- Review fix. Mutation: drop the warbandDrawn() test in sizeFrame (it redraws on every resize).
+	it("with no warband header drawn, a plain relayout does not redraw the headers", function()
+		local wide = SB.Config.Get("bank.columns")
+		SB.Config.Set("bank.columns", 4)
+		openBank() -- narrow: the last warband draw used no room
+		BW.view.GroupHeaders = function() return { { id = "bank", y = 0, count = 1, collapsed = false } } end
+		local n, relabel = 0, BW.view.Relabel
+		BW.view.Relabel = function(...) n = n + 1 return relabel(...) end
+		SB.Config.Set("bank.columns", wide) -- wide now, with no warband header in the list
+		BW.Reflow("reflow")
+		BW.view.Restack()
+		assert.equal(0, n)
+	end)
+
+	-- Review fix. Mutation: DepositControlsShown ignores the width after the first draw (cached).
+	it("changing bank.columns on an open window hides the controls when narrow and shows them again", function()
+		openBank()
+		assert.truthy(BW.depositButton.shown)
+		local wide = SB.Config.Get("bank.columns")
+		SB.Config.Set("bank.columns", 4)
+		BW.Reflow("reflow")
+		assert.falsy(BW.depositButton.shown)
+		assert.falsy(BW.reagentsBox.shown)
+		assert.equal(header("#bank").w, header("#warband").w)
+		SB.Config.Set("bank.columns", wide)
+		BW.Reflow("reflow")
+		assert.truthy(BW.depositButton.shown and BW.reagentsBox.shown)
+		assert.equal(header("#bank").w - BW.DEPOSIT_W, header("#warband").w)
+	end)
 end)
 
 describe("Bags and bank windows open together (Review Focus 1)", function()
