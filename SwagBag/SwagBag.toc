@@ -77,6 +77,7 @@ UI/LockWarnings.lua
 UI/TinyHost.lua
 UI/GroupView.lua
 UI/BankWindow.lua
+UI/BankMenu.lua
 UI/GuildButtons.lua
 UI/GuildBankWindow.lua
 UI/DisplayButtons.lua

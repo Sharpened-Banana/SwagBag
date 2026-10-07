@@ -115,24 +115,23 @@ describe("BankWindow list view (week 8)", function()
 		assert.equal(-(BW.HEADER + BW.COLUMNS_H), lastTopLeft(BW.scroll)[5], "the items start under the column bar")
 	end)
 
-	-- Mutation: in BankWindow.lua, VIEW_NEXT's `sections = "list"` -> `sections = "grid"`.
-	it("the view button shows categories, list and grid in turn, each answered in the title", function()
+	-- Mutation: in BW.SetView, save `view` as "sections" whatever was asked.
+	it("SetView draws categories, list and grid, each answered in the title", function()
 		openBank()
-		assert.equal(SB.L.VIEW_TO_LIST, BW.viewButton.text)
-		Fake.Fire(BW.viewButton, "OnClick")
-		assert.same({ "list", "list", SB.L.BANK_VIEW_LIST, SB.L.VIEW_TO_GRID },
-			{ SB.Config.Get("bank.view"), BW.view.drawn, BW.frame.title.text, BW.viewButton.text })
+		BW.SetView("list")
+		assert.same({ "list", "list", SB.L.BANK_VIEW_LIST },
+			{ SB.Config.Get("bank.view"), BW.view.drawn, BW.frame.title.text })
 		assert.truthy(row(6, 1).shown)
-		Fake.Fire(BW.viewButton, "OnClick")
-		assert.same({ "grid", "grid", SB.L.BANK_VIEW_GRID, SB.L.VIEW_TO_SECTIONS },
-			{ SB.Config.Get("bank.view"), BW.view.drawn, BW.frame.title.text, BW.viewButton.text })
+		BW.SetView("grid")
+		assert.same({ "grid", "grid", SB.L.BANK_VIEW_GRID },
+			{ SB.Config.Get("bank.view"), BW.view.drawn, BW.frame.title.text })
 		assert.equal(1, B.Get(6, 1).scale, "full size again")
 		assert.falsy(row(6, 1).shown)
 		assert.falsy(BW.columnsBar.frame.shown)
 		assert.equal(-BW.HEADER, lastTopLeft(BW.scroll)[5])
-		Fake.Fire(BW.viewButton, "OnClick")
-		assert.same({ "sections", "sections", SB.L.VIEW_TO_LIST }, { SB.Config.Get("bank.view"), BW.view.drawn,
-			BW.viewButton.text })
+		BW.SetView("sections")
+		assert.same({ "sections", "sections", SB.L.BANK_VIEW_SECTIONS },
+			{ SB.Config.Get("bank.view"), BW.view.drawn, BW.frame.title.text })
 	end)
 
 	-- One order for every list (bags.list). Mutations: in GroupView's busyCheck, drop the rows.IsMouseOver
@@ -180,7 +179,7 @@ describe("BankWindow list view (week 8)", function()
 	it("F6: a bank button whose scale does not take: the bank shows categories, says so once, records it", function()
 		openBank()
 		B.Get(12, 2).SetScale = function() end
-		Fake.Fire(BW.viewButton, "OnClick")
+		BW.SetView("list")
 		assert.equal("list", SB.Config.Get("bank.view"))
 		assert.equal("sections", BW.view.drawn)
 		assert.equal(1, B.Get(6, 1).scale, "every button back at full size")
@@ -204,7 +203,7 @@ describe("BankWindow list view (week 8)", function()
 				end
 			end
 			A.combat = true
-			Fake.Fire(BW.viewButton, "OnClick")
+			BW.SetView("list")
 			assert.equal("list", BW.view.drawn)
 			for i = made + 1, #Fake.created do
 				local f = Fake.created[i]
@@ -253,7 +252,7 @@ describe("BankWindow list view (week 8)", function()
 	it("F6: the fallback is said once per opening, so a second opening says it again", function()
 		openBank()
 		B.Get(12, 2).SetScale = function() end
-		Fake.Fire(BW.viewButton, "OnClick")
+		BW.SetView("list")
 		assert.equal(1, #A.Lines())
 		SB.eventFrame:Fire("BANKFRAME_CLOSED")
 		assert.falsy(BW.scaleWarned)
@@ -291,7 +290,7 @@ describe("BankWindow list view (week 8)", function()
 		bankUpdate(6)
 		B.Get(12, 2).SetScale = function() end
 		B.Get(6, 3).IsMouseOver = function(self) return self.scale ~= 1 end -- shrunk, the flask slides under the mouse
-		Fake.Fire(BW.viewButton, "OnClick")
+		BW.SetView("list")
 		assert.equal("sections", BW.view.drawn, "held: the categories stay drawn")
 		assert.equal(1, #B.placeholdersInUse, "nothing regrouped yet")
 		for _, bag in ipairs({ 6, 12 }) do
@@ -304,12 +303,12 @@ describe("BankWindow list view (week 8)", function()
 		assert.equal(0, #B.placeholdersInUse, "the retry landed the fallback")
 	end)
 
-	-- Week 8 (final review). The title says what is drawn. Mutation: in BW.ToggleView, flash
+	-- Week 8 (final review). The title says what is drawn. Mutation: in BW.SetView, flash
 	-- VIEW_FLASH[view] (the list's title) whatever the layout drew.
-	it("F6: the view button's title says categories when the list could not be drawn", function()
+	it("F6: the view's title says categories when the list could not be drawn", function()
 		openBank()
 		B.Get(12, 2).SetScale = function() end
-		Fake.Fire(BW.viewButton, "OnClick")
+		BW.SetView("list")
 		assert.equal(SB.L.BANK_VIEW_SECTIONS, BW.frame.title.text)
 	end)
 
@@ -317,7 +316,7 @@ describe("BankWindow list view (week 8)", function()
 	it("F6: after a fallback the visit stays on categories: no button is scaled again, no second error", function()
 		openBank()
 		B.Get(12, 2).SetScale = function() end
-		Fake.Fire(BW.viewButton, "OnClick")
+		BW.SetView("list")
 		assert.equal("sections", BW.view.drawn)
 		local errors, scales = #SB.ErrorTrap.Recent(), 0
 		local button = B.Get(6, 1)
