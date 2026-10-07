@@ -83,7 +83,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 #### F2. Bank window (character bank + warband bank, stacked)
 - AC2.1 Visiting a banker opens one SwagBag bank window with two stacked groups of sections: "Character bank" and "Warband bank". Blizzard's bank frame is invisible but still open (tiny mode).
 - AC2.2 Blizzard's real tab buttons (`BankFrame.TabSystem`) appear on SwagBag's window. Clicking them switches Blizzard's active bank type.
-- AC2.3 Right-click on a bag item deposits into whichever bank type is Blizzard's active tab. The section group that will receive deposits is highlighted (header tint + "deposits go here").
+- AC2.3 Right-click on a bag item deposits into whichever bank type is Blizzard's active tab. The section group that will receive deposits is highlighted (header tint + "right-clicked items land here").
 - AC2.4 ESC or walking away closes the bank interaction; subsequent item use (e.g. Hearthstone) works.
 - AC2.5 SwagBag never calls `BankFrame:SetTab`, writes `BankPanel.bankType`, or calls `C_Bank.CloseBankFrame()` from any OnHide. (A luacheck rule and a grep in CI enforce this.)
 - AC2.6 If the first in-dev check "deposit lands correctly while Blizzard's bank is in tiny mode" fails, the fallback "Blizzard bank visible beside ours" setting becomes the default without code changes elsewhere.
@@ -367,7 +367,7 @@ On `BANKFRAME_OPENED`, out of combat:
 2. `BankFrame.TabSystem` is reparented onto SwagBag's bank window header and re-anchored there. These are Blizzard's real tab buttons; a click runs Blizzard's own secure code. SwagBag only reads the result.
 3. On `BANKFRAME_CLOSED`, both reparents are restored (deferred to out of combat if needed). Only `BankFrame`'s **parent** is saved and restored, never its anchors (W3 Task 1 review: restoring anchors could leave it invisible); anchors are set only on the re-hosted TabSystem.
 
-Deposit target: SwagBag never chooses it. Right-click on a bag item runs Blizzard's handler, which uses `BankFrame:GetActiveBankType()`. SwagBag reads the same value (read-only) to highlight the receiving group and to label the header ("Deposits go to Warband bank - switch with the tabs below"; the re-hosted tabs sit under the title row). Verified in the spike: deposit followed the active tab in normal mode with zero writes.
+Deposit target: SwagBag never chooses it. Right-click on a bag item runs Blizzard's handler, which uses `BankFrame:GetActiveBankType()`. SwagBag reads the same value (read-only) to highlight the receiving group and to label the deposit bar ("Right-click deposits to:", followed by the re-hosted tabs in the window's header; with Blizzard's bank shown beside, "Right-click deposits to: Warband bank - switch with the tabs on Blizzard's bank"). Verified in the spike: deposit followed the active tab in normal mode with zero writes.
 
 Deposit warbound (AC2.8): the button runs the game's deposit for the warband bank type on the user's own click, so the selected bank type (`BankFrame:GetActiveBankType()`) is neither read nor written for it. Right-click deposits still follow the active tab as above.
 
@@ -381,7 +381,7 @@ Also: no `PreClick`/`PostClick` scripts on slot buttons; no insecure wrappers ar
 
 ### 5.4 Fallback
 
-The first in-dev check V2 (§11.3) is "deposit lands in the active bank type while Blizzard's bank is in tiny mode, and a Hearthstone works afterwards". If it fails on the first run, the setting `bank.blizzardFrame = "beside"` becomes the shipped default: Blizzard's bank frame stays visible exactly where Blizzard puts it, with its own tabs, and SwagBag's window positions itself beside it (SwagBag never moves Blizzard's frame); SwagBag's window still shows both groups and highlights the receiving one. The user-facing words are **hidden** (stored `"tiny"`) and **shown** (stored `"beside"`): Settings → Bank ("Hidden" / "Shown beside"), `/swagbag bank hidden|shown`, and the "..." menu's Show/Hide Blizzard's bank for one visit. `tiny` and `beside` remain accepted as aliases of the commands (old macros keep working) and are the saved values, so no migration; they appear in no help or answer text. A visit that starts in combat is "shown" for that visit.
+The first in-dev check V2 (§11.3) is "deposit lands in the active bank type while Blizzard's bank is in tiny mode, and a Hearthstone works afterwards". If it fails on the first run, the setting `bank.blizzardFrame = "beside"` becomes the shipped default: Blizzard's bank frame stays visible exactly where Blizzard puts it, with its own tabs, and SwagBag's window positions itself beside it (SwagBag never moves Blizzard's frame); SwagBag's window still highlights the receiving group (and, with `bank.show = "one"`, folds the other). The user-facing words are **hidden** (stored `"tiny"`) and **shown** (stored `"beside"`): Settings → Bank ("Hidden" / "Shown beside"), `/swagbag bank hidden|shown`, and the "..." menu's Show/Hide Blizzard's bank for one visit. `tiny` and `beside` remain accepted as aliases of the commands (old macros keep working) and are the saved values, so no migration; they are not offered in help or answer text. A visit that starts in combat is "shown" for that visit.
 
 ### 5.5 Sorting at the bank
 
