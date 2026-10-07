@@ -88,7 +88,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC2.5 SwagBag never calls `BankFrame:SetTab`, writes `BankPanel.bankType`, or calls `C_Bank.CloseBankFrame()` from any OnHide. (A luacheck rule and a grep in CI enforce this.)
 - AC2.6 If the first in-dev check "deposit lands correctly while Blizzard's bank is in tiny mode" fails, the fallback "Blizzard bank visible beside ours" setting becomes the default without code changes elsewhere.
 - AC2.7 Sort buttons for bags, character bank and warband bank call `C_Container.SortBags()` / `C_Container.SortBank(bankType)` and reflow the view afterwards. Week 9: with `sort.mode = "stacks"` ("Partial stacks first"; Blizzard's sort stays the default) they run SwagBag's stacker instead (§5.5).
-- AC2.8 A "Deposit warbound" button on SwagBag's bank window runs the game's own warband-bank deposit, with the warband bank type chosen on the user's click (it never sets Blizzard's selected bank type), refuses in combat, while the warband bank is locked, and when a refund could be lost, and answers once each time (P2). A "With reagents" box beside it mirrors and writes Blizzard's own include-reagents option (`bankAutoDepositReagents`), the one game setting SwagBag writes (accepted, week 6: the user asked for the button); it re-reads the option when the button is used. Both stay on SwagBag's window in tiny and beside mode. See §5.2.
+- AC2.8 A "Deposit warbound" button on SwagBag's bank window runs the game's own warband-bank deposit, with the warband bank type chosen on the user's click (it never sets Blizzard's selected bank type), refuses in combat, while the warband bank is locked, and when a refund could be lost, and answers once each time (P2). A "With reagents" box beside it mirrors and writes Blizzard's own include-reagents option (`bankAutoDepositReagents`), the one game setting SwagBag writes (accepted, week 6: the user asked for the button); it re-reads the option when the button is used. Deposit warbound sits on the Warband bank's group header (hidden when the window is too narrow) and is also in the "..." menu as "Deposit all warbound items" (same action, same answer); both stay on SwagBag's window in hidden and shown mode. See §5.2.
 
 #### F3. Category view (default) and grid view
 - AC3.1 A header toggle switches between category sections and a flat grid without /reload, in and out of combat.
@@ -206,6 +206,8 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 | **v1.1** | Remaining focus modes batch 1: PvP, Vendor and AH split into separate modes, Crafting, Cooking, Questing, Leveling, Travel. Worth-money highlight on bank open (fixed threshold default 100 g, or top-X %; delivered week 7, AC10.4). Remaining overlays batch 1: AH value overlay, uncollected transmog (delivered week 7, AC9.4). |
 | **v1.2** | Syndicator provider for alt data (replaces own store when present). Focus modes batch 2: Disenchanting/Salvage, Gear upgrade/Catalyst, Transmog farming, Pet battles, Profession knowledge, Housing. Overlays batch 2: uncollected pet/toy/decor (pet and toy delivered week 7; decor has the green glow only). |
 | **v1.3** | List view (Sorted-style rows with name, count, ilvl, AH value column, sortable; delivered for the bags in week 5 and for the bank and the guild bank in week 8: the same rows and columns, one shared order (`bags.list`), a view button that cycles categories, list, grid in every window; the guild bank's list shows each tab's empty slots as one free row). Themes: modern flat; ElvUI-matching (auto-detect ElvUI, use its media). |
+
+Change log: v1.3 (week 13): bank window simplified: deposit bar, one bank at a time, slim header and menu.
 
 ### 2.3 Later (demand-driven)
 
@@ -356,6 +358,8 @@ The attribute path (buttons without per-bag parents) would simplify layout but w
 
 One SwagBag bank window, opened on `BANKFRAME_OPENED`, closed on `BANKFRAME_CLOSED`. Contents: a "Character bank" group and a "Warband bank" group, each containing the category sections (or grid) for the tabs enumerated from `C_Bank.FetchPurchasedBankTabIDs(bankType)` — never hardcoded counts. The bag window opens alongside, as Blizzard does.
 
+Layout as built (week 13), top to bottom: the title row (Sort, a "..." menu button, the close X); the search row; the deposit bar, which reads "Right-click deposits to:" followed by Blizzard's own Bank and Warband Bank tab buttons (§5.2); with a list view, its column bar; then the groups. One bank is open at a time: the group the selected tab deposits into is open and the other folds to one line (a click on a folded header shows it until the tab changes); `bank.show = "both"` (Settings, `/swagbag bank both`) restores both open. The "Deposit warbound" button and its "With reagents" box sit on the Warband bank's group header, and the same action is in the "..." menu (the header controls hide when the window is too narrow). The "..." menu holds the view choice, Sort for each bank, Regroup now, Show/Hide Blizzard's bank, Deposit all warbound items and Bank settings. Bags title and item tooltip name where a right-click goes.
+
 ### 5.2 Tiny mode (default)
 
 On `BANKFRAME_OPENED`, out of combat:
@@ -377,7 +381,7 @@ Also: no `PreClick`/`PostClick` scripts on slot buttons; no insecure wrappers ar
 
 ### 5.4 Fallback
 
-The first in-dev check V2 (§11.3) is "deposit lands in the active bank type while Blizzard's bank is in tiny mode, and a Hearthstone works afterwards". If it fails on the first run, the setting `bank.blizzardFrame = "beside"` becomes the shipped default: Blizzard's bank frame stays visible exactly where Blizzard puts it, with its own tabs, and SwagBag's window positions itself beside it (SwagBag never moves Blizzard's frame); SwagBag's window still shows both groups and highlights the receiving one. The user can choose either in Settings → Bank ("Hide Blizzard's bank (tiny) / Show it beside SwagBag").
+The first in-dev check V2 (§11.3) is "deposit lands in the active bank type while Blizzard's bank is in tiny mode, and a Hearthstone works afterwards". If it fails on the first run, the setting `bank.blizzardFrame = "beside"` becomes the shipped default: Blizzard's bank frame stays visible exactly where Blizzard puts it, with its own tabs, and SwagBag's window positions itself beside it (SwagBag never moves Blizzard's frame); SwagBag's window still shows both groups and highlights the receiving one. The user-facing words are **hidden** (stored `"tiny"`) and **shown** (stored `"beside"`): Settings → Bank ("Hidden" / "Shown beside"), `/swagbag bank hidden|shown`, and the "..." menu's Show/Hide Blizzard's bank for one visit. `tiny` and `beside` remain accepted as aliases of the commands (old macros keep working) and are the saved values, so no migration; they appear in no help or answer text. A visit that starts in combat is "shown" for that visit.
 
 ### 5.5 Sorting at the bank
 
