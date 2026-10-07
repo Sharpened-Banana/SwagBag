@@ -90,8 +90,9 @@ Purpose: SwagBag's bags window and item tooltip say where a right-click will go.
 3. Click `Warband Bank` again, and hover a warbound item in your bags. Expected: the tooltip has the line `Right-click: into your Warband bank`. If the line does not show, tell Claude (the tooltip hook is installed at file load and has not been seen in game before).
 4. Hover a soulbound item in your bags, with the Warband tab selected. Expected: the tooltip has the line `Right-click: your Warband bank won't take this`.
 5. Click `Bank` and hover the same soulbound item. Expected: the line reads `Right-click: into your Character bank`.
-6. Close the bank with the X. Expected: the bags window title goes back to its normal title, and shows a `Show bank` button.
-7. Hover an item in your bags with the bank closed. Expected: no `Right-click:` line.
+6. Close the bank with the X. Expected: the window hides, but the visit is still open: the bags window title still reads `SwagBag — right-click to Character bank` (or `Warband bank`, whichever tab was lit), and the bags show a `Show bank` button.
+7. Walk away from the banker. Expected: the bags window title goes back to its normal title.
+8. Hover an item in your bags. Expected: no `Right-click:` line.
 
 ---
 

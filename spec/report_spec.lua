@@ -96,9 +96,10 @@ describe("Report", function()
 
 	it("shows the bank setting, the last visit and the deposit target (check V2)", function()
 		SB.Checks.last = {}
-		SB.BankWindow = { Mode = function() return "tiny" end, lastVisit = "beside", target = "warband",
+		SB.BankWindow = { Mode = function() return "tiny" end, Show = function() return "both" end,
+			lastVisit = "beside", target = "warband",
 			GroupName = function() return "Warband bank" end }
-		assert.truthy(SB.Report.Build():find("\nBank: setting tiny, last visit beside, last deposit target Warband bank",
+		assert.truthy(SB.Report.Build():find("\nBank: setting tiny, shows both, last visit beside, last deposit target Warband bank",
 			1, true))
 		SB.BankWindow.view = { stats = { lastLayoutMs = 61.27, lastLayoutReason = "open" } }
 		assert.truthy(SB.Report.Build():find("\nLast bank layout: 61.3 ms (open)", 1, true), "spec 9: first bank open")

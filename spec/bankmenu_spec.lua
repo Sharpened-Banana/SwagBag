@@ -90,6 +90,15 @@ describe("the bank window's header and its ... menu (week 13)", function()
 		assert.falsy(GameTooltip.shown)
 	end)
 
+	-- Final review fix 4. Mutation: the OnEnter always uses TIP_BANK_SORT.
+	it("Sort's tooltip with no known target says it sorts the Character bank and where the other is", function()
+		A.activeBankType = nil
+		openBank()
+		Fake.Fire(BW.sortButton, "OnEnter")
+		assert.equal(L.TIP_BANK_SORT_NONE:format(L.BANK_GROUP_BANK), GameTooltip.calls.AddLine[1])
+		assert.equal("Sorts your Character bank. The ... menu sorts either bank.", GameTooltip.calls.AddLine[1])
+	end)
+
 	it("the ... button's tooltip lists what the menu holds", function()
 		openBank()
 		Fake.Fire(BW.moreButton, "OnEnter")
