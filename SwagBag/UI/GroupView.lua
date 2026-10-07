@@ -46,7 +46,17 @@
 --   freeTile(view) optional -> true: each group's Free shows one tile per bag family with its
 --   number of free slots (Engine/Layout.lua, plan D19; families from cfg.family),
 --   hideEmptyNew optional: true hides each group's New while it is empty (the alt viewer, where
---   nothing ever arrives) }
+--   nothing ever arrives),
+--   Week 13, all optional (the guild bank sets none of them and behaves as before; a window owns its own folds):
+--   groupClosed(groupId) -> true | false | nil: a boolean decides whether the group is folded, nil falls
+--   back to the saved set,
+--   toggleGroup(groupId) -> bool: a group-header click asks the window first; true means it handled the
+--   click (GroupView only restacks), false toggles the saved set as before,
+--   groupInset(groupId) -> px: that group's header is drawn px narrower, leaving room for window controls,
+--   groupTip(groupId, header): runs when the mouse enters a group header (leaving hides GameTooltip when
+--   the header owns it),
+--   onHeaders(list): after every draw with the group headers { id, y, count, collapsed } (y negative from
+--   the child's top), and with {} from v.Clear();  v.GroupHeaders() returns the last list }
 -- Collapse state is saved per character in ui.collapsed[key .. ":" .. groupId] (sections)
 -- and ui.collapsed[key .. ":#"] (whole groups).
 local _, SB = ...
@@ -119,6 +129,10 @@ function GV.New(cfg)
 	v.Collapsed = collapsedFor
 
 	local function groupClosed(gid)
+		local own = cfg.groupClosed and cfg.groupClosed(gid)
+		if type(own) == "boolean" then
+			return own
+		end
 		return collapsedFor("#")[gid] == true
 	end
 
@@ -298,8 +312,22 @@ function GV.New(cfg)
 		end
 		if sid then
 			v.ToggleSection(gid, sid)
+		elseif cfg.toggleGroup and cfg.toggleGroup(gid) then
+			v.Restack() -- the window folded it itself: nothing to save
 		else
 			v.ToggleGroup(gid)
+		end
+	end
+
+	-- Group headers only; section headers keep their behaviour (no tip).
+	function owner.onEnter(id, header)
+		if cfg.groupTip and id:sub(1, 1) == "#" then
+			cfg.groupTip(id:sub(2), header)
+		end
+	end
+	function owner.onLeave(id, header)
+		if cfg.groupTip and id:sub(1, 1) == "#" and GameTooltip:GetOwner() == header then
+			GameTooltip:Hide()
 		end
 	end
 
@@ -354,7 +382,9 @@ function GV.New(cfg)
 		end
 		H.ReleaseAll(child)
 		for _, g in ipairs(pos.groupHeaders) do
-			local h = H.Acquire(child, "#" .. g.id, cfg.groupLabel(g.id, g.collapsed, g.count), GV.PAD, g.y, width, owner)
+			local inset = cfg.groupInset and cfg.groupInset(g.id) or 0
+			local h = H.Acquire(child, "#" .. g.id, cfg.groupLabel(g.id, g.collapsed, g.count), GV.PAD, g.y,
+				width - inset, owner)
 			if cfg.groupTint and cfg.groupTint(g.id) then
 				H.Tint(h, 0.25, 0.85, 0.35, 0.3)
 			end
@@ -362,6 +392,10 @@ function GV.New(cfg)
 		local labels = sectionLabels(pos)
 		for i, h in ipairs(pos.headers) do
 			H.Acquire(child, h.group .. ":" .. h.id, labels[i], GV.PAD, h.y, width, owner)
+		end
+		v.headers = pos.groupHeaders
+		if cfg.onHeaders then
+			cfg.onHeaders(pos.groupHeaders)
 		end
 	end
 
@@ -878,6 +912,14 @@ function GV.New(cfg)
 		if rows then
 			rows.HideAll()
 		end
+		v.headers = {}
+		if cfg.onHeaders then
+			cfg.onHeaders({})
+		end
+	end
+
+	function v.GroupHeaders()
+		return v.headers or {}
 	end
 
 	return v
