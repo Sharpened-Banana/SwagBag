@@ -136,6 +136,9 @@ local flashing = false
 -- While a focus mode is active (or modes are paused) its name comes first: "SwagBag — M+ —
 -- ilvl 279.4", "SwagBag — Paused" (AC8.5, spec 6.1).
 function W.Title()
+	if W.bankTarget then -- at the bank: where right-click goes (names looked up here; BagsWindow loads first)
+		return L.BAGS_TITLE_BANK:format(W.bankTarget == "warband" and L.BANK_GROUP_WARBAND or L.BANK_GROUP_BANK)
+	end
 	local mode = SB.Focus and SB.Focus.Label()
 	local ilvl = SB.Config.Get("bags.showIlvl") and SB.Adapter.EquippedItemLevel() or nil
 	if mode and ilvl then
@@ -183,6 +186,11 @@ local function itemLevelChanged()
 		W.RefreshTitle()
 	end
 end
+-- The bank window says where right-click deposits go ("bank" | "warband" | nil when the visit ends).
+SB.On("SB_BANK_TARGET", function(_, target)
+	W.bankTarget = target
+	W.RefreshTitle()
+end, "bags")
 SB.On("PLAYER_EQUIPMENT_CHANGED", itemLevelChanged, "bags")
 SB.On("PLAYER_AVG_ITEM_LEVEL_UPDATE", itemLevelChanged, "bags")
 

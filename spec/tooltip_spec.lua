@@ -342,4 +342,85 @@ describe("Adapter.HookItemTooltip (the real Adapter.lua)", function()
 		RAID_CLASS_COLORS = { MAGE = { colorStr = "ff3fc7eb" } }
 		assert.equal("|cff3fc7eb", A.ClassColour("MAGE"))
 	end)
+
+end)
+
+-- Week 13 Task 3: the item tooltip names where right-click goes at the bank (BW.DepositTooltipLine).
+describe("Right-click deposit tooltip line", function()
+	local SB, A, BW, L, lines, hook, owner, tooltip
+	local function blizzardBank()
+		local bf = Fake.New("Frame", UIParent)
+		bf.TabSystem = Fake.New("Frame", bf)
+		bf.TabSystem.tabs = { Fake.New("Button", bf.TabSystem), Fake.New("Button", bf.TabSystem) }
+		return bf
+	end
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		A.bagIDs.bank, A.bagIDs.warband = { 6 }, { 12 }
+		Fake.Install()
+		Env.PaintGlobals()
+		lines = {}
+		A.TooltipLine = function(_, left) lines[#lines + 1] = left end
+		A.HookItemTooltip = function(fn) hook = fn return true end
+		A.frames.BankFrame = blizzardBank()
+		A.activeBankType = "warband"
+		BW = Env.LoadBank(SB)
+		L = SB.L
+		SB.Emit("SB_LOGIN")
+		A.SetBagSize(6, 8)
+		A.SetBagSize(12, 8)
+		SB.Buttons.EnsureCapacity(0, 16)
+		SB.Buttons.EnsureCapacity(6, 8)
+		owner = SB.Buttons.Get(0, 1)
+		tooltip = { GetOwner = function() return owner end }
+	end)
+	after_each(function()
+		Fake.Uninstall()
+		Env.ClearPaintGlobals()
+	end)
+
+	-- Mutation: drop the hook at load, or the `A.AllowedInBank(...) == false` branch.
+	it("a bag item's tooltip names the right-click bank", function()
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		hook(tooltip, Fixtures.HERB)
+		assert.same({ L.TIP_RIGHT_CLICK_DEPOSIT:format(L.BANK_GROUP_WARBAND) }, lines)
+		lines = {}
+		A.AllowedInBank = function() return false end
+		hook(tooltip, Fixtures.HERB)
+		assert.same({ L.TIP_RIGHT_CLICK_REFUSED:format(L.BANK_GROUP_WARBAND) }, lines)
+	end)
+
+	-- Mutation: drop the bag-kind check, or the BW.interaction check, or the target check.
+	it("no right-click line away from the bank, over a bank item, or with no target", function()
+		hook(tooltip, Fixtures.HERB)
+		assert.same({}, lines, "away from the bank")
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		owner = SB.Buttons.Get(6, 1)
+		hook(tooltip, Fixtures.HERB)
+		assert.same({}, lines, "over a bank item")
+		owner = SB.Buttons.Get(0, 1)
+		BW.target = nil
+		hook(tooltip, Fixtures.HERB)
+		assert.same({}, lines, "no target")
+	end)
+
+	it("nothing for a tooltip with no owner, or an owner that is not a pool button", function()
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		tooltip.GetOwner = function() return nil end
+		hook(tooltip, Fixtures.HERB)
+		owner = Fake.New("Button", Fake.New("Frame"))
+		tooltip.GetOwner = function() return owner end
+		hook(tooltip, Fixtures.HERB)
+		assert.same({}, lines)
+	end)
+
+	it("nothing while the bank is in Safe Mode", function()
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		SB.SafeMode.Enable("bank", "manual")
+		hook(tooltip, Fixtures.HERB)
+		assert.same({}, lines)
+	end)
 end)

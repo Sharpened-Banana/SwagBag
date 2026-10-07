@@ -90,7 +90,7 @@ describe("BankWindow contents", function()
 
 	it("a bank visit shows Character bank on top and Warband bank below, each with its own sections", function()
 		openBank()
-		assert.same({ "- Character bank (2)  - deposits go here", "- Warband bank (2)",
+		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (2)",
 			"- New (0)", "- Consumables (1)", "- Herbs (1)", "- Free (6)",
 			"- New (0)", "- BoE gear (1)", "- Ore (1)", "- Free (6)" }, labels())
 		assert.truthy(B.Get(6, 1).shown)
@@ -119,7 +119,7 @@ describe("BankWindow contents", function()
 		assert.same(before, { at(6, 1), at(6, 2), at(6, 5), at(12, 1), at(12, 2) }, "a tab click moves nothing")
 		assert.equal("open", BW.view.stats.lastLayoutReason, "no layout ran")
 		assert.equal("- Character bank (3)", header("#bank").text.text)
-		assert.equal("- Warband bank (2)  - deposits go here", header("#warband").text.text)
+		assert.equal("- Warband bank (2)  - right-clicked items land here", header("#warband").text.text)
 		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#warband").bg.calls.SetColorTexture)
 	end)
 
@@ -243,7 +243,7 @@ describe("BankWindow contents", function()
 		bankUpdate(6)
 		assert.equal(header("bank:new").points[1][5] - 20, at(6, 5)[2], "first cell of New")
 		assert.same(before, { at(6, 1), at(6, 2), at(12, 1), at(12, 2) })
-		assert.equal("- Character bank (3)  - deposits go here", header("#bank").text.text)
+		assert.equal("- Character bank (3)  - right-clicked items land here", header("#bank").text.text)
 	end)
 
 	-- The free slot's number on a button (nil: none), plan D19.
@@ -442,7 +442,7 @@ describe("BankWindow contents", function()
 	it("the grid view shows each group in physical order", function()
 		SB.Config.Set("bank.view", "grid")
 		openBank()
-		assert.same({ "- Character bank (2)  - deposits go here", "- Warband bank (2)" }, labels())
+		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (2)" }, labels())
 		assert.equal(SB.L.VIEW_TO_SECTIONS, BW.viewButton.text)
 		Fake.Fire(BW.viewButton, "OnClick")
 		assert.equal("sections", SB.Config.Get("bank.view"))
@@ -828,5 +828,77 @@ describe("Bags and bank windows open together (Review Focus 1)", function()
 			still = still or p == bagsPlaceholder
 		end
 		assert.truthy(still, "and it is still in use")
+	end)
+
+end)
+
+describe("Bags title and bank at once (week 13 Task 3)", function()
+	local SB, A, W
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		A.bagIDs.bank, A.bagIDs.warband = { 6 }, { 12 }
+		Fake.Install()
+		Env.PaintGlobals()
+		A.frames.BankFrame = blizzardBank()
+		A.activeBankType = "warband"
+		for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/ListRows.lua",
+			"SwagBag/UI/BagsWindow.lua",
+			"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua" }) do
+			Loader.LoadFile(SB, path)
+		end
+		W = SB.BagsWindow
+		SB.Emit("SB_LOGIN")
+		A.SetBagSize(6, 8)
+		A.SetBagSize(12, 8)
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+		Env.ClearPaintGlobals()
+	end)
+
+	it("the target group says right-clicked items land there", function()
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		local text
+		for _, h in ipairs(SB.SectionHeaders.inUse) do
+			if h.shown and h.sectionId == "#warband" then
+				text = h.text.text
+			end
+		end
+		local L = SB.L
+		assert.equal(L.BANK_GROUP_TARGET, text:sub(-#L.BANK_GROUP_TARGET))
+		assert.equal("  - right-clicked items land here", L.BANK_GROUP_TARGET)
+	end)
+
+	-- Mutation: delete the SB_BANK_TARGET listener in BagsWindow.lua.
+	it("the bags title says where right-click goes at the bank", function()
+		local L = SB.L
+		SB.Emit("SB_BANK_TARGET", "warband")
+		assert.equal(L.BAGS_TITLE_BANK:format(L.BANK_GROUP_WARBAND), W.Title())
+		SB.Emit("SB_BANK_TARGET", "bank")
+		assert.equal(L.BAGS_TITLE_BANK:format(L.BANK_GROUP_BANK), W.Title())
+		SB.Emit("SB_BANK_TARGET", nil)
+		assert.equal(L.BAGS_TITLE, W.Title())
+	end)
+
+	it("the bags title on screen follows the bank visit", function()
+		local L = SB.L
+		W.Open()
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		assert.equal(L.BAGS_TITLE_BANK:format(L.BANK_GROUP_WARBAND), W.frame.title.text)
+	end)
+
+	-- Mutation: delete the Emit in BW.OnBankClosed.
+	it("closing the bank clears the bags title", function()
+		local L = SB.L
+		W.Open()
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		assert.equal("warband", W.bankTarget)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		assert.is_nil(W.bankTarget)
+		assert.equal(L.BAGS_TITLE, W.frame.title.text)
 	end)
 end)
