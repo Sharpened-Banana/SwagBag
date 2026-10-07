@@ -48,7 +48,7 @@ function Env.LoadBank(SB)
 	end
 	for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/SearchBox.lua",
 		"SwagBag/UI/ListRows.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua",
-		"SwagBag/UI/Overlays.lua" }) do
+		"SwagBag/UI/BankMenu.lua", "SwagBag/UI/Overlays.lua" }) do
 		Loader.LoadFile(SB, path)
 	end
 	return SB.BankWindow

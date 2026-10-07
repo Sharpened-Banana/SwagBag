@@ -309,7 +309,7 @@ describe("BankWindow contents", function()
 
 	it("Sort bank sorts the character bank and regroups after the bank settles; Sort warband sorts the warband", function()
 		openBank()
-		Fake.Fire(BW.sortBankButton, "OnClick")
+		BW.Sort("bank")
 		assert.same({ "bank" }, A.bankSorts)
 		assert.equal(SB.L.SORT_STARTED, BW.frame.title.text)
 		A.Put(6, 1, Fixtures.HERB, 20)
@@ -318,7 +318,7 @@ describe("BankWindow contents", function()
 		A.Advance(0.3)
 		assert.equal("sort", BW.view.stats.lastLayoutReason)
 		assert.equal(0, #B.placeholdersInUse)
-		Fake.Fire(BW.sortWarbandButton, "OnClick")
+		BW.Sort("warband")
 		assert.same({ "bank", "warband" }, A.bankSorts)
 	end)
 
@@ -330,14 +330,14 @@ describe("BankWindow contents", function()
 		A.Put(6, 3, Fixtures.HEALING_POTION, 4)
 		A.Put(12, 3, Fixtures.ORE, 5)
 		openBank()
-		Fake.Fire(BW.sortBankButton, "OnClick")
+		BW.Sort("bank")
 		assert.same({}, A.bankSorts)
 		assert.same({ { 6, 3, 6, 1 } }, A.stackMoves)
 		assert.equal(SB.L.STACK_STARTED, BW.frame.title.text)
 		A.Advance(SB.Stacker.DELAY)
 		assert.same({ SB.L.STACK_DONE:format(1, 0) }, A.Lines())
 		assert.equal("sort", BW.view.stats.lastLayoutReason)
-		Fake.Fire(BW.sortWarbandButton, "OnClick")
+		BW.Sort("warband")
 		A.Advance(SB.Stacker.DELAY)
 		assert.same({ 6, 3, 6, 1 }, A.stackMoves[1])
 		assert.same({ 12, 3, 12, 1 }, A.stackMoves[2], "the warband bank's own ore, in the warband bank")
@@ -353,7 +353,7 @@ describe("BankWindow contents", function()
 		A.Put(6, 3, Fixtures.HEALING_POTION, 4)
 		A.Put(6, 4, Fixtures.HERB, 5)
 		openBank()
-		Fake.Fire(BW.sortBankButton, "OnClick")
+		BW.Sort("bank")
 		SB.eventFrame:Fire("BANKFRAME_CLOSED")
 		A.Advance(SB.Stacker.DELAY)
 		assert.equal(1, #A.stackMoves)
@@ -361,7 +361,7 @@ describe("BankWindow contents", function()
 		-- the same with the closed bank's slots reading empty, as the client may answer
 		A.Put(6, 5, Fixtures.HERB, 2)
 		openBank()
-		Fake.Fire(BW.sortBankButton, "OnClick")
+		BW.Sort("bank")
 		SB.eventFrame:Fire("BANKFRAME_CLOSED")
 		local get = A.GetSlot
 		A.GetSlot = function(bag, slot)
@@ -378,14 +378,14 @@ describe("BankWindow contents", function()
 
 	it("a second Sort during a settle keeps the first sort's regroup; a sort that changes nothing stops waiting", function()
 		openBank()
-		Fake.Fire(BW.sortBankButton, "OnClick")
+		BW.Sort("bank")
 		A.Clear(6, 1)
 		bankUpdate(6)
-		Fake.Fire(BW.sortWarbandButton, "OnClick")
+		BW.Sort("warband")
 		A.Advance(BW.SORT_TIMEOUT + 0.1)
 		assert.equal("sort", BW.view.stats.lastLayoutReason)
 		assert.falsy(BW.sortPending)
-		Fake.Fire(BW.sortBankButton, "OnClick")
+		BW.Sort("bank")
 		A.Advance(BW.SORT_TIMEOUT + 0.1)
 		assert.falsy(BW.sortPending)
 		BW.view.stats.lastLayoutReason = "marker"
@@ -398,7 +398,7 @@ describe("BankWindow contents", function()
 	it("sorting in combat shows feedback and does nothing, now or after combat (W11)", function()
 		openBank()
 		A.combat = true
-		Fake.Fire(BW.sortBankButton, "OnClick")
+		BW.Sort("bank")
 		assert.same({}, A.bankSorts)
 		assert.equal(SB.L.SORT_AFTER_COMBAT, BW.frame.title.text)
 		assert.equal(0, SB.OutOfCombatPending())
@@ -411,7 +411,7 @@ describe("BankWindow contents", function()
 	it("a failing bank sort says so, records the error, and never claims it started", function()
 		openBank()
 		A.SortBank = function() return false, "boom" end
-		Fake.Fire(BW.sortBankButton, "OnClick")
+		BW.Sort("bank")
 		assert.equal(SB.L.SORT_UNAVAILABLE, BW.frame.title.text)
 		assert.equal("boom", SB.ErrorTrap.Recent()[1].message)
 		assert.falsy(SB.SafeMode.IsOn("bank"))
@@ -425,7 +425,7 @@ describe("BankWindow contents", function()
 		bankUpdate(6)
 		BW.scroll.mouseOver = true
 		B.Get(6, 3).mouseOver = true -- below the gap 6/2 left: Reflow moves it up
-		Fake.Fire(BW.reflowButton, "OnClick")
+		BW.Reflow("reflow")
 		assert.equal(SB.L.REFLOW_WAITING, BW.frame.title.text)
 		assert.equal(1, #B.placeholdersInUse)
 		B.Get(6, 3).mouseOver = false
@@ -450,8 +450,7 @@ describe("BankWindow contents", function()
 		SB.Config.Set("bank.view", "grid")
 		openBank()
 		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (2)" }, labels())
-		assert.equal(SB.L.VIEW_TO_SECTIONS, BW.viewButton.text)
-		Fake.Fire(BW.viewButton, "OnClick")
+		BW.SetView("sections")
 		assert.equal("sections", SB.Config.Get("bank.view"))
 		assert.equal(10, #labels())
 	end)
@@ -969,7 +968,8 @@ describe("Bags and bank windows open together (Review Focus 1)", function()
 		A.activeBankType = "bank"
 		for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/ListRows.lua",
 			"SwagBag/UI/BagsWindow.lua",
-			"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua" }) do
+			"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua",
+			"SwagBag/UI/BankMenu.lua" }) do
 			Loader.LoadFile(SB, path)
 		end
 		B, W, BW = SB.Buttons, SB.BagsWindow, SB.BankWindow
@@ -1058,7 +1058,8 @@ describe("Bags title and bank at once (week 13 Task 3)", function()
 		A.activeBankType = "warband"
 		for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/ListRows.lua",
 			"SwagBag/UI/BagsWindow.lua",
-			"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua" }) do
+			"SwagBag/UI/SearchBox.lua", "SwagBag/UI/TinyHost.lua", "SwagBag/UI/GroupView.lua", "SwagBag/UI/BankWindow.lua",
+			"SwagBag/UI/BankMenu.lua" }) do
 			Loader.LoadFile(SB, path)
 		end
 		W = SB.BagsWindow

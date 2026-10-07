@@ -4,22 +4,22 @@
 --                     tab buttons (BankFrame.TabSystem) hang under SwagBag's window
 --   "beside"          Blizzard's bank is left exactly as Blizzard shows it, and SwagBag's
 --                     window sits to its right (spec 5.4; the fallback if check V2 fails)
--- The "Blizzard bank" button switches between the two for this visit only (tab purchase and
+-- The "..." menu's Show/Hide Blizzard's bank entry switches between the two for this visit only (tab purchase and
 -- warband gold live in Blizzard's frame). The setting is bank.blizzardFrame
 -- (/swagbag bank tiny|beside).
 -- Read only (spec 5.2, 5.3): the deposit target is whatever bank type Blizzard has selected
 -- (Adapter.ActiveBankType); SwagBag shows it and never sets it. Esc or the X hides SwagBag's
 -- window (spec 5.6) and gives Blizzard's bank back its parent, so it is visible while the
--- visit lasts; the bags window shows "Bank still open", which shows this window again.
+-- visit lasts; the bags window shows "Show bank", which shows this window again.
 -- Contents (UI/GroupView.lua): the "Character bank" group on top, the "Warband bank" group
 -- below, each with its own category sections (or grid), for the purchased tabs the client
 -- reports, as categories, a list (week 8: one row per slot, the bags window's columns and order,
 -- UI/ListRows.lua) or a grid. The receiving group is tinted and says "right-clicked items land here". Items move only into
 -- New or Free while the window is open (spec 4.3). With bank.show "one" (the default, week 13) only
 -- the group the selected tab deposits into is open; the other folds to one line, and a click on its
--- header shows it until the tab changes ("both": /swagbag bank both, Settings). Sort buttons call Blizzard's bank sort
--- and regroup after the bank settles; in combat they refuse with feedback and nothing runs
--- later (spec 5.5, ruling W11). The window has its own search box.
+-- header shows it until the tab changes ("both": /swagbag bank both, Settings).
+-- The Sort button (and the "..." menu's two Sort rows) call Blizzard's bank sort and regroup after the
+-- bank settles; in combat they refuse with feedback and nothing runs later (spec 5.5, ruling W11). The window has its own search box.
 -- "Deposit warbound" (week 6, user request 3) runs the game's own warband deposit through the
 -- Adapter, beside a "With reagents" box that is Blizzard's own include-reagents choice.
 local _, SB = ...
@@ -258,7 +258,7 @@ end
 
 -- Put Blizzard's bank and SwagBag's window in the visit's mode. In combat parents cannot
 -- change, so a visit that starts in combat stays "beside".
--- Ruling W3-1: re-applied while Blizzard's bank is already tiny ("Bank still open", /swagbag
+-- Ruling W3-1: re-applied while Blizzard's bank is already tiny ("Show bank", /swagbag
 -- bank, a reopen inside one fight), the visit stays tiny and only our own position is
 -- restored; it never flips to "beside" (that would anchor us to the invisible frame). Out
 -- of combat a "beside" request still hands Blizzard's bank back below.
@@ -294,7 +294,7 @@ function BW.ApplyMode()
 	BW.RefreshTarget()
 end
 
--- The "Blizzard bank" button: show or hide Blizzard's bank for this visit. The window jumps
+-- The "..." menu's Show/Hide Blizzard's bank entry (UI/BankMenu.lua): show or hide Blizzard's bank for this visit. The window jumps
 -- beside Blizzard's bank (or back), so the answer shows longer and also goes to chat (D17).
 function BW.ToggleVisit()
 	if SB.Adapter.InCombat() then
@@ -319,16 +319,10 @@ local function titleButton(text, label, onClick, width)
 end
 BW.TitleButton = titleButton
 
-BW.blizzardButton = titleButton(L.BTN_BLIZZARD_BANK, "bank.blizzardButton", function()
-	BW.ToggleVisit()
-end, 104)
-BW.blizzardButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -5)
-
 ---------------------------------------------------------------------------
 -- Contents: two groups in one GroupView
 ---------------------------------------------------------------------------
--- The view button's order, as in the bags window: each click shows the next one.
-local VIEW_NEXT, VIEW_BUTTON = SB.GroupView.VIEW_NEXT, SB.GroupView.VIEW_BUTTON
+-- The views the "..." menu offers, and what the title says after each one.
 local VIEW_FLASH = { sections = L.BANK_VIEW_SECTIONS, list = L.BANK_VIEW_LIST, grid = L.BANK_VIEW_GRID }
 
 function BW.View()
@@ -635,17 +629,20 @@ function BW.Reflow(reason)
 	return done
 end
 
--- Categories -> list -> grid -> categories, like the bags window's view button.
-function BW.ToggleView()
-	local view = VIEW_NEXT[BW.View()]
+-- The "..." menu's view rows: save the view, say it once in the title, and draw it (now, or once the mouse
+-- leaves the items). false (with a title flash) while the settings are read-only.
+function BW.SetView(view)
+	if not VIEW_FLASH[view] then
+		return false
+	end
 	if not SB.Config.Set("bank.view", view) then -- read-only settings: nothing changes
 		BW.Flash(L.SETTINGS_READONLY)
-		return
+		return false
 	end
-	BW.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[view]])
 	BW.view.RequestLayout("view")
 	-- the flash says what is drawn: a list that could not size its buttons (F6) shows categories
 	BW.Flash(VIEW_FLASH[(view == "list" and BW.view.listFailed) and "sections" or view])
+	return true
 end
 
 -- A click on a column of the list: sort every list by it (Engine/Sort.lua), answered in the title (P2).
@@ -654,26 +651,22 @@ function BW.SortList(by)
 	return SB.GroupView.SortList(by, BW.Flash)
 end
 
--- Config is not initialized while this file loads, so the view label is set in BW.Open().
-BW.viewButton = titleButton(L.VIEW_TO_LIST, "bank.viewButton", function()
-	BW.ToggleView()
-end)
-BW.viewButton:SetPoint("RIGHT", BW.blizzardButton, "LEFT", -4, 0)
-BW.reflowButton = titleButton(L.BTN_REFLOW, "bank.reflowButton", function()
-	BW.Reflow("reflow")
-end, 60)
-BW.reflowButton:SetPoint("RIGHT", BW.viewButton, "LEFT", -4, 0)
-BW.sortWarbandButton = titleButton(L.BTN_SORT_WARBAND, "bank.sortWarband", function()
-	BW.Sort("warband")
-end, 96)
-BW.sortWarbandButton:SetPoint("RIGHT", BW.reflowButton, "LEFT", -4, 0)
-BW.sortBankButton = titleButton(L.BTN_SORT_BANK, "bank.sortBank", function()
-	BW.Sort("bank")
-end, 76)
-BW.sortBankButton:SetPoint("RIGHT", BW.sortWarbandButton, "LEFT", -4, 0)
+-- The title row is Sort, "..." and close; every other action is a row of the "..." menu (UI/BankMenu.lua).
+-- Sort sorts the bank the deposit target names (the one open in "one" mode), "bank" while none is known.
+function BW.SortKind()
+	return BW.target or "bank"
+end
+BW.moreButton = titleButton("...", "bank.moreButton", function()
+	SB.BankMenu.Toggle(BW.moreButton)
+end, 30)
+BW.moreButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -26, -5)
+BW.sortButton = titleButton(L.BTN_SORT, "bank.sortButton", function()
+	BW.Sort(BW.SortKind())
+end, 52)
+BW.sortButton:SetPoint("RIGHT", BW.moreButton, "LEFT", -4, 0)
 -- Ruling W3-26: the title (and its flashes) ends left of the leftmost title button; a long
 -- flash is cut short on one line instead of running under the buttons.
-frame.title:SetPoint("RIGHT", BW.sortBankButton, "LEFT", -6, 0)
+frame.title:SetPoint("RIGHT", BW.sortButton, "LEFT", -6, 0)
 frame.title:SetJustifyH("LEFT")
 frame.title:SetWordWrap(false)
 
@@ -830,6 +823,19 @@ BW.depositButton:SetScript("OnEnter", depositTip(L.BTN_DEPOSIT_WARBAND, L.TIP_DE
 BW.depositButton:SetScript("OnLeave", hideTip)
 BW.reagentsBox:SetScript("OnEnter", depositTip(L.DEPOSIT_REAGENTS_LABEL, L.TIP_DEPOSIT_REAGENTS))
 BW.reagentsBox:SetScript("OnLeave", hideTip)
+-- The title row's tooltips: Sort names the bank it sorts now (it follows the target), "..." lists what is in it.
+BW.sortButton:SetScript("OnEnter", Guard("bank.sortButton", function(self)
+	if not GameTooltip then
+		return
+	end
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:SetText(L.BTN_SORT)
+	GameTooltip:AddLine(L.TIP_BANK_SORT:format(groupName(BW.SortKind())), 1, 1, 1, true)
+	GameTooltip:Show()
+end, "bank"))
+BW.sortButton:SetScript("OnLeave", hideTip)
+BW.moreButton:SetScript("OnEnter", depositTip("...", L.TIP_BANK_MORE, "bank.moreButton"))
+BW.moreButton:SetScript("OnLeave", hideTip)
 
 -- The bar's tooltip: a plain frame over the label's own bounds (never over the tabs, which sit after
 -- the label), saying what the two tabs do.
@@ -947,11 +953,11 @@ function BW.IsOpen()
 	return frame:IsShown()
 end
 
--- "Bank still open" on the bags window (spec 5.6): shown while the visit is open but
+-- "Show bank" on the bags window (spec 5.6): shown while the visit is open but
 -- SwagBag's bank window is hidden. Its click only shows SwagBag's bank window again.
 local bags = SB.BagsWindow
 BW.stillOpenButton = CreateFrame("Button", nil, bags.frame, "UIPanelButtonTemplate")
-BW.stillOpenButton:SetSize(110, 18)
+BW.stillOpenButton:SetSize(80, 18)
 BW.stillOpenButton:SetText(L.BANK_STILL_OPEN)
 BW.stillOpenButton:SetPoint("RIGHT", bags.sortButton, "LEFT", -4, 0)
 BW.stillOpenButton:SetScript("OnClick", Guard("bank.stillOpen", function()
@@ -977,7 +983,6 @@ function BW.Open()
 		return true
 	end
 	BW.sortPending, BW.sortSawUpdate = false, false
-	BW.viewButton:SetText(VIEW_BUTTON[VIEW_NEXT[BW.View()]])
 	frame:Show()
 	BW.ApplyMode()
 	BW.RefreshReagents()
@@ -1001,6 +1006,7 @@ frame:SetScript("OnHide", Guard("bank.hide", function(self)
 	if BW.interaction then -- the visit is still open: make Blizzard's bank visible again
 		host.Restore()
 	end
+	SB.BankMenu.Hide()
 	BW.view.Clear()
 	BW.peek = {} -- the next opening starts from the one-bank rule again
 	BW.sortPending, BW.sortSawUpdate, BW.scaleWarned = false, false, false
@@ -1017,6 +1023,7 @@ end
 function BW.OnBankClosed()
 	BW.interaction, BW.visit = false, nil
 	frame:Hide()
+	SB.BankMenu.Hide() -- also when the window was already hidden (the Show bank button)
 	host.Restore()
 	BW.RefreshStillOpen()
 	SB.Emit("SB_BANK_TARGET", nil) -- right-click goes nowhere now: the bags title goes back to normal
