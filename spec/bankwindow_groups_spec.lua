@@ -621,6 +621,98 @@ describe("BankWindow contents", function()
 			assert.equal("-", text:sub(1, 1), text)
 		end
 	end)
+	-- Week 13 Task 2: Deposit warbound and With reagents on the Warband header.
+	local function warbandY()
+		for _, h in ipairs(BW.view.GroupHeaders()) do
+			if h.id == "warband" then
+				return h.y
+			end
+		end
+	end
+
+	local function topRight(f)
+		for _, p in ipairs(f.points) do
+			if p[1] == "TOPRIGHT" then
+				return p
+			end
+		end
+	end
+
+	-- Mutation: anchor the button to the frame's row 3 (SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -54)).
+	it("Deposit warbound sits on the Warband bank's header", function()
+		openBank()
+		local b = BW.depositButton
+		assert.equal(BW.child, b:GetParent())
+		local p = topRight(b)
+		assert.equal(BW.child, p[2])
+		assert.truthy(math.abs(p[5] - warbandY()) <= 2, "its y is the warband header's")
+		assert.truthy(warbandY() ~= 0, "and the header is below the Character bank's")
+		assert.truthy(b.shown)
+	end)
+
+	-- Mutation: place the controls once (skip the SetPoint when already placed).
+	it("the controls follow the header when the group above folds", function()
+		openBank()
+		local before = warbandY()
+		BW.view.ToggleGroup("bank")
+		A.Advance(0.06)
+		local after = warbandY()
+		assert.truthy(after > before, "the warband header moved up (y is negative from the top)")
+		assert.truthy(math.abs(topRight(BW.depositButton)[5] - after) <= 2)
+		assert.truthy(BW.depositButton.shown)
+	end)
+
+	-- Mutation: groupInset returns 0.
+	it("the warband header leaves room for the controls", function()
+		openBank()
+		assert.equal(header("#bank").w - BW.DEPOSIT_W, header("#warband").w)
+		assert.equal(BW.DEPOSIT_W, 236)
+	end)
+
+	-- Mutation: DepositControlsShown always returns true.
+	it("narrow bank hides the header controls", function()
+		SB.Config.Set("bank.columns", 4)
+		openBank()
+		assert.truthy(BW.child:GetWidth() - 8 < BW.DEPOSIT_W + BW.HEADER_LABEL_MIN)
+		assert.equal(false, BW.DepositControlsShown())
+		assert.falsy(BW.depositButton.shown)
+		assert.falsy(BW.reagentsBox.shown)
+		assert.falsy(BW.reagentsLabel.shown)
+		assert.equal(header("#bank").w, header("#warband").w, "the header keeps its whole width")
+	end)
+
+	-- Mutation: leave the Close path to the frame alone (onHeaders({}) from v.Clear is ignored).
+	it("the controls hide with the window and come back on reopen", function()
+		openBank()
+		assert.truthy(BW.depositButton.shown and BW.reagentsBox.shown)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		assert.falsy(BW.depositButton.shown)
+		assert.falsy(BW.reagentsBox.shown)
+		assert.falsy(BW.reagentsLabel.shown)
+		openBank()
+		assert.truthy(BW.depositButton.shown and BW.reagentsBox.shown and BW.reagentsLabel.shown)
+	end)
+
+	-- Ruling P2. Mutation: drop the SetFrameLevel calls in BW.PlaceDepositControls.
+	it("the controls sit above the warband header's frame level, so the header never eats their clicks", function()
+		openBank()
+		local level = header("#warband"):GetFrameLevel()
+		assert.truthy(BW.depositButton:GetFrameLevel() > level)
+		assert.truthy(BW.reagentsBox:GetFrameLevel() > level)
+		assert.equal(BW.depositButton, BW.reagentsLabel:GetParent(), "the label is drawn with the button")
+	end)
+
+	-- Mutation: showReagents ignores reagentsKnown (a placed box shows although the game cannot say).
+	it("a game that cannot say the reagents choice keeps the box and label hidden, even when the header moves", function()
+		A.DepositReagents = function() return nil end
+		openBank()
+		assert.truthy(BW.depositButton.shown)
+		assert.falsy(BW.reagentsBox.shown)
+		BW.view.ToggleGroup("bank")
+		A.Advance(0.06)
+		assert.falsy(BW.reagentsBox.shown)
+		assert.falsy(BW.reagentsLabel.shown)
+	end)
 end)
 
 describe("Bags and bank windows open together (Review Focus 1)", function()
