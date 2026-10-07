@@ -31,7 +31,7 @@ If anything goes wrong, type `/swagbag report`, press Ctrl+C, and paste the resu
 8. Right-click an item in your bags that can go in your own bank. Expected: it lands in the Character bank.
 9. Type `/reload`, then open the bank again. Expected: the tabs are in the header again.
 10. Right-click an item in your bags. Expected: it still lands in the bank whose tab is lit. This means there is no taint.
-11. Close the bank, then press your Hearthstone key and cancel the cast (Esc) or use any item. Expected: no red error, and no "blocked action" message.
+11. Close the bank and use your Hearthstone. Expected: it works, with no red error and no "blocked action" message.
 
 If the tabs overflow the header or don't click (steps 4, 5, 7): tell Claude. The fallback is to keep the bar text and move the tabs back under the window (a one-line `placeTabs` change, ruled in the ledger).
 
@@ -64,10 +64,10 @@ Purpose: the slim header (Sort, `...`, close) and the `...` menu.
 3. Hover `...`. Expected: a tooltip: `More: the view, sorting either bank, regroup, Blizzard's bank, Deposit warbound and settings.`
 4. Click `Warband Bank`, then hover `Deposit warbound` on the Warband bank's header. Expected: a tooltip that begins `Moves every warbound item in your bags into the Warband bank, whichever tab is selected.`
 5. Hover the `With reagents` box. Expected: a tooltip: `Blizzard's own setting: Deposit warbound takes reagents too. Right-click deposits don't change.`
-6. Click `...`. Expected: a menu opens with, in order: the view choices (`Categories`, `List`, `Grid`, the current one marked `(now)`), `Sort Character bank`, `Sort Warband bank`, `Regroup now`, `Show Blizzard's bank (buy tabs, gold)`, `Deposit all warbound items`, `Bank settings...`.
+6. Click `...`. Expected: a menu opens with, in order: the view choices (`View: Categories (now)`, `View: List`, `View: Grid`; the current one has `(now)` inside), `Sort Character bank`, `Sort Warband bank`, `Regroup now`, `Show Blizzard's bank (buy tabs, gold)`, `Deposit all warbound items`, `Bank settings...`.
 7. Hover each menu entry. Expected: each one shows a tooltip.
-8. Click `List`. Expected: the bank redraws as a list and the menu closes.
-9. Click `...` and click `Categories`. Expected: the category view is back.
+8. Click `View: List`. Expected: the bank redraws as a list and the menu closes.
+9. Click `...` and click `View: Categories`. Expected: the category view is back.
 10. Click `...` and click `Sort Warband bank`. Expected: the Warband bank sorts, and the answer shows once.
 11. Click `...` and click `Regroup now`. Expected: items regroup into their sections, with one answer.
 12. Click `...` and click `Deposit all warbound items`. Expected: the same answer as the `Deposit warbound` button gives.
@@ -75,8 +75,9 @@ Purpose: the slim header (Sort, `...`, close) and the `...` menu.
 14. Click `...` and click `Show Blizzard's bank (buy tabs, gold)`. Expected: Blizzard's own bank appears, SwagBag's window moves beside it, and the answer reads `Blizzard's bank is shown for this visit`.
 15. Look at the bar. Expected: it reads `Right-click deposits to: Warband bank - switch with the tabs on Blizzard's bank` (or `Character bank`).
 16. Click `...` and click `Hide Blizzard's bank`. Expected: Blizzard's bank goes away, the window goes back to where it was, the tabs are in the header again, and the answer reads `Blizzard's bank is hidden again`.
-17. Click `...` to open the menu, and press Esc once. Expected: this is current behaviour, not a bug: the menu closes and SwagBag's bank window closes with it, and Blizzard's bank comes back for the visit. The bags then show `Show bank`.
-18. Click `Show bank` in the bags title. Expected: SwagBag's bank window is back.
+17. Click `Show bank` in the bags title if SwagBag's window is closed. Expected: SwagBag's bank window is back.
+
+Known behaviour (not a bug): with the `...` menu open, pressing Esc once closes the menu and SwagBag's bank window together, Blizzard's bank comes back for the visit, and the bags show `Show bank`.
 
 ---
 
@@ -102,11 +103,8 @@ Purpose: the window stays usable when small, and in combat.
 2. Type `/swagbag bank shown`. Expected: chat shows `SwagBag: Bank: Blizzard's bank is shown, with SwagBag's bank window beside it.`
 3. Type `/swagbag bank hidden`. Expected: chat shows `SwagBag: Bank: Blizzard's bank is hidden; its Bank and Warband Bank tabs are at the top of SwagBag's bank window.`
 4. Type `/swagbag bank tiny`. Expected: the same line as step 3 (old macros still work).
-5. Open Settings, go to `Bank & guild`, and set `Bank slots per row` to 4. Open the bank. Expected: the window is still wide enough for the bar and the tabs; it is not narrower than before.
-6. Look at the Warband bank's header. Expected: `Deposit warbound` and `With reagents` are gone from the header when they would cover its name.
-7. Click `...`. Expected: `Deposit all warbound items` is still in the menu, and it works.
-8. Set `Bank slots per row` back to what it was. Close the bank.
-9. Stand next to the banker and the training dummy. Attack the dummy to enter combat, then open the bank. Expected: Blizzard's own bank stays visible, SwagBag's window opens beside it, and the bar reads `Right-click deposits to: ...` followed by `switch with the tabs on Blizzard's bank` (or `Right-click deposits: pick Bank or Warband Bank on Blizzard's bank`). It never shows `Right-click deposits to:` with no tabs next to it.
-10. Click `...` and click `Show Blizzard's bank (buy tabs, gold)` (or `Hide Blizzard's bank`). Expected: the answer reads `Leave combat first`, and nothing moves.
-11. Click `Sort` in the header. Expected: a refusal, no sorting, and nothing runs later when combat ends.
-12. Leave combat. Close the bank and open it again. Expected: the tabs are in the header and everything works as in V13-1.
+5. Narrow bank window: covered by automated tests (no in-game step).
+6. Stand next to the banker and the training dummy. Attack the dummy to enter combat, then open the bank. Expected: Blizzard's own bank stays visible, SwagBag's window opens beside it, and the bar reads `Right-click deposits to: ...` followed by `switch with the tabs on Blizzard's bank` (or `Right-click deposits: pick Bank or Warband Bank on Blizzard's bank`). It never shows `Right-click deposits to:` with no tabs next to it.
+7. Click `...` and click `Show Blizzard's bank (buy tabs, gold)` (or `Hide Blizzard's bank`). Expected: the answer reads `Leave combat first`, and nothing moves.
+8. Click `Sort` in the header. Expected: a refusal, no sorting, and nothing runs later when combat ends.
+9. Leave combat. Close the bank and open it again. Expected: the tabs are in the header and everything works as in V13-1.
