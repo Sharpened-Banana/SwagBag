@@ -183,12 +183,15 @@ function BW.Show()
 	return SB.Config.Get("bank.show") == "both" and "both" or "one"
 end
 
--- The one-bank fold (cfg.groupClosed): true | false while "one" and the target is known (a header click
--- flips it until the target changes, BW.peek); nil otherwise, so the saved collapse set decides. The
--- saved set is never written for it.
+-- The one-bank fold (cfg.groupClosed): true | false while "one" (a header click flips it until the target
+-- changes, BW.peek); nil in "both", so the saved collapse set decides. With no target known both groups are
+-- open, the saved set ignored, and only a peek folds one. The saved set is never written for it.
 function BW.Folded(gid)
-	if BW.Show() ~= "one" or BW.target == nil then
+	if BW.Show() ~= "one" then
 		return nil
+	end
+	if BW.target == nil then
+		return BW.peek[gid] == true
 	end
 	return (gid ~= BW.target) ~= (BW.peek[gid] == true)
 end
@@ -450,7 +453,9 @@ BW.view = SB.GroupView.New({
 		if id == BW.target then
 			text = text .. L.BANK_GROUP_TARGET
 		end
-		if collapsed and BW.Folded(id) then -- folded by the one-bank rule: a click shows it
+		-- Sign and suffix both come from the drawn `collapsed` (a restack held under the mouse leaves the
+		-- drawing behind BW.Folded): folded in "one" mode means the click shows it.
+		if collapsed and BW.Show() == "one" then
 			text = text .. L.BANK_GROUP_FOLDED
 			local n = BW.found and BW.found[id] or 0
 			if n > 0 then
@@ -461,8 +466,11 @@ BW.view = SB.GroupView.New({
 	end,
 	groupClosed = BW.Folded,
 	toggleGroup = function(id) -- a header click in one-bank mode flips the fold for this target only
-		if BW.Folded(id) == nil then
+		if BW.Show() ~= "one" then
 			return false
+		end
+		if BW.view.redrawPending or BW.view.restackHeld then
+			return true -- the drawing is behind: a click now would flip what is not on screen
 		end
 		BW.peek[id] = not BW.peek[id] or nil
 		return true
@@ -563,7 +571,7 @@ function BW.ApplySearch()
 	BW.found = found
 	if BW.view.IsOpen() then
 		for _, h in ipairs(BW.view.GroupHeaders()) do
-			if h.collapsed and BW.Folded(h.id) and (old and old[h.id] or 0) ~= (found and found[h.id] or 0) then
+			if h.collapsed and BW.Show() == "one" and (old and old[h.id] or 0) ~= (found and found[h.id] or 0) then
 				BW.view.Relabel()
 				break
 			end
@@ -838,7 +846,8 @@ BW.sortButton:SetScript("OnEnter", Guard("bank.sortButton", function(self)
 	end
 	GameTooltip:SetOwner(self, "ANCHOR_TOP")
 	GameTooltip:SetText(L.BTN_SORT)
-	GameTooltip:AddLine(L.TIP_BANK_SORT:format(groupName(BW.SortKind())), 1, 1, 1, true)
+	GameTooltip:AddLine((BW.target and L.TIP_BANK_SORT or L.TIP_BANK_SORT_NONE):format(groupName(BW.SortKind())),
+		1, 1, 1, true)
 	GameTooltip:Show()
 end, "bank"))
 BW.sortButton:SetScript("OnLeave", hideTip)
@@ -1136,6 +1145,7 @@ SB.Slash.Register("bank", L.HELP_BANK, function(arg)
 		if not SB.Config.Set("bank.show", arg) then
 			return L.SETTINGS_READONLY
 		end
+		BW.peek = {} -- a peek belongs to the rule it flipped
 		if frame:IsShown() and BW.view.IsOpen() then
 			BW.view.Restack()
 		end

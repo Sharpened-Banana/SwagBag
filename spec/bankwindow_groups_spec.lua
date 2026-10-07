@@ -888,6 +888,77 @@ describe("BankWindow contents", function()
 		assert.same({ warband = true }, copy(SB.Config.UI().collapsed["bank:#"]))
 	end)
 
+	-- Final review fix 2. Mutation: BW.Folded returns nil when no target is known (the saved set decides).
+	it("one mode with no known target ignores the saved folds; a click peeks", function()
+		SB.Config.UI().collapsed = { ["bank:#"] = { warband = true } }
+		A.activeBankType = nil
+		openBank()
+		assert.equal(OPEN, #shownSlots(6))
+		assert.equal(OPEN, #shownSlots(12), "the saved fold is ignored")
+		assert.equal("- Warband bank (2)", header("#warband").text.text)
+		clickGroup("warband") -- folds for this view only
+		assert.same({}, shownSlots(12))
+		assert.equal(true, BW.peek.warband)
+		assert.same({ warband = true }, copy(SB.Config.UI().collapsed["bank:#"]), "the saved set is unchanged")
+		assert.equal(SB.L.BANK_GROUP_LABEL:format("+", SB.L.BANK_GROUP_WARBAND, 2) .. SB.L.BANK_GROUP_FOLDED,
+			header("#warband").text.text)
+		clickGroup("warband")
+		assert.equal(OPEN, #shownSlots(12))
+		assert.is_nil(BW.peek.warband)
+		assert.same({ warband = true }, copy(SB.Config.UI().collapsed["bank:#"]))
+	end)
+
+	-- Final review fix 3. Mutation: groupLabel reads BW.Folded(id) for the suffix (a held restack mislabels).
+	it("a label redrawn during a held target switch matches what is drawn", function()
+		local L = SB.L
+		openBank()
+		B.Get(6, 1).mouseOver = true
+		switchTab("warband") -- held: the bank stays drawn open, the warband stays drawn folded
+		BW.view.Relabel()
+		assert.equal(L.BANK_GROUP_LABEL:format("+", L.BANK_GROUP_WARBAND, 2) .. L.BANK_GROUP_TARGET .. L.BANK_GROUP_FOLDED,
+			header("#warband").text.text, "drawn folded: the sign and the suffix agree")
+		assert.equal(L.BANK_GROUP_LABEL:format("-", L.BANK_GROUP_BANK, 2), header("#bank").text.text)
+		B.Get(6, 1).mouseOver = false
+		A.Advance(0.3)
+		assert.equal(L.BANK_GROUP_LABEL:format("-", L.BANK_GROUP_WARBAND, 2) .. L.BANK_GROUP_TARGET,
+			header("#warband").text.text)
+	end)
+
+	-- Final review fix 3. Mutation: toggleGroup drops the held/redrawPending guard.
+	it("a header click while a restack is held does nothing in one mode", function()
+		openBank()
+		B.Get(6, 1).mouseOver = true
+		switchTab("warband") -- held
+		clickGroup("bank")
+		assert.same({}, BW.peek)
+		assert.same({}, copy(SB.Config.UI().collapsed["bank:#"]), "and the saved set is not written either")
+		B.Get(6, 1).mouseOver = false
+		A.Advance(0.3)
+		assert.same({}, BW.peek)
+		assert.same({}, shownSlots(6), "the switch landed; the click did not peek")
+		BW.view.redrawPending = true
+		clickGroup("bank")
+		assert.same({}, BW.peek)
+		assert.same({}, copy(SB.Config.UI().collapsed["bank:#"]))
+		BW.view.redrawPending = false
+		clickGroup("bank")
+		assert.equal(true, BW.peek.bank)
+	end)
+
+	-- Final review fix 6. Mutation: the one/both branch leaves BW.peek alone.
+	it("/swagbag bank one and both forget a peek", function()
+		openBank()
+		clickGroup("warband")
+		assert.equal(true, BW.peek.warband)
+		SB.Slash.Dispatch("bank both")
+		assert.same({}, BW.peek)
+		clickGroup("warband") -- both mode: the saved fold, not a peek
+		assert.same({}, BW.peek)
+		SB.Slash.Dispatch("bank one")
+		assert.same({}, BW.peek)
+		assert.same({}, shownSlots(12), "one mode starts from the rule again")
+	end)
+
 	-- Mutation: the setDimmed wrapper counts dimmed buttons too (or nothing).
 	it("a search counts matches hidden in the folded bank", function()
 		local L = SB.L

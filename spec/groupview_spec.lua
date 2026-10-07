@@ -796,6 +796,20 @@ describe("GroupView", function()
 			assert.truthy(v.pos)
 		end)
 
+		-- Final review fix 5. Mutation: Clear calls cfg.onHeaders({}) directly (untrapped).
+		it("an onHeaders error during Clear is trapped and Clear completes", function()
+			v.Layout("open")
+			f.cfg.onHeaders = function() error("clear boom") end
+			local before = #SB.ErrorTrap.Recent()
+			v.Clear()
+			local list = SB.ErrorTrap.Recent()
+			assert.equal(before + 1, #list)
+			assert.equal("groupview.onHeaders", list[#list].label)
+			assert.equal("bank", list[#list].window)
+			assert.is_nil(v.pos)
+			assert.same({}, v.GroupHeaders())
+		end)
+
 		it("the guild bank's views are unchanged", function()
 			v.Layout("open")
 			assert.equal(v.pos.width - 2 * SB.GroupView.PAD, header("#bank").w)

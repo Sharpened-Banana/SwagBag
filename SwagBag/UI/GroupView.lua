@@ -398,10 +398,13 @@ function GV.New(cfg)
 
 	-- The window hears about the headers once v.pos is set, trapped as this window: its error never
 	-- leaves a half-drawn view behind.
-	local function notifyHeaders(pos)
+	local function notifyList(list)
 		if cfg.onHeaders then
-			SB.ErrorTrap.Run("groupview.onHeaders", window, cfg.onHeaders, pos.groupHeaders)
+			SB.ErrorTrap.Run("groupview.onHeaders", window, cfg.onHeaders, list)
 		end
+	end
+	local function notifyHeaders(pos)
+		notifyList(pos.groupHeaders)
 	end
 
 	local function cellsOf(pos)
@@ -820,9 +823,11 @@ function GV.New(cfg)
 		end
 		local pos = positionAll()
 		if anyBusy(SB.Layout.Moves(v.pos, pos)) then
+			v.restackHeld = true -- the drawing is behind what a window's rule says (a header click waits)
 			SB.Debounce(cfg.key .. ".restack", GV.RETRY, v.Restack, window)
 			return false
 		end
+		v.restackHeld = false
 		renderMoved(v.pos, pos)
 		v.redrawPending = false -- positionAll drew every group's current state
 		cfg.onResize(pos.width, pos.height, true)
@@ -914,16 +919,14 @@ function GV.New(cfg)
 			end
 		end
 		v.groups, v.byId, v.pos, v.cells, v.redrawPending, v.heldKey = {}, {}, nil, {}, false, nil
-		v.listFailed = false
+		v.listFailed, v.restackHeld = false, false
 		SB.Buttons.ReleasePlaceholders(cfg.child)
 		SB.SectionHeaders.ReleaseAll(cfg.child)
 		if rows then
 			rows.HideAll()
 		end
 		v.headers = {}
-		if cfg.onHeaders then
-			cfg.onHeaders({})
-		end
+		notifyList({})
 	end
 
 	function v.GroupHeaders()
