@@ -99,7 +99,7 @@ describe("Report", function()
 	it("shows the New log after the bag hooks, oldest first", function()
 		SB.Checks.last = {}
 		SB.SafeModeHooks = { TRACE = 5, TraceText = function() return "none" end }
-		SB.Inventory = { NEW_LOG_MAX = 10, newLog = {
+		SB.Inventory = { NEW_LOG_MAX = 20, newLog = {
 			{ kind = "settle", at = 0, phase = "start", world = false, reason = "login" },
 			{ kind = "flush", at = 12.34, source = "delayed", settling = false, left = 0, came = 3, arrivals = 3,
 				marked = 3, stacks = 5, guarded = false, revealed = { known = 1, base = 0 }, fresh = 0, bags = { 0, 1 },
@@ -112,7 +112,7 @@ describe("Report", function()
 		} }
 		local expected = table.concat({
 			"Bag hooks (last 5): none",
-			"New log (last 10):",
+			"New log (last 20):",
 			"  +0.0s settle start (login)",
 			"  +12.3s delayed: left 0, came 3, arrivals 3, marked 3 of 5 stacks; bags 0,1; known 1 base 0 fresh 0 secret 2",
 			"  +13.0s failsafe (settling): left 6, came 0, arrivals 32, marked 0 of 38 stacks GUARDED; bags none; known 0"
@@ -126,8 +126,8 @@ describe("Report", function()
 	-- Mutation: drop the REPORT_NEW_NONE line (an empty log prints only its title).
 	it("an empty New log says nothing was logged", function()
 		SB.Checks.last = {}
-		SB.Inventory = { NEW_LOG_MAX = 10, newLog = {} }
-		assert.truthy(SB.Report.Build():find("\nNew log (last 10):\n  (nothing logged)", 1, true))
+		SB.Inventory = { NEW_LOG_MAX = 20, newLog = {} }
+		assert.truthy(SB.Report.Build():find("\nNew log (last 20):\n  (nothing logged)", 1, true))
 	end)
 
 	it("shows the bank setting, the last visit and the deposit target (check V2)", function()
