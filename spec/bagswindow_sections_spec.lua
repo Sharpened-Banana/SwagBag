@@ -1295,6 +1295,24 @@ describe("BagsWindow category view", function()
 		assert.equal(true, SB.Config.Get("bags.newAlways"))
 	end)
 
+	-- 0.13.2: the relief valve for a New flood. Mutations: in the `new` command, drop the W.RequestLayout call for
+	-- `seen` (New keeps its rows); drop the SeenAll call (nothing is cleared).
+	it("/swagbag new seen empties New: the open window regroups and the answer counts the items", function()
+		SB.Config.Set("bags.newAlways", false)
+		W.Open()
+		A.Put(0, 10, Fixtures.HERB, 20)
+		A.Put(0, 11, Fixtures.ORE, 3)
+		bagUpdate()
+		W.Reflow()
+		assert.equal("- New (2)", header("new").text.text)
+		A.printed = {}
+		SB.Slash.Dispatch("new seen")
+		assert.same({ SB.L.NEW_SEEN_DONE:format(2) }, A.Lines())
+		assert.same({}, SB.Inventory.unseen)
+		assert.is_nil(header("new"))
+		assert.equal(false, SB.Config.Get("bags.newAlways"), "the New setting is untouched")
+	end)
+
 	-- Ruling W4-14: the footer never covers an item. Mutation: in sizeFrame, `local foot = W.FOOTER`.
 	it("the footer's height is part of the window, and the scroll area ends above it", function()
 		SB.Footer = { Layout = function()

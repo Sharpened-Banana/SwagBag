@@ -648,3 +648,215 @@ describe("Inventory: login and loading screens never flood New", function()
 		assert.falsy(Inv.IsNew(0, 1), "what was there before is not")
 	end)
 end)
+
+-- 0.13.2 diagnostics: the New log (Inv.newLog), the one-time flood hint and Inv.SeenAll. The log only watches:
+-- every other test in this file is the proof that New and the settle behave as before.
+describe("Inventory: the New log", function()
+	local SB, A, Inv
+	before_each(function()
+		SB = Loader.New(FILES)
+		A, Inv = SB.Adapter, SB.Inventory
+		Fixtures.SmallBags(A)
+		A.SetBagSize(1, 4)
+		A.Put(1, 1, Fixtures.HERB, 20)
+		A.Put(1, 2, Fixtures.BOE_RING, 1)
+	end)
+
+	local function fire(event, ...)
+		SB.eventFrame:Fire(event, ...)
+	end
+
+	local function flushAll()
+		for _, bag in ipairs(A.GetBagIDs("bags")) do
+			fire("BAG_UPDATE", bag)
+		end
+		fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.1)
+	end
+
+	local function entries(kind)
+		local out = {}
+		for _, e in ipairs(Inv.newLog) do
+			if e.kind == kind then
+				out[#out + 1] = e
+			end
+		end
+		return out
+	end
+
+	local function fillBag(bag, size, n, id)
+		A.SetBagSize(bag, size)
+		for slot = 1, n do
+			A.Put(bag, slot, id, 1)
+		end
+	end
+
+	-- The leading hypothesis, logged: six backpack stacks read empty outside a settle and come back three at a time.
+	-- Each return is under the flood guard, so every returning stack is marked (the log shows it, nothing changes).
+	-- Mutations: in logFlush, count `left` with `~= nil` (left and came swap); drop the `arrivals <
+	-- Inv.NEW_LOG_ARRIVALS` condition (the two returning flushes are not logged).
+	it("logs a flush where 6 slots go empty, then the two flushes of 3 that bring them back", function()
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		local saved = {}
+		for slot = 1, 6 do
+			saved[slot], A.slots[0][slot] = A.slots[0][slot], nil
+		end
+		flushAll()
+		for slot = 1, 3 do
+			A.slots[0][slot] = saved[slot]
+		end
+		flushAll()
+		for slot = 4, 6 do
+			A.slots[0][slot] = saved[slot]
+		end
+		flushAll()
+		local f = entries("flush")
+		assert.equal(3, #f)
+		assert.same({ 6, 0, 0, 0, 2, false, false }, { f[1].left, f[1].came, f[1].arrivals, f[1].marked, f[1].stacks,
+			f[1].guarded, f[1].settling })
+		assert.same({ 0, 3, 3, 3, 5, false }, { f[2].left, f[2].came, f[2].arrivals, f[2].marked, f[2].stacks, f[2].guarded })
+		assert.same({ 0, 3, 3, 3, 8, false }, { f[3].left, f[3].came, f[3].arrivals, f[3].marked, f[3].stacks, f[3].guarded })
+		assert.equal("delayed", f[1].source)
+		assert.same({ 0 }, f[1].bags)
+		assert.same({ known = 0, base = 0 }, f[2].revealed)
+		assert.equal(0, f[2].fresh)
+		assert.equal(0, f[2].secret)
+	end)
+
+	-- Mutation: in markUnseen, log `guarded = false` on the flood guard's early return (or drop that log call).
+	it("the flood guard's flush is logged GUARDED with nothing marked", function()
+		fillBag(2, 30, 30, Fixtures.ORE)
+		local saved1, saved2 = A.slots[1], A.slots[2]
+		A.slots[1], A.slots[2] = {}, {}
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.slots[1], A.slots[2] = saved1, saved2
+		flushAll()
+		local f = entries("flush")
+		local last = f[#f]
+		assert.equal(true, last.guarded)
+		assert.equal(0, last.marked)
+		assert.equal(32, last.arrivals)
+		assert.equal(38, last.stacks)
+		assert.same({ 1, 2 }, last.bags)
+	end)
+
+	-- Mutation: in Inv.Flush, call Inv.EndSettle() with no reason at the cap (the reason reads "quiet").
+	it("a settle logs its start and its end with the reason", function()
+		SB.Emit("SB_LOGIN")
+		A.Advance(2.34)
+		fire("PLAYER_ENTERING_WORLD", true, false)
+		A.Advance(Inv.SETTLE_QUIET + 0.1)
+		local s = entries("settle")
+		assert.equal(3, #s)
+		assert.same({ "start", false, "login", 0 }, { s[1].phase, s[1].world, s[1].reason, s[1].at })
+		assert.same({ "start", true, "world", 2.3 }, { s[2].phase, s[2].world, s[2].reason, s[2].at })
+		assert.same({ "end", "quiet" }, { s[3].phase, s[3].reason })
+		fire("PLAYER_ENTERING_WORLD", false, false)
+		for _ = 1, Inv.SETTLE_MAX + 1 do
+			A.Put(0, 15, Fixtures.JUNK, 1)
+			flushAll()
+			A.Advance(0.5)
+			A.Clear(0, 15)
+			flushAll()
+			A.Advance(0.5)
+		end
+		s = entries("settle")
+		assert.same({ "end", "cap" }, { s[#s].phase, s[#s].reason })
+	end)
+
+	-- Mutation: in Inv.Flush, log the cap's reason as "cap" whatever Inv.worldLoaded says.
+	it("the login settle's cap is logged as the login cap", function()
+		SB.Emit("SB_LOGIN")
+		A.Advance(Inv.SETTLE_LOGIN_MAX + 1)
+		flushAll()
+		local s = entries("settle")
+		assert.same({ "end", "login cap" }, { s[#s].phase, s[#s].reason })
+	end)
+
+	-- Mutation: in Inv.ScanKind, drop the scankind log entry.
+	it("a rescan of a kind is logged with its bag changes", function()
+		SB.Emit("SB_LOGIN")
+		Inv.ScanKind("bank", true)
+		local k = entries("scankind")
+		assert.equal(1, #k)
+		assert.same({ "bank", 0 }, { k[1].scanned, k[1].changes })
+	end)
+
+	-- Mutation: in the log's push, drop the `table.remove(log, 1)` (the ring grows past 10).
+	it("the ring keeps only the last 10 entries", function()
+		SB.Emit("SB_LOGIN")
+		for i = 1, 12 do
+			A.Advance(1)
+			Inv.Settle(i % 2 == 0)
+		end
+		assert.equal(10, #Inv.newLog)
+		assert.equal(12, Inv.newLog[10].at)
+		assert.equal(3, Inv.newLog[1].at)
+	end)
+
+	-- Mutation: drop the `>= 5` condition (a single loot is logged and fills the ring at idle play).
+	it("a small flush is not logged", function()
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.Put(0, 12, Fixtures.HERB, 3)
+		flushAll()
+		assert.equal(0, #entries("flush"))
+	end)
+
+	-- Mutations: `>= 20` -> `> 20` (no hint at 20); drop the once-per-session flag (a second hint); print at once
+	-- instead of through SB.Adapter.After(0, ...) (printed inside the flush).
+	it("a flush that marks 20 stacks prints the hint once, on the next frame", function()
+		fillBag(2, 30, 30, Fixtures.ORE)
+		fillBag(3, 30, 0, Fixtures.ORE)
+		fillBag(4, 30, 0, Fixtures.ORE)
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.printed = {}
+		for slot = 1, 20 do
+			A.Put(3, slot, Fixtures.HERB, 1)
+		end
+		local duringFlush
+		Inv.OnChanged(function()
+			duringFlush = duringFlush or #A.printed
+		end)
+		flushAll()
+		assert.equal(0, duringFlush, "not inside the flush")
+		assert.same({ SB.L.NEW_FLOOD_HINT:format(20) }, A.Lines())
+		for slot = 21, 30 do
+			A.Put(3, slot, Fixtures.JUNK, 1)
+		end
+		fillBag(4, 30, 30, Fixtures.FLASK)
+		flushAll()
+		assert.equal(1, #A.Lines(), "once per session")
+	end)
+
+	it("a flush that marks 19 stacks prints no hint", function()
+		fillBag(2, 30, 30, Fixtures.ORE)
+		fillBag(3, 30, 0, Fixtures.ORE)
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.printed = {}
+		for slot = 1, 19 do
+			A.Put(3, slot, Fixtures.HERB, 1)
+		end
+		flushAll()
+		assert.same({}, A.Lines())
+		assert.equal(19, entries("flush")[1].marked)
+	end)
+
+	-- Mutations: in Inv.SeenAll, drop `Inv.unseen = {}`; drop the ClearNewItems call; clear newSet for every bag.
+	it("SeenAll marks every unseen item seen, clears the bags' new keyword and the client's flags", function()
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.Put(0, 12, Fixtures.HERB, 3)
+		A.Put(0, 13, Fixtures.JUNK, 1)
+		flushAll()
+		Inv.newSet["13:1"] = true -- a bank slot's `new` stays
+		assert.equal(2, Inv.SeenAll())
+		assert.same({}, Inv.unseen)
+		assert.same({ ["13:1"] = true }, Inv.newSet)
+		assert.same(A.GetBagIDs("bags"), A.newClearedBags[#A.newClearedBags])
+	end)
+end)

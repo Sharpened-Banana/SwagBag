@@ -1627,8 +1627,15 @@ end, "bags")
 
 -- /swagbag new always|auto (ruling W4-15): New keeps its rows when empty (always), or shows only
 -- once something new arrives (auto, the default). Regroups now, or once the mouse leaves the items.
+-- /swagbag new seen (0.13.2, the relief valve for a New flood): every unseen item is seen (Inventory.SeenAll); an
+-- open window regroups through its held layout, so nothing moves under the mouse (P5).
 SB.Slash.Register("new", L.HELP_NEW, function(arg)
 	arg = (arg or ""):lower()
+	if arg == "seen" then
+		local n = SB.Inventory.SeenAll()
+		W.RequestLayout("newseen")
+		return L.NEW_SEEN_DONE:format(n)
+	end
 	if arg ~= "always" and arg ~= "auto" then
 		return L.NEW_USAGE:format(SB.Config.Get("bags.newAlways") and "always" or "auto")
 	end
