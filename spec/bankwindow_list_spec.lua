@@ -93,6 +93,7 @@ describe("BankWindow list view (week 8)", function()
 	-- Mutations: in GroupView's build(), drop the SB.Sort.DisplayOrder call; in its place(), offset by x, y
 	-- (not x / scale, y / scale).
 	it("each group's sections, one row per slot: the slot's own button at row size, its texts beside it", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		SB.Config.Set("bank.view", "list")
 		openBank()
 		assert.equal("list", BW.view.drawn)
@@ -157,6 +158,7 @@ describe("BankWindow list view (week 8)", function()
 	-- Spec 4.3 in the list. Mutations: in GroupView's renderExtras, drop the rows.Ghosts call; in its showAt,
 	-- drop the rows.Place call.
 	it("a deposit lands in New as a row; a withdrawal leaves a row-size placeholder and a ghost row", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		SB.Config.Set("bank.view", "list")
 		openBank()
 		local herb, ore = on(6, 2), on(12, 1)
@@ -221,6 +223,7 @@ describe("BankWindow list view (week 8)", function()
 
 	-- AC5.1. Mutation: the bank search box's setDimmed back to SB.Buttons.SetDimmed (rows stay bright).
 	it("the bank's search dims a non-matching row with its button", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		SB.Config.Set("bank.view", "list")
 		openBank()
 		BW.searchBox.editBox:SetText("ore")

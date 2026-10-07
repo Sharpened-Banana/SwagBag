@@ -15,7 +15,9 @@
 -- below, each with its own category sections (or grid), for the purchased tabs the client
 -- reports, as categories, a list (week 8: one row per slot, the bags window's columns and order,
 -- UI/ListRows.lua) or a grid. The receiving group is tinted and says "right-clicked items land here". Items move only into
--- New or Free while the window is open (spec 4.3). Sort buttons call Blizzard's bank sort
+-- New or Free while the window is open (spec 4.3). With bank.show "one" (the default, week 13) only
+-- the group the selected tab deposits into is open; the other folds to one line, and a click on its
+-- header shows it until the tab changes ("both": /swagbag bank both, Settings). Sort buttons call Blizzard's bank sort
 -- and regroup after the bank settles; in combat they refuse with feedback and nothing runs
 -- later (spec 5.5, ruling W11). The window has its own search box.
 -- "Deposit warbound" (week 6, user request 3) runs the game's own warband deposit through the
@@ -28,6 +30,8 @@ local BW = {
 	interaction = false, -- the bank visit is open (between BANKFRAME_OPENED and _CLOSED)
 	visit = nil, -- "tiny" | "beside" for this visit (the Blizzard bank button), nil = setting
 	target = nil, -- "bank" | "warband" | nil: Blizzard's selected bank type, last read
+	peek = {}, -- { [gid] = true }: groups whose one-bank fold the player flipped for this target (in memory only)
+	found = nil, -- { bank = n, warband = n }: search matches per group while a search is active
 	lastVisit = nil, -- "tiny" | "beside": the mode of the last visit (for /swagbag report)
 	sortPending = false, -- a Sort was pressed and the bank updates are still settling
 	sortSawUpdate = false,
@@ -165,6 +169,22 @@ local function groupName(kind)
 end
 BW.GroupName = groupName
 
+-- bank.show (week 13): "one" opens only the bank Blizzard's selected tab deposits into; "both" is the
+-- layout before it, where the saved group folds decide. Anything else reads as "one".
+function BW.Show()
+	return SB.Config.Get("bank.show") == "both" and "both" or "one"
+end
+
+-- The one-bank fold (cfg.groupClosed): true | false while "one" and the target is known (a header click
+-- flips it until the target changes, BW.peek); nil otherwise, so the saved collapse set decides. The
+-- saved set is never written for it.
+function BW.Folded(gid)
+	if BW.Show() ~= "one" or BW.target == nil then
+		return nil
+	end
+	return (gid ~= BW.target) ~= (BW.peek[gid] == true)
+end
+
 -- true while the visit is tiny and Blizzard's tab buttons hang on this window (read from where the
 -- tabs live, so a tab system that could not be moved, or a visit that began in combat, is false).
 function BW.TabsInHeader()
@@ -199,8 +219,13 @@ function BW.RefreshTarget()
 	BW.target = SB.Adapter.ActiveBankType()
 	placeBar()
 	frame.deposit:SetText(BW.BarText())
-	if old ~= BW.target and BW.view and BW.view.IsOpen() then
-		BW.view.Relabel() -- the tint and "deposits go here" move to the other group
+	if old ~= BW.target then
+		BW.peek = {} -- a peek lasts until the tab changes
+		if BW.view and BW.view.IsOpen() then
+			-- The open bank follows the tab, and the tint and "deposits go here" move with it. Restack
+			-- redraws the headers too, and holds while a button that would move is under the mouse (P5).
+			BW.view.Restack()
+		end
 	end
 	SB.Emit("SB_BANK_TARGET", BW.target)
 end
@@ -330,6 +355,7 @@ end, { click = L.LIST_BANK_ROW_CLICK, emptyTip = L.LIST_BANK_EMPTY_TIP, gone = L
 	end }) or nil
 
 local searchBox -- the bank's search box, built below the view
+local counting -- while BW.ApplySearch runs a search: { groupOf = { [button] = gid }, found = { [gid] = n } }
 
 local function bagsOf(kind)
 	local A, B, list = SB.Adapter, SB.Buttons, {}
@@ -422,8 +448,26 @@ BW.view = SB.GroupView.New({
 		if id == BW.target then
 			text = text .. L.BANK_GROUP_TARGET
 		end
+		if collapsed and BW.Folded(id) then -- folded by the one-bank rule: a click shows it
+			text = text .. L.BANK_GROUP_FOLDED
+			local n = BW.found and BW.found[id] or 0
+			if n > 0 then
+				text = text .. L.BANK_GROUP_FOUND:format(n)
+			end
+		end
 		return text
 	end,
+	groupClosed = BW.Folded,
+	toggleGroup = function(id) -- a header click in one-bank mode flips the fold for this target only
+		if BW.Folded(id) == nil then
+			return false
+		end
+		BW.peek[id] = not BW.peek[id] or nil
+		return true
+	end,
+	groupTip = Guard("bank.groupTip", function(id, header)
+		BW.GroupTip(id, header)
+	end, "bank"),
 	groupTint = function(id)
 		return id == BW.target
 	end,
@@ -449,7 +493,7 @@ BW.view = SB.GroupView.New({
 	end,
 	onResize = sizeFrame,
 	onUpdated = function()
-		searchBox.Apply()
+		BW.ApplySearch()
 		SB.Emit("SB_BANK_CHANGED") -- a held layout landed: what the bank shows changed
 	end,
 	onDrop = function(sectionId)
@@ -486,20 +530,53 @@ searchBox = SB.SearchBox.New({
 		return BW.IsOpen()
 	end,
 	forEachSlot = function(fn)
-		return BW.view.ForEachSlot(fn)
+		return BW.view.ForEachSlot(function(button, record, bag, slot)
+			if counting then
+				counting.groupOf[button] = BW.view.GroupOf(bag)
+			end
+			return fn(button, record, bag, slot)
+		end)
 	end,
 	setDimmed = function(button, dimmed) -- the button, and in the list its row
+		local gid = counting and not dimmed and counting.groupOf[button]
+		if gid then
+			counting.found[gid] = (counting.found[gid] or 0) + 1
+		end
 		return BW.view.SetDimmed(button, dimmed)
 	end,
 })
 BW.searchBox = searchBox
+
+-- The search, counting each group's matches (folded cells are visited too), so a folded bank can say
+-- "n found" without unfolding. The headers are drawn again only when a folded group's count changed.
+-- The box's own typing runs through it as well (its Run calls Box.Apply).
+local applySearch = searchBox.Apply
+function BW.ApplySearch()
+	local active = searchBox.search.IsActive()
+	counting = active and { groupOf = {}, found = { bank = 0, warband = 0 } } or nil
+	local matches, total, ms = applySearch()
+	local found = counting and counting.found
+	counting = nil
+	local old = BW.found
+	BW.found = found
+	if BW.view.IsOpen() then
+		for _, h in ipairs(BW.view.GroupHeaders()) do
+			if h.collapsed and BW.Folded(h.id) and (old and old[h.id] or 0) ~= (found and found[h.id] or 0) then
+				BW.view.Relabel()
+				break
+			end
+		end
+	end
+	return matches, total, ms
+end
+searchBox.Apply = BW.ApplySearch
 
 -- Full layout of both groups, then the search dimming. SB_BANK_CHANGED (week 8): the bank's contents as
 -- drawn changed (a layout, or items that arrived, left or changed while open); the worth glow's "your top
 -- X %" line follows it (UI/Overlays.lua).
 function BW.Layout(reason)
 	BW.view.Layout(reason)
-	searchBox.Apply()
+	BW.ApplySearch()
 	SB.Emit("SB_BANK_CHANGED")
 end
 
@@ -762,6 +839,30 @@ BW.barHit:EnableMouse(true)
 BW.barHit:SetScript("OnEnter", depositTip(L.TIP_DEPOSIT_BAR_TITLE, L.TIP_DEPOSIT_BAR, "bank.barTip"))
 BW.barHit:SetScript("OnLeave", hideTip)
 
+-- A group header's tooltip (cfg.groupTip, trapped as bank.groupTip): the bank's name, whose bank it is,
+-- and what a click does now. The click line follows the drawn fold; a group folded by the saved set
+-- ("Both banks") gets none, since its click is the plain fold toggle.
+function BW.GroupTip(id, header)
+	if not GameTooltip then
+		return
+	end
+	local collapsed
+	for _, h in ipairs(BW.view.GroupHeaders()) do
+		if h.id == id then
+			collapsed = h.collapsed
+		end
+	end
+	GameTooltip:SetOwner(header, "ANCHOR_TOP")
+	GameTooltip:SetText(groupName(id))
+	GameTooltip:AddLine(id == "warband" and L.TIP_GROUP_WARBAND or L.TIP_GROUP_BANK, 1, 1, 1, true)
+	if not collapsed then
+		GameTooltip:AddLine(L.TIP_GROUP_CLICK_HIDE, 1, 1, 1, true)
+	elseif BW.Folded(id) ~= nil then
+		GameTooltip:AddLine(L.TIP_GROUP_CLICK_SHOW, 1, 1, 1, true)
+	end
+	GameTooltip:Show()
+end
+
 -- Live updates while open (spec 4.3), for the bank tabs only: count, lock and loaded data
 -- repaint in place; an emptied slot or a different item goes to GroupView.Changes; a tab
 -- that appears or changes size lays the bank out again (held back like any full layout).
@@ -834,7 +935,7 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 	end
 	if touched then
 		v.RefreshTotals()
-		searchBox.Apply()
+		BW.ApplySearch()
 		SB.Emit("SB_BANK_CHANGED")
 	end
 end, "bank"))
@@ -901,6 +1002,7 @@ frame:SetScript("OnHide", Guard("bank.hide", function(self)
 		host.Restore()
 	end
 	BW.view.Clear()
+	BW.peek = {} -- the next opening starts from the one-bank rule again
 	BW.sortPending, BW.sortSawUpdate, BW.scaleWarned = false, false, false
 	SB.Emit("SB_BANK_CLOSED")
 	BW.RefreshStillOpen()
@@ -1015,6 +1117,15 @@ end, "none")
 
 SB.Slash.Register("bank", L.HELP_BANK, function(arg)
 	arg = (arg or ""):lower()
+	if arg == "one" or arg == "both" then -- bank.show: the open window follows at once (held under the mouse, P5)
+		if not SB.Config.Set("bank.show", arg) then
+			return L.SETTINGS_READONLY
+		end
+		if frame:IsShown() and BW.view.IsOpen() then
+			BW.view.Restack()
+		end
+		return arg == "one" and L.BANK_SHOW_ONE or L.BANK_SHOW_BOTH
+	end
 	if arg ~= "tiny" and arg ~= "beside" then
 		return L.BANK_USAGE:format(BW.Mode())
 	end

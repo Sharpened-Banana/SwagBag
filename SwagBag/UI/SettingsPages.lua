@@ -161,6 +161,11 @@ local function bankRows()
 			apply = function(v)
 				return run("bank " .. v)
 			end },
+		{ kind = "choice", label = L.SET_BANK_SHOW, get = get("bank.show"),
+			choices = { { value = "one", text = L.SET_BANK_SHOW_ONE }, { value = "both", text = L.SET_BANK_SHOW_BOTH } },
+			apply = function(v)
+				return run("bank " .. v)
+			end },
 		{ kind = "choice", label = L.SET_GUILD_MODE, get = get("guildBank.mode"),
 			choices = { { value = "full", text = L.SET_GUILD_FULL }, { value = "view", text = L.SET_GUILD_VIEW } },
 			apply = function(v)
