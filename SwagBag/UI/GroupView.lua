@@ -571,9 +571,6 @@ function GV.New(cfg)
 	---------------------------------------------------------------------------
 	-- Full layout
 	---------------------------------------------------------------------------
-	-- Read every slot into a fresh candidate (groups, records, sizes); nothing is drawn.
-	-- b.ms: where the time went (the groups and their buttons, reading the slots, the categories).
-	-- view: the view to build (default: the setting's, wanted()); b.view says which.
 	local function hideNew()
 		local h = cfg.hideEmptyNew
 		if type(h) == "function" then
@@ -582,6 +579,9 @@ function GV.New(cfg)
 		return h
 	end
 
+	-- Read every slot into a fresh candidate (groups, records, sizes); nothing is drawn.
+	-- b.ms: where the time went (the groups and their buttons, reading the slots, the categories).
+	-- view: the view to build (default: the setting's, wanted()); b.view says which.
 	local function build(view)
 		local A = SB.Adapter
 		view = view or wanted()
