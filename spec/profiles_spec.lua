@@ -140,6 +140,14 @@ describe("Profiles (week 7)", function()
 		assert.equal("list", data.settings["bank.view"])
 	end)
 
+	-- Week 13 Task 4. Mutation: drop `["bank.show"] = ...` from VALID (any word would come in).
+	it("bank.show travels in share strings", function()
+		C.Set("bank.show", "both")
+		local data = assert(Pr.Parse(Pr.Export(false)))
+		assert.equal("both", data.settings["bank.show"])
+		assert.same({ nil, "type", "bank.show" }, { Pr.Parse("SWAGBAG:1:s.bank.show=ssideways") })
+	end)
+
 	-- Week 9 (user pick 8). Mutation: drop `["sort.mode"] = ...` from VALID (any word would come in).
 	it("the Sort button's mode travels in a share string; a word it may not hold is refused", function()
 		C.Set("sort.mode", "stacks")

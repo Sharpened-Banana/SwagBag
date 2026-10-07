@@ -145,6 +145,22 @@ describe("Settings window", function()
 		assert.equal(1, refreshed)
 	end)
 
+	-- Week 13 Task 4. Mutation: delete the bank.show row from bankRows in SettingsPages.lua.
+	it("Settings > Bank & guild has the choice", function()
+		local L = SB.L
+		SW.Show("bank")
+		local found = false
+		for i = 1, SW.used.labels do
+			found = found or SW.labels[i].text == L.SET_BANK_SHOW
+		end
+		assert.truthy(found, "the row is labelled")
+		assert.same({ L.SET_BANK_SHOW_ONE, true }, { button(L.SET_BANK_SHOW_ONE).text, SW.selected[button(L.SET_BANK_SHOW_ONE)] == true })
+		click(L.SET_BANK_SHOW_BOTH)
+		click(L.SET_BANK_SHOW_ONE)
+		assert.same({ "bank both", "bank one" }, ran)
+		assert.equal("ran bank one", SW.lastStatus)
+	end)
+
 	-- Ruling W4-15. Mutation: delete the New row from bagsRows in SettingsPages.lua.
 	it("the New row runs /swagbag new, hidden first (the default), always shown next to it", function()
 		SB.Slash.Register("new", "test", function(arg)

@@ -89,6 +89,7 @@ describe("BankWindow contents", function()
 	end
 
 	it("a bank visit shows Character bank on top and Warband bank below, each with its own sections", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		openBank()
 		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (2)",
 			"- New (0)", "- Consumables (1)", "- Herbs (1)", "- Free (6)",
@@ -106,8 +107,9 @@ describe("BankWindow contents", function()
 		assert.same({ "285", "BoE" }, { r.topLeft.text, r.bind.text })
 	end)
 
-	-- Fix round 1: the click only relabels. Mutation: v.Relabel() -> v.Layout("target") in BW.RefreshTarget.
+	-- Fix round 1: the click only redraws the headers. Mutation: BW.view.Restack() -> BW.view.Layout("target") in BW.RefreshTarget.
 	it("the group that receives deposits is tinted; a tab click moves the highlight to the other group", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		openBank()
 		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#bank").bg.calls.SetColorTexture)
 		A.Put(6, 5, Fixtures.FLASK, 2) -- a deposit: one item in New
@@ -124,6 +126,7 @@ describe("BankWindow contents", function()
 	end)
 
 	it("bank section headers show each category's total value (F10)", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		A.items[Fixtures.HERB].sellPrice = 1500
 		A.auctionator = { prices = { ["item:" .. Fixtures.ORE] = 9000 } }
 		SB.Prices.Invalidate()
@@ -237,6 +240,7 @@ describe("BankWindow contents", function()
 	end)
 
 	it("a deposit shows in that group's New; nothing else moves", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		openBank()
 		local before = { at(6, 1), at(6, 2), at(12, 1), at(12, 2) }
 		A.Put(6, 5, Fixtures.FLASK, 2) -- a bag item right-clicked into the character bank
@@ -254,6 +258,7 @@ describe("BankWindow contents", function()
 
 	it("a withdrawal leaves a placeholder in its group; the slot joins that group's free slots (its tile's number)",
 		function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 			openBank()
 			assert.same({ 6, 6 }, { number(6, 3), number(12, 3) }, "one tile per group: its first empty slot")
 			A.Clear(6, 2)
@@ -274,6 +279,7 @@ describe("BankWindow contents", function()
 	-- character bank and the warband bank alike. Mutation: in GroupView's build(), pass
 	-- `family = function(bag) return bag end` (one tile per tab).
 	it("each group's tabs share one free tile with the group's number: character bank and warband bank", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		A.bagIDs.bank, A.bagIDs.warband = { 6, 7 }, { 12, 13 }
 		A.SetBagSize(7, 4)
 		A.SetBagSize(13, 4)
@@ -440,6 +446,7 @@ describe("BankWindow contents", function()
 	end)
 
 	it("the grid view shows each group in physical order", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		SB.Config.Set("bank.view", "grid")
 		openBank()
 		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (2)" }, labels())
@@ -529,6 +536,7 @@ describe("BankWindow contents", function()
 	end)
 
 	it("a bank tab change during the visit (BANK_TAB_SETTINGS_UPDATED) lays the bank out again", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		openBank()
 		A.bagIDs.warband = { 12, 13 }
 		A.SetBagSize(13, 98)
@@ -612,6 +620,7 @@ describe("BankWindow contents", function()
 	-- return SB.Focus.CollapsedView(set) when SB.Focus exists. (The guild bank window is the same
 	-- GroupView, so this pins it too.)
 	it("a focus mode never collapses the bank window's sections", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		Loader.LoadFile(SB, "SwagBag/Engine/Focus.lua")
 		SB.Focus.SetSignal("challengeMode", true)
 		openBank()
@@ -652,6 +661,7 @@ describe("BankWindow contents", function()
 
 	-- Mutation: place the controls once (skip the SetPoint when already placed).
 	it("the controls follow the header when the group above folds", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		openBank()
 		local before = warbandY()
 		BW.view.ToggleGroup("bank")
@@ -742,6 +752,207 @@ describe("BankWindow contents", function()
 		assert.truthy(BW.depositButton.shown and BW.reagentsBox.shown)
 		assert.equal(header("#bank").w - BW.DEPOSIT_W, header("#warband").w)
 	end)
+
+	-- Week 13 Task 4: one bank at a time, following the selected tab ("Both banks" in Settings).
+	local function shownSlots(bag)
+		local out = {}
+		for slot = 1, 8 do
+			if B.Get(bag, slot).shown then
+				out[#out + 1] = slot
+			end
+		end
+		return out
+	end
+
+	local OPEN = 3 -- an open group of these fixtures shows two items and its free tile
+
+	local function switchTab(kind)
+		A.activeBankType = kind
+		Fake.Fire(bf.TabSystem.tabs[kind == "warband" and 2 or 1], "OnClick")
+		A.Advance(0)
+	end
+
+	local function clickGroup(id)
+		header("#" .. id).scripts.OnClick(header("#" .. id))
+	end
+
+	local function copy(t)
+		local out = {}
+		for k, val in pairs(t or {}) do
+			out[k] = val
+		end
+		return out
+	end
+
+	-- Mutation: cfg.groupClosed returns nil (the saved set decides: both open).
+	it("only the bank you deposit into is open", function()
+		local L = SB.L
+		openBank()
+		assert.equal(OPEN, #shownSlots(6), "the bank's cells are shown")
+		assert.same({}, shownSlots(12), "every warband cell is hidden")
+		assert.equal(L.BANK_GROUP_LABEL:format("+", L.BANK_GROUP_WARBAND, 2) .. L.BANK_GROUP_FOLDED,
+			header("#warband").text.text)
+		assert.equal("  - click to show", L.BANK_GROUP_FOLDED)
+	end)
+
+	it("switching the tab switches the open bank", function()
+		openBank()
+		switchTab("warband")
+		assert.equal(OPEN, #shownSlots(12))
+		assert.same({}, shownSlots(6))
+		assert.equal(SB.L.BANK_GROUP_LABEL:format("+", SB.L.BANK_GROUP_BANK, 2) .. SB.L.BANK_GROUP_FOLDED,
+			header("#bank").text.text)
+	end)
+
+	-- P5. Mutation: BW.RefreshTarget calls BW.view.Layout("target") instead of BW.view.Restack().
+	it("a target switch under the mouse waits", function()
+		openBank()
+		B.Get(6, 1).mouseOver = true -- the bank would fold: this button would hide
+		switchTab("warband")
+		assert.truthy(B.Get(6, 1).shown, "held: the cells stay")
+		assert.same({}, shownSlots(12))
+		B.Get(6, 1).mouseOver = false
+		A.Advance(0.3)
+		assert.same({}, shownSlots(6), "the fold lands once the mouse leaves")
+		assert.equal(OPEN, #shownSlots(12))
+	end)
+
+	-- P2: the click answers by the group opening. Mutation: cfg.toggleGroup returns false (the saved set flips).
+	it("clicking the folded bank shows it until the tab changes", function()
+		openBank()
+		local before = copy(SB.Config.UI().collapsed["bank:#"])
+		clickGroup("warband")
+		assert.equal(OPEN, #shownSlots(12), "warband opens")
+		assert.equal(OPEN, #shownSlots(6), "and the bank stays open")
+		assert.equal(SB.L.BANK_GROUP_LABEL:format("-", SB.L.BANK_GROUP_WARBAND, 2), header("#warband").text.text)
+		assert.same(before, copy(SB.Config.UI().collapsed["bank:#"]), "the saved set is unchanged")
+		switchTab("warband")
+		switchTab("bank")
+		assert.same({}, shownSlots(12), "after a tab switch and back, warband is folded again")
+		assert.same(before, copy(SB.Config.UI().collapsed["bank:#"]))
+	end)
+
+	it("clicking the open bank folds it", function()
+		openBank()
+		clickGroup("bank")
+		assert.same({}, shownSlots(6))
+		assert.same({}, shownSlots(12))
+		assert.is_nil(SB.Config.UI().collapsed["bank:#"] and SB.Config.UI().collapsed["bank:#"].bank)
+		clickGroup("bank")
+		assert.equal(OPEN, #shownSlots(6))
+	end)
+
+	-- Review Focus 1. Mutation: BW.Folded drops the `BW.target ~= nil` test (no target: everything folds).
+	it("no known target shows both banks", function()
+		A.activeBankType = nil
+		openBank()
+		assert.equal(OPEN, #shownSlots(6))
+		assert.equal(OPEN, #shownSlots(12))
+		assert.equal("- Character bank (2)", header("#bank").text.text)
+		assert.equal("- Warband bank (2)", header("#warband").text.text)
+		for _, id in ipairs({ "#bank", "#warband" }) do
+			assert.truthy(header(id).bg.calls.SetColorTexture[2] ~= 0.85, id .. " is not tinted")
+		end
+	end)
+
+	-- Mutation: BW.Show() always returns "one".
+	it("Both banks brings back today's layout", function()
+		SB.Config.Set("bank.show", "both")
+		openBank()
+		assert.equal(OPEN, #shownSlots(6))
+		assert.equal(OPEN, #shownSlots(12))
+		assert.equal("- Warband bank (2)", header("#warband").text.text)
+		clickGroup("warband") -- folds through the saved set, as before
+		assert.equal(true, SB.Config.UI().collapsed["bank:#"].warband)
+		assert.same({}, shownSlots(12))
+		assert.equal("+ Warband bank (2)", header("#warband").text.text)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		openBank()
+		assert.same({}, shownSlots(12), "the saved fold of warband is respected")
+		assert.equal(OPEN, #shownSlots(6))
+	end)
+
+	-- Review Focus 5. Mutation: cfg.toggleGroup writes the saved set (v.Collapsed("#")[gid] = ...).
+	it("one-bank folds never touch the saved collapse set", function()
+		SB.Config.UI().collapsed = { ["bank:#"] = { warband = true } }
+		A.activeBankType = "warband"
+		openBank()
+		assert.equal(OPEN, #shownSlots(12), "the target wins over the saved fold")
+		assert.same({}, shownSlots(6))
+		clickGroup("bank") -- a peek
+		clickGroup("warband") -- a fold of the target
+		assert.equal(OPEN, #shownSlots(6))
+		assert.same({}, shownSlots(12))
+		SB.Slash.Dispatch("bank both")
+		assert.same({}, shownSlots(12), "warband is folded again from the saved set")
+		assert.equal(OPEN, #shownSlots(6))
+		assert.same({ warband = true }, copy(SB.Config.UI().collapsed["bank:#"]))
+	end)
+
+	-- Mutation: the setDimmed wrapper counts dimmed buttons too (or nothing).
+	it("a search counts matches hidden in the folded bank", function()
+		local L = SB.L
+		openBank()
+		BW.searchBox.editBox:SetText("ore")
+		Fake.Fire(BW.searchBox.editBox, "OnTextChanged")
+		A.Advance(0.2)
+		local text = header("#warband").text.text
+		assert.equal(L.BANK_GROUP_FOUND:format(1), text:sub(-#L.BANK_GROUP_FOUND:format(1)))
+		assert.equal("  - 1 found", L.BANK_GROUP_FOUND:format(1))
+		assert.same({ bank = 0, warband = 1 }, BW.found)
+		assert.same({}, shownSlots(12), "nothing unfolds")
+		assert.equal("- Character bank (2)  - right-clicked items land here", header("#bank").text.text,
+			"the open bank never says found")
+		BW.searchBox.editBox:SetText("")
+		Fake.Fire(BW.searchBox.editBox, "OnTextChanged")
+		A.Advance(0.2)
+		assert.is_nil(BW.found)
+		assert.equal(L.BANK_GROUP_LABEL:format("+", L.BANK_GROUP_WARBAND, 2) .. L.BANK_GROUP_FOLDED,
+			header("#warband").text.text)
+	end)
+
+	-- Mutation: cfg.groupTip unset (no tooltip).
+	it("group headers explain the two banks", function()
+		local L = SB.L
+		openBank()
+		local lines = {}
+		GameTooltip.AddLine = function(_, text)
+			lines[#lines + 1] = text
+		end
+		GameTooltip.ClearLines = function()
+			lines = {}
+		end
+		header("#warband").scripts.OnEnter(header("#warband"))
+		assert.equal(L.BANK_GROUP_WARBAND, GameTooltip.text)
+		assert.same({ L.TIP_GROUP_WARBAND, L.TIP_GROUP_CLICK_SHOW }, lines)
+		assert.truthy(GameTooltip.shown)
+		lines = {}
+		header("#bank").scripts.OnEnter(header("#bank"))
+		assert.equal(L.BANK_GROUP_BANK, GameTooltip.text)
+		assert.same({ L.TIP_GROUP_BANK, L.TIP_GROUP_CLICK_HIDE }, lines)
+	end)
+
+	-- P2. Mutation: the slash's one/both branch returns its answer without restacking an open window.
+	it("/swagbag bank one and both save and answer", function()
+		local L = SB.L
+		openBank()
+		local n, restack = 0, BW.view.Restack
+		BW.view.Restack = function(...)
+			n = n + 1
+			return restack(...)
+		end
+		SB.Slash.Dispatch("bank both")
+		assert.equal("both", SB.Config.Get("bank.show"))
+		assert.equal(OPEN, #shownSlots(12), "the open window restacks")
+		SB.Slash.Dispatch("bank one")
+		assert.equal("one", SB.Config.Get("bank.show"))
+		assert.same({}, shownSlots(12))
+		assert.equal(2, n)
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("bank both")
+		assert.equal("one", SB.Config.Get("bank.show"))
+		assert.same({ L.BANK_SHOW_BOTH, L.BANK_SHOW_ONE, L.SETTINGS_READONLY }, A.Lines())
+	end)
 end)
 
 describe("Bags and bank windows open together (Review Focus 1)", function()
@@ -785,6 +996,7 @@ describe("Bags and bank windows open together (Review Focus 1)", function()
 	end
 
 	it("a bags redraw (Reflow, a bag change) never takes the bank window's headers or placeholders", function()
+		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		W.Open()
 		SB.eventFrame:Fire("BANKFRAME_OPENED")
 		local headers = bankHeaders()
