@@ -78,6 +78,7 @@ describe("GuildBankWindow (check G1)", function()
 		SB = Loader.New(Env.ENGINE)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("bags.newAlways", true) -- these tests were written with New always drawn (0.13.1: it hides while empty by default)
 		Fixtures.Install(A)
 		Fake.Install()
 		Env.PaintGlobals()
@@ -1176,6 +1177,77 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal(reason, GW.view.stats.lastLayoutReason)
 		GW.Close()
 		assert.same({}, GW.pending)
+	end)
+end)
+
+-- 0.13.1: New hides while empty in the guild bank too (bags.newAlways, one setting for every window), and the
+-- guild bank draws no group bands.
+describe("GuildBankWindow New and bands (0.13.1)", function()
+	local SB, A, GW
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.Install(A)
+		Fake.Install()
+		Env.PaintGlobals()
+		blizzardGuildBank(A)
+		A.guild.tabs = { { tab = 1, name = "Mats", withdrawals = 5 }, { tab = 2, name = "Gear", withdrawals = 0 } }
+		A.guild.slots = { [1] = { [1] = { itemID = Fixtures.HERB, count = 20 } }, [2] = { [1] = { itemID = Fixtures.BOE_RING } } }
+		A.guild.current = 1
+		GW = Env.LoadGuild(SB)
+		SB.Emit("SB_LOGIN")
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+		Env.ClearPaintGlobals()
+	end)
+
+	local function openVault()
+		SB.eventFrame:Fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "GuildBanker")
+		for _ = 1, 4 do
+			SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED")
+			A.Advance(0.06)
+		end
+	end
+	local function header(id)
+		for _, h in ipairs(SB.SectionHeaders.inUse) do
+			if h.sectionId == id and h.shown then
+				return h
+			end
+		end
+	end
+
+	-- Mutation: in GuildBankWindow's GroupView cfg, delete `hideEmptyNew = function() ... end`.
+	it("an empty guild bank shows no New header on any tab by default", function()
+		openVault()
+		assert.falsy(header("tab1:new"))
+		assert.falsy(header("tab2:new"))
+		assert.truthy(header("tab1:c_herbs"))
+	end)
+
+	-- Mutation: in GuildBankWindow's hideEmptyNew, return true regardless of bags.newAlways.
+	it("bags.newAlways = true shows New on every tab when empty", function()
+		SB.Config.Set("bags.newAlways", true)
+		openVault()
+		assert.equal("- New (0)", header("tab1:new").text.text)
+		assert.equal("- New (0)", header("tab2:new").text.text)
+	end)
+
+	-- Mutation: replace the cfg's hideEmptyNew with `false`; a deposit would not matter (New is always drawn).
+	it("a deposit makes New appear on that tab only", function()
+		openVault()
+		A.guild.slots[1][7] = { itemID = Fixtures.FLASK, count = 3 }
+		SB.eventFrame:Fire("GUILDBANKBAGSLOTS_CHANGED")
+		assert.equal("- New (1)", header("tab1:new").text.text)
+		assert.falsy(header("tab2:new"))
+	end)
+
+	-- Mutation: give the guild bank's GroupView cfg a groupColor.
+	it("the guild bank draws no bands", function()
+		openVault()
+		assert.equal(0, #GW.view.bands)
 	end)
 end)
 

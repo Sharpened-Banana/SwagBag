@@ -819,6 +819,81 @@ describe("GroupView", function()
 			assert.equal(true, v.Collapsed("#").bank)
 		end)
 	end)
+	-- 0.13.1. Mutation: in GroupView's hideNew(), return `cfg.hideEmptyNew` as is (a function is always truthy).
+	it("hideEmptyNew may be a function, read at each build", function()
+		local hide = true
+		v, f = newView(SB)
+		f.cfg.hideEmptyNew = function() return hide end
+		v.Layout("open")
+		assert.falsy(header("bank:new"), "hidden while empty")
+		hide = false
+		v.Layout("again")
+		assert.truthy(header("bank:new"), "the next build reads the function again")
+		f.cfg.hideEmptyNew = true
+		v.Layout("again")
+		assert.falsy(header("bank:new"), "a plain boolean still works")
+	end)
+
+	describe("group bands (cfg.groupColor)", function()
+		local function colored(opts)
+			v, f = newView(SB, opts)
+			f.cfg.groupColor = function(id)
+				if id == "bank" then
+					return 0.85, 0.65, 0.25, 0.06
+				end
+				return 0.25, 0.65, 1.0, 0.06
+			end
+			return v
+		end
+
+		-- Mutation: in drawBands, `SetColorTexture(r, gr, b, a)` -> `SetColorTexture(r, gr, b, 1)`; or anchor every band at y 0.
+		it("draws one band per group with its colour, from its header's top to the next header", function()
+			colored().Layout("open")
+			local heads = v.GroupHeaders()
+			assert.equal(2, #v.bands)
+			assert.same({ 0.85, 0.65, 0.25, 0.06 }, v.bands[1].tex.calls.SetColorTexture)
+			assert.same({ 0.25, 0.65, 1.0, 0.06 }, v.bands[2].tex.calls.SetColorTexture)
+			assert.equal(heads[1].y, v.bands[1].frame.points[1][5])
+			assert.equal(heads[2].y, v.bands[2].frame.points[1][5])
+			assert.equal(-heads[2].y, v.bands[1].height, "down to the next group's header")
+			assert.equal(v.pos.height + heads[2].y, v.bands[2].height, "the last one to the content end")
+			assert.equal(v.pos.width, v.bands[1].frame.w, "the full content width")
+			assert.truthy(v.bands[1].frame:GetFrameLevel() < btn(6, 1):GetFrameLevel(), "below the item buttons")
+		end)
+
+		-- Mutation: delete the `g.collapsed and GV.GROUP_HEADER or` branch.
+		it("a folded group's band is the header's height only", function()
+			colored().Layout("open")
+			v.ToggleGroup("warband")
+			v.Restack()
+			assert.equal(SB.GroupView.GROUP_HEADER, v.bands[2].height)
+			assert.truthy(v.bands[1].height > SB.GroupView.GROUP_HEADER)
+		end)
+
+		-- Mutation: in v.Clear, drop releaseBands().
+		it("Clear hides the bands; a new layout reuses them", function()
+			colored().Layout("open")
+			local first = v.bands[1].frame
+			v.Clear()
+			assert.equal(0, #v.bands)
+			assert.equal(false, first.shown)
+			v.Layout("open")
+			assert.equal(first, v.bands[1].frame, "pooled, not created again")
+			assert.equal(true, first.shown)
+		end)
+
+		-- Mutation: draw a band when groupColor returns nil.
+		it("a group with no colour gets no band; no groupColor draws none", function()
+			colored()
+			f.cfg.groupColor = function(id) if id == "bank" then return 1, 0, 0, 0.06 end end
+			v.Layout("open")
+			assert.equal(1, #v.bands)
+			f.cfg.groupColor = nil
+			v.Layout("again")
+			assert.equal(0, #v.bands)
+		end)
+	end)
+
 end)
 
 describe("GroupView randomized (Park-Miller): hover holds across groups, section truth after every drain", function()

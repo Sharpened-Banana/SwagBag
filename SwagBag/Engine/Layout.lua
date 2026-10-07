@@ -14,7 +14,7 @@
 --   order: section ids in display order; New is forced first and Free last.
 --   opts: { columns, newRows, freeTile, family, hideEmptyNew }
 --     hideEmptyNew: an empty New is not drawn (no header, no reserved rows) until something
---       arrives (ruling W4-15, the bags window unless bags.newAlways); state.newShown says which
+--       arrives (ruling W4-15, every window unless bags.newAlways); state.newShown says which
 --     freeTile: Free shows ONE tile per bag family instead of every empty slot (plan D19)
 --     family(bag) -> key: empty slots of one family hold the same items (default: all "any").
 --       Called only when a slot JOINS the layout (Build, "added"); the answer is kept in
@@ -227,7 +227,7 @@ function Layout.Build(slots, assign, order, opts)
 	local new = section(st, Layout.NEW)
 	new.capacity = math.max(st.newRows, math.ceil(new.size / cols)) * cols
 	-- Ruling W4-15: with hideEmptyNew an empty New is not drawn until something arrives; without it
-	-- (the bank windows, bags.newAlways) New always keeps its header and rows.
+	-- (bags.newAlways) New always keeps its header and rows.
 	st.newShown = not opts.hideEmptyNew or new.size > 0
 	return st
 end

@@ -13,6 +13,7 @@ describe("GuildBankWindow list view (week 8)", function()
 		SB = Loader.New(Env.ENGINE)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("bags.newAlways", true) -- these tests were written with New always drawn (0.13.1: it hides while empty by default)
 		Fixtures.Install(A)
 		Fake.Install()
 		Env.PaintGlobals()

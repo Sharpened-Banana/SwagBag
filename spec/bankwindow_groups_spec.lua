@@ -22,6 +22,7 @@ describe("BankWindow contents", function()
 		SB = Loader.New(Env.ENGINE)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("bags.newAlways", true) -- these tests were written with New always drawn (0.13.1: it hides while empty by default)
 		Fixtures.SmallBags(A)
 		A.bagIDs.bank, A.bagIDs.warband = { 6 }, { 12 }
 		Fake.Install()
@@ -1031,6 +1032,7 @@ describe("Bags and bank windows open together (Review Focus 1)", function()
 		SB = Loader.New(Env.ENGINE)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("bags.newAlways", true) -- these tests were written with New always drawn (0.13.1: it hides while empty by default)
 		Fixtures.SmallBags(A)
 		A.bagIDs.bank, A.bagIDs.warband = { 6 }, { 12 }
 		Fake.Install()
@@ -1065,6 +1067,27 @@ describe("Bags and bank windows open together (Review Focus 1)", function()
 		end
 		return n
 	end
+
+	-- 0.13.1. Mutation: in /swagbag new, drop the loop that asks the bank windows for a layout.
+	it("/swagbag new always brings New into an open bank", function()
+		SB.Config.Set("bags.newAlways", false)
+		SB.Config.Set("bank.show", "both")
+		W.Open()
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		local function hasNew(id)
+			for _, h in ipairs(SB.SectionHeaders.inUse) do
+				if h.shown and h.sectionId == id then
+					return true
+				end
+			end
+			return false
+		end
+		assert.equal(false, hasNew("bank:new"))
+		SB.Slash.Run("new always")
+		A.Advance(SB.GroupView.RETRY + 0.01)
+		assert.equal(true, hasNew("bank:new"))
+		assert.equal(true, hasNew("warband:new"))
+	end)
 
 	it("a bags redraw (Reflow, a bag change) never takes the bank window's headers or placeholders", function()
 		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
@@ -1184,5 +1207,147 @@ describe("Bags title and bank at once (week 13 Task 3)", function()
 		SB.eventFrame:Fire("BANKFRAME_CLOSED")
 		assert.is_nil(W.bankTarget)
 		assert.equal(L.BAGS_TITLE, W.frame.title.text)
+	end)
+end)
+
+-- 0.13.1: New hides while empty in the bank (bags.newAlways, one setting for every window), and each bank
+-- group has a faint colour band (bank.groupColors).
+describe("BankWindow New and group colours (0.13.1)", function()
+	local SB, A, BW, B, bf
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		A.bagIDs.bank, A.bagIDs.warband = { 6 }, { 12 }
+		Fake.Install()
+		Env.PaintGlobals()
+		bf = blizzardBank()
+		A.frames.BankFrame = bf
+		A.activeBankType = "bank"
+		BW = Env.LoadBank(SB)
+		B = SB.Buttons
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.SetBagSize(6, 8)
+		A.SetBagSize(12, 8)
+		A.Put(6, 1, Fixtures.HEALING_POTION, 5)
+		A.Put(6, 2, Fixtures.HERB, 20)
+		A.Put(12, 1, Fixtures.ORE, 10)
+		A.Put(12, 2, Fixtures.BOE_RING, 1)
+		SB.Config.Set("bank.show", "both")
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+		Env.ClearPaintGlobals()
+	end)
+
+	local function openBank()
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+	end
+	local function bankUpdate(bag)
+		SB.eventFrame:Fire("BAG_UPDATE", bag)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.06)
+	end
+	local function header(id)
+		for _, h in ipairs(SB.SectionHeaders.inUse) do
+			if h.sectionId == id and h.shown then
+				return h
+			end
+		end
+	end
+	local function at(bag, slot)
+		local p = B.Get(bag, slot).points
+		p = p[#p]
+		return { p[4], p[5] }
+	end
+
+	-- Mutation: in BankWindow's GroupView cfg, delete `hideEmptyNew = function() ... end`.
+	it("an empty bank shows no New header in either group by default", function()
+		openBank()
+		assert.falsy(header("bank:new"))
+		assert.falsy(header("warband:new"))
+		assert.truthy(header("bank:c_consumables"), "the rest is drawn")
+	end)
+
+	-- Mutation: in BankWindow's hideEmptyNew, return false always (New is drawn from the start), or
+	-- return true always (an arrival never opens New).
+	it("a deposit makes New appear in that group only, with the item in it", function()
+		openBank()
+		A.Put(6, 5, Fixtures.FLASK, 2)
+		bankUpdate(6)
+		local new = assert(header("bank:new"), "New opened in the character bank")
+		assert.equal("- New (1)", new.text.text)
+		assert.equal(new.points[1][5] - 20, at(6, 5)[2], "the item is the first cell of New")
+		assert.falsy(header("warband:new"), "the warband bank has no New")
+	end)
+
+	-- Mutation: replace the cfg's hideEmptyNew with a function that ignores bags.newAlways (returns true).
+	it("bags.newAlways = true shows New in both groups when empty", function()
+		SB.Config.Set("bags.newAlways", true)
+		openBank()
+		assert.equal("- New (0)", header("bank:new").text.text)
+		assert.equal("- New (0)", header("warband:new").text.text)
+	end)
+
+	-- P5 (the held redraw path, as the bags window). Mutation: in the bank, apply the deposit with a layout
+	-- that ignores the mouse (BW.view.Layout instead of Changes' guarded redraw).
+	it("a deposit while the mouse is over a button that would move: the redraw is held, then lands", function()
+		openBank()
+		local warbandAt = at(12, 1)
+		B.Get(12, 1).mouseOver = true -- New opening in the character bank pushes the warband down
+		A.Put(6, 5, Fixtures.FLASK, 2)
+		bankUpdate(6)
+		assert.same(warbandAt, at(12, 1), "the hovered button did not move")
+		assert.falsy(header("bank:new"), "the redraw is held")
+		B.Get(12, 1).mouseOver = false
+		A.Advance(SB.GroupView.RETRY + 0.01)
+		assert.truthy(header("bank:new"), "it landed once the mouse left")
+		assert.truthy(at(12, 1)[2] < warbandAt[2], "the warband moved down")
+	end)
+
+	local function bands()
+		return BW.view.bands
+	end
+
+	-- Mutation: swap the two colours in BankWindow's groupColor; or draw the bands at y 0.
+	it("the bank shows two bands with the exact colours, each from its header's top", function()
+		openBank()
+		assert.equal(2, #bands())
+		assert.same({ 0.85, 0.65, 0.25, 0.06 }, bands()[1].tex.calls.SetColorTexture)
+		assert.same({ 0.25, 0.65, 1.0, 0.06 }, bands()[2].tex.calls.SetColorTexture)
+		local top = function(h) local p = h.points[#h.points] return p[5] end
+		assert.equal(top(header("#bank")), bands()[1].frame.points[1][5])
+		assert.equal(top(header("#warband")), bands()[2].frame.points[1][5])
+		assert.same({ 0.25, 0.85, 0.35, 0.3 }, header("#bank").bg.calls.SetColorTexture, "the deposit tint stays on top")
+	end)
+
+	-- Mutation: delete the folded branch in GroupView's drawBands.
+	it("a folded group's band is header height only (one-bank mode folds the other bank)", function()
+		SB.Config.Set("bank.show", "one")
+		openBank()
+		assert.equal(SB.GroupView.GROUP_HEADER, bands()[2].height, "the warband is folded")
+		assert.truthy(bands()[1].height > SB.GroupView.GROUP_HEADER)
+	end)
+
+	-- Mutation: delete the `bank.groupColors` check in groupColor.
+	it("bank.groupColors = false shows no bands; /swagbag bank colors redraws an open bank", function()
+		SB.Config.Set("bank.groupColors", false)
+		openBank()
+		assert.equal(0, #bands())
+		assert.equal(SB.L.BANK_COLORS_ON, (select(2, SB.Slash.Run("bank colors on"))))
+		assert.equal(2, #bands())
+		assert.equal(true, SB.Config.Get("bank.groupColors"))
+		assert.equal(SB.L.BANK_COLORS_OFF, (select(2, SB.Slash.Run("bank colors off"))))
+		assert.equal(0, #bands())
+		assert.equal(false, SB.Config.Get("bank.groupColors"))
+	end)
+
+	it("closing the bank hides the bands", function()
+		openBank()
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		assert.equal(0, #bands())
 	end)
 end)

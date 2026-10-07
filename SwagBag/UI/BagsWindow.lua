@@ -851,7 +851,7 @@ local function layoutSections(bags)
 	if isList() then
 		slots = SB.Sort.DisplayOrder(slots, SB.Sort.Spec(), SB.Sort.Value)
 	end
-	-- New is hidden while empty unless bags.newAlways (ruling W4-15); the bank windows never hide it.
+	-- New is hidden while empty unless bags.newAlways (ruling W4-15); the bank and guild bank windows follow it too.
 	W.state = SB.Layout.Build(slots, assignOf, SB.Categories.SectionOrder(),
 		{ columns = isList() and 1 or columns(),
 			newRows = isList() and W.LIST_NEW_ROWS or SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
@@ -1636,6 +1636,11 @@ SB.Slash.Register("new", L.HELP_NEW, function(arg)
 		return L.SETTINGS_READONLY
 	end
 	W.RequestLayout("new")
+	for _, other in ipairs({ SB.BankWindow, SB.GuildBankWindow }) do -- the bank windows follow the same setting
+		if other and other.view and other.view.IsOpen() then
+			other.view.RequestLayout("new")
+		end
+	end
 	return arg == "always" and L.NEW_MODE_ALWAYS or L.NEW_MODE_AUTO
 end, "bags")
 
