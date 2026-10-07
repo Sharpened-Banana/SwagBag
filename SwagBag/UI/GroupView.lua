@@ -394,8 +394,13 @@ function GV.New(cfg)
 			H.Acquire(child, h.group .. ":" .. h.id, labels[i], GV.PAD, h.y, width, owner)
 		end
 		v.headers = pos.groupHeaders
+	end
+
+	-- The window hears about the headers once v.pos is set, trapped as this window: its error never
+	-- leaves a half-drawn view behind.
+	local function notifyHeaders(pos)
 		if cfg.onHeaders then
-			cfg.onHeaders(pos.groupHeaders)
+			SB.ErrorTrap.Run("groupview.onHeaders", window, cfg.onHeaders, pos.groupHeaders)
 		end
 	end
 
@@ -447,6 +452,7 @@ function GV.New(cfg)
 		renderExtras(pos)
 		paintTiles(pos)
 		v.pos = pos
+		notifyHeaders(pos)
 	end
 
 	local function hideGone(old, pos)
@@ -476,6 +482,7 @@ function GV.New(cfg)
 		renderExtras(pos)
 		paintTiles(pos)
 		v.pos = pos
+		notifyHeaders(pos)
 	end
 
 	---------------------------------------------------------------------------
@@ -791,6 +798,7 @@ function GV.New(cfg)
 	function v.Relabel()
 		if v.pos then
 			renderExtras(v.pos)
+			notifyHeaders(v.pos)
 		end
 	end
 
