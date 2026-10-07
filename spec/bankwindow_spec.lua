@@ -452,14 +452,32 @@ describe("BankWindow frames (check V2)", function()
 	end)
 
 	-- Never invisible but clickable. Mutation: create the button on Blizzard's bank (parent bf).
+	-- Week 13: the button sits in the window's child, on the Warband header (spec/bankwindow_groups_spec.lua).
 	it("the deposit button is on SwagBag's window in tiny and beside mode, so it hides with that window", function()
+		A.bagIDs.warband = { 12 }
+		A.SetBagSize(12, 8)
 		openBank()
-		assert.equal(BW.frame, BW.depositButton.parent)
+		assert.equal(BW.child, BW.depositButton.parent)
 		assert.equal(SB.TinyHost.Parent(), bf.parent, "tiny: Blizzard's bank is invisible, our button is not")
 		Fake.Fire(BW.blizzardButton, "OnClick")
 		assert.equal(UIParent, bf.parent, "beside")
-		assert.equal(BW.frame, BW.depositButton.parent)
+		assert.equal(BW.child, BW.depositButton.parent)
 		assert.truthy(BW.frame.shown and BW.depositButton.shown)
+	end)
+
+	-- Week 13 Task 2. Mutation: in the OnEnter, drop the AddLine (the body).
+	it("Deposit warbound's tooltip says where it goes; With reagents' says whose setting it is", function()
+		openBank()
+		Fake.Fire(BW.depositButton, "OnEnter")
+		assert.equal(SB.L.BTN_DEPOSIT_WARBAND, GameTooltip.text)
+		assert.equal(SB.L.TIP_DEPOSIT_WARBAND, GameTooltip.calls.AddLine[1])
+		assert.equal(BW.depositButton, GameTooltip.calls.SetOwner[1])
+		assert.truthy(GameTooltip.shown)
+		Fake.Fire(BW.depositButton, "OnLeave")
+		assert.falsy(GameTooltip.shown)
+		Fake.Fire(BW.reagentsBox, "OnEnter")
+		assert.equal(SB.L.DEPOSIT_REAGENTS_LABEL, GameTooltip.text)
+		assert.equal(SB.L.TIP_DEPOSIT_REAGENTS, GameTooltip.calls.AddLine[1])
 	end)
 
 	-- Mutation: the box's OnClick flashes without calling A.SetDepositReagents.

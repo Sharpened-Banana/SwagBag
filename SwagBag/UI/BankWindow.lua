@@ -352,6 +352,11 @@ local function sizeFrame(width, height)
 	end
 	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -header)
 	child:SetSize(width, height)
+	-- The headers were drawn at the width before this one: when the room for the deposit controls
+	-- changed with it, only the headers are drawn again (nothing moves).
+	if BW.view and BW.DepositControlsShown() ~= (BW.insetDrawn or false) then
+		BW.view.Relabel()
+	end
 	local maxHeight = UIParent:GetHeight() * BW.MAX_HEIGHT_FRACTION / frame:GetScale()
 	frame:SetSize(width + 8, math.min(height, maxHeight - header - BW.FOOTER) + header + BW.FOOTER)
 	clampScroll()
@@ -379,6 +384,14 @@ BW.view = SB.GroupView.New({
 	end,
 	groupTint = function(id)
 		return id == BW.target
+	end,
+	groupInset = function(id) -- the Warband header leaves room for Deposit warbound and With reagents
+		local room = id == "warband" and BW.DepositControlsShown()
+		BW.insetDrawn = room and true or false -- what this draw used (sizeFrame checks it against the final width)
+		return room and BW.DEPOSIT_W or 0
+	end,
+	onHeaders = function(list)
+		BW.PlaceDepositControls(list)
 	end,
 	view = BW.View,
 	columns = function()
@@ -548,11 +561,11 @@ frame.title:SetWordWrap(false)
 ---------------------------------------------------------------------------
 -- SwagBag's own plain button makes the game call Blizzard's "Deposit All Warbound Items" makes
 -- (Adapter.DepositWarband, the warband bank by type: Blizzard's selected bank type is never read
--- for it nor set). It sits on this window under the title, so it shows in tiny and beside mode alike
--- and hides with the window: never invisible but clickable. Every click answers in the title (P2).
+-- for it nor set). It sits on the Warband group's header in this window, so it shows in tiny and beside
+-- mode alike and hides with the window: never invisible but clickable. Every click answers in the title (P2).
 -- It refuses in combat (nothing is queued, like Sort), while the warband bank is locked, and when a
 -- deposit would end an item's refund or that cannot be told: Blizzard's own button asks first, and
--- the "Blizzard bank" button shows it. SwagBag only reads the result: the items arrive in the
+-- the "..." menu's Show Blizzard's bank entry shows it. SwagBag only reads the result: the items arrive in the
 -- warband group's New like any deposit (spec 4.3).
 local function carried()
 	local A, list = SB.Adapter, {}
@@ -594,28 +607,75 @@ function BW.DepositWarband()
 	return true
 end
 
-BW.depositButton = titleButton(L.BTN_DEPOSIT_WARBAND, "bank.depositWarband", function()
+-- The three controls are plain frames on the Warband group's header (the header is in `child`, drawn
+-- there by GroupView; BW.PlaceDepositControls follows it through cfg.onHeaders). Headers are acquired
+-- in this same child after they are made, so the controls sit two levels above a header's or the
+-- header would take their clicks (ruling P2). The label belongs to the button so it is drawn above too.
+BW.DEPOSIT_W = 236 -- the room the three take at the header's right end
+BW.HEADER_LABEL_MIN = 160 -- the least the header keeps for its own name
+local HEADER_LEVEL = 3 -- child + 1 is a header's level; the controls are 2 above that
+
+BW.depositButton = CreateFrame("Button", nil, child, "UIPanelButtonTemplate")
+BW.depositButton:SetSize(128, 18)
+BW.depositButton:SetText(L.BTN_DEPOSIT_WARBAND)
+BW.depositButton:SetScript("OnClick", Guard("bank.depositWarband", function()
 	BW.DepositWarband()
-end, 128)
-BW.depositButton:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -54)
+end, "bank"))
+if SB.Theme then
+	SB.Theme.Button(BW.depositButton)
+end
 
 -- "With reagents": Blizzard's include-reagents choice for that deposit (its own setting, which its own
 -- box writes too). Shown ticked as the game has it; hidden when the game cannot say.
-BW.reagentsLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+BW.reagentsLabel = BW.depositButton:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 BW.reagentsLabel:SetPoint("RIGHT", BW.depositButton, "LEFT", -6, 0)
 BW.reagentsLabel:SetText(L.DEPOSIT_REAGENTS_LABEL)
-BW.reagentsBox = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+BW.reagentsBox = CreateFrame("CheckButton", nil, child, "UICheckButtonTemplate")
 BW.reagentsBox:SetSize(22, 22)
 BW.reagentsBox:SetPoint("RIGHT", BW.reagentsLabel, "LEFT", -2, 0)
 if SB.Theme then
 	SB.Theme.Text(BW.reagentsLabel, "small")
 end
 
+local reagentsKnown = false -- the game can say whether the deposit takes reagents
+local depositPlaced = false -- the controls sit on a Warband header now
+
+-- Room for the controls: the header keeps HEADER_LABEL_MIN for its own name.
+function BW.DepositControlsShown()
+	return child:GetWidth() - 2 * SB.GroupView.PAD >= BW.DEPOSIT_W + BW.HEADER_LABEL_MIN
+end
+
+local function showReagents()
+	local show = reagentsKnown and depositPlaced
+	BW.reagentsBox:SetShown(show)
+	BW.reagentsLabel:SetShown(show)
+end
+
 function BW.RefreshReagents()
 	local on = SB.Adapter.DepositReagents()
-	BW.reagentsBox:SetShown(on ~= nil)
-	BW.reagentsLabel:SetShown(on ~= nil)
+	reagentsKnown = on ~= nil
+	showReagents()
 	BW.reagentsBox:SetChecked(on == true)
+end
+
+-- cfg.onHeaders: follow the Warband header, or hide all three when it is not drawn or too narrow.
+function BW.PlaceDepositControls(list)
+	local entry
+	for _, h in ipairs(list) do
+		if h.id == "warband" then
+			entry = h
+		end
+	end
+	depositPlaced = entry ~= nil and BW.DepositControlsShown()
+	if depositPlaced then
+		local level = child:GetFrameLevel() + HEADER_LEVEL
+		BW.depositButton:SetFrameLevel(level)
+		BW.reagentsBox:SetFrameLevel(level)
+		BW.depositButton:ClearAllPoints()
+		BW.depositButton:SetPoint("TOPRIGHT", child, "TOPRIGHT", -SB.GroupView.PAD, entry.y - 2)
+	end
+	BW.depositButton:SetShown(depositPlaced)
+	showReagents()
 end
 
 BW.reagentsBox:SetScript("OnClick", Guard("bank.depositReagents", function()
@@ -628,8 +688,30 @@ BW.reagentsBox:SetScript("OnClick", Guard("bank.depositReagents", function()
 	BW.RefreshReagents()
 end, "bank"))
 
--- The deposit line ends left of the box, on one line.
-frame.deposit:SetPoint("RIGHT", BW.reagentsBox, "LEFT", -6, 0)
+-- Tooltips: the title is the control's own text, the body says what it does.
+local function depositTip(title, body)
+	return Guard("bank.depositTip", function(self)
+		if not GameTooltip then
+			return
+		end
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText(title)
+		GameTooltip:AddLine(body, 1, 1, 1, true)
+		GameTooltip:Show()
+	end, "bank")
+end
+local function hideTip()
+	if GameTooltip then
+		GameTooltip:Hide()
+	end
+end
+BW.depositButton:SetScript("OnEnter", depositTip(L.BTN_DEPOSIT_WARBAND, L.TIP_DEPOSIT_WARBAND))
+BW.depositButton:SetScript("OnLeave", hideTip)
+BW.reagentsBox:SetScript("OnEnter", depositTip(L.DEPOSIT_REAGENTS_LABEL, L.TIP_DEPOSIT_REAGENTS))
+BW.reagentsBox:SetScript("OnLeave", hideTip)
+
+-- The deposit line runs to the window's right edge, on one line.
+frame.deposit:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -58)
 frame.deposit:SetWordWrap(false)
 
 -- Live updates while open (spec 4.3), for the bank tabs only: count, lock and loaded data
