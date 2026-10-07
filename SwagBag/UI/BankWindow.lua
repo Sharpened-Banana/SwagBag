@@ -342,6 +342,17 @@ local function describe(bag, slot)
 	return record
 end
 
+-- The room the Warband header was drawn with; only meaningful while that header is drawn.
+local insetDrawn = false
+local function warbandDrawn()
+	for _, h in ipairs(BW.view.GroupHeaders()) do
+		if h.id == "warband" then
+			return true
+		end
+	end
+	return false
+end
+
 -- Fit the window around the content; scroll when taller than 75 % of the screen. Every anchor
 -- of this window is a top-left corner, so a resize never moves its top edge.
 local function sizeFrame(width, height)
@@ -354,7 +365,7 @@ local function sizeFrame(width, height)
 	child:SetSize(width, height)
 	-- The headers were drawn at the width before this one: when the room for the deposit controls
 	-- changed with it, only the headers are drawn again (nothing moves).
-	if BW.view and BW.DepositControlsShown() ~= (BW.insetDrawn or false) then
+	if BW.view and warbandDrawn() and BW.DepositControlsShown() ~= insetDrawn then
 		BW.view.Relabel()
 	end
 	local maxHeight = UIParent:GetHeight() * BW.MAX_HEIGHT_FRACTION / frame:GetScale()
@@ -387,7 +398,9 @@ BW.view = SB.GroupView.New({
 	end,
 	groupInset = function(id) -- the Warband header leaves room for Deposit warbound and With reagents
 		local room = id == "warband" and BW.DepositControlsShown()
-		BW.insetDrawn = room and true or false -- what this draw used (sizeFrame checks it against the final width)
+		if id == "warband" then
+			insetDrawn = room and true or false -- what this draw used (sizeFrame checks it against the final width)
+		end
 		return room and BW.DEPOSIT_W or 0
 	end,
 	onHeaders = function(list)
