@@ -99,24 +99,25 @@ describe("Report", function()
 	it("shows the New log after the bag hooks, oldest first", function()
 		SB.Checks.last = {}
 		SB.SafeModeHooks = { TRACE = 5, TraceText = function() return "none" end }
-		SB.Inventory = { NEW_LOG_MAX = 20, newLog = {
+		SB.Inventory = { NEW_LOG_MAX = 30, newLog = {
 			{ kind = "settle", at = 0, phase = "start", world = false, reason = "login" },
 			{ kind = "flush", at = 12.34, source = "delayed", settling = false, left = 0, came = 3, arrivals = 3,
 				marked = 3, stacks = 5, guarded = false, revealed = { known = 1, base = 0 }, fresh = 0, bags = { 0, 1 },
-				secret = 2 },
+				secret = 2, total = 4, open = { "vendor", "mail" } },
 			{ kind = "flush", at = 13, source = "failsafe", settling = true, left = 6, came = 0, arrivals = 32,
 				marked = 0, stacks = 38, guarded = true, revealed = { known = 0, base = 0 }, fresh = 0, bags = {},
-				secret = 0 },
+				secret = 0, total = 0, open = {} },
 			{ kind = "scankind", at = 20, scanned = "bank", changes = 0 },
 			{ kind = "settle", at = 21, phase = "end", world = true, reason = "login cap" },
 		} }
 		local expected = table.concat({
 			"Bag hooks (last 5): none",
-			"New log (last 20):",
+			"New log (last 30):",
 			"  +0.0s settle start (login)",
-			"  +12.3s delayed: left 0, came 3, arrivals 3, marked 3 of 5 stacks; bags 0,1; known 1 base 0 fresh 0 secret 2",
-			"  +13.0s failsafe (settling): left 6, came 0, arrivals 32, marked 0 of 38 stacks GUARDED; bags none; known 0"
-				.. " base 0 fresh 0 secret 0",
+			"  +12.3s delayed: left 0, came 3, arrivals 3, marked 3 of 5 stacks, New now 4; open: vendor,mail; bags 0,1;"
+				.. " known 1 base 0 fresh 0 secret 2",
+			"  +13.0s failsafe (settling): left 6, came 0, arrivals 32, marked 0 of 38 stacks, New now 0 GUARDED; open:"
+				.. " none; bags none; known 0 base 0 fresh 0 secret 0",
 			"  +20.0s rescan bank: 0 bag changes",
 			"  +21.0s settle end (login cap)",
 		}, "\n")
@@ -126,8 +127,8 @@ describe("Report", function()
 	-- Mutation: drop the REPORT_NEW_NONE line (an empty log prints only its title).
 	it("an empty New log says nothing was logged", function()
 		SB.Checks.last = {}
-		SB.Inventory = { NEW_LOG_MAX = 20, newLog = {} }
-		assert.truthy(SB.Report.Build():find("\nNew log (last 20):\n  (nothing logged)", 1, true))
+		SB.Inventory = { NEW_LOG_MAX = 30, newLog = {} }
+		assert.truthy(SB.Report.Build():find("\nNew log (last 30):\n  (nothing logged)", 1, true))
 	end)
 
 	it("shows the bank setting, the last visit and the deposit target (check V2)", function()

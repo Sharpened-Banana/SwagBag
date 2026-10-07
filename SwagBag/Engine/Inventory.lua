@@ -37,15 +37,17 @@
 --   Inv.IsUnseen(bag, slot) -> bool;  Inv.Seen(bag, slot);  Inv.SeenAll() -> n (/swagbag new seen)
 -- 0.13.2 diagnostics (the New flood after a vendor visit; the cause is not known yet): Inv.newLog keeps the last
 -- NEW_LOG_MAX entries, session only, for /swagbag report (Core/Report.lua). It only watches: nothing in it changes
--- what arrives. Counts only, written at a flush with NEW_LOG_CHANGES or more item changes in the bags or
--- NEW_LOG_ARRIVALS or more arrivals, at a settle's start and end, and at a rescan of a kind (Inv.ScanKind) that
--- changed an item in the bags (it should never):
---   { kind = "flush", at, source, settling, left, came, arrivals, marked, stacks, guarded,
---     revealed = { known, base }, fresh, bags = { bag IDs, ascending }, secret }
+-- what arrives. Counts only, written at a flush with NEW_LOG_CHANGES or more item changes in the bags,
+-- NEW_LOG_ARRIVALS or more arrivals, or anything marked while New holds NEW_LOG_TOTAL or more, at a settle's start
+-- and end, and at a rescan of a kind (Inv.ScanKind) that changed an item in the bags (it should never):
+--   { kind = "flush", at, source, settling, left, came, arrivals, marked, stacks, total (keys in Inv.unseen after
+--     the flush), guarded, revealed = { known, base }, fresh, bags = { bag IDs, ascending }, secret,
+--     open = { "vendor" | "bank" | "mail", ... } }
 --   { kind = "settle", at, phase = "start" | "end", world, reason = "login" | "world" | "quiet" | "cap" | "login cap" }
 --   { kind = "scankind", at, scanned = kind, changes = item changes in the bags }
--- `at` is seconds since the login scan (Inv.loginAt), to 0.1 s. A flush that marks NEW_HINT_MIN stacks or more
--- prints NEW_FLOOD_HINT once per session, on the next frame.
+-- `at` is seconds since the login scan (Inv.loginAt), to 0.1 s. A flush that marks NEW_HINT_MIN stacks or more, or
+-- New growing by NEW_HINT_GROWTH within NEW_HINT_WINDOW seconds, prints NEW_FLOOD_HINT once per session, on the
+-- next frame. The log and the hint run after the listeners, in a pcall: they can never stop a flush.
 local _, SB = ...
 
 local Inv = {
@@ -71,11 +73,16 @@ local Inv = {
 	FLOOD_MIN = 20, -- outside a settle, a flush bringing in at least this many stacks, more than half the bags, is
 	-- the client's late data, not loot (see the header)
 	newLog = {}, -- 0.13.2 diagnostics (see the header)
-	NEW_LOG_MAX = 20,
+	NEW_LOG_MAX = 30,
 	NEW_LOG_CHANGES = 5,
 	NEW_LOG_ARRIVALS = 3,
+	NEW_LOG_TOTAL = 30, -- and a flush that marked anything while New holds this many or more
 	NEW_HINT_MIN = 20,
+	NEW_HINT_GROWTH = 30, -- the hint also prints when New grows this much within NEW_HINT_WINDOW seconds
+	NEW_HINT_WINDOW = 20,
 	floodHinted = false,
+	hintTrail = {}, -- { { at, total } }: New's total before each flush of the last NEW_HINT_WINDOW seconds
+	mailOpen = false, -- MAIL_SHOW .. MAIL_CLOSED, for the log's `open` field (read only)
 }
 SB.Inventory = Inv
 
@@ -325,7 +332,30 @@ local function markUnseen(changes, set, before)
 end
 
 -- The New log's flush entry (see the header): counts only, and nothing unless the flush was a big one.
-local function logFlush(changes, set, source, arrivals, marked, guarded)
+local function unseenTotal()
+	local n = 0
+	for _ in pairs(Inv.unseen) do
+		n = n + 1
+	end
+	return n
+end
+
+-- The windows open at a flush (read only): the vendor (UI/Vendor.lua), a bank visit, the mailbox.
+local function openWindows()
+	local out = {}
+	if SB.Vendor ~= nil and SB.Vendor.open == true then
+		out[#out + 1] = "vendor"
+	end
+	if SB.AtBank() then
+		out[#out + 1] = "bank"
+	end
+	if Inv.mailOpen then
+		out[#out + 1] = "mail"
+	end
+	return out
+end
+
+local function logFlush(changes, set, source, arrivals, marked, guarded, total)
 	local left, came, fresh, bagSeen = 0, 0, 0, {}
 	local revealed = { known = 0, base = 0 }
 	for _, c in ipairs(changes) do
@@ -346,7 +376,8 @@ local function logFlush(changes, set, source, arrivals, marked, guarded)
 			end
 		end
 	end
-	if left + came < Inv.NEW_LOG_CHANGES and arrivals < Inv.NEW_LOG_ARRIVALS then
+	if left + came < Inv.NEW_LOG_CHANGES and arrivals < Inv.NEW_LOG_ARRIVALS
+		and not (marked >= 1 and total >= Inv.NEW_LOG_TOTAL) then
 		return
 	end
 	local bags = {}
@@ -359,19 +390,35 @@ local function logFlush(changes, set, source, arrivals, marked, guarded)
 		secret = secret + 1
 	end
 	logNew({ kind = "flush", source = source, settling = Inv.settling, left = left, came = came, arrivals = arrivals,
-		marked = marked, stacks = stacks(set), guarded = guarded, revealed = revealed, fresh = fresh, bags = bags,
-		secret = secret })
+		marked = marked, stacks = stacks(set), total = total, guarded = guarded, revealed = revealed, fresh = fresh,
+		bags = bags, secret = secret, open = openWindows() })
 end
 
--- A flush that marked NEW_HINT_MIN stacks or more: one chat hint per session, on the next frame (see the header).
-local function floodHint(marked)
-	if marked < Inv.NEW_HINT_MIN or Inv.floodHinted then
+-- A flush that marked NEW_HINT_MIN stacks or more, or New grown by NEW_HINT_GROWTH within NEW_HINT_WINDOW seconds
+-- (pre: New's total before this flush): one chat hint per session, on the next frame (see the header).
+local function floodHint(marked, pre, total)
+	if Inv.floodHinted then
 		return
 	end
-	Inv.floodHinted = true
+	local now = SB.Adapter.Now()
+	local trail, kept = Inv.hintTrail, {}
+	trail[#trail + 1] = { at = now, total = pre }
+	local low = pre
+	for _, t in ipairs(trail) do
+		if now - t.at <= Inv.NEW_HINT_WINDOW then
+			kept[#kept + 1] = t
+			low = math.min(low, t.total)
+		end
+	end
+	Inv.hintTrail = kept
+	local n = marked >= Inv.NEW_HINT_MIN and marked or (total - low >= Inv.NEW_HINT_GROWTH and total - low)
+	if not n then
+		return
+	end
+	Inv.floodHinted, Inv.hintTrail = true, {}
 	SB.Adapter.After(0, function()
 		SB.ErrorTrap.Run("inventory.floodhint", "bags", function()
-			SB.Print(SB.L.NEW_FLOOD_HINT:format(marked))
+			SB.Print(SB.L.NEW_FLOOD_HINT:format(n))
 		end)
 	end)
 end
@@ -391,6 +438,7 @@ function Inv.Flush(source)
 	local mask, all = 0, {}
 	local set = bagsSet()
 	local before = Inv.scanned and totals(set)
+	local pre = unseenTotal() -- the New log and hint (see the header)
 	for _, bag in ipairs(bags) do
 		local m, changes = Inv.ScanBag(bag)
 		mask = Inv.Or(mask, m)
@@ -398,12 +446,9 @@ function Inv.Flush(source)
 			all[#all + 1] = c
 		end
 	end
+	local arrivals, marked, guarded = 0, 0, false
 	if before then
-		local arrivals, marked, guarded = markUnseen(all, set, before)
-		logFlush(all, set, source, arrivals, marked, guarded)
-		floodHint(marked)
-	else
-		logFlush(all, set, source, 0, 0, false)
+		arrivals, marked, guarded = markUnseen(all, set, before)
 	end
 	if Inv.settling and Inv.worldLoaded then
 		Inv.Quiet() -- the bags are still filling: the settle waits for them to be quiet
@@ -412,6 +457,13 @@ function Inv.Flush(source)
 		Inv.lastFlush = source
 		Inv.Notify(mask, all)
 	end
+	pcall(function() -- diagnostics only: an error here never reaches the flush's caller (see the header)
+		local total = unseenTotal()
+		logFlush(all, set, source, arrivals, marked, guarded, total)
+		if before then
+			floodHint(marked, pre, total)
+		end
+	end)
 end
 
 -- Flush now the dirty bags of these kinds only (listeners are notified as usual); other
@@ -697,6 +749,15 @@ SB.On("PLAYER_ENTERING_WORLD", function()
 	if Inv.scanned then
 		Inv.Settle(true)
 	end
+end, "bags")
+
+-- The mailbox, for the New log's `open` field (read only).
+SB.On("MAIL_SHOW", function()
+	Inv.mailOpen = true
+end, "bags")
+
+SB.On("MAIL_CLOSED", function()
+	Inv.mailOpen = false
 end, "bags")
 
 SB.On("BANKFRAME_OPENED", function()

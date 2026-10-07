@@ -788,15 +788,15 @@ describe("Inventory: the New log", function()
 		assert.same({ "bags", 1 }, { k[1].scanned, k[1].changes })
 	end)
 
-	-- Mutation: in the log's push, drop the `table.remove(log, 1)` (the ring grows past 20).
-	it("the ring keeps only the last 20 entries", function()
+	-- Mutation: in the log's push, drop the `table.remove(log, 1)` (the ring grows past 30).
+	it("the ring keeps only the last 30 entries", function()
 		SB.Emit("SB_LOGIN")
-		for i = 1, 22 do
+		for i = 1, 32 do
 			A.Advance(1)
 			Inv.Settle(i % 2 == 0)
 		end
-		assert.equal(20, #Inv.newLog)
-		assert.equal(22, Inv.newLog[20].at)
+		assert.equal(30, #Inv.newLog)
+		assert.equal(32, Inv.newLog[30].at)
 		assert.equal(3, Inv.newLog[1].at)
 	end)
 
@@ -862,5 +862,103 @@ describe("Inventory: the New log", function()
 		assert.same({}, Inv.unseen)
 		assert.same({ ["13:1"] = true }, Inv.newSet)
 		assert.same(A.GetBagIDs("bags"), A.newClearedBags[#A.newClearedBags])
+	end)
+
+	-- A slow flood: two stacks a flush, each flush under every other threshold.
+	local filled
+	local function trickle(flushes, gap)
+		for _ = 1, flushes do
+			filled = (filled or 0) + 2
+			A.Put(2, filled - 1, Fixtures.HERB, 1)
+			A.Put(2, filled, Fixtures.JUNK, 1)
+			flushAll()
+			A.Advance(gap or 0)
+		end
+	end
+
+	-- Gap 1. Mutations: drop the `marked >= 1 and total >= NEW_LOG_TOTAL` condition (nothing logged); record
+	-- `total` before markUnseen (one short).
+	it("a flood arriving two stacks a flush is logged once New holds 30, with New's total", function()
+		filled = 0
+		A.SetBagSize(2, 36)
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		trickle(14)
+		assert.equal(0, #entries("flush"), "28 in New: small flushes are not logged")
+		trickle(1)
+		local f = entries("flush")
+		assert.equal(1, #f)
+		assert.same({ 2, 30 }, { f[1].marked, f[1].total })
+	end)
+
+	-- Gap 2. Mutations: drop the growth test in floodHint (no hint); `>= 30` -> `> 30` (no hint at 30); drop the
+	-- window's pruning (the spread-out trickle prints).
+	it("New growing by 30 within 20 seconds prints the hint once, with the growth", function()
+		filled = 0
+		A.SetBagSize(2, 40)
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.printed = {}
+		trickle(15, 1)
+		assert.same({ SB.L.NEW_FLOOD_HINT:format(30) }, A.Lines())
+		trickle(5, 1)
+		assert.equal(1, #A.Lines(), "once per session")
+	end)
+
+	it("New growing by 30 over more than 20 seconds prints no hint", function()
+		filled = 0
+		A.SetBagSize(2, 40)
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		A.printed = {}
+		trickle(15, 2)
+		assert.same({}, A.Lines())
+	end)
+
+	-- Gap 3. Mutations: drop the "vendor" (or "bank", or "mail") test in openWindows; never clear the mail flag
+	-- at MAIL_CLOSED.
+	it("a flush entry names the windows that were open", function()
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		local saved = {}
+		for slot = 1, 6 do
+			saved[slot], A.slots[0][slot] = A.slots[0][slot], nil
+		end
+		flushAll()
+		assert.same({}, entries("flush")[1].open)
+		SB.Vendor = { open = true }
+		SB.BankWindow = { interaction = true }
+		fire("MAIL_SHOW")
+		for slot = 1, 6 do
+			A.slots[0][slot] = saved[slot]
+		end
+		flushAll()
+		assert.same({ "vendor", "bank", "mail" }, entries("flush")[2].open)
+		SB.Vendor.open, SB.BankWindow.interaction = false, false
+		fire("MAIL_CLOSED")
+		for slot = 1, 6 do
+			A.slots[0][slot] = nil
+		end
+		flushAll()
+		assert.same({}, entries("flush")[3].open)
+	end)
+
+	-- Gap 4. Mutation: in Inv.Flush, call logFlush before Notify without its pcall (the listener misses the flush and
+	-- the error reaches the flush's caller).
+	it("a failure in the log cannot stop the listeners or break the flush", function()
+		SB.Emit("SB_LOGIN")
+		Fixtures.Settle(SB)
+		local heard = 0
+		Inv.OnChanged(function()
+			heard = heard + 1
+		end)
+		Inv.newLog = nil -- every log write now errors
+		for slot = 1, 6 do
+			A.slots[0][slot] = nil
+		end
+		flushAll()
+		assert.equal(1, heard)
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.is_nil(Inv.GetSlot(0, 1), "the model still updated")
 	end)
 end)
