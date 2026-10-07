@@ -23,7 +23,8 @@ Config.Defaults = {
 		-- showIlvl: the title shows the average equipped item level (plan D18);
 		-- freeTile: Free shows one tile per bag family with the number of free slots, false shows
 		-- every free slot (plan D19; the bank window follows it too). newAlways: New keeps its header
-		-- and rows when empty; false (default) shows New only once something new arrives (W4-15).
+		-- and rows when empty; false (default) shows New only once something new arrives (W4-15). One setting
+		-- for the bags, bank and guild bank windows.
 		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
 			showIlvl = true, freeTile = true, newAlways = false,
 			-- warnOtherAddons (week 9): one chat line at login while another bag addon is on too (Core/Report.lua).
@@ -40,7 +41,7 @@ Config.Defaults = {
 		-- view: "sections" | "grid"; columns: slots per row in the bank window.
 		-- show (week 13): "one" (the bank Blizzard's selected tab deposits into is open, the other folds to one
 		-- line) | "both" (both open; the saved group folds decide).
-		bank = { blizzardFrame = "tiny", show = "one", view = "sections", columns = 14 },
+		bank = { blizzardFrame = "tiny", show = "one", groupColors = true, view = "sections", columns = 14 },
 		-- mode: "full" (SwagBag's window replaces Blizzard's; spec F16) | "view" (read-only window
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).

@@ -109,7 +109,7 @@ local LABELS = {
 	["bags.list.sort"] = "SET_LIST_SORT", ["bags.list.desc"] = "PROFILE_LABEL_LIST_DESC",
 	["bags.footer.entries"] = "PROFILE_LABEL_FOOTER", ["bags.warnOtherAddons"] = "SET_OTHER_BAGS",
 	["bank.blizzardFrame"] = "SET_BANK_FRAME", ["bank.show"] = "SET_BANK_SHOW", ["bank.view"] = "PROFILE_LABEL_BANK_VIEW",
-	["bank.columns"] = "PROFILE_LABEL_BANK_COLUMNS",
+	["bank.columns"] = "PROFILE_LABEL_BANK_COLUMNS", ["bank.groupColors"] = "SET_BANK_COLORS",
 	["guildBank.mode"] = "SET_GUILD_MODE", ["guildBank.withdrawAnyTab"] = "PROFILE_LABEL_ANYTAB",
 	["guildBank.view"] = "PROFILE_LABEL_GUILD_VIEW", ["guildBank.columns"] = "PROFILE_LABEL_GUILD_COLUMNS",
 	["prices.headerTotals"] = "SET_TOTALS", ["prices.worth"] = "SET_WORTH",

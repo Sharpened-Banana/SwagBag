@@ -481,6 +481,18 @@ BW.view = SB.GroupView.New({
 	groupTint = function(id)
 		return id == BW.target
 	end,
+	groupColor = function(id) -- a faint band per bank (bank.groupColors); the green deposit tint sits on top
+		if not SB.Config.Get("bank.groupColors") then
+			return nil
+		end
+		if id == "warband" then
+			return 0.25, 0.65, 1.0, 0.06 -- the hue of Blizzard's "Warbound" text
+		end
+		return 0.85, 0.65, 0.25, 0.06
+	end,
+	hideEmptyNew = function() -- one setting for every window (bags.newAlways)
+		return not SB.Config.Get("bags.newAlways")
+	end,
 	groupInset = function(id) -- the Warband header leaves room for Deposit warbound and With reagents
 		local room = id == "warband" and BW.DepositControlsShown()
 		if id == "warband" then
@@ -1141,6 +1153,16 @@ end, "none")
 
 SB.Slash.Register("bank", L.HELP_BANK, function(arg)
 	arg = (arg or ""):lower()
+	if arg == "colors on" or arg == "colors off" then -- bank.groupColors: nothing moves, so a relabel redraws it
+		local on = arg == "colors on"
+		if not SB.Config.Set("bank.groupColors", on) then
+			return L.SETTINGS_READONLY
+		end
+		if frame:IsShown() and BW.view.IsOpen() then
+			BW.view.Relabel()
+		end
+		return on and L.BANK_COLORS_ON or L.BANK_COLORS_OFF
+	end
 	if arg == "one" or arg == "both" then -- bank.show: the open window follows at once (held under the mouse, P5)
 		if not SB.Config.Set("bank.show", arg) then
 			return L.SETTINGS_READONLY

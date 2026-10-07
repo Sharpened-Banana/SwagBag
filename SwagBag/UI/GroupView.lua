@@ -45,8 +45,10 @@
 --   sectionLabel(groupId, header) optional: header = { id, count, collapsed, overflow },
 --   freeTile(view) optional -> true: each group's Free shows one tile per bag family with its
 --   number of free slots (Engine/Layout.lua, plan D19; families from cfg.family),
---   hideEmptyNew optional: true hides each group's New while it is empty (the alt viewer, where
---   nothing ever arrives),
+--   hideEmptyNew optional: true, or a function returning a boolean (read at every build), hides each
+--   group's New while it is empty (the alt viewer passes true; the bank windows follow bags.newAlways),
+--   groupColor(groupId) optional -> r, g, b, a | nil: a faint band behind the whole group, from its header's
+--   top to the next group's header (header only while folded); v.bands lists the bands drawn,
 --   Week 13, all optional (the guild bank sets none of them and behaves as before; a window owns its own folds):
 --   groupClosed(groupId) -> true | false | nil: a boolean decides whether the group is folded, nil falls
 --   back to the saved set,
@@ -365,6 +367,48 @@ function GV.New(cfg)
 		return labels
 	end
 
+	-- The group bands (cfg.groupColor): one pooled texture per group on a plain frame sitting at the child's
+	-- own level, so the buttons and headers (one level above) draw over it.
+	local bandPool = {}
+	v.bands = {}
+	local function releaseBands()
+		for i = #v.bands, 1, -1 do
+			local b = v.bands[i]
+			b.frame:Hide()
+			bandPool[#bandPool + 1] = b
+			v.bands[i] = nil
+		end
+	end
+	local function drawBands(pos)
+		releaseBands()
+		if not cfg.groupColor then
+			return
+		end
+		local child, list = cfg.child, pos.groupHeaders
+		for i, g in ipairs(list) do
+			local r, gr, b, a = cfg.groupColor(g.id)
+			if r then
+				local bottom = list[i + 1] and -list[i + 1].y or pos.height
+				local height = g.collapsed and GV.GROUP_HEADER or (bottom + g.y)
+				local band = table.remove(bandPool)
+				if not band then
+					local frame = CreateFrame("Frame", nil, child)
+					band = { frame = frame, tex = frame:CreateTexture(nil, "BACKGROUND") }
+					band.tex:SetAllPoints(frame)
+				end
+				band.frame:SetParent(child)
+				band.frame:SetFrameLevel(child:GetFrameLevel())
+				band.frame:ClearAllPoints()
+				band.frame:SetPoint("TOPLEFT", child, "TOPLEFT", 0, g.y)
+				band.frame:SetSize(pos.width, height)
+				band.tex:SetColorTexture(r, gr, b, a)
+				band.frame:Show()
+				band.id, band.height = g.id, height
+				v.bands[#v.bands + 1] = band
+			end
+		end
+	end
+
 	-- Placeholders and headers are few: they are redrawn whole, inside this view's child only.
 	local function renderExtras(pos)
 		local B, H, child = SB.Buttons, SB.SectionHeaders, cfg.child
@@ -381,6 +425,7 @@ function GV.New(cfg)
 			rows.Ghosts(ghosts, rowWidth(), GV.LIST_ROW)
 		end
 		H.ReleaseAll(child)
+		drawBands(pos)
 		for _, g in ipairs(pos.groupHeaders) do
 			local inset = cfg.groupInset and cfg.groupInset(g.id) or 0
 			local h = H.Acquire(child, "#" .. g.id, cfg.groupLabel(g.id, g.collapsed, g.count), GV.PAD, g.y,
@@ -529,6 +574,14 @@ function GV.New(cfg)
 	-- Read every slot into a fresh candidate (groups, records, sizes); nothing is drawn.
 	-- b.ms: where the time went (the groups and their buttons, reading the slots, the categories).
 	-- view: the view to build (default: the setting's, wanted()); b.view says which.
+	local function hideNew()
+		local h = cfg.hideEmptyNew
+		if type(h) == "function" then
+			return h() and true or false
+		end
+		return h
+	end
+
 	local function build(view)
 		local A = SB.Adapter
 		view = view or wanted()
@@ -566,7 +619,7 @@ function GV.New(cfg)
 				end
 				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order, { columns = list and 1 or cfg.columns(),
 					newRows = list and GV.LIST_NEW_ROWS or cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile(view) or nil,
-					family = cfg.family or SB.Adapter.BagFamily, hideEmptyNew = cfg.hideEmptyNew })
+					family = cfg.family or SB.Adapter.BagFamily, hideEmptyNew = hideNew() })
 				b.ms.categories = b.ms.categories + A.ProfileMs() - t
 			end
 			b.groups[#b.groups + 1] = g
@@ -922,6 +975,7 @@ function GV.New(cfg)
 		v.listFailed, v.restackHeld = false, false
 		SB.Buttons.ReleasePlaceholders(cfg.child)
 		SB.SectionHeaders.ReleaseAll(cfg.child)
+		releaseBands()
 		if rows then
 			rows.HideAll()
 		end

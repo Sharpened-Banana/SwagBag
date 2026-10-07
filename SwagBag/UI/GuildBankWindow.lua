@@ -519,6 +519,9 @@ GW.view = SB.GroupView.New({
 	groupLabel = function(id, collapsed, count)
 		return GW.TabLabel(tonumber(id:sub(4)), collapsed, count)
 	end,
+	hideEmptyNew = function() -- one setting for every window (bags.newAlways)
+		return not SB.Config.Get("bags.newAlways")
+	end,
 	groupTint = function(id)
 		return GW.target ~= nil and id == "tab" .. GW.target
 	end,

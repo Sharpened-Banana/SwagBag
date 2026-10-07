@@ -103,6 +103,20 @@ describe("Profiles (week 7)", function()
 			{ itemID = 211880, threshold = 5 } }, data.watch)
 	end)
 
+	-- 0.13.1. Mutation: drop ["bank.groupColors"] from Profiles.LABELS (the preview would show a dotted path), or
+	-- drop `groupColors = true` from Config.Defaults (no default to export against).
+	it("bank.groupColors round-trips false and is named in the preview", function()
+		assert.equal(true, C.Get("bank.groupColors"))
+		C.Set("bank.groupColors", false)
+		local data = assert(Pr.Parse(Pr.Export(false)))
+		assert.same({ ["bank.groupColors"] = false }, data.settings)
+		C.Set("bank.groupColors", true) -- the preview lists what an import would change
+		for _, line in ipairs(Pr.Preview(data)) do
+			assert.falsy(line:find("bank.groupColors", 1, true), "never a dotted path: " .. line)
+		end
+		assert.truthy(table.concat(Pr.Preview(data), "\n"):find(SB.L.SET_BANK_COLORS, 1, true))
+	end)
+
 	-- Mutation: in Pr.Parse, `elseif tonumber(version) > Pr.VERSION` -> `elseif false` (a newer string read anyway).
 	it("refuses a string that is not ours, from a newer SwagBag, damaged, too long or with a wrong value", function()
 		assert.same({ nil, "notours" }, { Pr.Parse("hello") })
