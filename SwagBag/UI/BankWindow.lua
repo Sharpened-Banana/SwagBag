@@ -14,7 +14,7 @@
 -- Contents (UI/GroupView.lua): the "Character bank" group on top, the "Warband bank" group
 -- below, each with its own category sections (or grid), for the purchased tabs the client
 -- reports, as categories, a list (week 8: one row per slot, the bags window's columns and order,
--- UI/ListRows.lua) or a grid. The receiving group is tinted and says "deposits go here". Items move only into
+-- UI/ListRows.lua) or a grid. The receiving group is tinted and says "right-clicked items land here". Items move only into
 -- New or Free while the window is open (spec 4.3). Sort buttons call Blizzard's bank sort
 -- and regroup after the bank settles; in combat they refuse with feedback and nothing runs
 -- later (spec 5.5, ruling W11). The window has its own search box.
@@ -31,7 +31,8 @@ local BW = {
 	lastVisit = nil, -- "tiny" | "beside": the mode of the last visit (for /swagbag report)
 	sortPending = false, -- a Sort was pressed and the bank updates are still settling
 	sortSawUpdate = false,
-	HEADER = 80, -- title row, search row, deposit line
+	HEADER = 90, -- title row, search row, the deposit bar (tall enough for Blizzard's tab buttons)
+	MIN_WIDTH = 440, -- the window is never narrower: the bar's words and the tabs need the room
 	COLUMNS_H = 18, -- the list's column bar under the deposit line (week 8), shown while a list is drawn
 	scaleWarned = false, -- the list's F6 fallback was said this opening
 	FOOTER = 6,
@@ -69,8 +70,9 @@ frame.title:SetPoint("TOPLEFT", 10, -8)
 frame.title:SetText(L.BANK_TITLE)
 
 frame.deposit = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-frame.deposit:SetPoint("TOPLEFT", 14, -58)
+frame.deposit:SetPoint("TOPLEFT", 14, -62)
 frame.deposit:SetJustifyH("LEFT")
+frame.deposit:SetWordWrap(false)
 if SB.Theme then -- the look (UI/Theme.lua); the Blizzard theme keeps exactly the values above (AC14.1)
 	SB.Theme.Window(frame, "main")
 	SB.Theme.Text(frame.title, "title")
@@ -163,11 +165,40 @@ local function groupName(kind)
 end
 BW.GroupName = groupName
 
--- Read Blizzard's selected bank type (never written) and show where deposits go.
+-- true while the visit is tiny and Blizzard's tab buttons hang on this window (read from where the
+-- tabs live, so a tab system that could not be moved, or a visit that began in combat, is false).
+function BW.TabsInHeader()
+	local bf = blizzardBank()
+	return bf ~= nil and bf.TabSystem ~= nil and bf.TabSystem:GetParent() == frame
+end
+
+-- What the bar says. With the tabs beside it, the plain words are enough: the tabs show the choice.
+-- Without them (beside mode, or a visit that began in combat) the bar names the target and says
+-- where the tabs are; with no target known it asks to pick one. Never blank.
+function BW.BarText()
+	if BW.TabsInHeader() then
+		return L.BANK_DEPOSIT_BAR
+	elseif BW.target then
+		return L.BANK_DEPOSIT_BESIDE:format(groupName(BW.target))
+	end
+	return L.BANK_DEPOSIT_PICK
+end
+
+-- The label keeps its short width while the tabs sit after it; otherwise it runs to the right edge.
+local function placeBar()
+	frame.deposit:ClearAllPoints()
+	frame.deposit:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -62)
+	if not BW.TabsInHeader() then
+		frame.deposit:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -62)
+	end
+end
+
+-- Read Blizzard's selected bank type (never written) and show where right-click goes.
 function BW.RefreshTarget()
 	local old = BW.target
 	BW.target = SB.Adapter.ActiveBankType()
-	frame.deposit:SetText(BW.target and L.BANK_DEPOSITS_TO:format(groupName(BW.target)) or "")
+	placeBar()
+	frame.deposit:SetText(BW.BarText())
 	if old ~= BW.target and BW.view and BW.view.IsOpen() then
 		BW.view.Relabel() -- the tint and "deposits go here" move to the other group
 	end
@@ -192,7 +223,7 @@ local function hookTabs(tabSystem)
 end
 
 local function placeTabs(tabSystem)
-	tabSystem:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 12, 2)
+	tabSystem:SetPoint("LEFT", frame.deposit, "RIGHT", 6, 0)
 end
 
 local function anchorBeside(bf)
@@ -369,7 +400,7 @@ local function sizeFrame(width, height)
 		BW.view.Relabel()
 	end
 	local maxHeight = UIParent:GetHeight() * BW.MAX_HEIGHT_FRACTION / frame:GetScale()
-	frame:SetSize(width + 8, math.min(height, maxHeight - header - BW.FOOTER) + header + BW.FOOTER)
+	frame:SetSize(math.max(width + 8, BW.MIN_WIDTH), math.min(height, maxHeight - header - BW.FOOTER) + header + BW.FOOTER)
 	clampScroll()
 end
 
@@ -702,8 +733,8 @@ BW.reagentsBox:SetScript("OnClick", Guard("bank.depositReagents", function()
 end, "bank"))
 
 -- Tooltips: the title is the control's own text, the body says what it does.
-local function depositTip(title, body)
-	return Guard("bank.depositTip", function(self)
+local function depositTip(title, body, label)
+	return Guard(label or "bank.depositTip", function(self)
 		if not GameTooltip then
 			return
 		end
@@ -723,9 +754,13 @@ BW.depositButton:SetScript("OnLeave", hideTip)
 BW.reagentsBox:SetScript("OnEnter", depositTip(L.DEPOSIT_REAGENTS_LABEL, L.TIP_DEPOSIT_REAGENTS))
 BW.reagentsBox:SetScript("OnLeave", hideTip)
 
--- The deposit line runs to the window's right edge, on one line.
-frame.deposit:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -58)
-frame.deposit:SetWordWrap(false)
+-- The bar's tooltip: a plain frame over the label's own bounds (never over the tabs, which sit after
+-- the label), saying what the two tabs do.
+BW.barHit = CreateFrame("Frame", nil, frame)
+BW.barHit:SetAllPoints(frame.deposit)
+BW.barHit:EnableMouse(true)
+BW.barHit:SetScript("OnEnter", depositTip(L.TIP_DEPOSIT_BAR_TITLE, L.TIP_DEPOSIT_BAR, "bank.barTip"))
+BW.barHit:SetScript("OnLeave", hideTip)
 
 -- Live updates while open (spec 4.3), for the bank tabs only: count, lock and loaded data
 -- repaint in place; an emptied slot or a different item goes to GroupView.Changes; a tab
@@ -882,6 +917,7 @@ function BW.OnBankClosed()
 	frame:Hide()
 	host.Restore()
 	BW.RefreshStillOpen()
+	SB.Emit("SB_BANK_TARGET", nil) -- right-click goes nowhere now: the bags title goes back to normal
 end
 
 SB.On("BANKFRAME_OPENED", function()
@@ -891,6 +927,30 @@ end, "bank")
 SB.On("BANKFRAME_CLOSED", function()
 	BW.OnBankClosed()
 end, "bank")
+
+-- The item tooltip of a carried item says where right-click sends it, or that the bank refuses it.
+-- Only for a pool button of a bag (never a bank item), while a visit is open with a known target.
+function BW.DepositTooltipLine(tooltip)
+	if not (BW.interaction and BW.target ~= nil) or SB.SafeMode.IsOn("bank") then
+		return
+	end
+	local owner = tooltip.GetOwner and tooltip:GetOwner()
+	local parent = owner and owner.GetParent and owner:GetParent()
+	if not (parent and parent.GetID) then
+		return
+	end
+	local bag, B, A = parent:GetID(), SB.Buttons, SB.Adapter
+	if type(bag) ~= "number" or B.KindOf(bag) ~= "bags" or B.Get(bag, owner:GetID()) ~= owner then
+		return
+	end
+	local name = groupName(BW.target)
+	if A.AllowedInBank(bag, owner:GetID(), BW.target) == false then
+		A.TooltipLine(tooltip, L.TIP_RIGHT_CLICK_REFUSED:format(name))
+	else
+		A.TooltipLine(tooltip, L.TIP_RIGHT_CLICK_DEPOSIT:format(name))
+	end
+end
+SB.Adapter.HookItemTooltip(Guard("tooltip.deposit", BW.DepositTooltipLine, "none"))
 
 -- A bank tab bought or changed during the visit (spec 9, 13.2 item 6; the event is
 -- feature-detected: registration fails silently on a client without it).

@@ -104,7 +104,7 @@ describe("BankWindow frames (check V2)", function()
 		assert.equal(SB.TinyHost.Parent(), bf.parent)
 		assert.equal(true, bf.shown, "still shown: the bank visit stays open")
 		assert.equal(BW.frame, bf.TabSystem.parent)
-		assert.same({ "TOPLEFT", BW.frame, "BOTTOMLEFT", 12, 2 }, bf.TabSystem.points[1])
+		assert.same({ "LEFT", BW.frame.deposit, "RIGHT", 6, 0 }, bf.TabSystem.points[1])
 	end)
 
 	-- Ruling W3-2: a STRICT fake logs every call, modelled or not (SetScript, SetAlpha, SetScale,
@@ -216,13 +216,14 @@ describe("BankWindow frames (check V2)", function()
 		local seen = {}
 		SB.On("SB_BANK_TARGET", function(_, target) seen[#seen + 1] = target end)
 		openBank()
-		assert.equal("Deposits go to Warband bank - switch with the tabs below", BW.frame.deposit.text)
+		assert.equal(SB.L.BANK_DEPOSIT_BAR, BW.frame.deposit.text)
+		assert.equal("warband", BW.target)
 		A.activeBankType = "bank"
 		Fake.Fire(bf.TabSystem.tabs[1], "OnClick")
-		assert.equal("Deposits go to Warband bank - switch with the tabs below", BW.frame.deposit.text,
-			"Blizzard's click handler has not run yet")
+		assert.equal("warband", BW.target, "Blizzard's click handler has not run yet")
 		A.Advance(0)
-		assert.equal("Deposits go to Character bank - switch with the tabs below", BW.frame.deposit.text)
+		assert.equal("bank", BW.target)
+		assert.equal(SB.L.BANK_DEPOSIT_BAR, BW.frame.deposit.text)
 		assert.same({ "warband", "bank" }, seen)
 	end)
 
@@ -271,7 +272,7 @@ describe("BankWindow frames (check V2)", function()
 		assert.equal(UIParent, bf.parent)
 		assert.equal(bf, bf.TabSystem.parent)
 		assert.same({ "TOPLEFT", bf, "TOPRIGHT", 8, 0 }, BW.frame.points[#BW.frame.points])
-		assert.equal("Deposits go to Character bank - switch with the tabs below", BW.frame.deposit.text)
+		assert.equal(SB.L.BANK_DEPOSIT_BESIDE:format(SB.L.BANK_GROUP_BANK), BW.frame.deposit.text)
 	end)
 
 	it("the Blizzard bank button shows Blizzard's bank for this visit only, and hides it again", function()
@@ -523,6 +524,107 @@ describe("BankWindow frames (check V2)", function()
 		assert.falsy(SB.SafeMode.IsOn("bags"))
 		assert.equal(UIParent, bf.parent, "Safe Mode handed the bank back")
 	end)
+
+	-- Week 13 Task 3. Mutation: placeTabs back to `TOPLEFT, frame, BOTTOMLEFT, 12, 2`.
+	it("Blizzard's tabs sit in the header after the bar's words", function()
+		openBank()
+		assert.equal(BW.frame, bf.TabSystem.parent)
+		assert.same({ "LEFT", BW.frame.deposit, "RIGHT", 6, 0 }, bf.TabSystem.points[1])
+		assert.equal(true, BW.TabsInHeader())
+		closeBank()
+		assert.equal(bf, bf.TabSystem.parent)
+		assert.same({ { "TOPLEFT", bf, "BOTTOMLEFT", 22, 2 } }, bf.TabSystem.points)
+		assert.equal(false, BW.TabsInHeader())
+	end)
+
+	it("the label keeps its short width in tiny mode and runs to the right edge beside", function()
+		openBank()
+		local function has(point)
+			for _, p in ipairs(BW.frame.deposit.points) do
+				if p[1] == point then
+					return true
+				end
+			end
+			return false
+		end
+		assert.truthy(has("TOPLEFT"))
+		assert.falsy(has("TOPRIGHT"), "the tabs follow the words")
+		Fake.Fire(BW.blizzardButton, "OnClick")
+		assert.truthy(has("TOPRIGHT"))
+		assert.equal(false, BW.frame.deposit.calls.SetWordWrap[1])
+	end)
+
+	-- Mutation: BW.BarText returns the beside line in tiny mode.
+	it("the bar reads the plain words in tiny mode", function()
+		A.activeBankType = "bank"
+		openBank()
+		assert.equal(SB.L.BANK_DEPOSIT_BAR, BW.frame.deposit:GetText())
+		assert.equal(SB.L.BANK_DEPOSIT_BAR, BW.BarText())
+		A.activeBankType = "warband"
+		Fake.Fire(bf.TabSystem.tabs[1], "OnClick")
+		A.Advance(0)
+		assert.equal("warband", BW.target)
+		assert.equal(SB.L.BANK_DEPOSIT_BAR, BW.frame.deposit:GetText())
+	end)
+
+	it("beside names the target and where the tabs are", function()
+		SB.Config.Set("bank.blizzardFrame", "beside")
+		A.activeBankType = "warband"
+		openBank()
+		assert.equal(SB.L.BANK_DEPOSIT_BESIDE:format(SB.L.BANK_GROUP_WARBAND), BW.frame.deposit:GetText())
+	end)
+
+	-- Mutation: the old blank text (`BW.target and ... or ""`).
+	it("beside with no target asks to pick", function()
+		SB.Config.Set("bank.blizzardFrame", "beside")
+		A.activeBankType = nil
+		openBank()
+		assert.is_nil(BW.target)
+		assert.equal(SB.L.BANK_DEPOSIT_PICK, BW.frame.deposit:GetText())
+		assert.truthy(BW.frame.deposit:GetText() ~= "")
+	end)
+
+	-- Review Focus 3. Mutation: BW.BarText ignores TabsInHeader.
+	it("a visit started in combat shows the beside line", function()
+		A.combat = true
+		A.activeBankType = "warband"
+		openBank()
+		assert.equal(false, BW.TabsInHeader())
+		assert.equal(SB.L.BANK_DEPOSIT_BESIDE:format(SB.L.BANK_GROUP_WARBAND), BW.frame.deposit:GetText())
+		assert.equal(bf, bf.TabSystem.parent)
+	end)
+
+	-- Review Focus 4. Mutation: sizeFrame back to `width + 8`.
+	it("the window keeps its minimum width", function()
+		SB.Config.Set("bank.columns", 4)
+		openBank()
+		assert.truthy(BW.child:GetWidth() + 8 < BW.MIN_WIDTH, "the content alone would be narrower")
+		assert.truthy(BW.frame:GetWidth() >= BW.MIN_WIDTH)
+		assert.equal(440, BW.MIN_WIDTH)
+		assert.equal(90, BW.HEADER)
+	end)
+
+	-- Mutation: drop the AddLine for the body, or cover the tabs (hit frame on the whole window).
+	it("the bar's tooltip explains the two tabs, over the label's own bounds", function()
+		openBank()
+		assert.equal(BW.frame.deposit, BW.barHit.allPoints)
+		assert.equal(true, BW.barHit.calls.EnableMouse[1])
+		Fake.Fire(BW.barHit, "OnEnter")
+		assert.equal(SB.L.TIP_DEPOSIT_BAR_TITLE, GameTooltip.text)
+		assert.equal(SB.L.TIP_DEPOSIT_BAR, GameTooltip.calls.AddLine[1])
+		assert.equal(BW.barHit, GameTooltip.calls.SetOwner[1])
+		Fake.Fire(BW.barHit, "OnLeave")
+		assert.falsy(GameTooltip.shown)
+	end)
+
+	-- Mutation: delete the Emit in BW.OnBankClosed.
+	it("closing the bank emits SB_BANK_TARGET with nil", function()
+		local seen = {}
+		openBank()
+		SB.On("SB_BANK_TARGET", function(_, target) seen[#seen + 1] = target == nil and "nil" or target end)
+		closeBank()
+		assert.same({ "nil" }, seen)
+	end)
 end)
 
 describe("BankWindow load order", function()
@@ -535,4 +637,5 @@ describe("BankWindow load order", function()
 		Fake.Uninstall()
 		assert.truthy(ok, tostring(err))
 	end)
+
 end)

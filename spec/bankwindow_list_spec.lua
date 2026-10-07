@@ -96,7 +96,7 @@ describe("BankWindow list view (week 8)", function()
 		SB.Config.Set("bank.view", "list")
 		openBank()
 		assert.equal("list", BW.view.drawn)
-		assert.same({ "- Character bank (3)  - deposits go here", "- Warband bank (2)",
+		assert.same({ "- Character bank (3)  - right-clicked items land here", "- Warband bank (2)",
 			"- New (0)", "- Consumables (2) - 15s vendor", "- Herbs (1)", "- Free (5)",
 			"- New (0)", "- BoE gear (1)", "- Ore (1)", "- Free (6)" }, labels())
 		assert.equal(GV.LIST_ROW / GV.SLOT, B.Get(6, 1).scale, "drawn at the row's height")
