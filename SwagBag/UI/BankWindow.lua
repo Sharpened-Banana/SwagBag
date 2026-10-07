@@ -1,12 +1,18 @@
 -- SwagBag bank window (spec F2, section 5). Opens on BANKFRAME_OPENED, closes on
--- BANKFRAME_CLOSED. Blizzard's bank frame stays open the whole time:
---   "tiny" (default)  Blizzard's bank is shown but invisible (UI/TinyHost.lua) and its real
---                     tab buttons (BankFrame.TabSystem) hang under SwagBag's window
---   "beside"          Blizzard's bank is left exactly as Blizzard shows it, and SwagBag's
---                     window sits to its right (spec 5.4; the fallback if check V2 fails)
--- The "..." menu's Show/Hide Blizzard's bank entry switches between the two for this visit only (tab purchase and
--- warband gold live in Blizzard's frame). The setting is bank.blizzardFrame
--- (/swagbag bank tiny|beside).
+-- BANKFRAME_CLOSED. Blizzard's bank frame stays open the whole time. The player's words are
+-- "hidden" and "shown"; the saved values (bank.blizzardFrame) stay "tiny" and "beside":
+--   "tiny" (hidden, default)  Blizzard's bank is shown but invisible (UI/TinyHost.lua) and its real
+--                     Bank and Warband Bank tab buttons (BankFrame.TabSystem) sit in the deposit bar
+--                     inside this window's header
+--   "beside" (shown)  Blizzard's bank is left exactly as Blizzard shows it, with its own tabs, and
+--                     SwagBag's window sits to its right (spec 5.4; also forced for a visit that
+--                     starts in combat)
+-- The "..." menu's Show/Hide Blizzard's bank entry switches between the two for this visit only (tab
+-- purchase and warband gold live in Blizzard's frame). /swagbag bank hidden|shown sets the setting
+-- (tiny and beside still work as aliases).
+-- Layout (week 13), top to bottom: the title row (Sort and "...", then the close X); the search
+-- row; the deposit bar, which says "Right-click deposits to:" followed by Blizzard's tabs (without
+-- the tabs it names the target and says where they are); with a list, its column bar; then the groups.
 -- Read only (spec 5.2, 5.3): the deposit target is whatever bank type Blizzard has selected
 -- (Adapter.ActiveBankType); SwagBag shows it and never sets it. Esc or the X hides SwagBag's
 -- window (spec 5.6) and gives Blizzard's bank back its parent, so it is visible while the
@@ -15,13 +21,15 @@
 -- below, each with its own category sections (or grid), for the purchased tabs the client
 -- reports, as categories, a list (week 8: one row per slot, the bags window's columns and order,
 -- UI/ListRows.lua) or a grid. The receiving group is tinted and says "right-clicked items land here". Items move only into
--- New or Free while the window is open (spec 4.3). With bank.show "one" (the default, week 13) only
--- the group the selected tab deposits into is open; the other folds to one line, and a click on its
--- header shows it until the tab changes ("both": /swagbag bank both, Settings).
--- The Sort button (and the "..." menu's two Sort rows) call Blizzard's bank sort and regroup after the
--- bank settles; in combat they refuse with feedback and nothing runs later (spec 5.5, ruling W11). The window has its own search box.
--- "Deposit warbound" (week 6, user request 3) runs the game's own warband deposit through the
--- Adapter, beside a "With reagents" box that is Blizzard's own include-reagents choice.
+-- New or Free while the window is open (spec 4.3). One bank at a time (bank.show "one", the
+-- default): only the group the selected tab deposits into is open; the other folds to one line, and
+-- a click on its header shows it until the tab changes ("both": /swagbag bank both, Settings).
+-- Sort and the "..." menu's two Sort rows call Blizzard's bank sort and regroup after the bank
+-- settles; in combat they refuse with feedback and nothing runs later (spec 5.5, ruling W11). The
+-- window has its own search box.
+-- "Deposit warbound" (week 6, user request 3) sits on the Warband group's header and in the "..."
+-- menu. It runs the game's own warband deposit through the Adapter, beside a "With reagents" box
+-- that is Blizzard's own include-reagents choice; both hide when the window is too narrow.
 local _, SB = ...
 
 local L = SB.L
@@ -222,7 +230,7 @@ function BW.RefreshTarget()
 	if old ~= BW.target then
 		BW.peek = {} -- a peek lasts until the tab changes
 		if BW.view and BW.view.IsOpen() then
-			-- The open bank follows the tab, and the tint and "deposits go here" move with it. Restack
+			-- The open bank follows the tab, and the tint and the "right-clicked items land here" note move with it. Restack
 			-- redraws the headers too, and holds while a button that would move is under the mouse (P5).
 			BW.view.Restack()
 		end
@@ -1133,8 +1141,13 @@ SB.Slash.Register("bank", L.HELP_BANK, function(arg)
 		end
 		return arg == "one" and L.BANK_SHOW_ONE or L.BANK_SHOW_BOTH
 	end
+	if arg == "hidden" then -- the plain words; tiny and beside stay as aliases for old macros
+		arg = "tiny"
+	elseif arg == "shown" then
+		arg = "beside"
+	end
 	if arg ~= "tiny" and arg ~= "beside" then
-		return L.BANK_USAGE:format(BW.Mode())
+		return L.BANK_USAGE:format(BW.Mode() == "tiny" and "hidden" or "shown", BW.Show())
 	end
 	if not SB.Config.Set("bank.blizzardFrame", arg) then
 		return L.SETTINGS_READONLY

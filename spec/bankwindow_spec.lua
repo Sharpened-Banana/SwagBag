@@ -323,7 +323,50 @@ describe("BankWindow frames (check V2)", function()
 		assert.equal(SB.TinyHost.Parent(), bf.parent)
 		SB.Slash.Dispatch("bank")
 		assert.same({ SB.L.BANK_MODE_BESIDE, SB.L.BANK_MODE_TINY,
-			"Use /swagbag bank tiny or /swagbag bank beside (now: tiny)." }, A.Lines())
+			SB.L.BANK_USAGE:format("hidden", "one") }, A.Lines())
+	end)
+
+	-- Week 13 Task 6. Mutation: the slash's hidden/shown branch is deleted (they fall to the usage line).
+	it("hidden and shown set Blizzard's bank", function()
+		openBank()
+		SB.Slash.Dispatch("bank shown")
+		assert.equal("beside", SB.Config.Get("bank.blizzardFrame"))
+		SB.Slash.Dispatch("bank hidden")
+		assert.equal("tiny", SB.Config.Get("bank.blizzardFrame"))
+		assert.same({ SB.L.BANK_MODE_BESIDE, SB.L.BANK_MODE_TINY }, A.Lines())
+	end)
+
+	-- Mutation: the tiny/beside aliases are removed from the slash.
+	it("tiny and beside still work", function()
+		openBank()
+		SB.Slash.Dispatch("bank beside")
+		assert.equal("beside", SB.Config.Get("bank.blizzardFrame"))
+		SB.Slash.Dispatch("bank tiny")
+		assert.equal("tiny", SB.Config.Get("bank.blizzardFrame"))
+		assert.same({ SB.L.BANK_MODE_BESIDE, SB.L.BANK_MODE_TINY }, A.Lines())
+	end)
+
+	-- Mutation: the usage line passes the stored words (tiny/beside) again.
+	it("the usage line uses the plain words", function()
+		SB.Slash.Dispatch("bank")
+		SB.Config.Set("bank.blizzardFrame", "beside")
+		SB.Config.Set("bank.show", "both")
+		SB.Slash.Dispatch("bank")
+		local lines = A.Lines()
+		assert.equal(SB.L.BANK_USAGE:format("hidden", "one"), lines[1])
+		assert.equal(SB.L.BANK_USAGE:format("shown", "both"), lines[2])
+		for _, line in ipairs(lines) do
+			assert.is_nil(line:find("tiny", 1, true))
+			assert.is_nil(line:find("beside", 1, true))
+		end
+	end)
+
+	-- Mutation: HELP_BANK goes back to the tiny|beside words.
+	it("help names the plain words only", function()
+		local help = SB.L.HELP_BANK
+		assert.truthy(help:find("hidden", 1, true))
+		assert.truthy(help:find("one", 1, true))
+		assert.is_nil(help:find("tiny", 1, true))
 	end)
 
 	-- Final review M2. Mutation: delete the bags.BoundTitle call in BW.RefreshStillOpen (the
