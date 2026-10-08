@@ -287,4 +287,22 @@ describe("Search", function()
 		assert.same({ "profession", "profession gear", "profession tool" }, c.keywords)
 		assert.equal("static", c.cacheClass)
 	end)
+
+	-- Mutation: PreviewExact is ignored (the preview of a rule is prefix-widened), or exactText is never reset
+	-- (typing trink by hand afterwards stays name-only).
+	it("0.13.6: a previewed rule lights by name only; typing the same word by hand matches keywords again", function()
+		SB.Adapter.AddItem(777001, { name = "Charm of X", classID = SB.Adapter.ITEM_CLASS.Armor, subclassID = 0,
+			equipLoc = "INVTYPE_TRINKET", quality = 4, ilvl = 280, maxStack = 1, bind = "pickup" })
+		SB.Adapter.Put(0, 8, 777001, 1)
+		slots[8] = { button = "b8", record = SB.Items.Describe(0, 8) }
+		assert.truthy(S.SetText("trink")) -- typed first, prefix-matched
+		assert.equal(1, (S.Apply(forEach, setDimmed)))
+		S.PreviewExact("trink")
+		assert.truthy(S.SetText("trink"))
+		assert.equal(0, (S.Apply(forEach, setDimmed)), "the rule trink means a name containing trink")
+		S.SetText("trin")
+		assert.equal(1, (S.Apply(forEach, setDimmed)), "the user edited the box: prefix again")
+		S.SetText("trink")
+		assert.equal(1, (S.Apply(forEach, setDimmed)), "and stays prefix when the same word is typed again")
+	end)
 end)

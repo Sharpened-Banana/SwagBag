@@ -44,14 +44,26 @@ function SearchState.New()
 	local S = { active = nil, text = "", lastError = nil, lastWarning = nil, lastEvalError = nil, stats = {},
 		VOLATILE_REFRESH = SearchState.VOLATILE_REFRESH, ErrorSpan = SearchState.ErrorSpan }
 
+	-- 0.13.6: Show matches previews a rule, which must light exactly what the rule matches. PreviewExact(text) makes
+	-- the next SetText(text) compile without keyword prefixes; any other text (the user typing) is prefix-matched again.
+	function S.PreviewExact(text)
+		S.exactText = text
+		if S.text == text then
+			S.text = nil -- force the recompile
+		end
+	end
+
 	-- Returns true, or false + formatted error message.
 	function S.SetText(text)
 		text = text or ""
+		if text ~= S.exactText then
+			S.exactText = nil
+		end
 		if S.active and text == S.text then
 			S.lastError = nil -- unchanged valid query: no recompile
 			return true
 		end
-		local compiled = SB.Query.Compile(text, { prefix = true })
+		local compiled = SB.Query.Compile(text, { prefix = S.exactText ~= text })
 		if not compiled.fn then
 			S.lastError = compiled.errors[1]
 			return false, SB.Query.FormatError(S.lastError)
