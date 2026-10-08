@@ -23,7 +23,10 @@
 -- UI/ListRows.lua) or a grid. The receiving group is tinted and says "right-clicked items land here". Items move only into
 -- New or Free while the window is open (spec 4.3). One bank at a time (bank.show "one", the
 -- default): only the group the selected tab deposits into is open; the other folds to one line, and
--- a click on its header shows it until the tab changes ("both": /swagbag bank both, Settings).
+-- a click on its header shows it until the tab changes ("both": /swagbag bank both, Settings). While a
+-- search is active (0.13.5) every group holding a match is open and its header says "n found"; clearing
+-- the search folds them back, and a header click folds a search-opened group until the text changes. Each
+-- of these folds is a Restack, held while a button that would move is under the mouse (P5).
 -- Sort and the "..." menu's two Sort rows call Blizzard's bank sort and regroup after the bank
 -- settles; in combat they refuse with feedback and nothing runs later (spec 5.5, ruling W11). The
 -- window has its own search box.
@@ -40,6 +43,9 @@ local BW = {
 	target = nil, -- "bank" | "warband" | nil: Blizzard's selected bank type, last read
 	peek = {}, -- { [gid] = true }: groups whose one-bank fold the player flipped for this target (in memory only)
 	found = nil, -- { bank = n, warband = n }: search matches per group while a search is active
+	searchClosed = {}, -- { [gid] = true }: search-opened groups a header click folded, until the search text changes
+	searchOpen = {}, -- { [gid] = true }: the groups with a match at the last search apply (what the drawing was asked for)
+	searchText = nil, -- the search text of the last apply (a new text forgets searchClosed)
 	lastVisit = nil, -- "tiny" | "beside": the mode of the last visit (for /swagbag report)
 	sortPending = false, -- a Sort was pressed and the bank updates are still settling
 	sortSawUpdate = false,
@@ -185,10 +191,15 @@ end
 
 -- The one-bank fold (cfg.groupClosed): true | false while "one" (a header click flips it until the target
 -- changes, BW.peek); nil in "both", so the saved collapse set decides. With no target known both groups are
--- open, the saved set ignored, and only a peek folds one. The saved set is never written for it.
+-- open, the saved set ignored, and only a peek folds one. While a search is active (0.13.5) a group holding a
+-- match is open whatever the target or a peek says, unless a header click folded it for this search
+-- (BW.searchClosed). The saved set is never written for it.
 function BW.Folded(gid)
 	if BW.Show() ~= "one" then
 		return nil
+	end
+	if BW.found and (BW.found[gid] or 0) > 0 then
+		return BW.searchClosed[gid] == true
 	end
 	if BW.target == nil then
 		return BW.peek[gid] == true
@@ -454,9 +465,12 @@ BW.view = SB.GroupView.New({
 			text = text .. L.BANK_GROUP_TARGET
 		end
 		-- Sign and suffix both come from the drawn `collapsed` (a restack held under the mouse leaves the
-		-- drawing behind BW.Folded): folded in "one" mode means the click shows it.
-		if collapsed and BW.Show() == "one" then
-			text = text .. L.BANK_GROUP_FOLDED
+		-- drawing behind BW.Folded): folded in "one" mode means the click shows it. A group with search
+		-- matches says how many, open or folded.
+		if BW.Show() == "one" then
+			if collapsed then
+				text = text .. L.BANK_GROUP_FOLDED
+			end
 			local n = BW.found and BW.found[id] or 0
 			if n > 0 then
 				text = text .. L.BANK_GROUP_FOUND:format(n)
@@ -471,6 +485,10 @@ BW.view = SB.GroupView.New({
 		end
 		if BW.view.redrawPending or BW.view.restackHeld then
 			return true -- the drawing is behind: a click now would flip what is not on screen
+		end
+		if BW.found and (BW.found[id] or 0) > 0 then -- the search holds it open: fold it (or open it again) for this search
+			BW.searchClosed[id] = not BW.searchClosed[id] or nil
+			return true
 		end
 		BW.peek[id] = not BW.peek[id] or nil
 		return true
@@ -569,8 +587,11 @@ searchBox = SB.SearchBox.New({
 })
 BW.searchBox = searchBox
 
--- The search, counting each group's matches (folded cells are visited too), so a folded bank can say
--- "n found" without unfolding. The headers are drawn again only when a folded group's count changed.
+-- The search, counting each group's matches (folded cells are visited too). In "one" mode (0.13.5) a group
+-- holding a match opens (BW.Folded) and folds back when the search is cleared: when the set of groups with a
+-- match changed since the last apply (or a new text forgot a header click's fold), the view restacks, held
+-- while a button that would move is under the mouse (P5). The restack's onUpdated runs this again, which
+-- finds the set unchanged, so it never loops. Otherwise the headers are drawn again only when a count changed.
 -- The box's own typing runs through it as well (its Run calls Box.Apply).
 local applySearch = searchBox.Apply
 function BW.ApplySearch()
@@ -581,9 +602,33 @@ function BW.ApplySearch()
 	counting = nil
 	local old = BW.found
 	BW.found = found
-	if BW.view.IsOpen() then
-		for _, h in ipairs(BW.view.GroupHeaders()) do
-			if h.collapsed and BW.Show() == "one" and (old and old[h.id] or 0) ~= (found and found[h.id] or 0) then
+	if not BW.view.IsOpen() then
+		return matches, total, ms
+	end
+	local text = active and searchBox.search.text or nil
+	local forgot = false
+	if text ~= BW.searchText then
+		BW.searchText = text
+		forgot = next(BW.searchClosed) ~= nil
+		BW.searchClosed = {}
+	end
+	local open, changed = {}, forgot
+	for _, gid in ipairs({ "bank", "warband" }) do
+		open[gid] = (found and found[gid] or 0) > 0 or nil
+		if open[gid] ~= BW.searchOpen[gid] then
+			changed = true
+		end
+	end
+	BW.searchOpen = open
+	if changed and BW.Show() == "one" then
+		if not BW.view.Restack() then
+			BW.view.Relabel() -- held: the counts show now, the folds land once the mouse leaves
+		end
+		return matches, total, ms
+	end
+	if BW.Show() == "one" then
+		for _, gid in ipairs({ "bank", "warband" }) do
+			if (old and old[gid] or 0) ~= (found and found[gid] or 0) then
 				BW.view.Relabel()
 				break
 			end
@@ -1042,6 +1087,7 @@ frame:SetScript("OnHide", Guard("bank.hide", function(self)
 	SB.BankMenu.Hide()
 	BW.view.Clear()
 	BW.peek = {} -- the next opening starts from the one-bank rule again
+	BW.searchClosed, BW.searchOpen, BW.searchText = {}, {}, nil
 	BW.sortPending, BW.sortSawUpdate, BW.scaleWarned = false, false, false
 	SB.Emit("SB_BANK_CLOSED")
 	BW.RefreshStillOpen()
