@@ -1016,6 +1016,21 @@ describe("BankWindow contents", function()
 			header("#bank").text.text, "the open bank says found too")
 	end)
 
+	-- 0.13.6 (the user: "trink" does not find trinkets). Mutation: the bank search compiles without { prefix = true }.
+	it("0.13.6: typing trink in the bank's search box lights the trinket and opens its bank", function()
+		A.AddItem(777001, { name = "Charm of X", classID = A.ITEM_CLASS.Armor, subclassID = 0,
+			equipLoc = "INVTYPE_TRINKET", quality = 4, ilvl = 280, maxStack = 1, bind = "pickup" })
+		A.Put(12, 3, 777001, 1)
+		openBank()
+		bankUpdate(12)
+		assert.same({}, shownSlots(12))
+		search("trink")
+		assert.equal(OPEN + 1, #shownSlots(12), "warband holds the trinket (three items and the free tile): it opens")
+		assert.equal(1, B.Get(12, 3).alpha, "the trinket is lit")
+		assert.equal(B.DIM_ALPHA, B.Get(12, 2).alpha, "the ring is dimmed")
+		assert.same({ bank = 0, warband = 1 }, BW.found)
+	end)
+
 	-- P5. Mutation: BW.ApplySearch calls BW.view.Layout("search") instead of BW.view.Restack().
 	it("0.13.5: a search that would move a button under the mouse waits, then lands", function()
 		switchTab("warband")
