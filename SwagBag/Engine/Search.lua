@@ -48,9 +48,6 @@ function SearchState.New()
 	-- the next SetText(text) compile without keyword prefixes; any other text (the user typing) is prefix-matched again.
 	function S.PreviewExact(text)
 		S.exactText = text
-		if S.text == text then
-			S.text = nil -- force the recompile
-		end
 	end
 
 	-- Returns true, or false + formatted error message.
@@ -59,16 +56,17 @@ function SearchState.New()
 		if text ~= S.exactText then
 			S.exactText = nil
 		end
-		if S.active and text == S.text then
+		if S.active and text == S.text and S.compiledExact == (S.exactText == text) then
 			S.lastError = nil -- unchanged valid query: no recompile
 			return true
 		end
-		local compiled = SB.Query.Compile(text, { prefix = S.exactText ~= text })
+		local exact = S.exactText == text
+		local compiled = SB.Query.Compile(text, { prefix = not exact })
 		if not compiled.fn then
 			S.lastError = compiled.errors[1]
 			return false, SB.Query.FormatError(S.lastError)
 		end
-		S.active, S.text, S.lastError = compiled, text, nil
+		S.active, S.text, S.lastError, S.compiledExact = compiled, text, nil, exact
 		local w = compiled.warnings and compiled.warnings[1]
 		S.lastWarning = w and SB.Query.FormatWarning(w) or nil
 		return true

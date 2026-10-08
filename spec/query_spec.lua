@@ -493,6 +493,13 @@ describe("Query compile with opts.prefix (0.13.6)", function()
 		assert.is_nil(Q.Compile("ilv>250", P).fn, "a numeric keyword is not completed")
 	end)
 
+	-- Mutation: orMatcher tests `v == true` (a truthy non-boolean eval then counts as false, unlike a plain keyword).
+	it("a keyword eval returning a truthy non-boolean is a match, as build normalises it", function()
+		Q.RegisterKeyword({ name = "sloppy", class = "static", eval = function() return 1 end })
+		assert.equal(true, Q.Eval(Q.Compile("sloppy"), HELM))
+		assert.equal(true, Q.Eval(Q.Compile("slop", P), HELM))
+	end)
+
 	-- Mutation: the keyword table is scanned per record (emptying it after Compile would change the result).
 	it("the keyword scan happens at compile time, not per record", function()
 		local c = Q.Compile("trink", P)

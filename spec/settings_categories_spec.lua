@@ -311,6 +311,21 @@ describe("Settings > Categories (week 11)", function()
 		assert.same({ "trinket" }, SB.Search.active.keywords, "typed by hand afterwards: prefix matching")
 	end)
 
+	-- Mutation: previewRows keeps exactText when the bags refuse the search (bags closed).
+	it("a Show matches the bags refuse leaves no exact flag behind", function()
+		SB.Slash.Register("search", "test", function() return SB.L.SEARCH_OPEN_FIRST end)
+		click(L.CAT_NEW_BUTTON)
+		click(L.CAT_ADD_RULE)
+		click(L.CAT_PICK_NAME)
+		enter(2, "trink")
+		click(L.CAT_SHOW_TEXT)
+		enter(3, "trink")
+		assert.equal(L.SEARCH_OPEN_FIRST, click(L.CAT_SHOW_MATCHES))
+		assert.is_nil(SB.Search.exactText)
+		SB.Search.SetText("trink")
+		assert.same({ "trinket" }, SB.Search.active.keywords, "typed later: prefix matching")
+	end)
+
 	-- Mutations: in SettingsCategories' previewRows, `return run("search " .. text)` -> `return run("search")`; or
 	-- `for _, w in ipairs(SB.Query.Validate(SB.Query.Compile(text)).warnings) do` ->
 	-- `for _, w in ipairs({ SB.Query.Validate(SB.Query.Compile(text)).warnings[1] }) do` (the first warning only).
