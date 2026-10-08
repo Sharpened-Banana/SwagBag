@@ -128,27 +128,6 @@ function Report.Build()
 	if hooks and hooks.TraceText then -- week 6 (D16): the last bag functions the game ran, and what SwagBag did
 		lines[#lines + 1] = L.REPORT_BAG_HOOKS:format(hooks.TRACE, hooks.TraceText())
 	end
-	local inv = SB.Inventory
-	if inv and inv.newLog then -- 0.13.2 diagnostics: the New log (Engine/Inventory.lua's header), oldest first
-		lines[#lines + 1] = L.REPORT_NEW_LOG:format(inv.NEW_LOG_MAX or #inv.newLog)
-		if #inv.newLog == 0 then
-			lines[#lines + 1] = L.REPORT_NEW_NONE
-		end
-		for _, e in ipairs(inv.newLog) do
-			if e.kind == "settle" then
-				lines[#lines + 1] = L.REPORT_NEW_SETTLE:format(e.at, tostring(e.phase), tostring(e.reason))
-			elseif e.kind == "scankind" then
-				lines[#lines + 1] = L.REPORT_NEW_SCANKIND:format(e.at, tostring(e.scanned), e.changes)
-			else
-				local bagList = #e.bags > 0 and table.concat(e.bags, ",") or L.REPORT_NONE
-				local open = e.open and #e.open > 0 and table.concat(e.open, ",") or L.REPORT_NONE
-				lines[#lines + 1] = L.REPORT_NEW_FLUSH:format(e.at, tostring(e.source),
-					e.settling and L.REPORT_NEW_SETTLING or "", e.left, e.came, e.arrivals, e.marked, e.stacks,
-					e.total or 0, e.guarded and L.REPORT_NEW_GUARDED or "", open, bagList, e.revealed.known,
-					e.revealed.base, e.fresh, e.secret)
-			end
-		end
-	end
 	local bank = SB.BankWindow
 	if bank then
 		lines[#lines + 1] = L.REPORT_BANK:format(bank.Mode(), bank.Show(), tostring(bank.lastVisit or L.REPORT_NONE),
