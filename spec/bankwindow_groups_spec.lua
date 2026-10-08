@@ -960,26 +960,136 @@ describe("BankWindow contents", function()
 		assert.same({}, shownSlots(12), "one mode starts from the rule again")
 	end)
 
-	-- Mutation: the setDimmed wrapper counts dimmed buttons too (or nothing).
-	it("a search counts matches hidden in the folded bank", function()
-		local L = SB.L
-		openBank()
-		BW.searchBox.editBox:SetText("ore")
+	local function search(t)
+		BW.searchBox.editBox:SetText(t)
 		Fake.Fire(BW.searchBox.editBox, "OnTextChanged")
 		A.Advance(0.2)
+	end
+
+	-- Mutation: the setDimmed wrapper counts dimmed buttons too (or nothing).
+	it("a search counts matches in each bank; a bank with none never says found", function()
+		local L = SB.L
+		openBank()
+		search("ore")
 		local text = header("#warband").text.text
 		assert.equal(L.BANK_GROUP_FOUND:format(1), text:sub(-#L.BANK_GROUP_FOUND:format(1)))
 		assert.equal("  - 1 found", L.BANK_GROUP_FOUND:format(1))
 		assert.same({ bank = 0, warband = 1 }, BW.found)
-		assert.same({}, shownSlots(12), "nothing unfolds")
 		assert.equal("- Character bank (2)  - right-clicked items land here", header("#bank").text.text,
-			"the open bank never says found")
-		BW.searchBox.editBox:SetText("")
-		Fake.Fire(BW.searchBox.editBox, "OnTextChanged")
-		A.Advance(0.2)
+			"a bank with no match never says found")
+		search("")
 		assert.is_nil(BW.found)
 		assert.equal(L.BANK_GROUP_LABEL:format("+", L.BANK_GROUP_WARBAND, 2) .. L.BANK_GROUP_FOLDED,
 			header("#warband").text.text)
+	end)
+
+	-- 0.13.5 (the user's "search for trinket doesn't grab trinkets"): a search opens the banks that hold a match.
+	-- Mutation: BW.Folded drops the search rule (a match in the folded bank stays hidden).
+	it("0.13.5: a search opens the folded bank that holds a match; clearing it folds it back", function()
+		local L = SB.L
+		openBank()
+		assert.same({}, shownSlots(12))
+		search("ore")
+		assert.equal(OPEN, #shownSlots(12), "warband opens")
+		assert.equal(OPEN, #shownSlots(6), "the target stays open")
+		assert.equal(1, B.Get(12, 1).alpha, "the ore is not dimmed")
+		assert.equal(B.DIM_ALPHA, B.Get(12, 2).alpha, "the ring is")
+		assert.equal(L.BANK_GROUP_LABEL:format("-", L.BANK_GROUP_WARBAND, 2) .. L.BANK_GROUP_FOUND:format(1),
+			header("#warband").text.text, "open, and it says how many it found")
+		search("")
+		assert.same({}, shownSlots(12), "folded back")
+		assert.equal(L.BANK_GROUP_LABEL:format("+", L.BANK_GROUP_WARBAND, 2) .. L.BANK_GROUP_FOLDED,
+			header("#warband").text.text)
+	end)
+
+	-- Mutation: BW.Folded opens a group for any active search (found[gid] > 0 not checked).
+	it("0.13.5: only a bank with a match opens", function()
+		local L = SB.L
+		openBank()
+		search("finger")
+		assert.equal(OPEN, #shownSlots(12), "the ring is in warband: it opens")
+		assert.same({ bank = 0, warband = 1 }, BW.found)
+		search("potion")
+		assert.same({}, shownSlots(12), "only the character bank matches: warband folds again")
+		assert.equal(OPEN, #shownSlots(6))
+		assert.equal(L.BANK_GROUP_LABEL:format("-", L.BANK_GROUP_BANK, 2) .. L.BANK_GROUP_TARGET .. L.BANK_GROUP_FOUND:format(1),
+			header("#bank").text.text, "the open bank says found too")
+	end)
+
+	-- P5. Mutation: BW.ApplySearch calls BW.view.Layout("search") instead of BW.view.Restack().
+	it("0.13.5: a search that would move a button under the mouse waits, then lands", function()
+		switchTab("warband")
+		openBank()
+		assert.same({}, shownSlots(6))
+		B.Get(12, 1).mouseOver = true -- the bank above would open: this button would move down
+		local before = at(12, 1)
+		search("potion")
+		assert.same({}, shownSlots(6), "held")
+		assert.same(before, at(12, 1), "nothing moved")
+		B.Get(12, 1).mouseOver = false
+		A.Advance(0.3)
+		assert.equal(OPEN, #shownSlots(6), "the bank opens once the mouse leaves")
+	end)
+
+	-- Mutation: BW.Folded applies the search rule in "both" mode too.
+	it("0.13.5: in both mode a search changes no fold and never touches the saved set", function()
+		SB.Config.Set("bank.show", "both")
+		SB.Config.UI().collapsed = { ["bank:#"] = { warband = true } }
+		openBank()
+		assert.same({}, shownSlots(12))
+		search("ore")
+		assert.same({}, shownSlots(12), "the saved fold decides")
+		BW.view.Restack() -- any redraw during the search (a deposit, a tab click) still reads the saved fold
+		assert.same({}, shownSlots(12))
+		assert.same({ warband = true }, copy(SB.Config.UI().collapsed["bank:#"]))
+		search("")
+		assert.same({ warband = true }, copy(SB.Config.UI().collapsed["bank:#"]))
+	end)
+
+	-- P2. Mutation: cfg.toggleGroup ignores BW.searchClosed (the click flips a peek the search rule overrides).
+	it("0.13.5: a header click folds a search-opened bank until the search text changes", function()
+		local L = SB.L
+		openBank()
+		local before = copy(SB.Config.UI().collapsed["bank:#"])
+		search("ore")
+		assert.equal(OPEN, #shownSlots(12))
+		clickGroup("warband")
+		assert.same({}, shownSlots(12), "the click folds it")
+		assert.equal(L.BANK_GROUP_LABEL:format("+", L.BANK_GROUP_WARBAND, 2) .. L.BANK_GROUP_FOLDED .. L.BANK_GROUP_FOUND:format(1),
+			header("#warband").text.text, "folded: it still says how many it found")
+		bankUpdate(12) -- a plain re-apply of the same search keeps the fold
+		assert.same({}, shownSlots(12))
+		search("bismuth")
+		assert.equal(OPEN, #shownSlots(12), "a new search text forgets the click")
+		assert.same(before, copy(SB.Config.UI().collapsed["bank:#"]), "nothing saved")
+		assert.same({}, BW.peek)
+	end)
+
+	-- Mutation: BW.ApplySearch restacks whenever a search is active (not only when the opened set changes).
+	it("0.13.5: one search change gives one restack, and no loop", function()
+		openBank()
+		local n, restack = 0, BW.view.Restack
+		BW.view.Restack = function(...)
+			n = n + 1
+			return restack(...)
+		end
+		search("ore")
+		assert.equal(1, n, "opening warband")
+		search("bismuth")
+		assert.equal(1, n, "the same banks match: nothing to restack")
+		search("")
+		assert.equal(2, n, "clearing folds it back")
+	end)
+
+	-- Mutation: cfg.toggleGroup writes the saved set for a search-opened group.
+	it("0.13.5: a search never writes the saved collapse set", function()
+		openBank()
+		local before = copy(SB.Config.UI().collapsed["bank:#"])
+		search("ore")
+		clickGroup("warband")
+		clickGroup("warband")
+		search("")
+		assert.same(before, copy(SB.Config.UI().collapsed["bank:#"]))
 	end)
 
 	-- Mutation: cfg.groupTip unset (no tooltip).
