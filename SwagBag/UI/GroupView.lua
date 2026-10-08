@@ -776,7 +776,8 @@ function GV.New(cfg)
 	-- arriving (Inventory's LOADED changes { { bag, slot, reasons } }) for an item the last full layout put in New
 	-- because it could not be categorised yet lays the view out again, LOADED_DELAY after the last such load (a
 	-- burst is one regroup), through v.RequestLayout (held like any layout, P5). A load for an item already in its
-	-- category regroups nothing. Returns true when a regroup was asked for.
+	-- category, or one after which the item still has no data, regroups nothing. It also waits while the mouse is
+	-- over cfg.scroll (the window's item area). Returns true when a regroup was asked for.
 	function v.PendingLoaded(changes)
 		if not v.pos then
 			return false
@@ -785,10 +786,21 @@ function GV.New(cfg)
 		for _, c in ipairs(changes) do
 			local itemID = Inv.Has(c.reasons, Inv.R.LOADED) and v.pendingNew[keyOf(c.bag, c.slot)]
 			local s = itemID and Inv.GetSlot(c.bag, c.slot)
-			if s and s.itemID == itemID then
-				SB.Debounce(cfg.key .. ".loaded", GV.LOADED_DELAY, function()
+			local record = s and v.records[keyOf(c.bag, c.slot)] -- the window refreshed it before calling
+			if s and s.itemID == itemID and record and not record.pending then
+				local function land()
+					if not v.pos then
+						return
+					end
+					-- not started by the player: also waits while the mouse is anywhere over the items (an item
+					-- could slide into the empty cell or placeholder under it), as the guild bank and the bags do
+					if cfg.scroll and cfg.scroll:IsMouseOver() then
+						SB.Debounce(cfg.key .. ".loaded", GV.RETRY, land, window)
+						return
+					end
 					v.RequestLayout("loaded")
-				end, window)
+				end
+				SB.Debounce(cfg.key .. ".loaded", GV.LOADED_DELAY, land, window)
 				return true
 			end
 		end

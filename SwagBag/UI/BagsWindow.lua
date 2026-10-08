@@ -1514,7 +1514,8 @@ end
 -- item the last full layout put in New because it could not be categorised yet regroups the window, LOADED_DELAY
 -- after the last such load (a burst is one regroup), held like any layout (P5: never under the mouse or while
 -- anything is on the cursor). An unseen item stays in New (unseen wins); a load for an item already in its
--- category, or a failed load (Inventory notifies nothing), regroups nothing. An item still pending at that layout
+-- category, a failed load (Inventory notifies nothing), or a load after which the item still has no data,
+-- regroups nothing. An item still pending at that layout
 -- waits for its next load: one regroup per burst, never a loop.
 function W.PendingLoaded(changes)
 	if not W.state then
@@ -1524,7 +1525,8 @@ function W.PendingLoaded(changes)
 	for _, c in ipairs(changes) do
 		local itemID = Inv.Has(c.reasons, Inv.R.LOADED) and W.pendingNew[SB.Layout.Key(c.bag, c.slot)]
 		local s = itemID and Inv.GetSlot(c.bag, c.slot)
-		if s and s.itemID == itemID and not Inv.IsUnseen(c.bag, c.slot) then
+		local record = s and W.records[c.bag] and W.records[c.bag][c.slot] -- refreshed above in the same handler
+		if s and s.itemID == itemID and not Inv.IsUnseen(c.bag, c.slot) and record and not record.pending then
 			SB.Debounce("bags.loaded", W.LOADED_DELAY, function()
 				W.RequestLayout("loaded")
 			end, "bags")

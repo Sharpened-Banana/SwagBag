@@ -1566,6 +1566,17 @@ describe("BagsWindow category view", function()
 		assert.equal("- BoE gear (9)", header("c_boe").text.text)
 	end)
 
+	-- Mutation: in W.PendingLoaded, drop `and not record.pending`.
+	it("0.13.3: a load after which the item still has no data regroups nothing", function()
+		putPending(PENDING, 7)
+		W.Open()
+		local n = countLayouts()
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", PENDING[1], true) -- success, but the data is still missing
+		A.Advance(W.LOADED_DELAY + W.RETRY)
+		assert.equal(0, n.count)
+		assert.equal("- New (3)", header("new").text.text)
+	end)
+
 	-- Mutation: in Inventory's onItemLoaded, drop `if success == false then return end`.
 	it("0.13.3: a failed load (success false) regroups nothing; the item stays in New", function()
 		putPending(PENDING, 7)
