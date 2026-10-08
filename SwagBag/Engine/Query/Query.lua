@@ -156,7 +156,7 @@ local function orMatcher(fns)
 		local result = false
 		for i = 1, n do
 			local v = fns[i](r)
-			if v == true then
+			if v ~= nil and v ~= false then -- the same normalisation as build's leaf: any other value is a match
 				return true
 			elseif v == nil then
 				result = nil

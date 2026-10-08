@@ -482,7 +482,11 @@ local function previewRows(out, text, noHint)
 		{ text = L.CAT_SHOW_MATCHES, run = forget(function()
 			SC.shown = text:match("^%s*(.-)%s*$") -- the command trims it; the close compares with what it stored
 			SB.Search.PreviewExact(SC.shown) -- the rule's own meaning: no keyword prefixes (0.13.6)
-			return run("search " .. text)
+			local answer = run("search " .. text)
+			if answer == L.SEARCH_OPEN_FIRST then
+				SB.Search.PreviewExact(nil) -- the bags refused: nothing was searched, so nothing stays exact
+			end
+			return answer
 		end) },
 		{ text = L.CAT_CLEAR_MATCHES, run = forget(function()
 			SC.shown = nil
