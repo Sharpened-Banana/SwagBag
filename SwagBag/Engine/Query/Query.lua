@@ -5,7 +5,11 @@
 --       value(record) -> number | false | nil for numeric use:   ilvl>250
 --                        (false = item has no such field -> comparison is false;
 --                         nil = data not loaded yet -> result unknown)
---   Query.Compile(text) -> { fn, cacheClass, keywords, errors, warnings, ast, id, text, empty }
+--   Query.Compile(text [, opts]) -> { fn, cacheClass, keywords, errors, warnings, ast, id, text, empty }
+--       opts.prefix = true (0.13.6; only the search boxes pass it): a bare word of Query.PREFIX_MIN (3) or more
+--       characters that is not itself a keyword also matches every keyword or alias that starts with it, so "trink"
+--       finds trinkets while it is being typed. The matching keywords are collected once, at compile time. Rules,
+--       focus modes, watch lists and share strings compile without it, so a saved "leg" keeps its exact meaning.
 --       warnings: { { kind = "unknown_keyword", value, position } } for #word with no such
 --       keyword. Like Syndicator, such a term is simply false (spec 7.5 #3); not an error.
 --   Query.Eval(compiled, record) -> true | false | nil   (nil when compiled has errors)
@@ -20,7 +24,7 @@
 -- OR is true if any part is true, else nil if any is nil; NOT nil is nil.
 local _, SB = ...
 
-local Q = { keywords = {}, nextId = 0, MAX_QUERY = 500 }
+local Q = { keywords = {}, nextId = 0, MAX_QUERY = 500, PREFIX_MIN = 3 }
 SB.Query = Q
 
 local RANK = { static = 1, instance = 2, volatile = 3 }
@@ -131,6 +135,37 @@ local function build(node, leaf)
 	end
 end
 
+-- Every keyword entry with an eval whose name or alias starts with word (lower case), once each, in name order.
+-- Compile time only.
+local function prefixKeywords(word)
+	local found, seen = {}, {}
+	for name, kw in pairs(Q.keywords) do
+		if kw.eval and name:sub(1, #word) == word and not seen[kw] then
+			seen[kw] = true
+			found[#found + 1] = kw
+		end
+	end
+	table.sort(found, function(a, b) return a.name < b.name end)
+	return found
+end
+
+-- A name match widened by keyword evals (Kleene OR: true if any is true, else nil if any is nil, else false).
+local function orMatcher(fns)
+	local n = #fns
+	return function(r)
+		local result = false
+		for i = 1, n do
+			local v = fns[i](r)
+			if v == true then
+				return true
+			elseif v == nil then
+				result = nil
+			end
+		end
+		return result
+	end
+end
+
 local function unknown()
 	return nil
 end
@@ -139,7 +174,7 @@ local function never()
 	return false
 end
 
-function Q.Compile(text)
+function Q.Compile(text, opts)
 	text = text or ""
 	local compiled = { text = text, keywords = {}, errors = {}, warnings = {}, cacheClass = "static" }
 	if not text:find("%S") then
@@ -179,6 +214,17 @@ function Q.Compile(text)
 			if node.type == "exact" then
 				compiled.warnings[#compiled.warnings + 1] = { kind = "unknown_keyword", value = node.value, position = node.s }
 				return never
+			end
+			if node.type == "word" and opts and opts.prefix and #node.value >= Q.PREFIX_MIN then
+				local fns = { textMatcher(node.value) }
+				for _, entry in ipairs(prefixKeywords(node.value:lower())) do
+					use(entry)
+					fns[#fns + 1] = entry.eval
+				end
+				if #fns > 1 then
+					return orMatcher(fns)
+				end
+				return fns[1]
 			end
 			return textMatcher(node.value)
 		elseif node.type == "text" then

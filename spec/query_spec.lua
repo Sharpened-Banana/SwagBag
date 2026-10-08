@@ -377,3 +377,127 @@ describe("Query errors, Validate, Pretty, registry", function()
 		assert.has_error(function() Q.RegisterKeyword({ class = "static", eval = function() end }) end, "name")
 	end)
 end)
+
+-- 0.13.6 (the user: "trinket finds trinkets, trink does not"): a search box passes { prefix = true }, and a bare
+-- word of 3+ characters then also matches any keyword or alias that starts with it. Rules never pass it.
+describe("Query compile with opts.prefix (0.13.6)", function()
+	local Q
+	local P = { prefix = true }
+	local TRINKET = { kind = "gear", name = "Charm of X", equipLoc = "INVTYPE_TRINKET" }
+	local WRIST = { kind = "gear", name = "Cuffs", equipLoc = "INVTYPE_WRIST" }
+	local FINGER = { kind = "gear", name = "Band of the Fallen", equipLoc = "INVTYPE_FINGER" }
+	before_each(function()
+		Q = Loader.New(FILES).Query
+		registerTestKeywords(Q)
+		local function slot(name, loc, aliases)
+			Q.RegisterKeyword({ name = name, aliases = aliases, class = "static",
+				eval = function(r) return r.equipLoc == loc end })
+		end
+		slot("trinket", "INVTYPE_TRINKET")
+		slot("wrist", "INVTYPE_WRIST", { "bracers" })
+		slot("finger", "INVTYPE_FINGER")
+		slot("fingerless", "INVTYPE_FINGERLESS")
+	end)
+
+	local function match(text, record, opts)
+		return Q.Eval(Q.Compile(text, opts), record)
+	end
+
+	-- Mutation: the prefix branch is not added (the word stays a name match only).
+	it("trink and trinke find the trinket by keyword and not the ring", function()
+		assert.equal(true, match("trink", TRINKET, P))
+		assert.equal(true, match("trinke", TRINKET, P))
+		assert.equal(false, match("trink", FINGER, P))
+	end)
+
+	-- Mutation: PREFIX_MIN is 4, or the length test is > instead of >=.
+	it("three characters are enough; two match the name only", function()
+		assert.equal(3, Q.PREFIX_MIN)
+		assert.equal(true, match("tri", TRINKET, P))
+		assert.equal(false, match("tr", { equipLoc = "INVTYPE_TRINKET", name = "Charm" }, P))
+	end)
+
+	-- Mutation: an exact keyword is widened too (fingerless would light up with "finger").
+	it("an exact keyword behaves exactly as without the option", function()
+		assert.equal(true, match("trinket", TRINKET, P))
+		local plain, withPrefix = Q.Compile("finger"), Q.Compile("finger", P)
+		assert.same(plain.keywords, withPrefix.keywords)
+		assert.same({ "finger" }, withPrefix.keywords)
+		assert.equal(true, Q.Eval(withPrefix, { equipLoc = "INVTYPE_FINGER" }))
+		assert.equal(false, Q.Eval(withPrefix, { equipLoc = "INVTYPE_FINGERLESS" }))
+	end)
+
+	-- Mutation: the prefix branch replaces the name match instead of adding to it.
+	it("a prefix still matches names", function()
+		assert.equal(true, match("ban", FINGER, P))
+		assert.equal(true, match("cha", TRINKET, P), "Charm of X by name")
+		assert.equal(false, match("ban", TRINKET, P))
+	end)
+
+	-- Mutation: only keyword names are scanned, aliases are not.
+	it("an alias prefix matches: brac finds wrist items through bracers", function()
+		assert.equal(true, match("brac", WRIST, P))
+		assert.equal(false, match("brac", FINGER, P))
+	end)
+
+	-- Mutation: only the first matching keyword is used (or the same entry is counted twice).
+	it("keywords sharing a prefix: either one matches, and an entry named twice is used once", function()
+		local c = Q.Compile("fing", P)
+		assert.equal(true, Q.Eval(c, FINGER))
+		assert.equal(true, Q.Eval(c, { equipLoc = "INVTYPE_FINGERLESS", name = "Glove" }))
+		assert.equal(false, Q.Eval(c, TRINKET))
+		table.sort(c.keywords)
+		assert.same({ "finger", "fingerless" }, c.keywords)
+		local w = Q.Compile("wri", P)
+		assert.same({ "wrist" }, w.keywords)
+		assert.same({ "wrist" }, Q.Compile("brac", P).keywords)
+	end)
+
+	-- Mutation: combine with AND semantics, or turn nil into false.
+	it("nil: an unknown keyword with false name results gives nil; a true name still wins", function()
+		assert.is_nil(match("myst", HELM, P))
+		assert.is_nil(match("myst", LOADING, P), "name not loaded either")
+		assert.equal(true, match("myst", { name = "Mystic Robe" }, P))
+		assert.equal(false, match("trink", HELM, P))
+	end)
+
+	-- Mutation: cacheClass is taken from the last (or first) matched keyword instead of the highest.
+	it("cacheClass is the highest class among the matched keywords; value-only keywords are not matched", function()
+		Q.RegisterKeyword({ name = "zed1", class = "static", eval = function() return false end })
+		Q.RegisterKeyword({ name = "zed2", class = "volatile", eval = function() return false end })
+		Q.RegisterKeyword({ name = "zed3", class = "instance", eval = function() return false end })
+		Q.RegisterKeyword({ name = "zedvalue", class = "volatile", value = function() return 1 end })
+		local c = Q.Compile("zed", P)
+		assert.equal("volatile", c.cacheClass)
+		assert.same({ "zed1", "zed2", "zed3" }, (function() table.sort(c.keywords) return c.keywords end)())
+		assert.equal("static", Q.Compile("zed1", P).cacheClass)
+		assert.equal("static", Q.Compile("zed", {}).cacheClass)
+	end)
+
+	-- Mutation: Compile always widens (the option is ignored).
+	it("without the option trink matches by name only", function()
+		assert.equal(false, match("trink", TRINKET))
+		assert.equal(false, match("trink", TRINKET, {}))
+		assert.same({}, Q.Compile("trink").keywords)
+		assert.equal(true, match("trink", { name = "Trinket Box" }))
+	end)
+
+	-- Mutation: exact and quoted nodes get the prefix branch too.
+	it("#word, quoted text and numeric terms are unchanged", function()
+		local c = Q.Compile("#trink", P)
+		assert.equal(false, Q.Eval(c, TRINKET))
+		assert.equal("unknown_keyword", c.warnings[1].kind)
+		assert.equal(false, match("\"trink\"", TRINKET, P))
+		assert.equal(true, match("\"trink\"", { name = "Trinket Box" }, P))
+		assert.equal(true, match("ilvl>250", RING, P))
+		assert.is_nil(Q.Compile("ilv>250", P).fn, "a numeric keyword is not completed")
+	end)
+
+	-- Mutation: the keyword table is scanned per record (emptying it after Compile would change the result).
+	it("the keyword scan happens at compile time, not per record", function()
+		local c = Q.Compile("trink", P)
+		Q.keywords = {}
+		assert.equal(true, Q.Eval(c, TRINKET))
+		assert.equal(false, Q.Eval(c, FINGER))
+	end)
+end)

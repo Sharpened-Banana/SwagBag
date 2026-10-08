@@ -255,4 +255,36 @@ describe("Search", function()
 		bank.Apply(forEach, setDimmed)
 		assert.equal(3, #SB.ErrorTrap.Recent(), "recorded once more, not per pass")
 	end)
+
+	-- 0.13.6. Mutation: SearchState compiles without { prefix = true } (trink then matches names only).
+	it("0.13.6: a partly typed keyword finds the item (trink finds the trinket, not the ring)", function()
+		SB.Adapter.AddItem(777001, { name = "Charm of X", classID = SB.Adapter.ITEM_CLASS.Armor, subclassID = 0,
+			equipLoc = "INVTYPE_TRINKET", quality = 4, ilvl = 280, maxStack = 1, bind = "pickup" })
+		SB.Adapter.Put(0, 8, 777001, 1)
+		slots[8] = { button = "b8", record = SB.Items.Describe(0, 8) }
+		assert.truthy(S.SetText("trink"))
+		local matches = S.Apply(forEach, setDimmed)
+		assert.equal(1, matches)
+		assert.is_nil(dimmed.b8 and true or nil, "the trinket is lit")
+		assert.truthy(dimmed.b3, "the ring is dimmed")
+		S.SetText("trinket")
+		assert.equal(1, (S.Apply(forEach, setDimmed)))
+		S.SetText("tr")
+		assert.equal(0, (S.Apply(forEach, setDimmed)), "two characters: names only")
+	end)
+
+	-- Mutation: Compile with the option is given to every caller (Categories rule "leg" widens too).
+	it("0.13.6: a rule compiled without the option keeps its exact meaning", function()
+		local c = SB.Query.Compile("trink")
+		assert.same({}, c.keywords)
+		assert.same({ "trinket" }, SB.Query.Compile("trink", { prefix = true }).keywords)
+	end)
+
+	-- Real keywords sharing a prefix: "prof" is profession, profession tool, profession gear (+ its alias).
+	it("0.13.6: several real keywords share a prefix", function()
+		local c = SB.Query.Compile("prof", { prefix = true })
+		table.sort(c.keywords)
+		assert.same({ "profession", "profession gear", "profession tool" }, c.keywords)
+		assert.equal("static", c.cacheClass)
+	end)
 end)

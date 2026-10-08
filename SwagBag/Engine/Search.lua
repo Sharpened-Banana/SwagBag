@@ -51,7 +51,7 @@ function SearchState.New()
 			S.lastError = nil -- unchanged valid query: no recompile
 			return true
 		end
-		local compiled = SB.Query.Compile(text)
+		local compiled = SB.Query.Compile(text, { prefix = true })
 		if not compiled.fn then
 			S.lastError = compiled.errors[1]
 			return false, SB.Query.FormatError(S.lastError)
