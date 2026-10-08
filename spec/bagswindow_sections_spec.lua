@@ -1455,6 +1455,127 @@ describe("BagsWindow category view", function()
 		assert.equal(0, #B.placeholders)
 		assert.same(counts, placedCounts())
 	end)
+
+	-- 0.13.3 (the root cause of the New flood after a cold client start: 133 stacks at a vendor): an item whose data
+	-- had not loaded at the last full layout waits in New; its data arriving regroups (debounced, held like any
+	-- layout), so it leaves New for its category by itself.
+	local PENDING = { 239001, 239002, 239003 }
+	local function putPending(ids, firstSlot)
+		for i, id in ipairs(ids) do
+			A.AddItem(id, { classID = A.ITEM_CLASS.Armor, subclassID = 0, equipLoc = "INVTYPE_CHEST", pending = true })
+			A.Put(0, firstSlot + i - 1, id, 1)
+		end
+		SB.Inventory.ScanAll() -- in the bags at login: not unseen
+		Fixtures.Settle(SB)
+	end
+	local function load(id, success)
+		A.items[id] = { name = "Robe " .. id, classID = A.ITEM_CLASS.Armor, subclassID = 0, quality = 3,
+			equipLoc = "INVTYPE_CHEST", ilvl = 280, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", id, success ~= false)
+	end
+	local function countLayouts()
+		local n, layout = { count = 0 }, W.Layout
+		W.Layout = function(...)
+			n.count = n.count + 1
+			return layout(...)
+		end
+		return n
+	end
+
+	-- Mutation: in BagsWindow's inventory handler, drop the pending-load check (no regroup on LOADED).
+	it("0.13.3: items pending at the open leave New for their category once their data loads", function()
+		putPending(PENDING, 7)
+		W.Open()
+		assert.equal("- New (3)", header("new").text.text, "pending: New")
+		for _, id in ipairs(PENDING) do
+			load(id)
+		end
+		assert.equal("- New (3)", header("new").text.text, "debounced: not yet")
+		A.Advance(W.LOADED_DELAY)
+		assert.equal("- New (0)", header("new").text.text)
+		assert.equal("- BoE gear (4)", header("c_boe").text.text)
+		assert.equal("loaded", W.stats.lastLayoutReason)
+	end)
+
+	-- P5. Mutation: in the debounced function, call W.Layout("loaded") instead of W.RequestLayout("loaded").
+	it("0.13.3: that regroup waits while the mouse is over the items, then lands once it leaves", function()
+		putPending(PENDING, 7)
+		W.Open()
+		W.scroll.mouseOver = true
+		B.Get(0, 7).mouseOver = true
+		for _, id in ipairs(PENDING) do
+			load(id)
+		end
+		A.Advance(W.LOADED_DELAY + W.RETRY * 2)
+		assert.equal("- New (3)", header("new").text.text, "held under the mouse")
+		W.scroll.mouseOver, B.Get(0, 7).mouseOver = false, false
+		A.Advance(W.RETRY)
+		assert.equal("- New (0)", header("new").text.text, "landed once the mouse left")
+		assert.equal("- BoE gear (4)", header("c_boe").text.text)
+	end)
+
+	-- Unseen wins. The slot held a pending item at the open; it left, and the same item came back (looted: unseen)
+	-- before its data loaded. Mutation: in W.PendingLoaded, drop the Inventory.IsUnseen test.
+	it("0.13.3: an unseen item whose data loads stays in New and regroups nothing", function()
+		putPending({ PENDING[1] }, 7)
+		W.Open()
+		assert.equal("- New (1)", header("new").text.text)
+		A.Clear(0, 7)
+		bagUpdate()
+		A.Put(0, 7, PENDING[1], 1)
+		bagUpdate()
+		assert.truthy(SB.Inventory.IsUnseen(0, 7), "looted: unseen")
+		local n = countLayouts()
+		load(PENDING[1])
+		A.Advance(W.LOADED_DELAY + W.RETRY)
+		assert.equal(0, n.count, "no regroup")
+		assert.equal("- New (1)", header("new").text.text)
+	end)
+
+	-- Mutation: in the inventory handler, request the regroup on every LOADED (drop the pendingNew lookup).
+	it("0.13.3: data loading for an item already in its category asks for no layout", function()
+		W.Open()
+		local requests, request = 0, W.RequestLayout
+		W.RequestLayout = function(reason)
+			requests = requests + 1
+			return request(reason)
+		end
+		-- the potion is categorised; a LOADED for it (the client may fire one for any item) changes nothing
+		SB.Inventory.MarkPending(Fixtures.HEALING_POTION)
+		SB.eventFrame:Fire("GET_ITEM_INFO_RECEIVED", Fixtures.HEALING_POTION, true)
+		SB.eventFrame:Fire("BAG_UPDATE_COOLDOWN")
+		A.Advance(W.LOADED_DELAY + W.RETRY)
+		assert.equal(0, requests)
+	end)
+
+	-- Mutation: replace SB.Debounce with a direct W.RequestLayout("loaded") call (one layout per load).
+	it("0.13.3: a burst of loads gives exactly one layout", function()
+		local ids = { 239001, 239002, 239003, 239004, 239005, 239006, 239007, 239008 }
+		putPending(ids, 7)
+		W.Open()
+		local n = countLayouts()
+		for i, id in ipairs(ids) do
+			load(id)
+			if i % 2 == 0 then
+				A.Advance(0.1) -- loads trickle in: each one restarts the wait
+			end
+		end
+		A.Advance(W.LOADED_DELAY)
+		assert.equal(1, n.count)
+		assert.equal("- New (0)", header("new").text.text)
+		assert.equal("- BoE gear (9)", header("c_boe").text.text)
+	end)
+
+	-- Mutation: in Inventory's onItemLoaded, drop `if success == false then return end`.
+	it("0.13.3: a failed load (success false) regroups nothing; the item stays in New", function()
+		putPending(PENDING, 7)
+		W.Open()
+		local n = countLayouts()
+		load(PENDING[1], false)
+		A.Advance(W.LOADED_DELAY + W.RETRY)
+		assert.equal(0, n.count)
+		assert.equal("- New (3)", header("new").text.text)
+	end)
 end)
 
 describe("BagsWindow focus modes (spec 6)", function()

@@ -1024,6 +1024,91 @@ describe("BankWindow contents", function()
 		assert.equal("one", SB.Config.Get("bank.show"))
 		assert.same({ L.BANK_SHOW_BOTH, L.BANK_SHOW_ONE, L.SETTINGS_READONLY }, A.Lines())
 	end)
+
+	-- 0.13.3 (the root cause of the Warband bank's New (219) at the first visit after a cold client start): an item
+	-- whose data had not loaded at the last full layout waits in its group's New; its data arriving regroups the
+	-- bank (debounced, held like any layout), so it leaves New for its category by itself.
+	local PENDING = { 239001, 239002, 239003, 239004, 239005 }
+	local function load(id, success)
+		A.items[id] = { name = "Robe " .. id, classID = A.ITEM_CLASS.Armor, subclassID = 0, quality = 3,
+			equipLoc = "INVTYPE_CHEST", ilvl = 280, maxStack = 1, bind = "equip" }
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", id, success ~= false)
+	end
+	local function putPending()
+		SB.Config.Set("bank.show", "both")
+		for i, id in ipairs(PENDING) do
+			A.AddItem(id, { classID = A.ITEM_CLASS.Armor, subclassID = 0, equipLoc = "INVTYPE_CHEST", pending = true })
+			A.Put(12, 2 + i, id, 1)
+		end
+	end
+
+	-- Mutation: in BankWindow's inventory handler, drop the v.PendingLoaded(changes) call.
+	it("0.13.3: Warband items pending at the visit leave New for their category once their data loads", function()
+		putPending()
+		openBank()
+		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (7)",
+			"- New (0)", "- Consumables (1)", "- Herbs (1)", "- Free (6)",
+			"- New (5)", "- BoE gear (1)", "- Ore (1)", "- Free (1)" }, labels())
+		for _, id in ipairs(PENDING) do
+			load(id)
+		end
+		assert.equal("- New (5)", labels()[7], "debounced: not yet")
+		A.Advance(SB.GroupView.LOADED_DELAY)
+		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (7)",
+			"- New (0)", "- Consumables (1)", "- Herbs (1)", "- Free (6)",
+			"- New (0)", "- BoE gear (6)", "- Ore (1)", "- Free (1)" }, labels())
+		assert.equal("loaded", BW.view.stats.lastLayoutReason)
+	end)
+
+	-- Mutation: in GroupView's PendingLoaded, call v.Layout("loaded") instead of v.RequestLayout("loaded").
+	it("0.13.3: that bank regroup waits while a button that would move is under the mouse, then lands", function()
+		putPending()
+		openBank()
+		B.Get(12, 3).mouseOver = true
+		for _, id in ipairs(PENDING) do
+			load(id)
+		end
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY * 2)
+		assert.equal("- New (5)", labels()[7], "held under the mouse")
+		B.Get(12, 3).mouseOver = false
+		A.Advance(SB.GroupView.RETRY)
+		assert.equal("- New (0)", labels()[7], "landed once the mouse left")
+	end)
+
+	-- Mutation: in GroupView's PendingLoaded, drop the pendingNew lookup (every LOADED regroups).
+	it("0.13.3: a load for a bank item already in its category, or a failed load, lays nothing out", function()
+		putPending()
+		openBank()
+		local layouts, request = 0, BW.view.RequestLayout
+		BW.view.RequestLayout = function(reason)
+			layouts = layouts + 1
+			return request(reason)
+		end
+		SB.Inventory.MarkPending(Fixtures.ORE)
+		SB.eventFrame:Fire("GET_ITEM_INFO_RECEIVED", Fixtures.ORE, true)
+		load(PENDING[1], false)
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
+		assert.equal(0, layouts)
+		assert.equal("- New (5)", labels()[7])
+	end)
+
+	-- Mutation: in GroupView's PendingLoaded, call v.RequestLayout at once instead of through SB.Debounce.
+	it("0.13.3: a burst of bank loads gives exactly one layout", function()
+		putPending()
+		openBank()
+		local n, request = 0, BW.view.RequestLayout
+		BW.view.RequestLayout = function(reason)
+			n = n + 1
+			return request(reason)
+		end
+		for _, id in ipairs(PENDING) do
+			load(id)
+			A.Advance(0.1)
+		end
+		A.Advance(SB.GroupView.LOADED_DELAY)
+		assert.equal(1, n)
+		assert.equal("- New (0)", labels()[7])
+	end)
 end)
 
 describe("Bags and bank windows open together (Review Focus 1)", function()

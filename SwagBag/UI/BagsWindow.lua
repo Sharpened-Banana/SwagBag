@@ -26,6 +26,7 @@ local W = {
 	view = nil, -- sections view: the collapsed lookup W.pos was built with (what is drawn, W4-1)
 	order = nil, -- sections view: the section order W.pos was built with (what is drawn, W4-1)
 	drawn = "sections", -- the view the current layout was drawn in (the setting may change before a held layout)
+	pendingNew = {}, -- [Layout.Key(bag, slot)] = itemID: put in New at the last full layout because it could not be categorised yet (0.13.3)
 	areaHeld = false, -- a world-started re-stack is waiting for the mouse to leave the items (W4-13)
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
 	tiled = {}, -- [button] = its tile entry ({ bag, slot, ... }) while it shows a free tile's number (plan D19)
@@ -40,6 +41,7 @@ local W = {
 	MAX_HEIGHT_FRACTION = 0.75,
 	SCALE_STEP = 0.05,
 	RETRY = 0.3, -- spec 4.2 rule 5: held-back moves retry 300 ms later
+	LOADED_DELAY = 0.5, -- 0.13.3: data loading for items pending in New regroups this long after the last load
 	SORT_SETTLE = 0.3, -- regroup this long after the last bag update of a sort
 	SORT_TIMEOUT = 1.5, -- a sort that never changes anything stops waiting after this long (W3)
 	DROP_GUARD = 0.3, -- the click that follows a drop on the same header is ignored for this long
@@ -825,11 +827,18 @@ end
 -- Final review item 6 (the user's rule, spec AC3.3): an item that came into the bags and was not hovered yet
 -- (Inventory.IsUnseen) goes to New at every full layout, whatever its category and whatever the focus mode;
 -- every other item to its category (nil, a pending item, is New too).
+-- 0.13.3: a pending item (its data not loaded yet, or a rule that cannot decide yet: after a cold client start, a
+-- hundred stacks at the first open) is remembered in W.pendingNew; its data arriving regroups the window
+-- (W.PendingLoaded), so it leaves New for its category by itself.
 local function assignOf(record)
 	if SB.Inventory and SB.Inventory.IsUnseen(record.bag, record.slot) then
 		return nil
 	end
-	return SB.Categorizer.Assign(record)
+	local id = SB.Categorizer.Assign(record)
+	if id == nil then
+		W.pendingNew[SB.Layout.Key(record.bag, record.slot)] = record.itemID
+	end
+	return id
 end
 
 local function layoutSections(bags)
@@ -928,6 +937,7 @@ function W.Layout(reason)
 	end
 	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -W.HeaderHeight())
 	W.records, W.state, W.pos, W.view, W.order, W.areaHeld = {}, nil, nil, nil, nil, false
+	W.pendingNew = {}
 	B.ReleasePlaceholders(child)
 	SB.SectionHeaders.ReleaseAll(child)
 	local width, height
@@ -1500,6 +1510,30 @@ function W.ApplyChanges(changes)
 	return result
 end
 
+-- 0.13.3 (the root cause of the New flood after a cold client start): data arriving (Inventory's LOADED) for an
+-- item the last full layout put in New because it could not be categorised yet regroups the window, LOADED_DELAY
+-- after the last such load (a burst is one regroup), held like any layout (P5: never under the mouse or while
+-- anything is on the cursor). An unseen item stays in New (unseen wins); a load for an item already in its
+-- category, or a failed load (Inventory notifies nothing), regroups nothing. An item still pending at that layout
+-- waits for its next load: one regroup per burst, never a loop.
+function W.PendingLoaded(changes)
+	if not W.state then
+		return false
+	end
+	local Inv = SB.Inventory
+	for _, c in ipairs(changes) do
+		local itemID = Inv.Has(c.reasons, Inv.R.LOADED) and W.pendingNew[SB.Layout.Key(c.bag, c.slot)]
+		local s = itemID and Inv.GetSlot(c.bag, c.slot)
+		if s and s.itemID == itemID and not Inv.IsUnseen(c.bag, c.slot) then
+			SB.Debounce("bags.loaded", W.LOADED_DELAY, function()
+				W.RequestLayout("loaded")
+			end, "bags")
+			return true
+		end
+	end
+	return false
+end
+
 -- Slots added or removed since the last layout (a bag was equipped or taken off).
 local function sizeChanges()
 	local A, B, out = SB.Adapter, SB.Buttons, {}
@@ -1592,6 +1626,9 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 				end
 			end
 		end
+	end
+	if Inv.Has(mask, Inv.R.LOADED) then
+		W.PendingLoaded(changes)
 	end
 	local applied
 	if W.state and (#moves > 0 or #W.state.deferred > 0) then

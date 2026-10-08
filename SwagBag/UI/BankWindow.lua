@@ -899,7 +899,8 @@ function BW.GroupTip(id, header)
 end
 
 -- Live updates while open (spec 4.3), for the bank tabs only: count, lock and loaded data
--- repaint in place; an emptied slot or a different item goes to GroupView.Changes; a tab
+-- repaint in place (0.13.3: loaded data for an item waiting in New because it was pending regroups the bank,
+-- debounced and held, GroupView's v.PendingLoaded); an emptied slot or a different item goes to GroupView.Changes; a tab
 -- that appears or changes size lays the bank out again (held back like any full layout).
 local BANK_REASONS
 SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
@@ -962,6 +963,9 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 				end
 			end
 		end
+	end
+	if Inv.Has(mask, Inv.R.LOADED) then
+		v.PendingLoaded(changes) -- 0.13.3: pending items in New leave it once their data loads
 	end
 	for _, gid in ipairs({ "bank", "warband" }) do
 		if byGroup[gid] then

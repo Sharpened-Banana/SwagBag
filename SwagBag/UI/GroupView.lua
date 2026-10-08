@@ -19,6 +19,8 @@
 --   v.Layout(reason) -> width, height   full layout (open, Reflow, sort, view toggle)
 --   v.RequestLayout(reason) -> bool     the same, held back while anything is on the cursor (CursorBusy)
 --                                       or a button that would move is under the mouse (4.3)
+--   v.PendingLoaded(changes) -> bool    0.13.3: Inventory LOADED changes; regroups (debounced, held) when one is
+--                                       for an item the last full layout put in New because it was pending
 --   v.Changes(groupId, list)            live changes { { bag, slot, kind, icon } }, kind
 --                                       "left" | "arrived" | "added" | "removed" (Layout.Apply)
 --   v.Restack() -> bool                 redraw after a collapse or expand (held back like a move)
@@ -65,6 +67,7 @@ local _, SB = ...
 
 local GV = { SLOT = 37, GAP = 4, PAD = 4, SECTION_HEADER = 20, SECTION_GAP = 6, GROUP_HEADER = 22, GROUP_GAP = 8,
 	RETRY = 0.3, DROP_GUARD = 0.3,
+	LOADED_DELAY = 0.5, -- 0.13.3: data loading for items pending in New regroups this long after the last load
 	-- the list view (week 8): the bags window's sizes (UI/BagsWindow.lua), so every list looks the same
 	LIST_ROW = 24, LIST_GAP = 2, LIST_WIDTH = 480, LIST_NEW_ROWS = 8, ROW_TEXT_GAP = 4, SCALE_EPSILON = 0.001 }
 SB.GroupView = GV
@@ -96,7 +99,7 @@ function GV.New(cfg)
 	local Guard = SB.ErrorTrap.Guard
 	local window = cfg.window or "bank" -- the ErrorTrap window of every entry point (spec P6)
 	local v = { groups = {}, byId = {}, records = {}, cells = {}, placed = {}, sizes = {}, groupOf = {}, pos = nil,
-		redrawPending = false, stats = {}, tiled = {}, drawn = "sections", listFailed = false }
+		redrawPending = false, stats = {}, tiled = {}, drawn = "sections", listFailed = false, pendingNew = {} }
 	local rows = cfg.rows
 
 	-- The view a layout is built for: the setting, with "list" only when there are rows to draw it.
@@ -585,8 +588,16 @@ function GV.New(cfg)
 	local function build(view)
 		local A = SB.Adapter
 		view = view or wanted()
-		local b = { groups = {}, byId = {}, records = {}, sizes = {}, groupOf = {}, view = view,
+		local b = { groups = {}, byId = {}, records = {}, sizes = {}, groupOf = {}, view = view, pendingNew = {},
 			ms = { groups = 0, read = 0, categories = 0, positions = 0, drawing = 0 } }
+		-- 0.13.3: what goes to New because it cannot be categorised yet is remembered (v.PendingLoaded)
+		local function assign(record)
+			local id = SB.Categorizer.Assign(record)
+			if id == nil and record.bag and record.slot then
+				b.pendingNew[keyOf(record.bag, record.slot)] = record.itemID
+			end
+			return id
+		end
 		local sections = view ~= "grid"
 		local list = view == "list"
 		local order = sections and SB.Categories.SectionOrder() or nil
@@ -617,7 +628,7 @@ function GV.New(cfg)
 				if list then -- each section lists its items in the list's order (Engine/Sort.lua)
 					slots = SB.Sort.DisplayOrder(slots, SB.Sort.Spec(), SB.Sort.Value)
 				end
-				g.state = SB.Layout.Build(slots, SB.Categorizer.Assign, order, { columns = list and 1 or cfg.columns(),
+				g.state = SB.Layout.Build(slots, assign, order, { columns = list and 1 or cfg.columns(),
 					newRows = list and GV.LIST_NEW_ROWS or cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile(view) or nil,
 					family = cfg.family or SB.Adapter.BagFamily, hideEmptyNew = hideNew() })
 				b.ms.categories = b.ms.categories + A.ProfileMs() - t
@@ -692,6 +703,7 @@ function GV.New(cfg)
 		local old = v.pos
 		v.groups, v.byId, v.records, v.sizes, v.groupOf, v.redrawPending = b.groups, b.byId, b.records, b.sizes,
 			b.groupOf, false
+		v.pendingNew = b.pendingNew
 		v.drawn = b.view
 		v.heldKey = nil -- any layout that lands (v.Layout too) ends a held RequestLayout's reason
 		if old then
@@ -758,6 +770,29 @@ function GV.New(cfg)
 			cfg.onUpdated()
 		end
 		return true
+	end
+
+	-- 0.13.3 (the root cause of the Warband bank's New flood at the first visit after a cold client start): data
+	-- arriving (Inventory's LOADED changes { { bag, slot, reasons } }) for an item the last full layout put in New
+	-- because it could not be categorised yet lays the view out again, LOADED_DELAY after the last such load (a
+	-- burst is one regroup), through v.RequestLayout (held like any layout, P5). A load for an item already in its
+	-- category regroups nothing. Returns true when a regroup was asked for.
+	function v.PendingLoaded(changes)
+		if not v.pos then
+			return false
+		end
+		local Inv = SB.Inventory
+		for _, c in ipairs(changes) do
+			local itemID = Inv.Has(c.reasons, Inv.R.LOADED) and v.pendingNew[keyOf(c.bag, c.slot)]
+			local s = itemID and Inv.GetSlot(c.bag, c.slot)
+			if s and s.itemID == itemID then
+				SB.Debounce(cfg.key .. ".loaded", GV.LOADED_DELAY, function()
+					v.RequestLayout("loaded")
+				end, window)
+				return true
+			end
+		end
+		return false
 	end
 
 	---------------------------------------------------------------------------
@@ -971,7 +1006,7 @@ function GV.New(cfg)
 				end
 			end
 		end
-		v.groups, v.byId, v.pos, v.cells, v.redrawPending, v.heldKey = {}, {}, nil, {}, false, nil
+		v.groups, v.byId, v.pos, v.cells, v.redrawPending, v.heldKey, v.pendingNew = {}, {}, nil, {}, false, nil, {}
 		v.listFailed, v.restackHeld = false, false
 		SB.Buttons.ReleasePlaceholders(cfg.child)
 		SB.SectionHeaders.ReleaseAll(cfg.child)
