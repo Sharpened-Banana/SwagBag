@@ -481,6 +481,7 @@ local function previewRows(out, text, noHint)
 	out[#out + 1] = { kind = "actions", label = L.CAT_SEE, tip = L.CAT_SEE_TIP, actions = {
 		{ text = L.CAT_SHOW_MATCHES, run = forget(function()
 			SC.shown = text:match("^%s*(.-)%s*$") -- the command trims it; the close compares with what it stored
+			SB.Search.PreviewExact(SC.shown) -- the rule's own meaning: no keyword prefixes (0.13.6)
 			return run("search " .. text)
 		end) },
 		{ text = L.CAT_CLEAR_MATCHES, run = forget(function()

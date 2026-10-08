@@ -296,6 +296,21 @@ describe("Settings > Categories (week 11)", function()
 		assert.truthy(SB.Config.db.userEdits.c_gear, "one click after reopening only asks")
 	end)
 
+	-- Mutation: previewRows drops `SB.Search.PreviewExact(SC.shown)` (Show matches widens the rule by keyword prefixes).
+	it("Show matches lights exactly what the rule matches: no keyword prefixes, until the user types", function()
+		click(L.CAT_NEW_BUTTON)
+		click(L.CAT_ADD_RULE)
+		click(L.CAT_PICK_NAME)
+		enter(2, "trink")
+		click(L.CAT_SHOW_TEXT)
+		enter(3, "trink")
+		click(L.CAT_SHOW_MATCHES)
+		assert.same({}, SB.Search.active.keywords, "the rule trink is a name, not the trinket keyword")
+		SB.Search.SetText("trin")
+		SB.Search.SetText("trink")
+		assert.same({ "trinket" }, SB.Search.active.keywords, "typed by hand afterwards: prefix matching")
+	end)
+
 	-- Mutations: in SettingsCategories' previewRows, `return run("search " .. text)` -> `return run("search")`; or
 	-- `for _, w in ipairs(SB.Query.Validate(SB.Query.Compile(text)).warnings) do` ->
 	-- `for _, w in ipairs({ SB.Query.Validate(SB.Query.Compile(text)).warnings[1] }) do` (the first warning only).
