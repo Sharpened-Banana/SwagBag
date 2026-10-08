@@ -1075,6 +1075,38 @@ describe("BankWindow contents", function()
 		assert.equal("- New (0)", labels()[7], "landed once the mouse left")
 	end)
 
+	-- Not started by the player: it also waits while the mouse rests over the bank's items with no button that
+	-- would move under it. Mutation: in PendingLoaded's land, drop the cfg.scroll:IsMouseOver() check.
+	it("0.13.3: that bank regroup also waits while the mouse is anywhere over the bank's items, then lands", function()
+		putPending()
+		openBank()
+		BW.scroll.mouseOver = true -- over a gap: no button that would move is under it
+		for _, id in ipairs(PENDING) do
+			load(id)
+		end
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY * 3)
+		assert.equal("- New (5)", labels()[7], "held while the mouse is over the items")
+		BW.scroll.mouseOver = false
+		A.Advance(SB.GroupView.RETRY)
+		assert.equal("- New (0)", labels()[7], "landed once the mouse left")
+		assert.equal("loaded", BW.view.stats.lastLayoutReason)
+	end)
+
+	-- Mutation: in GroupView's PendingLoaded, drop `and not record.pending`.
+	it("0.13.3: a bank load after which the item still has no data lays nothing out", function()
+		putPending()
+		openBank()
+		local layouts, request = 0, BW.view.RequestLayout
+		BW.view.RequestLayout = function(reason)
+			layouts = layouts + 1
+			return request(reason)
+		end
+		SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", PENDING[1], true) -- success, but the data is still missing
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
+		assert.equal(0, layouts)
+		assert.equal("- New (5)", labels()[7])
+	end)
+
 	-- Mutation: in GroupView's PendingLoaded, drop the pendingNew lookup (every LOADED regroups).
 	it("0.13.3: a load for a bank item already in its category, or a failed load, lays nothing out", function()
 		putPending()
