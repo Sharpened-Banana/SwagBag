@@ -1149,6 +1149,35 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal(1, requests, "one layout, not one per retry")
 	end)
 
+	-- 0.13.3 (the same root cause as the bags' and the bank's New floods): several guild items pending at the visit
+	-- all leave New after one regroup. Mutation: in onItemLoaded, call `land` at once instead of through SB.Debounce.
+	it("0.13.3: a burst of guild loads moves every pending item out of New with exactly one layout", function()
+		local ids = { 239001, 239002, 239003, 239004, 239005 }
+		for i, id in ipairs(ids) do
+			A.AddItem(id, { classID = A.ITEM_CLASS.Armor, subclassID = 4, equipLoc = "INVTYPE_CHEST", pending = true })
+			A.guild.slots[1][2 + i] = { itemID = id }
+		end
+		openVault()
+		answerQueries()
+		A.Advance(0.3)
+		assert.equal("- New (5)", header("tab1:new").text.text, "pending: New")
+		local requests, request = 0, GW.view.RequestLayout
+		GW.view.RequestLayout = function(reason)
+			requests = requests + 1
+			return request(reason)
+		end
+		for _, id in ipairs(ids) do
+			A.items[id] = { name = "Chest " .. id, classID = A.ITEM_CLASS.Armor, subclassID = 4,
+				equipLoc = "INVTYPE_CHEST", quality = 3, ilvl = 270, maxStack = 1, bind = "equip" }
+			SB.eventFrame:Fire("ITEM_DATA_LOAD_RESULT", id, true)
+			A.Advance(0.1)
+		end
+		A.Advance(GW.LOADED_DELAY)
+		assert.equal(1, requests)
+		assert.equal("- New (0)", header("tab1:new").text.text)
+		assert.equal("- BoE gear (5)", header("tab1:c_boe").text.text)
+	end)
+
 	-- Week 8 ruling Q5. Mutation: in onItemLoaded, drop `success == false or` from the first guard.
 	it("item data that failed to load (success false) lays nothing out and keeps the item pending", function()
 		A.guild.slots[1][3] = { itemID = Fixtures.UNLOADED }
