@@ -26,7 +26,7 @@ Chat lines start with `SwagBag: `. You need: a vendor, a banker with the Warband
 
 ## S-5 New
 
-1. Loot one more of that trade good. Expected: it shows in `New` on its own.
+1. Take one stack of that trade good out of the mailbox or the bank into an empty bag slot (a new slot, not topping up an existing stack). Expected: it shows in `New` on its own, not in the group.
 2. Hover it, close and reopen the bags. Expected: it joins the group.
 
 ## S-6 Bank
@@ -36,8 +36,8 @@ Chat lines start with `SwagBag: `. You need: a vendor, a banker with the Warband
 
 ## S-7 List view
 
-1. Switch the bags to the list view. Expected: the Count column shows the total.
-2. Click the `Count` header until it reads `Sorted by Count, highest first`. Expected: the group sits where its total belongs.
+1. Click the `List` button in the bags' title bar (or type `/swagbag view list`). Expected: the Count column shows the total.
+2. Click the `Count` column header until the title flashes `Sorted by Count, highest first`. Expected: the group sits where its total belongs.
 
 ## S-8 Sell all
 

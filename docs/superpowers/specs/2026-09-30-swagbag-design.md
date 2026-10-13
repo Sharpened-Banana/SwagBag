@@ -321,7 +321,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 
 ### 4.2 Invariants
 
-1. **Identity:** a slot button always shows whatever is physically in its (bag, slot). We never pretend otherwise. **Recorded exception (0.14.0):** with `bags.stacks = "one"` (default) the shown stack of a group draws the group's total as its number; its tooltip lists every stack and says which one a click uses. `button.count`, the split, every click and drag act on that real stack only.
+1. **Identity:** a slot button always shows whatever is physically in its (bag, slot). We never pretend otherwise. **Recorded exception (0.14.0):** with `bags.stacks = "one"` (default) the shown stack of a group draws the group's total as its number; its tooltip lists the stacks (up to six, then "N more") and says which one a click uses. `button.count`, the split, every click and drag act on that real stack only.
 2. **Section truth:** every slot button drawn inside a category section shows the item that section was built for, or it is not in that section. (The spike asserted this after every incremental update with zero violations.)
 3. **Placeholder honesty:** a placeholder never responds to item interaction. Its click shows a tooltip "This item moved or was used — items regroup when you close the bag" and does nothing else. (Spike check `placeholderClickIsHarmless` is the first in-dev verification; see §11.3.)
 4. **Free is real:** empty slots are drawn as their real buttons in the "Free" section, so dropping an item onto Free is a real drop into that slot.
@@ -336,7 +336,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 | **Different item arrives** in a slot whose button is in a section | Placeholder at old position; button moves to the next cell of **New**. | Same. |
 | **Item arrives** in a Free slot | Button moves to New. | Same. |
 | **The shown stack of a group leaves, gets another item, or its slot is removed** (0.14.0) | The group's next stack takes its cell (no placeholder) and the button does what the row above says. This waits while either button is busy. | Same. |
-| **A hidden stack leaves or gets another item** (0.14.0) | To Free / New as for any button; the total updates. | Same. |
+| **A hidden stack leaves, gets another item, or its slot is removed** (0.14.0) | To Free / New as for any button; the total updates. | Same. |
 | **Item hovered** (its button or list row; week 9, AC3.3) | Nothing moves: it stays in New while the window is open and joins its category at the next open or Reflow. An item never hovered stays in New at every open, whatever the focus mode. | Same. |
 | **Count changes** | Repaint (`COUNT` reason). | Same. |
 | **Same item, changed link** (keystone level, enchant, gem) | Repaint only; re-categorized at the next open or Reflow. | Same. |

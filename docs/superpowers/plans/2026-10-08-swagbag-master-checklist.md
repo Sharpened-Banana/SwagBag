@@ -1,6 +1,6 @@
-# SwagBag 0.13.6: the master in-game checklist
+# SwagBag 0.14.0: the master in-game checklist
 
-One list for everything built in weeks 6 to 13 that you have not tried in the game yet. The sessions are in risk order: the first ones protect your items and your clicks, then the M+ flow, then gold-making, then setup and looks. Sessions 1 to 7 fit in one evening, 8 to 11 in a second, 12 to 15 in a third.
+One list for everything built in weeks 6 to 13 and the 0.14.0 stack grouping that you have not tried in the game yet. The sessions are in risk order: the first ones protect your items and your clicks, then the M+ flow, then gold-making, then setup and looks. Sessions 1 to 7 fit in one evening, 8 to 11 in a second, 12 to 15 in a third, and Session 16 (one icon per item) is a short extra.
 
 Chat lines start with `SwagBag: `. Words in angle brackets, like `<its name>` or `N`, stand for your own item names and numbers. After each session, tell Claude "Session N done" and the numbers of any steps that didn't match.
 
@@ -9,7 +9,7 @@ Chat lines start with `SwagBag: `. Words in angle brackets, like `<its name>` or
 Why: Blizzard's own Bank and Warband Bank tabs now sit inside SwagBag's bank window. If they break your right-clicks or your Hearthstone, nothing else matters.
 Have ready: a banker; your Warband bank unlocked; in your bags one warbound item, one soulbound item and one ordinary trade good; your Hearthstone off cooldown.
 
-1. Fully restart the game first: quit completely, start it again and log in. Expected: chat shows `SwagBag: v0.13.6 loaded. Type /swagbag help for commands.`, and no setup window opens by itself. (W12, W13)
+1. Fully restart the game first: quit completely, start it again and log in. Expected: chat shows `SwagBag: v0.14.0 loaded. Type /swagbag help for commands.`, and no setup window opens by itself. (W12, W13)
 2. Right-click the banker and leave the mouse resting over the bank's items while it fills. Expected: SwagBag's bank opens and Blizzard's bank is not visible. If some items first show in `New` while their data loads, they stay put while the mouse rests there, and move to their own sections about half a second after you move the mouse away. (W13, 0.13.3)
 3. Look at the line under the search box. Expected: it reads `Right-click deposits to:`, followed by two tabs, `Bank` and `Warband Bank`, inside the window's header. They do not overlap the search box or the first group. (W13)
 4. Click `Warband Bank`. Expected: the tab lights up, the Warband bank opens, the Character bank folds to one line, and your bags' title reads `SwagBag — right-click to Warband bank`. (W13)
@@ -289,10 +289,10 @@ Have ready: a trade good you can split into two partial stacks (for example 45 a
 5. At a vendor, right-click the icon. Expected: the 45 sells and the slot looks empty while your mouse stays there. (0.14.0)
 6. Move the mouse away from the items. Expected: the 7 appears in the same place. (0.14.0)
 7. Look at two copies of one ring with different item levels, a keystone, and two caged pets. Expected: each one stays its own icon. (0.14.0)
-8. Loot one more of that trade good. Expected: it shows in `New` on its own. Hover it, close and reopen the bags: it joins the group. (0.14.0)
+8. Take one stack of that trade good out of the mailbox or the bank into an empty bag slot (a new slot, not topping up an existing stack). Expected: it shows in `New` on its own, not in the group. Hover it, close and reopen the bags: it joins the group. (0.14.0)
 9. At the bank, look at two stacks of one item in the Warband bank. Expected: one icon. (0.14.0)
 10. Put one stack of an item in the Character bank and one in the Warband bank. Expected: two icons, one in each bank. (0.14.0)
-11. Switch the bags to the list view. Expected: the Count column shows the total. Click the `Count` header until it reads `Sorted by Count, highest first`. Expected: the group sits where its total belongs. (0.14.0)
+11. Click the `List` button in the bags' title bar (or type `/swagbag view list`). Expected: the Count column shows the total. Click the `Count` column header until the title flashes `Sorted by Count, highest first`. Expected: the group sits where its total belongs. (0.14.0)
 12. Shift+right-click a section header and choose `Sell all (N)`, then accept the question. Expected: both stacks are sold, and the chat line counts both. (0.14.0)
 13. Type `/swagbag stacks all`. Expected: `SwagBag: Every stack is shown again.`, and the window shows both stacks once the mouse leaves the items. (0.14.0)
 14. Open Settings > Bags, find `Same item in several stacks (bags and banks)` and click `One icon with the total`. Expected: the one icon is back. (0.14.0)
