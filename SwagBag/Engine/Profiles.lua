@@ -80,7 +80,8 @@ end
 local COLUMNS, SECTION_IDS = range(4, 40, true), pattern("^[%w_,]*$")
 local VALID = {
 	["bags.columns"] = COLUMNS, ["bags.scale"] = range(0.5, 2), ["bags.newRows"] = range(0, 10, true),
-	["bags.view"] = words("sections", "grid", "list"), ["bags.list.sort"] = words("value", "name", "count", "ilvl"),
+	["bags.view"] = words("sections", "grid", "list"), ["bags.stacks"] = words("one", "all"),
+	["bags.list.sort"] = words("value", "name", "count", "ilvl"),
 	["bags.footer.entries"] = pattern("^[%a,%-]*$"),
 	["bank.blizzardFrame"] = words("tiny", "beside"), ["bank.show"] = words("one", "both"),
 	["bank.view"] = words("sections", "grid", "list"), ["bank.columns"] = COLUMNS,
@@ -104,7 +105,7 @@ end
 local LABELS = {
 	["bags.view"] = "SET_VIEW", ["bags.columns"] = "SET_COLUMNS", ["bags.scale"] = "SET_SCALE",
 	["bags.freeTile"] = "PROFILE_LABEL_FREE_TILE", ["bags.newAlways"] = "PROFILE_LABEL_NEW_ALWAYS",
-	["bags.reagentSeparate"] = "PROFILE_LABEL_REAGENTS",
+	["bags.reagentSeparate"] = "PROFILE_LABEL_REAGENTS", ["bags.stacks"] = "SET_STACKS",
 	["bags.newRows"] = "PROFILE_LABEL_NEW_ROWS", ["bags.showIlvl"] = "PROFILE_LABEL_SHOW_ILVL",
 	["bags.list.sort"] = "SET_LIST_SORT", ["bags.list.desc"] = "PROFILE_LABEL_LIST_DESC",
 	["bags.footer.entries"] = "PROFILE_LABEL_FOOTER", ["bags.warnOtherAddons"] = "SET_OTHER_BAGS",

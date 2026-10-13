@@ -172,15 +172,19 @@ function Items.RefreshVolatile(record)
 	return record
 end
 
+-- The bind part of an instance key: #b bound, #uw warbound-until-equipped, #? bind unknown (W5-10: a saved item
+-- never shares with the same link known unbound), #u unbound. Items.Key and Stacks.Key share it.
+function Items.BindSuffix(record)
+	return record.isBound and "#b" or (record.isWUE and "#uw" or (record.bindUnknown and "#?" or "#u"))
+end
+
 -- Memo key for a record by cache class (spec 7.8):
 --   static -> itemID; instance -> full link + bound/WuE suffix (#b, #uw, #u, #? bind unknown); volatile -> nil
 function Items.Key(record, class)
 	if class == "static" then
 		return record.itemID
 	elseif class == "instance" then
-		-- #? a saved item whose bind is unknown (W5-10): never shares a memo with the same link known unbound
-		return (record.link or tostring(record.itemID))
-			.. (record.isBound and "#b" or (record.isWUE and "#uw" or (record.bindUnknown and "#?" or "#u")))
+		return (record.link or tostring(record.itemID)) .. Items.BindSuffix(record)
 	end
 	return nil
 end

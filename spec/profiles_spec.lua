@@ -154,6 +154,16 @@ describe("Profiles (week 7)", function()
 		assert.equal("list", data.settings["bank.view"])
 	end)
 
+	-- Stack grouping. Mutation: drop `["bags.stacks"] = ...` from VALID (any word would come in) or from LABELS.
+	it("bags.stacks is shareable and checked", function()
+		C.Set("bags.stacks", "all")
+		local data = assert(Pr.Parse(Pr.Export(false)))
+		assert.equal("all", data.settings["bags.stacks"])
+		assert.equal("one", assert(Pr.Parse("SWAGBAG:1:s.bags.stacks=sone")).settings["bags.stacks"])
+		assert.same({ nil, "type", "bags.stacks" }, { Pr.Parse("SWAGBAG:1:s.bags.stacks=ssome") })
+		assert.equal(SB.L.SET_STACKS, Pr.Label("bags.stacks"))
+	end)
+
 	-- Week 13 Task 4. Mutation: drop `["bank.show"] = ...` from VALID (any word would come in).
 	it("bank.show travels in share strings", function()
 		C.Set("bank.show", "both")

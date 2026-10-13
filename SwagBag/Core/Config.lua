@@ -25,8 +25,9 @@ Config.Defaults = {
 		-- every free slot (plan D19; the bank window follows it too). newAlways: New keeps its header
 		-- and rows when empty; false (default) shows New only once something new arrives (W4-15). One setting
 		-- for the bags, bank and guild bank windows.
+		-- stacks: "one" shows several stacks of one item as one icon with the total (display only); "all" every stack.
 		bags = { columns = 12, scale = 1.0, view = "sections", newRows = 2, reagentSeparate = false,
-			showIlvl = true, freeTile = true, newAlways = false,
+			showIlvl = true, freeTile = true, newAlways = false, stacks = "one",
 			-- warnOtherAddons (week 9): one chat line at login while another bag addon is on too (Core/Report.lua).
 			warnOtherAddons = true,
 			-- list: the list view's order (Engine/Sort.lua; the bags window's third view). sort: "value" |

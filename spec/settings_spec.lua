@@ -21,7 +21,7 @@ describe("Settings window", function()
 		SB.BagsWindow = bags
 		-- The chat commands the rows run (their real versions live in the windows' files).
 		ran = {}
-		for _, name in ipairs({ "free", "bank", "guild", "overlays" }) do
+		for _, name in ipairs({ "free", "stacks", "bank", "guild", "overlays" }) do
 			SB.Slash.Register(name, "test", function(arg)
 				ran[#ran + 1] = name .. " " .. arg
 				return "ran " .. name .. " " .. arg
@@ -91,6 +91,19 @@ describe("Settings window", function()
 		click("Every free slot")
 		assert.same({ "free all" }, ran)
 		assert.equal("ran free all", SW.lastStatus)
+	end)
+
+	-- Stack grouping. Mutation: in the stacks row, apply = function(v) return run("stacks one") end.
+	it("the stacks row runs /swagbag stacks", function()
+		SW.Show("bags")
+		click("Every stack")
+		assert.same({ "stacks all" }, ran)
+		assert.equal("ran stacks all", SW.lastStatus)
+		SB.Slash.Register("stacks", "test", function(arg)
+			return arg == "all" and SB.L.STACKS_MODE_ALL or SB.L.STACKS_MODE_ONE
+		end)
+		click("Every stack")
+		assert.equal(SB.L.STACKS_MODE_ALL, SW.lastStatus)
 	end)
 
 	it("columns: saved, the bags regroup, the status says so, and the new one is selected", function()
