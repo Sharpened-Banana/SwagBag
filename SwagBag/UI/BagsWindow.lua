@@ -892,11 +892,17 @@ local function layoutSections(bags)
 	-- The list view lays the slots out in its display order (Engine/Sort.lua): Layout keeps the
 	-- order it is given inside each section. Empty slots keep their physical order.
 	-- A stack group sorts by its total (0.14.0): an unseen stack stays in New, so it is no part of one.
+	local stackKey = W.StackKey
 	if isList() then
-		local keys = {}
+		local keys, memo = {}, {}
 		for _, s in ipairs(slots) do
-			keys[s] = s.record and not (SB.Inventory and SB.Inventory.IsUnseen(s.bag, s.slot)) and W.StackKey(s.record)
-				or nil
+			if s.record then -- the key is computed once per record; Layout.Build reads it from the memo
+				memo[s.record] = W.StackKey(s.record)
+				keys[s] = not (SB.Inventory and SB.Inventory.IsUnseen(s.bag, s.slot)) and memo[s.record] or nil
+			end
+		end
+		stackKey = function(record)
+			return memo[record]
 		end
 		local totals = SB.Stacks and SB.Stacks.Totals(slots, function(s)
 			return keys[s]
@@ -909,7 +915,7 @@ local function layoutSections(bags)
 	W.state = SB.Layout.Build(slots, assignOf, SB.Categories.SectionOrder(),
 		{ columns = isList() and 1 or columns(),
 			newRows = isList() and W.LIST_NEW_ROWS or SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
-			family = SB.Adapter.BagFamily, hideEmptyNew = not SB.Config.Get("bags.newAlways"), stackKey = W.StackKey })
+			family = SB.Adapter.BagFamily, hideEmptyNew = not SB.Config.Get("bags.newAlways"), stackKey = stackKey })
 	W.view = snapshot(W.state, W.EffectiveCollapsed())
 	W.order = W.EffectiveOrder(W.state)
 	W.pos = position(W.state, W.view, W.order)

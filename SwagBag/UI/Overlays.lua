@@ -11,7 +11,8 @@
 --                 collected yet while the green glow is not drawn (off, or gold at the bank)  (overlays.uncollected)
 --   whole button  a gold glow while the bank is open on items worth money (prices.worth, week 7;
 --                 at the bank it wins over the green glow). /swagbag worth sets it.
--- The stack count is Blizzard's own (SetItemButtonCount); nothing is drawn bottom right. Sizes
+-- The stack count is Blizzard's own (SetItemButtonCount); nothing is drawn bottom right (a grouped icon
+-- draws the group total on that same Count font string: Buttons.SetStack). Sizes
 -- are the constants below (W4-15: larger, thick outline), so a check in game can tune them.
 -- overlays.usePawn hands the arrow to Pawn (Adapter.PawnUpgrade) for bag and bank items; where
 -- Pawn has no opinion the item-level rule decides.

@@ -101,13 +101,14 @@ end
 -- entry: a pos.stacks entry { bag, slot, members = { { bag, slot } } }; recordOf(bag, slot) -> record | nil.
 function Stacks.Of(entry, recordOf)
 	local first = recordOf(entry.bag, entry.slot)
-	if not first then
+	local key = first and Stacks.Key(first)
+	if not key then
 		return nil
 	end
 	local counts, total = { first.count }, first.count
 	for _, m in ipairs(entry.members) do
 		local r = recordOf(m.bag, m.slot)
-		if r then
+		if r and Stacks.Key(r) == key then -- a slot refilled with another item since the layout is no member
 			counts[#counts + 1] = r.count
 			total = total + r.count
 		end

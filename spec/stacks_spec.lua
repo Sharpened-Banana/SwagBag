@@ -102,7 +102,7 @@ describe("Stacks", function()
 	end)
 
 	it("Of totals a shown stack and its members", function()
-		local recs = { ["0:1"] = { count = 45 }, ["0:2"] = { count = 7 } }
+		local recs = { ["0:1"] = rec(nil, { count = 45 }), ["0:2"] = rec(nil, { count = 7 }) }
 		local function recordOf(b, s)
 			return recs[b .. ":" .. s]
 		end
@@ -110,8 +110,42 @@ describe("Stacks", function()
 		assert.same({ total = 52, counts = { 45, 7 } }, Stacks.Of(entry, recordOf))
 		recs["0:1"] = nil
 		assert.is_nil(Stacks.Of(entry, recordOf), "the shown stack is gone")
-		recs["0:1"], recs["0:2"] = { count = 45 }, nil
+		recs["0:1"], recs["0:2"] = rec(nil, { count = 45 }), nil
 		assert.is_nil(Stacks.Of(entry, recordOf), "fewer than two stacks remain")
+	end)
+
+	-- A slot refilled with another item since the layout (a held swap) is no member of the group.
+	-- Mutation: drop the key check in Stacks.Of (the Flask would count as a herb stack).
+	it("Of skips a slot that no longer holds the same item", function()
+		local flask = rec("item:" .. Fixtures.FLASK, { itemID = Fixtures.FLASK, count = 1 })
+		local recs = { ["0:1"] = rec(nil, { count = 45 }), ["0:2"] = flask }
+		local function recordOf(b, s)
+			return recs[b .. ":" .. s]
+		end
+		local entry = { bag = 0, slot = 1, members = { { bag = 0, slot = 2 } } }
+		assert.is_nil(Stacks.Of(entry, recordOf), "the member is another item: one stack left")
+		recs["0:1"], recs["0:2"] = flask, rec(nil, { count = 7 })
+		assert.is_nil(Stacks.Of(entry, recordOf), "the representative is another item: no group")
+		recs["0:1"] = rec(nil, { count = 45, pending = true })
+		assert.is_nil(Stacks.Of(entry, recordOf), "an unkeyable representative: no group")
+		recs["0:1"], recs["0:3"] = rec(nil, { count = 45 }), rec(nil, { count = 2 })
+		entry.members[2] = { bag = 0, slot = 3 }
+		assert.same({ total = 54, counts = { 45, 7, 2 } }, Stacks.Of(entry, function(b, s)
+			return b == 0 and s == 1 and recs["0:1"] or recs[b .. ":" .. s] == flask and nil or recs[b .. ":" .. s]
+		end), "the members that still match count")
+	end)
+
+	-- Mutation: over-blank, so any of fields 8, 9, 12, 13 is blanked in Stacks.normalise.
+	it("suffixID, uniqueID, modifiers and context still tell items apart", function()
+		-- fields counted as in Stacks.normalise: "item" is 1, the itemID 2, linkLevel 10, specializationID 11
+		local function link(field, value)
+			local f = { "item", tostring(HERB), "", "", "", "", "", "", "", "70", "250", "", "" }
+			f[field] = value
+			return table.concat(f, ":")
+		end
+		for _, field in ipairs({ 8, 9, 12, 13 }) do
+			differ(Stacks.Key(rec(link(field, "1"))), Stacks.Key(rec(link(field, "2"))), "field " .. field)
+		end
 	end)
 
 	it("Totals sums by key and skips nil keys", function()
@@ -129,7 +163,7 @@ describe("Stacks", function()
 		local buttons, records = {}, {}
 		for slot, n in pairs(counts) do
 			buttons[slot] = { slot = slot }
-			records[slot] = { count = n }
+			records[slot] = rec(nil, { count = n })
 		end
 		local function buttonOf(_, slot) return buttons[slot] end
 		local function recordOf(_, slot) return records[slot] end

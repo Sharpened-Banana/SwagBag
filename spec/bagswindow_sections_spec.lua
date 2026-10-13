@@ -97,6 +97,8 @@ local function fakeButtons()
 	function B.KindOf(bag) return bag <= 5 and "bags" or "bank" end
 	function B.SetParentFor() end
 	function B.SetDimmed(button, d) button.dimmed = d end
+	function B.SetStack(button, s) button.stack = s end
+	function B.StackOf(button) return rawget(button, "stack") end
 	function B.AcquirePlaceholder(_, icon, _, x, y)
 		local p = { icon = icon, x = x, y = y }
 		B.placeholders[#B.placeholders + 1] = p
@@ -1697,6 +1699,20 @@ describe("BagsWindow category view", function()
 			A.Advance(0.3)
 			assert.truthy(B.Get(0, 8).shown)
 			assert.same({ x, y }, { B.Get(0, 8).x, B.Get(0, 8).y })
+		end)
+
+		-- A different item lands in the shown stack's slot under the mouse; the layout is held. Mutation: drop the
+		-- key check in Stacks.Of (the Flask would show 8 and a "2 stacks" tooltip).
+		it("a different item swapped into the shown slot claims no total", function()
+			W.Open()
+			B.Get(0, 7).mouseOver = true
+			A.Put(0, 7, Fixtures.FLASK, 1)
+			bagUpdate()
+			assert.is_nil(B.StackOf(B.Get(0, 7)), "the Flask shows no stack, so no total and no tooltip line")
+			assert.is_nil(next(W.stacked), "no button is grouped")
+			B.Get(0, 7).mouseOver = false
+			A.Advance(0.3)
+			assert.is_nil(B.StackOf(B.Get(0, 7)))
 		end)
 
 		-- Mutation: in the inventory handler, drop the paintStacks(W.pos) call.

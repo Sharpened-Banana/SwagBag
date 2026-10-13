@@ -57,6 +57,7 @@ local function newView(SB, opts)
 			return (collapsed and "+ " or "- ") .. id .. " (" .. count .. ")"
 		end,
 		groupTint = function(id) return tint[id] end,
+		rows = opts.rows,
 		view = function() return opts.view or "sections" end,
 		columns = function() return opts.columns or 4 end,
 		newRows = function() return 1 end,
@@ -976,6 +977,48 @@ describe("GroupView", function()
 			assert.equal(0, #SB.Buttons.placeholdersInUse, "its cell is taken: no placeholder")
 			assert.is_nil(total(6, 2), "one stack left: no group")
 			assert.same({}, v.stacked)
+		end)
+
+		-- A different item lands in the shown stack's slot under the mouse; the layout is held. Mutation: drop the
+		-- key check in Stacks.Of (the Flask would show 8 and a "2 stacks" tooltip).
+		it("a different item swapped into the shown slot claims no total and no tooltip line", function()
+			stackedView().Layout("open")
+			local shown = btn(6, 4)
+			shown.mouseOver = true
+			A.Put(6, 4, Fixtures.FLASK, 1)
+			v.SetRecord(6, 4, SB.Items.Describe(6, 4))
+			v.Changes("bank", { { bag = 6, slot = 4, kind = "arrived" } })
+			assert.is_nil(total(6, 4), "the Flask shows no total")
+			assert.same({}, v.stacked)
+			local lines = {}
+			SB.Adapter.TooltipLine = function(_, text) lines[#lines + 1] = text end
+			SB.Buttons.StackTooltipLine({ GetOwner = function() return shown end })
+			assert.same({}, lines, "its tooltip has no stacks line")
+		end)
+
+		-- Mutation: pass `stackKey = stackKey` to Layout.Build instead of buildKey (each key computed twice).
+		it("the list computes each record's key once per build", function()
+			Loader.LoadFile(SB, "SwagBag/Engine/Sort.lua")
+			local noop = setmetatable({}, { __index = function() return function() end end }) -- list rows, not under test
+			v, f = newView(SB, { view = "list", rows = noop })
+			f.cfg.stacks = function() return true end
+			local seen, key = {}, SB.Stacks.Key
+			SB.Stacks.Key = function(record)
+				seen[record] = (seen[record] or 0) + 1
+				return key(record)
+			end
+			local build, n, worst = SB.Layout.Build, 0, 0
+			SB.Layout.Build = function(...)
+				local state = build(...)
+				for _, times in pairs(seen) do -- the pre-pass and this Build, before any repaint
+					n, worst = n + 1, math.max(worst, times)
+				end
+				return state
+			end
+			v.Layout("open")
+			assert.truthy(n >= 3, "the records were keyed")
+			assert.equal(1, worst, "no record is keyed twice by the pre-pass and Build")
+			assert.equal(65, total(6, 4))
 		end)
 
 		-- Review Focus 4. Mutation: v.ForEachSlot skips cells with stackOf.
