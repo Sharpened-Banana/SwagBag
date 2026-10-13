@@ -428,3 +428,83 @@ describe("The free tile's number (plan D19)", function()
 		assert.is_nil(SB.Buttons.freeCounts[fakeFrame("ItemButton")], "no region until a button needs one")
 	end)
 end)
+
+-- Stack grouping (0.14.0): a grouped icon shows the total, but Blizzard's count field (button.count,
+-- which Blizzard's Shift-click split reads) keeps the real stack. SetItemButtonCount is uienv's: it sets b.count.
+describe("A grouped icon's total (0.14.0)", function()
+	local SB, B, b
+	before_each(function()
+		SB = Loader.New({ "SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua",
+			"SwagBag/Engine/Items.lua", "SwagBag/Engine/Stacks.lua" })
+		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
+		SetItemButtonTexture, SetItemButtonQuality, SetItemButtonDesaturated = function() end, function() end, function() end
+		SetItemButtonCount = function(button, n) button.count = n end
+		B = SB.Buttons
+		b = fakeFrame("ItemButton")
+		b.Count = fakeFrame("FontString")
+	end)
+
+	after_each(function()
+		SetItemButtonTexture, SetItemButtonCount, SetItemButtonQuality, SetItemButtonDesaturated = nil, nil, nil, nil
+	end)
+
+	-- Review Focus 2. Mutation: in SetStack, SetItemButtonCount(button, stack.total) instead of the font string.
+	it("the total never reaches Blizzard's count field", function()
+		B.Paint(b, { count = 45, icon = 1 })
+		B.SetStack(b, { total = 52, counts = { 45, 7 } })
+		assert.same({ 45, "52", true }, { b.count, b.Count.text, b.Count.shown })
+		B.Paint(b, { count = 44, icon = 1 }) -- a repaint (a lock, a count change) keeps the group's text
+		assert.same({ 44, "52", true }, { b.count, b.Count.text, b.Count.shown })
+		assert.same({ total = 52, counts = { 45, 7 } }, B.StackOf(b))
+	end)
+
+	-- Mutation: drop `Buttons.stacks[button] = nil` in Paint's empty branch.
+	it("an empty paint forgets the stack", function()
+		B.Paint(b, { count = 45, icon = 1 })
+		B.SetStack(b, { total = 52, counts = { 45, 7 } })
+		B.Paint(b, nil)
+		assert.is_nil(B.StackOf(b))
+		assert.equal(0, b.count)
+	end)
+
+	-- Mutation: in SetStack's nil branch, skip SetItemButtonCount.
+	it("clearing a stack gives back Blizzard's number", function()
+		B.Paint(b, { count = 45, icon = 1 })
+		B.SetStack(b, { total = 52, counts = { 45, 7 } })
+		b.count = "scribbled" -- whatever happened since, the clear redraws from the last paint
+		B.SetStack(b, nil)
+		assert.equal(45, b.count)
+		assert.is_nil(B.StackOf(b))
+	end)
+
+	-- Mutation: store the stack on the button (b.swagStack = stack) instead of the weak side table.
+	it("SetStack works in combat and writes no field on the button", function()
+		SB.Adapter.combat = true
+		B.Paint(b, { count = 45, icon = 1 })
+		local before = {}
+		for k, v in pairs(b) do
+			before[k] = v
+		end
+		B.SetStack(b, { total = 52, counts = { 45, 7 } })
+		B.SetStack(b, nil)
+		B.SetStack(b, { total = 52, counts = { 45, 7 } })
+		for k, v in pairs(b) do
+			if k ~= "count" then
+				assert.equal(before[k], v, "field " .. tostring(k))
+			end
+		end
+		for k in pairs(before) do
+			assert.truthy(rawget(b, k) ~= nil, "field " .. tostring(k) .. " kept")
+		end
+		assert.equal(45, b.count, "only SetItemButtonCount's own field, with the real stack")
+		assert.equal("52", b.Count.text)
+	end)
+
+	it("a button without a Count font string is fine (nil-safe)", function()
+		local bare = fakeFrame("ItemButton")
+		B.Paint(bare, { count = 3, icon = 1 })
+		B.SetStack(bare, { total = 9, counts = { 3, 6 } })
+		assert.equal(3, bare.count)
+		assert.truthy(B.StackOf(bare))
+	end)
+end)

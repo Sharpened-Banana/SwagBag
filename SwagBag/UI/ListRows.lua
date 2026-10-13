@@ -18,16 +18,18 @@
 --                                              gone / goneTip (a ghost row's name text, and its tooltip and
 --                                              click answer): the texts a row says (default: the bags window's)
 --   rows.Place(button, x, y, width, height, shown)  the row of a slot button (made on first use)
---   rows.Paint(button, bag, slot, record, freeCount, family)  record nil: an empty slot ("Empty
+--   rows.Paint(button, bag, slot, record, freeCount, family, total)  record nil: an empty slot ("Empty
 --                                              slot"), or the free tile when freeCount is a number
 --                                              (family "reagent": reagents only; another
---                                              family than "any": profession items only, F9)
+--                                              family than "any": profession items only, F9);
+--                                              total: a stack group's item count (0.14.0), nil for one stack
 --   rows.Ghosts(list, width, height)           rows for placeholders: { { x, y } }, drawn whole
 --   rows.HideAll()                             another view, or a full layout starting
 --   rows.SetDimmed(button, dimmed)             search: a row dims with its button (AC5.1)
 --   rows.IsMouseOver(button) -> bool           P5: a row under the mouse holds its button
 --   ListRows.Columns(width) -> { name, count, ilvl, value } = { x, width }   pure
---   ListRows.Texts(record, freeCount, family) -> { name, count, ilvl, value } pure
+--   ListRows.Texts(record, freeCount, family, total) -> { name, count, ilvl, value } pure; with a number
+--                                              total (a stack group) Count shows it and Value is the group's
 --   ListRows.SortedText(spec) -> "Sorted by Value, highest first"   pure
 --   ListRows.ColumnBar(parent, width, height, onClick, window, label) -> bar   (week 8) the column
 --                                              header bar over a list's row texts: plain buttons Name, Count, ilvl, Value,
@@ -85,7 +87,7 @@ local function coloured(record)
 	return name
 end
 
-function LR.Texts(record, freeCount, family)
+function LR.Texts(record, freeCount, family, total)
 	if not record then
 		local name = L.LIST_EMPTY
 		if type(freeCount) == "number" then -- the free tile; a reagent or profession bag's says what it takes (F9)
@@ -102,6 +104,10 @@ function LR.Texts(record, freeCount, family)
 	local count = record.count or 1
 	local ilvl = SB.Sort.Ilvl(record)
 	local value = SB.Sort.Value(record)
+	if type(total) == "number" then -- a stack group: the total, and what all of it is worth
+		value = value and value * total / count
+		count = total
+	end
 	return {
 		name = coloured(record),
 		count = count > 1 and tostring(count) or "",
@@ -293,8 +299,8 @@ function LR.New(parent, _window, flash, opts)
 		row:Show()
 	end
 
-	function R.Paint(button, bag, slot, record, freeCount, family)
-		local t = LR.Texts(record, freeCount, family)
+	function R.Paint(button, bag, slot, record, freeCount, family, total)
+		local t = LR.Texts(record, freeCount, family, total)
 		t.slot = { bag = bag, slot = slot, filled = record ~= nil }
 		texts[button] = t
 		local row = R.rows[button]

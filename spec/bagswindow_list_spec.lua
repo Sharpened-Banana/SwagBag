@@ -786,6 +786,50 @@ describe("BagsWindow list view", function()
 		assert.equal(SB.L.LIST_FREE_REAGENT:format(2), W.rows.rows[B.Get(5, 1)].name.text)
 		assert.equal(SB.L.LIST_FREE:format(10), W.rows.rows[B.Get(0, 7)].name.text)
 	end)
+
+	-- Stack grouping (0.14.0): Mycobloom 45 at (0,7) and 7 at (0,8), and another herb, 50 at (0,9), in the bags
+	-- at login. Engine/Stacks.lua is loaded here only, so the tests above keep every stack.
+	describe("stack grouping (0.14.0)", function()
+		local OTHER_HERB = 210797
+		before_each(function()
+			Loader.LoadFile(SB, "SwagBag/Engine/Stacks.lua")
+			function B.SetStack(button, s) button.stack = s end
+			function B.StackOf(button) return rawget(button, "stack") end
+			A.AddItem(OTHER_HERB, { name = "Arathor's Spear", classID = A.ITEM_CLASS.Tradegoods,
+				subclassID = A.TRADEGOODS_SUB.Herb, quality = 1, ilvl = 1, maxStack = 1000, bind = "none",
+				isCraftingReagent = true })
+			A.Put(0, 7, Fixtures.HERB, 45)
+			A.Put(0, 8, Fixtures.HERB, 7)
+			A.Put(0, 9, OTHER_HERB, 50)
+			A.items[Fixtures.HERB].sellPrice = 10
+			SB.Inventory.ScanAll() -- in the bags at login: not unseen
+		end)
+
+		-- Mutation: in paintStacks, Paint the row without s.total.
+		it("a group is one row with the total in Count", function()
+			W.Open()
+			assert.same({ true, false }, { B.Get(0, 7).shown, B.Get(0, 8).shown })
+			assert.same({ "52", SB.Prices.Money(520) }, { row(7).count.text, row(7).value.text }, "52 at 10c")
+			assert.falsy(row(8) and row(8).shown, "the hidden stack has no row")
+			A.Put(0, 8, Fixtures.HERB, 9) -- a count change repaints the row's total in place
+			bagUpdate()
+			assert.same({ "54", SB.Prices.Money(540) }, { row(7).count.text, row(7).value.text })
+			SB.Emit("SB_PRICES_CHANGED") -- a price repaint keeps the group's texts
+			assert.same({ "54", SB.Prices.Money(540) }, { row(7).count.text, row(7).value.text })
+		end)
+
+		-- Mutation: in layoutSections, call DisplayOrder without the totalOf function.
+		it("a group sorts by its total", function()
+			SB.Sort.Save("count", true)
+			W.Open()
+			assert.same({ "c_herbs", "c_herbs" }, { W.state.where[7].section, W.state.where[9].section })
+			assert.truthy(B.Get(0, 7).y > B.Get(0, 9).y, "45 + 7 = 52 above the single 50, highest first")
+			SB.Config.Set("bags.stacks", "all")
+			W.Reflow()
+			assert.truthy(B.Get(0, 9).y > B.Get(0, 7).y, "every stack: the 50 above the 45")
+			assert.truthy(B.Get(0, 7).y > B.Get(0, 8).y)
+		end)
+	end)
 end)
 
 describe("BagsWindow week-4 carry-overs (title flash, drop, default place)", function()
