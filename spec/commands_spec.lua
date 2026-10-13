@@ -147,4 +147,39 @@ describe("Commands", function()
 		}, A.Lines())
 		assert.equal(2, regroups)
 	end)
+
+	-- Stack grouping. Mutation: delete SB.Emit("SB_STACKS_CHANGED") in the stacks command.
+	it("stacks one|all sets the setting and answers", function()
+		local changed = 0
+		SB.On("SB_STACKS_CHANGED", function()
+			changed = changed + 1
+		end)
+		assert.equal("one", SB.Config.Get("bags.stacks"), "one icon is the default")
+		SB.Slash.Dispatch("stacks all")
+		assert.equal("all", SB.Config.Get("bags.stacks"))
+		assert.equal(1, changed)
+		SB.Slash.Dispatch("stacks ONE")
+		assert.equal("one", SB.Config.Get("bags.stacks"))
+		assert.same({ SB.L.STACKS_MODE_ALL, SB.L.STACKS_MODE_ONE }, A.Lines())
+		assert.equal(2, changed)
+	end)
+
+	it("stacks with no word gives the usage", function()
+		local changed = 0
+		SB.On("SB_STACKS_CHANGED", function()
+			changed = changed + 1
+		end)
+		SB.Slash.Dispatch("stacks")
+		SB.Slash.Dispatch("stacks some")
+		assert.same({ SB.L.STACKS_USAGE:format("one"), SB.L.STACKS_USAGE:format("one") }, A.Lines())
+		assert.equal("one", SB.Config.Get("bags.stacks"))
+		assert.equal(0, changed)
+	end)
+
+	it("stacks refuses while read-only", function()
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("stacks all")
+		assert.equal("one", SB.Config.Get("bags.stacks"))
+		assert.same({ SB.L.SETTINGS_READONLY }, A.Lines())
+	end)
 end)

@@ -106,6 +106,19 @@ Slash.Register("free", L.HELP_FREE, function(arg)
 	return arg == "tile" and L.FREE_MODE_TILE or L.FREE_MODE_ALL
 end)
 
+-- /swagbag stacks one|all: the setting, then every open window regroups (guarded). Display only.
+Slash.Register("stacks", L.HELP_STACKS, function(arg)
+	arg = arg:lower()
+	if arg ~= "one" and arg ~= "all" then
+		return L.STACKS_USAGE:format(SB.Config.Get("bags.stacks"))
+	end
+	if not SB.Config.Set("bags.stacks", arg) then
+		return L.SETTINGS_READONLY
+	end
+	SB.Emit("SB_STACKS_CHANGED")
+	return arg == "one" and L.STACKS_MODE_ONE or L.STACKS_MODE_ALL
+end)
+
 Slash.Register("debug", L.HELP_DEBUG, function(arg)
 	local what, window = arg:lower():match("^(%S*)%s*(%S*)")
 	if what == "v1" and SB.DebugV1 then

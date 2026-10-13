@@ -83,6 +83,11 @@ local function bagsRows()
 			apply = function(v)
 				return run(v and "free tile" or "free all")
 			end },
+		{ kind = "choice", label = L.SET_STACKS, get = get("bags.stacks"),
+			choices = { { value = "one", text = L.SET_STACKS_ONE }, { value = "all", text = L.SET_STACKS_ALL } },
+			apply = function(v)
+				return run("stacks " .. v)
+			end },
 		{ kind = "choice", label = L.SET_NEW, get = get("bags.newAlways"),
 			choices = { { value = false, text = L.SET_NEW_AUTO }, { value = true, text = L.SET_NEW_ALWAYS } },
 			apply = function(v)
