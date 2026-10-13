@@ -14,7 +14,8 @@
 --                                      item whose bind is unknown (record.bindUnknown, ruling W5-10)
 --   Prices.Source() -> "Auctionator" | "Vendor" | ...   the provider that answers first
 --   Prices.SectionTotals(state, recordOf) -> { [sectionId] = copper }   value x count per
---                                      layout section (Engine/Layout.lua state), placeholders skipped
+--                                      layout section (Engine/Layout.lua state), placeholders skipped;
+--                                      a stack group's hidden stacks (Layout.MembersOf) count too
 --   Prices.Money(copper) -> "1,240g" | "35s" | "12c"
 --   Prices.WorthThreshold(values, mode, gold, percent) -> copper | nil   the worth-money glow's line (week 7,
 --                                      user pick 7): "fixed" gold x 10000; "top" the stack value of the
@@ -247,7 +248,7 @@ function P.SectionTotals(state, recordOf)
 				sum = sum + worth(cell.bag, cell.slot)
 				local members = SB.Layout.MembersOf(state, SB.Layout.Key(cell.bag, cell.slot))
 				for _, m in ipairs(members or EMPTY) do
-					sum = sum + worth(math.floor(m / 1000), m % 1000)
+					sum = sum + worth(SB.Layout.BagSlot(m))
 				end
 			end
 		end

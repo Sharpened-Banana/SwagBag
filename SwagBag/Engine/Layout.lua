@@ -103,6 +103,11 @@ function Layout.Key(bag, slot)
 	return bag * 1000 + slot
 end
 
+-- The (bag, slot) of a key: Layout.Key's inverse.
+function Layout.BagSlot(key)
+	return math.floor(key / 1000), key % 1000
+end
+
 local function section(st, id)
 	local sec = st.sections[id]
 	if not sec then
@@ -470,7 +475,7 @@ end
 -- members hands that cell to its first member (shown), and the others follow it: returns that
 -- member's key. Otherwise the cell gets a placeholder (old icon), or stays a hole for "removed".
 local function vacate(st, key, old, ch, result)
-	local group = st.stacks[key]
+	local group = st.stacks and st.stacks[key]
 	if group then
 		st.stacks[key] = nil
 		local m = table.remove(group.members, 1)
@@ -585,8 +590,7 @@ local function applyOne(st, ch, collapsed, result)
 			return
 		end
 		local moved
-		if member then
-			clearOverflow(st, key)
+		if member then -- a member joined in Build, never via New's overflow: no overflow key to clear
 			moved = applyMember(st, ch, collapsed, result, key)
 		else
 			moved = applyTile(st, ch, collapsed, result, key, st.where[key])
