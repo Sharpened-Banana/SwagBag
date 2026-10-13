@@ -102,6 +102,8 @@ local function fakeButtons()
 	function B.KindOf(bag) return bag <= 5 and "bags" or "bank" end
 	function B.SetParentFor() end
 	function B.SetDimmed(button, d) button.dimmed = d end
+	function B.SetStack(button, s) button.stack = s end
+	function B.StackOf(button) return rawget(button, "stack") end
 	function B.AcquirePlaceholder(_, icon, size, x, y)
 		local p = { icon = icon, size = size, x = x, y = y }
 		B.placeholders[#B.placeholders + 1] = p
@@ -816,6 +818,27 @@ describe("BagsWindow list view", function()
 			assert.same({ "54", SB.Prices.Money(540) }, { row(7).count.text, row(7).value.text })
 			SB.Emit("SB_PRICES_CHANGED") -- a price repaint keeps the group's texts
 			assert.same({ "54", SB.Prices.Money(540) }, { row(7).count.text, row(7).value.text })
+		end)
+
+		-- Mutation: pass `stackKey = W.StackKey` to Layout.Build again (the key is computed twice per slot).
+		it("the list computes each record's key once per build", function()
+			local seen, key = {}, SB.Stacks.Key
+			SB.Stacks.Key = function(record)
+				seen[record] = (seen[record] or 0) + 1
+				return key(record)
+			end
+			local build, worst, n = SB.Layout.Build, 0, 0
+			SB.Layout.Build = function(...)
+				local state = build(...)
+				for _, times in pairs(seen) do
+					n, worst = n + 1, math.max(worst, times)
+				end
+				return state
+			end
+			W.Open()
+			assert.truthy(n >= 3, "the records were keyed")
+			assert.equal(1, worst, "no record is keyed twice by the pre-pass and Build")
+			assert.equal(52, B.StackOf(B.Get(0, 7)).total)
 		end)
 
 		-- Mutation: in layoutSections, call DisplayOrder without the totalOf function.

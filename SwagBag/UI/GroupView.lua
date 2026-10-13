@@ -663,12 +663,19 @@ function GV.New(cfg)
 			b.ms.read = b.ms.read + A.ProfileMs() - t
 			if sections then
 				t = A.ProfileMs()
+				local buildKey = stackKey
 				if list then -- each section lists its items in the list's order (Engine/Sort.lua)
 					local totalOf
 					if stackKey then -- a stack group sorts by its total, counted in this group only (0.14.0)
-						local keys = {}
-						for _, s in ipairs(slots) do
-							keys[s] = s.record and stackKey(s.record) or nil
+						local keys, memo = {}, {}
+						for _, s in ipairs(slots) do -- the key is computed once per record; Layout.Build reads the memo
+							if s.record then
+								memo[s.record] = stackKey(s.record)
+								keys[s] = memo[s.record]
+							end
+						end
+						buildKey = function(record)
+							return memo[record]
 						end
 						local totals = SB.Stacks.Totals(slots, function(s)
 							return keys[s]
@@ -681,7 +688,7 @@ function GV.New(cfg)
 				end
 				g.state = SB.Layout.Build(slots, assign, order, { columns = list and 1 or cfg.columns(),
 					newRows = list and GV.LIST_NEW_ROWS or cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile(view) or nil,
-					family = cfg.family or SB.Adapter.BagFamily, hideEmptyNew = hideNew(), stackKey = stackKey })
+					family = cfg.family or SB.Adapter.BagFamily, hideEmptyNew = hideNew(), stackKey = buildKey })
 				b.ms.categories = b.ms.categories + A.ProfileMs() - t
 			end
 			b.groups[#b.groups + 1] = g
