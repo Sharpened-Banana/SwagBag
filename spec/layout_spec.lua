@@ -407,8 +407,12 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 		assert.truthy(st.needsReflow)
 	end)
 
-	it("section truth: random swaps, returns, batches, overflow and hover holds never put a wrong item in a section", function()
-		local totals = { leavePh = 0, toNew = 0, overflowed = 0, swaps = 0, deferrals = 0, leaves = 0 }
+	-- stackKey: nil, or the stack grouping of 0.14.0 (every item of a section is "one item"): the same
+	-- checks, plus the member invariants (each member in exactly one group, where = { rep's section,
+	-- stackOf = rep }, the rep in a cell, no empty group) and a busy button never moves.
+	local function sectionTruth(stackKey)
+		local totals = { leavePh = 0, toNew = 0, overflowed = 0, swaps = 0, deferrals = 0, leaves = 0, handovers = 0,
+			memberMoves = 0 }
 		for seedNo = 1, 24 do
 			local content, built, slots = {}, {}, {}
 			for slot = 1, 20 do
@@ -416,7 +420,7 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 				built[slot] = content[slot]
 				slots[slot] = { bag = 0, slot = slot, record = content[slot] and { cat = "c" .. (content[slot] % 3) } or nil }
 			end
-			st = L.Build(slots, assign, { "c0", "c1", "c2" }, { columns = 4, newRows = 2 })
+			st = L.Build(slots, assign, { "c0", "c1", "c2" }, { columns = 4, newRows = 2, stackKey = stackKey })
 			local headerY = {}
 			for _, h in ipairs(L.Position(st, OPTS, {}).headers) do
 				headerY[h.id] = h.y
@@ -483,6 +487,21 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 						end
 					end
 				end
+				for repKey, group in pairs(st.stacks) do -- a hidden member counts as present
+					local rw = st.where[repKey]
+					assert.truthy(rw and rw.index and st.sections[rw.section].cells[rw.index], label .. ": a rep without a cell")
+					assert.truthy(#group.members > 0, label .. ": an empty group was kept")
+					for _, m in ipairs(group.members) do
+						assert.falsy(seen[m], label .. ": a member placed twice")
+						seen[m] = true
+						count = count + 1
+						assert.same({ section = rw.section, stackOf = repKey }, st.where[m], label)
+					end
+				end
+				for key, w in pairs(st.where) do
+					assert.truthy(seen[key], label .. ": a where entry for no button")
+					assert.truthy(not w.stackOf or stackKey, label .. ": a member without stackKey")
+				end
 				assert.equal(20, count, label .. ": a button was lost")
 				local held = {}
 				for _, ch in ipairs(st.deferred) do
@@ -493,7 +512,7 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 				for _, cell in ipairs(pos.cells) do
 					local w = st.where[L.Key(cell.bag, cell.slot)]
 					if w.section ~= "new" and w.section ~= "free" and not held[cell.slot] then
-						assert.truthy(cell.shown)
+						assert.truthy(cell.shown or (w.stackOf and pos.byKey[w.stackOf].shown), label .. ": a hidden item")
 						assert.equal(built[cell.slot], content[cell.slot], label .. ": wrong item in section " .. w.section)
 					end
 				end
@@ -539,9 +558,14 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 						changes[#changes + 1] = one()
 					end
 				end
-				local before = {}
+				-- a member's place is its section (re-pointing to a new rep moves nothing)
+				local function place(w)
+					return w.stackOf and (w.section .. "#member") or (w.section .. "#" .. w.index)
+				end
+				local before, wasMember = {}, {}
 				for k, w in pairs(st.where) do
-					before[k] = w.section .. "#" .. w.index
+					before[k] = place(w)
+					wasMember[k] = w.stackOf ~= nil
 				end
 				local holdSet
 				if rand(3) == 1 then
@@ -571,10 +595,19 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 				local moved = {}
 				for _, k in ipairs(r.moved) do
 					moved[k] = true
+					if wasMember[k] then
+						totals.memberMoves = totals.memberMoves + 1
+						if st.where[k] and st.where[k].index and before[k]:sub(1, 1) == "c" and st.where[k].section ~= "new"
+							and st.where[k].section ~= "free" then
+							totals.handovers = totals.handovers + 1
+						end
+					end
 				end
 				for k, w in pairs(st.where) do
 					if not moved[k] then
-						assert.equal(before[k], w.section .. "#" .. w.index, "a button moved that was not changed")
+						assert.equal(before[k], place(w), "a button moved that was not changed")
+					elseif holdSet and holdSet[k % 1000] then
+						error("a busy button moved")
 					end
 				end
 				checkInvariants(("seed %d step %d"):format(seedNo, step))
@@ -590,6 +623,18 @@ describe("Layout.Apply (spec 4.3: what happens while the window is open)", funct
 		assert.truthy(totals.overflowed > 0, "New never overflowed")
 		assert.truthy(totals.swaps > 0, "no swaps")
 		assert.truthy(totals.deferrals > 0, "the hover guard never held anything")
+		if stackKey then
+			assert.truthy(totals.memberMoves > 0, "no hidden stack ever changed")
+			assert.truthy(totals.handovers > 0, "no shown stack ever handed its cell over")
+		end
+	end
+
+	it("section truth: random swaps, returns, batches, overflow and hover holds never put a wrong item in a section", function()
+		sectionTruth(nil)
+	end)
+
+	it("section truth with stack groups: members stay in one group and a busy button never moves", function()
+		sectionTruth(function(r) return r.cat end)
 	end)
 end)
 
@@ -828,12 +873,16 @@ describe("Layout free tile (plan D19)", function()
 	-- -> `#st.tiles.spares[f]` in Position; (4) in applyTile's "left" branch,
 	-- `append(st, Layout.FREE, cell)` instead of `Layout.ToFamily(st, key, cell)`; (5) the live
 	-- `st.tiles.family(bagOf(key))` instead of the stored family in isTile (W3-21).
-	it("randomized: one real empty tile per family with the real count; nothing moves under the cursor", function()
+	-- stackKey: nil, or 0.14.0's stack grouping (every item of a section is "one item"), with the
+	-- member invariants on top: each member in exactly one group, where = { rep's section, stackOf =
+	-- rep }, the rep in a cell, no empty group; a hidden member counts as present and its item shows
+	-- through its rep.
+	local function tileRandom(stackKey)
 		local SIZES = { [0] = 12, [1] = 8, [2] = 6, [5] = 6 }
 		local FAMILIES = { "any", "reagent", "family8" }
 		local totals = { swaps = 0, heldSwaps = 0, spareLeaves = 0, spareArrivals = 0, reagentSwaps = 0, fullTile = 0,
 			steps = 0, settled = 0, reflows = 0, tileOff = 0, tileBackOn = 0, removes = 0, adds = 0,
-			removedTiles = 0, handedOn = 0, fills = 0, zeroToOneAny = 0, zeroToOneReagent = 0 }
+			removedTiles = 0, handedOn = 0, fills = 0, zeroToOneAny = 0, zeroToOneReagent = 0, memberMoves = 0, handovers = 0 }
 		local seed = 20261002
 		local function rand(n)
 			seed = seed * 16807 % 2147483647
@@ -862,7 +911,7 @@ describe("Layout free tile (plan D19)", function()
 			end
 			local tileOn = true
 			local st = L.Build(slots, assign, { "c0", "c1", "c2" },
-				{ columns = 4, newRows = 1 + rand(2), freeTile = true, family = liveFamily })
+				{ columns = 4, newRows = 1 + rand(2), freeTile = true, family = liveFamily, stackKey = stackKey })
 			local pos = L.Position(st, OPTS, {})
 			local hover, cursor = nil, false
 
@@ -912,6 +961,16 @@ describe("Layout free tile (plan D19)", function()
 						assert.same({ section = "free", spare = f }, st.where[k], label)
 					end
 				end
+				for repKey, group in pairs(st.stacks) do -- a hidden member counts as present
+					local rw = st.where[repKey]
+					assert.truthy(rw and rw.index and st.sections[rw.section].cells[rw.index], label .. ": a rep without a cell")
+					assert.truthy(#group.members > 0, label .. ": an empty group was kept")
+					for _, k in ipairs(group.members) do
+						assert.is_nil(seen[k], label .. ": a member is also elsewhere")
+						seen[k] = true
+						assert.same({ section = rw.section, stackOf = repKey }, st.where[k], label)
+					end
+				end
 				for _, k in ipairs(keys) do
 					assert.truthy(seen[k] or heldAdd[k], label .. ": a button was lost")
 				end
@@ -938,8 +997,8 @@ describe("Layout free tile (plan D19)", function()
 				end
 				if not st.tiles then -- the tile is off: every free slot is shown, no tile, no spare
 					assert.equal(0, #new.tiles, label .. ": a tile with the tile off")
-					for k, c in pairs(new.byKey) do
-						assert.truthy(c.shown and not c.spare, label .. ": a hidden slot with the tile off " .. k)
+					for k, c in pairs(new.byKey) do -- a hidden stack (member) is a filled slot, not a free one
+						assert.truthy(c.shown and not c.spare or c.stackOf, label .. ": a hidden slot with the tile off " .. k)
 					end
 					if #st.deferred == 0 then
 						totals.settled = totals.settled + 1
@@ -974,8 +1033,9 @@ describe("Layout free tile (plan D19)", function()
 						end
 					end
 					for _, k in ipairs(keys) do
+						local c = new.byKey[k]
 						if content[k] then
-							assert.truthy(new.byKey[k].shown, label .. ": an item is hidden")
+							assert.truthy(c.shown or (c.stackOf and new.byKey[c.stackOf].shown), label .. ": an item is hidden")
 						end
 					end
 				end
@@ -1065,7 +1125,7 @@ describe("Layout free tile (plan D19)", function()
 								record = content[k] and { cat = "c" .. (content[k] % 3) } or nil }
 						end
 						st = L.Build(fresh, assign, { "c0", "c1", "c2" },
-							{ columns = 4, newRows = 1 + rand(2), freeTile = tileOn, family = liveFamily })
+							{ columns = 4, newRows = 1 + rand(2), freeTile = tileOn, family = liveFamily, stackKey = stackKey })
 						pos = L.Position(st, OPTS, {})
 						totals.reflows = totals.reflows + 1
 					end
@@ -1130,9 +1190,22 @@ describe("Layout free tile (plan D19)", function()
 				for _, d in ipairs(st.deferred) do
 					heldBefore[L.Key(d.bag, d.slot)] = true
 				end
+				local wasMember = {}
+				for k, w in pairs(st.where) do
+					wasMember[k] = w.stackOf ~= nil
+				end
 				local r = L.Apply(st, changes, function(bag, slot)
 					return busyKeys[L.Key(bag, slot)] == true
 				end)
+				for _, k in ipairs(r.moved) do
+					if wasMember[k] then
+						totals.memberMoves = totals.memberMoves + 1
+						local w = st.where[k]
+						if w and w.index and w.section ~= "new" and w.section ~= "free" then
+							totals.handovers = totals.handovers + 1
+						end
+					end
+				end
 				local new = L.Position(st, OPTS, {})
 				for _, k in ipairs(r.moved) do
 					if wasTile[k] and st.where[k] and st.where[k].section == "new" then
@@ -1194,7 +1267,19 @@ describe("Layout free tile (plan D19)", function()
 		assert.truthy(totals.fills >= 60, "families filled by loot " .. totals.fills)
 		assert.truthy(totals.zeroToOneAny >= 25, "'any' from 0 free to 1+ " .. totals.zeroToOneAny)
 		assert.truthy(totals.zeroToOneReagent >= 15, "'reagent' from 0 free to 1+ " .. totals.zeroToOneReagent)
+		return totals
+	end
+
+	it("randomized: one real empty tile per family with the real count; nothing moves under the cursor", function()
+		tileRandom(nil)
 	end)
+
+	it("randomized with stack groups: members stay in one group, every item shows, nothing moves under the cursor",
+		function()
+			local totals = tileRandom(function(r) return r.cat end)
+			assert.truthy(totals.memberMoves > 0, "no hidden stack ever changed")
+			assert.truthy(totals.handovers > 0, "no shown stack ever handed its cell over")
+		end)
 end)
 
 -- Ruling W4-15: New is hidden while it is empty (opts.hideEmptyNew). Its first arrival shows it and
@@ -1397,11 +1482,14 @@ describe("Layout stacks (0.14.0)", function()
 			pos.stacks[1])
 		assert.equal(1, pos.headers[2].count, "a group counts once")
 		-- the member's entry comes right after its representative's
+		local found = false
 		for i, c in ipairs(pos.cells) do
 			if c.bag == 0 and c.slot == 5 then
+				found = true
 				assert.equal(m, pos.cells[i + 1])
 			end
 		end
+		assert.truthy(found, "the representative has an entry")
 		assert.equal(false, L.Position(st, OPTS, { a = true }).stacks[1].shown)
 	end)
 
