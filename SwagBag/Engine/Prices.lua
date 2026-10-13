@@ -224,19 +224,30 @@ function P.AuctionValue(link, itemID, recheck)
 	return best
 end
 
+local EMPTY = {}
+
+-- Every section's value: each shown button's stack and, for a stack group (0.14.0), its hidden stacks.
 function P.SectionTotals(state, recordOf)
+	local function worth(bag, slot)
+		local r = recordOf(bag, slot)
+		if r and not r.pending then
+			local v = P.Value(r.link, r.itemID, P.Bound(r))
+			if v then
+				return v * (r.count or 1)
+			end
+		end
+		return 0
+	end
 	local totals = {}
 	for id, sec in pairs(state.sections) do
 		local sum = 0
 		for i = 1, sec.size do
 			local cell = sec.cells[i]
 			if cell and cell.bag and not cell.placeholder then
-				local r = recordOf(cell.bag, cell.slot)
-				if r and not r.pending then
-					local v = P.Value(r.link, r.itemID, P.Bound(r))
-					if v then
-						sum = sum + v * (r.count or 1)
-					end
+				sum = sum + worth(cell.bag, cell.slot)
+				local members = SB.Layout.MembersOf(state, SB.Layout.Key(cell.bag, cell.slot))
+				for _, m in ipairs(members or EMPTY) do
+					sum = sum + worth(math.floor(m / 1000), m % 1000)
 				end
 			end
 		end

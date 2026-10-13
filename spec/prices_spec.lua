@@ -252,6 +252,20 @@ describe("Prices (spec F10, 3.3)", function()
 		assert.same({ c_herbs = 23 * 1500, c_consumables = 500, new = 0, free = 0 }, totals)
 	end)
 
+	-- Review focus 4 (0.14.0). Mutation: in SectionTotals, iterate the cells only (no MembersOf).
+	it("section totals count hidden stacks", function()
+		A.items[Fixtures.HERB].sellPrice = 10
+		local records = {
+			[1] = { itemID = Fixtures.HERB, link = HERB_LINK, count = 7 },
+			[5] = { itemID = Fixtures.HERB, link = HERB_LINK, count = 45 },
+		}
+		local st = SB.Layout.Build({ { bag = 0, slot = 1, record = records[1] }, { bag = 0, slot = 5, record = records[5] } },
+			function() return "c_herbs" end, { "c_herbs" }, { columns = 4, stackKey = function(r) return r.link end })
+		assert.equal(1, st.sections.c_herbs.size, "one cell for both stacks")
+		local totals = P.SectionTotals(st, function(_, slot) return records[slot] end)
+		assert.equal(520, totals.c_herbs)
+	end)
+
 	it("a warbound-until-equipped item is worth its vendor price only (W3-35)", function()
 		A.auctionator = { prices = { [RING_LINK] = 9990000 } }
 		P.Invalidate()
