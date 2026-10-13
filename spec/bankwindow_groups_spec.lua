@@ -1266,6 +1266,73 @@ describe("BankWindow contents", function()
 		assert.equal(1, n)
 		assert.equal("- New (0)", labels()[7])
 	end)
+
+	-- Stack grouping (0.14.0): the character and warband banks show one icon per item (bags.stacks "one").
+	describe("stack grouping (0.14.0)", function()
+		local function total(bag, slot)
+			local s = B.StackOf(B.Get(bag, slot))
+			return s and s.total
+		end
+
+		-- Mutation: BankWindow's GroupView cfg drops `stacks`.
+		it("the bank shows one icon with the total", function()
+			A.Put(6, 4, Fixtures.HERB, 45)
+			openBank()
+			assert.same({ 1, 3, 4 }, shownSlots(6), "the potion, the free tile and the herbs' icon (the 20 hides under the 45)")
+			assert.equal(65, total(6, 4))
+			assert.equal(45, B.Get(6, 4).count, "Blizzard's count field keeps the real stack")
+			assert.equal("- Herbs (1)", header("bank:c_herbs").text.text)
+		end)
+
+		-- P5. Mutation: the bank's SB_STACKS_CHANGED listener is deleted.
+		it("stacks all shows every bank stack after a held layout", function()
+			A.Put(6, 4, Fixtures.HERB, 45)
+			openBank()
+			local icon = B.Get(6, 4)
+			local cell = at(6, 4)
+			icon.mouseOver = true -- with every stack shown the 45 takes a cell of its own: it would move
+			SB.Config.Set("bags.stacks", "all")
+			SB.Emit("SB_STACKS_CHANGED")
+			assert.same({ 1, 3, 4 }, shownSlots(6), "held under the mouse")
+			assert.same(cell, at(6, 4))
+			A.Advance(0.3)
+			assert.same({ 1, 3, 4 }, shownSlots(6), "still under the mouse")
+			icon.mouseOver = false
+			A.Advance(0.3)
+			assert.same({ 1, 2, 3, 4 }, shownSlots(6), "every stack shows")
+			assert.same({ nil, nil }, { total(6, 2), total(6, 4) })
+			assert.equal("- Herbs (2)", header("bank:c_herbs").text.text)
+		end)
+
+		-- Mutation: the bank's inventory handler drops v.PaintStacks().
+		it("a deposit that tops up a hidden stack updates the total in place", function()
+			A.Put(6, 4, Fixtures.HERB, 45)
+			openBank()
+			local cell = at(6, 4)
+			A.Put(6, 2, Fixtures.HERB, 30) -- the hidden 20 becomes 30
+			bankUpdate(6)
+			assert.equal(75, total(6, 4))
+			assert.same({ 45, 30 }, B.StackOf(B.Get(6, 4)).counts)
+			assert.same({ 1, 3, 4 }, shownSlots(6), "nothing appears")
+			assert.same(cell, at(6, 4), "nothing moves")
+		end)
+
+		-- Review Focus 5. Mutation: no `afterApply` on the bank's search box.
+		it("a bank search counts and lights a hidden stack's match", function()
+			A.Put(12, 3, Fixtures.HERB, 45)
+			A.Put(12, 4, Fixtures.HERB, 7)
+			openBank()
+			assert.same({}, shownSlots(12), "the warband is folded")
+			search("mycobloom")
+			assert.equal(2, BW.found.warband, "both stacks count, the hidden 7 too")
+			assert.same({ 1, 2, 3, 5 }, shownSlots(12), "the warband opens: the ore, the ring, the herbs' icon, the free tile")
+			search("count<10 & mycobloom") -- only the hidden 7 matches
+			assert.equal(1, BW.found.warband)
+			assert.truthy(B.Get(12, 3).shown)
+			assert.equal(1, B.Get(12, 3).alpha, "the shown 45's icon stays lit")
+			assert.equal(B.DIM_ALPHA, B.Get(12, 1).alpha, "the ore is dimmed")
+		end)
+	end)
 end)
 
 describe("Bags and bank windows open together (Review Focus 1)", function()

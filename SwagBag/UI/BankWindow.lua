@@ -511,6 +511,9 @@ BW.view = SB.GroupView.New({
 	hideEmptyNew = function() -- one setting for every window (bags.newAlways)
 		return not SB.Config.Get("bags.newAlways")
 	end,
+	stacks = function() -- one icon per item in each bank (0.14.0): bags.stacks covers the bags and both banks
+		return SB.Stacks ~= nil and SB.Stacks.Enabled()
+	end,
 	groupInset = function(id) -- the Warband header leaves room for Deposit warbound and With reagents
 		local room = id == "warband" and BW.DepositControlsShown()
 		if id == "warband" then
@@ -583,6 +586,11 @@ searchBox = SB.SearchBox.New({
 			counting.found[gid] = (counting.found[gid] or 0) + 1
 		end
 		return BW.view.SetDimmed(button, dimmed)
+	end,
+	-- a grouped icon stays lit while any of its stacks matches (0.14.0); every stack, hidden ones too, was
+	-- counted above, and relighting goes around that count
+	afterApply = function()
+		return BW.view.RelightStacks()
 	end,
 })
 BW.searchBox = searchBox
@@ -1019,6 +1027,7 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 	end
 	if touched then
 		v.RefreshTotals()
+		v.PaintStacks() -- a group's total follows a count change in place (0.14.0)
 		BW.ApplySearch()
 		SB.Emit("SB_BANK_CHANGED")
 	end
@@ -1161,6 +1170,13 @@ SB.On("SB_FREE_TILE_CHANGED", function()
 		BW.view.RequestLayout("free")
 	end
 end, "bank")
+
+-- /swagbag stacks one|all (Core/Commands.lua, 0.14.0): the bank regroups silently, now or once the mouse leaves.
+SB.On("SB_STACKS_CHANGED", Guard("bank.stacksChanged", function()
+	if frame:IsShown() then
+		BW.view.RequestLayout("stacks")
+	end
+end, "bank"), "bank")
 
 -- Auctionator reported new prices: the section totals and the list's Value column follow, in place.
 SB.On("SB_PRICES_CHANGED", function()

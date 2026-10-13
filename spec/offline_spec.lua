@@ -429,6 +429,17 @@ describe("Alt viewer", function()
 			assert.falsy(tostring(f.template):find("ContainerFrameItemButton"), tostring(f.template))
 		end
 	end)
+
+	-- Stack grouping (0.14.0) is for the live bags and banks only: the alt viewer passes no cfg.stacks.
+	-- Mutation: OfflineWindow's GroupView cfg passes `stacks = function() return true end`.
+	it("the alt viewer never groups", function()
+		SB.Snapshots.DB().chars["Abby-Argent Dawn"].bags.containers[0].s = "1:item:211880;20\n3:item:211880;5\n"
+		OW.Open("Abby-ArgentDawn")
+		assert.same({ true, true }, { DB.Get(0, 1).shown, DB.Get(0, 3).shown }, "both potion stacks show")
+		assert.same({ nil, nil }, { SB.Buttons.StackOf(DB.Get(0, 1)), SB.Buttons.StackOf(DB.Get(0, 3)) })
+		assert.same({ 20, 5 }, { DB.Get(0, 1).count, DB.Get(0, 3).count })
+		assert.equal("- Consumables (2)", sectionHeaders()[1])
+	end)
 end)
 
 describe("Alt viewer: the character picker and the ways in", function()

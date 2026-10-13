@@ -380,4 +380,31 @@ describe("BankWindow list view (week 8)", function()
 		Fake.Fire(B.placeholdersInUse[1], "OnEnter")
 		assert.equal(SB.L.LIST_BANK_GONE_TIP, GameTooltip.text)
 	end)
+
+	-- Stack grouping (0.14.0). Mutations: in GroupView's build, no totalOf for DisplayOrder (the warband's
+	-- order stays, the bank's 65 sorts as its 45); one totals index shared by both groups (the warband's 7
+	-- sorts as 72); paintStacks without the row's total (Count says 45); v.RefreshRows without paintStacks.
+	it("a bank list row shows the total", function()
+		for id, name in pairs({ [777002] = "Arathor Sage", [777003] = "Arathor Thyme" }) do -- two more herbs
+			A.AddItem(id, { name = name, classID = A.ITEM_CLASS.Tradegoods, subclassID = A.TRADEGOODS_SUB.Herb,
+				quality = 1, ilvl = 1, maxStack = 1000, bind = "none", isCraftingReagent = true })
+		end
+		A.Put(6, 4, Fixtures.HERB, 45)
+		A.Put(6, 5, 777003, 50)
+		A.Put(12, 3, Fixtures.HERB, 7)
+		A.Put(12, 4, 777002, 30)
+		SB.Sort.Save("count", true)
+		SB.Config.Set("bank.show", "both")
+		SB.Config.Set("bank.view", "list")
+		openBank()
+		assert.equal("list", BW.view.drawn)
+		assert.falsy(B.Get(6, 2).shown, "the 20 hides under the 45's row")
+		assert.equal("65", row(6, 4).count.text)
+		assert.equal("- Herbs (2)", labels()[5], "the bank's Herbs: the Mycobloom icon and the thyme")
+		assert.truthy(on(6, 4)[2] > on(6, 5)[2], "the bank's Mycobloom (65) sorts above its thyme (50)")
+		assert.equal("7", row(12, 3).count.text, "the warband's 7 is its own")
+		assert.truthy(on(12, 4)[2] > on(12, 3)[2], "the warband's sage (30) sorts above its Mycobloom (7)")
+		SB.Emit("SB_PRICES_CHANGED") -- every row's Value is painted again: a grouped row keeps its total
+		assert.equal("65", row(6, 4).count.text)
+	end)
 end)
