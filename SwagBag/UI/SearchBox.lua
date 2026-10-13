@@ -6,7 +6,9 @@
 --   SB.SearchBox                the bags window's box (built at load, below)
 --   SB.SearchBox.New(o) -> box  another window's box. o = { parent, name, search, window,
 --     debounceKey, isOpen = fn() -> bool, forEachSlot = fn(fn), setDimmed = fn(button, dimmed),
---     rightInset (optional: room kept free at the row's right end; the bags window's Lock button, week 7) }
+--     rightInset (optional: room kept free at the row's right end; the bags window's Lock button, week 7),
+--     afterApply (optional, 0.14.0: runs after each search that applied; the bags window relights a grouped
+--     icon whose hidden stack matches) }
 --   box.editBox, box.Apply(), box.Run(), box.ShowError(text, err), box.ClearError()
 local _, SB = ...
 
@@ -82,8 +84,13 @@ local function new(o)
 			errorLine:SetTextColor(1, 0.1, 0.1)
 			errorLine:SetText(L.SEARCH_EVAL_FAILED)
 			underline:Hide()
-		elseif o.search.lastError == nil then
-			Box.ClearError()
+		else
+			if o.search.lastError == nil then
+				Box.ClearError()
+			end
+			if o.afterApply then
+				o.afterApply()
+			end
 		end
 		return matches, total, ms
 	end
@@ -123,6 +130,9 @@ local Box = new({
 	end,
 	setDimmed = function(button, dimmed) -- the button, and in the list view its row (W.SetDimmed)
 		return W.SetDimmed(button, dimmed)
+	end,
+	afterApply = function() -- a grouped icon stays lit while any of its stacks matches (0.14.0)
+		return W.RelightStacks()
 	end,
 })
 Box.New = new

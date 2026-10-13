@@ -1587,6 +1587,189 @@ describe("BagsWindow category view", function()
 		assert.equal(0, n.count)
 		assert.equal("- New (3)", header("new").text.text)
 	end)
+
+	-- Stack grouping (0.14.0): two Mycobloom stacks, 45 at (0,7) and 7 at (0,8), in the bags at login (seen).
+	-- Engine/Stacks.lua is loaded here only, so the tests above keep every stack (SB.Stacks absent).
+	describe("stack grouping (0.14.0)", function()
+		local printed
+		before_each(function()
+			Loader.LoadFile(SB, "SwagBag/Engine/Stacks.lua")
+			Loader.LoadFile(SB, "SwagBag/Core/Commands.lua")
+			function B.SetStack(button, s) button.stack = s end
+			function B.StackOf(button) return rawget(button, "stack") end
+			printed = {}
+			SB.Print = function(msg) printed[#printed + 1] = msg end
+			A.Put(0, 7, Fixtures.HERB, 45)
+			A.Put(0, 8, Fixtures.HERB, 7)
+			SB.Inventory.ScanAll() -- in the bags at login: not unseen
+			Fixtures.Settle(SB)
+		end)
+
+		local function sectionOf(bag, slot)
+			local w = W.state.where[SB.Layout.Key(bag, slot)]
+			return w and w.section
+		end
+
+		local function total(bag, slot)
+			local s = B.StackOf(B.Get(bag, slot))
+			return s and s.total
+		end
+
+		-- Mutation: drop `stackKey = W.StackKey` from layoutSections' Build options.
+		it("two stacks show as one icon with the total", function()
+			W.Open()
+			assert.falsy(B.Get(0, 8).shown, "the 7 hides under the 45's icon")
+			assert.truthy(B.Get(0, 7).shown)
+			assert.equal(52, total(0, 7))
+			assert.same({ 45, 7 }, B.StackOf(B.Get(0, 7)).counts)
+			assert.equal("- Herbs (1)", header(sectionOf(0, 7)).text.text, "the header counts the icon once")
+		end)
+
+		-- Mutation: in W.StackKey, ignore the setting (always group).
+		it("every stack shows with stacks all", function()
+			W.Open()
+			SB.Slash.Dispatch("stacks all")
+			assert.same({ SB.L.STACKS_MODE_ALL }, printed, "one answer (P2)")
+			assert.same({ true, true }, { B.Get(0, 7).shown, B.Get(0, 8).shown })
+			assert.same({ nil, nil }, { total(0, 7), total(0, 8) }, "no stack is set")
+			assert.equal("- Herbs (2)", header(sectionOf(0, 7)).text.text)
+		end)
+
+		-- Mutation: delete the SB_STACKS_CHANGED listener.
+		it("the setting regroups only once the mouse leaves", function()
+			SB.Config.Set("bags.stacks", "all")
+			W.Open()
+			assert.truthy(B.Get(0, 8).shown)
+			SB.Config.Set("bags.stacks", "one")
+			W.scroll.mouseOver = true
+			SB.Emit("SB_STACKS_CHANGED")
+			assert.truthy(B.Get(0, 8).shown, "nothing changes under the mouse")
+			assert.is_nil(total(0, 7))
+			A.Advance(0.3)
+			assert.truthy(B.Get(0, 8).shown, "still under the mouse")
+			W.scroll.mouseOver = false
+			A.Advance(0.3)
+			assert.falsy(B.Get(0, 8).shown)
+			assert.equal(52, total(0, 7))
+		end)
+
+		local function sellShownUnderMouse()
+			W.Open()
+			local shown = B.Get(0, 7)
+			local x, y = shown.x, shown.y
+			shown.mouseOver = true
+			A.Clear(0, 7) -- sold with a vendor right-click
+			bagUpdate()
+			assert.falsy(B.Get(0, 8).shown, "nothing appears under the mouse")
+			assert.same({ x, y }, { shown.x, shown.y }, "the emptied button stays put")
+			assert.is_nil(total(0, 7), "the 45's icon no longer claims the total")
+			A.Advance(0.3)
+			assert.falsy(B.Get(0, 8).shown, "still under the mouse")
+			shown.mouseOver = false
+			A.Advance(0.3)
+			assert.truthy(B.Get(0, 8).shown)
+			assert.same({ x, y }, { B.Get(0, 8).x, B.Get(0, 8).y }, "the 7 takes the cell")
+			assert.equal(0, #B.placeholders, "its cell is taken: no placeholder")
+			assert.is_nil(total(0, 8), "one stack left: no group")
+		end
+
+		-- Review Focus 1. Mutation: in the inventory handler, drop the paintStacks(W.pos) call.
+		it("selling the shown stack under the mouse waits", function()
+			sellShownUnderMouse()
+		end)
+
+		it("in combat a promotion still lands", function()
+			A.combat = true
+			sellShownUnderMouse()
+		end)
+
+		-- P5: an item on the cursor holds the hidden stack too (busyCheck's cursor answer covers every key,
+		-- hidden or shown). Mutation: in busyCheck, `return buttonBusy(bag, slot)` (no cursor).
+		it("an item on the cursor holds the hand-over until it is put down", function()
+			W.Open()
+			local x, y = B.Get(0, 7).x, B.Get(0, 7).y
+			A.cursor = { itemID = Fixtures.FLASK }
+			A.Clear(0, 7)
+			bagUpdate()
+			A.Advance(0.3)
+			assert.falsy(B.Get(0, 8).shown, "nothing appears while the cursor holds an item")
+			A.cursor = nil
+			A.Advance(0.3)
+			assert.truthy(B.Get(0, 8).shown)
+			assert.same({ x, y }, { B.Get(0, 8).x, B.Get(0, 8).y })
+		end)
+
+		-- Mutation: in the inventory handler, drop the paintStacks(W.pos) call.
+		it("a count change updates the total in place", function()
+			W.Open()
+			local counts = placedCounts()
+			A.Put(0, 8, Fixtures.HERB, 9)
+			bagUpdate()
+			assert.equal(54, total(0, 7))
+			assert.same({ 45, 9 }, B.StackOf(B.Get(0, 7)).counts)
+			assert.same(counts, placedCounts(), "nothing moves")
+			assert.falsy(B.Get(0, 8).shown)
+		end)
+
+		it("an unseen stack stays separate in New", function()
+			W.Open()
+			A.Put(0, 9, Fixtures.HERB, 3) -- looted into the Free tile
+			bagUpdate()
+			assert.equal("new", sectionOf(0, 9))
+			assert.truthy(B.Get(0, 9).shown)
+			assert.equal(52, total(0, 7), "the group is unchanged")
+			assert.is_nil(total(0, 9))
+			W.Reflow()
+			assert.equal("new", sectionOf(0, 9), "unseen: still in New at the next layout")
+			assert.same({ 52, true }, { total(0, 7), B.Get(0, 9).shown })
+		end)
+
+		-- Mutation: delete paintStacks(nil) in layoutGrid (the 45's icon keeps claiming 52 in the grid).
+		it("the grid view never groups", function()
+			W.Open()
+			assert.equal(52, total(0, 7))
+			W.SetView("grid")
+			assert.same({ true, true }, { B.Get(0, 7).shown, B.Get(0, 8).shown })
+			assert.same({ nil, nil }, { total(0, 7), total(0, 8) })
+		end)
+
+		it("ForEachSlot still visits hidden stacks", function()
+			W.Open()
+			local seen = {}
+			W.ForEachSlot(function(_, record, bag, slot)
+				if record then
+					seen[SB.Layout.Key(bag, slot)] = record.count
+				end
+			end)
+			assert.same({ 45, 7 }, { seen[7], seen[8] })
+		end)
+
+		-- Review Focus 4. Mutation: in W.SectionSlots, iterate the cells only (drop the members loop).
+		it("SectionSlots lists every stack of a grouped icon", function()
+			W.Open()
+			local out = {}
+			for _, c in ipairs(W.SectionSlots(sectionOf(0, 7))) do
+				out[#out + 1] = c.slot .. "x" .. c.record.count
+			end
+			assert.same({ "7x45", "8x7" }, out)
+		end)
+
+		-- Review Focus 5 (ruling S2: the search matches only the hidden stack). Mutation: no afterApply on the bags box.
+		it("a hidden stack's match keeps the icon lit", function()
+			Loader.LoadFile(SB, "SwagBag/UI/SearchBox.lua")
+			W.Open()
+			SB.Slash.Dispatch("search count>40")
+			assert.same({ false, true }, { B.Get(0, 7).dimmed, B.Get(0, 8).dimmed }, "the shown 45 matches: no relight needed")
+			SB.Slash.Dispatch("search count<7")
+			assert.same({ true, true }, { B.Get(0, 7).dimmed, B.Get(0, 8).dimmed }, "neither stack matches: dimmed")
+			SB.Slash.Dispatch("search count<10 & mycobloom")
+			assert.equal(false, B.Get(0, 8).dimmed, "the hidden 7 matches")
+			assert.equal(false, B.Get(0, 7).dimmed, "the shown 45 does not, but its icon stays lit")
+			assert.truthy(B.Get(0, 2).dimmed, "the flask (2) is no Mycobloom")
+			SB.Emit("SB_BAGS_UPDATED") -- any re-apply dims it, then relights it again
+			assert.equal(false, B.Get(0, 7).dimmed)
+		end)
+	end)
 end)
 
 describe("BagsWindow focus modes (spec 6)", function()

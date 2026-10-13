@@ -40,6 +40,19 @@ describe("ListRows", function()
 		assert.equal("285", ring.ilvl)
 	end)
 
+	-- 0.14.0 stack grouping: one row for several stacks. Mutation: Value from the shown stack alone (no * total / count).
+	it("a row with a total shows it in Count and values the total", function()
+		A.items[Fixtures.HEALING_POTION].sellPrice = 200 -- the shown stack of 5: 10s; the group of 12: 24s
+		local t = LR.Texts(record(1), nil, nil, 12)
+		assert.same({ name = "Algari Healing Potion", count = "12", ilvl = "", value = "24s" }, t)
+		local button = Fake.New("Button", parent)
+		rows.Place(button, 30, -4, 300, 24, true)
+		rows.Paint(button, 0, 1, record(1), nil, nil, 12)
+		assert.same({ "12", "24s" }, { rows.rows[button].count.text, rows.rows[button].value.text })
+		rows.Paint(button, 0, 1, record(1))
+		assert.same({ "5", "10s" }, { rows.rows[button].count.text, rows.rows[button].value.text }, "no total: the stack")
+	end)
+
 	it("texts: with no quality colour from the client the name takes its link's |c colour; a loading item shows its link's name", function()
 		local r = { name = "Band", link = "|cffa335ee|Hitem:225001::|h[Band]|h|r", count = 1 }
 		assert.equal("|cffa335eeBand|r", LR.Texts(r).name)

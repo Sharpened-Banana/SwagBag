@@ -424,3 +424,55 @@ describe("Right-click deposit tooltip line", function()
 		assert.same({}, lines)
 	end)
 end)
+
+-- Stack grouping (0.14.0): a grouped icon's item tooltip lists its stacks and says which one a click uses
+-- (Blizzard's click acts on the shown stack only). Hooked once at load, as "tooltip.stacks" (window "none").
+describe("The stacks line on a grouped icon's tooltip (0.14.0)", function()
+	local SB, A, B, hook, lines
+	before_each(function()
+		SB = Loader.New(Env.ENGINE)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fake.Install()
+		lines = {}
+		A.TooltipLine = function(_, left, right) lines[#lines + 1] = { left, right } end
+		A.HookItemTooltip = function(fn) hook = fn return true end
+		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
+		B = SB.Buttons
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	local function tooltipOf(owner)
+		return { GetOwner = function() return owner end }
+	end
+
+	-- Mutation: in StackTooltipLine, return before the click line.
+	it("a grouped icon's tooltip lists the stacks and says which one a click uses", function()
+		local button = {}
+		B.SetStack(button, { total = 52, counts = { 45, 7 } })
+		hook(tooltipOf(button), Fixtures.HERB)
+		assert.same({ { "2 stacks: 45 + 7" }, { "Clicks use the stack of 45" } }, lines)
+	end)
+
+	-- Mutation: in StackTooltipLine, take any grouped icon's stack (next(Buttons.stacks)) instead of the owner's.
+	it("an ungrouped item gets no stacks line", function()
+		local other = {}
+		B.SetStack(other, { total = 52, counts = { 45, 7 } }) -- another icon is grouped
+		hook(tooltipOf({}), Fixtures.HERB)
+		hook(tooltipOf(nil), Fixtures.HERB)
+		hook({}, Fixtures.HERB) -- a tooltip with no owner method
+		assert.same({}, lines)
+		assert.truthy(B.StackOf(other))
+	end)
+
+	it("an error in the line is trapped as \"none\": the bags stay out of Safe Mode", function()
+		local button = {}
+		B.SetStack(button, { total = 52, counts = { 45, 7 } })
+		A.TooltipLine = function() error("line failed") end
+		hook(tooltipOf(button), Fixtures.HERB)
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+end)

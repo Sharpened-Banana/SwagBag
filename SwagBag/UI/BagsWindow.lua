@@ -30,6 +30,8 @@ local W = {
 	areaHeld = false, -- a world-started re-stack is waiting for the mouse to leave the items (W4-13)
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
 	tiled = {}, -- [button] = its tile entry ({ bag, slot, ... }) while it shows a free tile's number (plan D19)
+	stacked = {}, -- [button] = its pos.stacks entry while it shows a stack group's total (0.14.0)
+	dimmed = {}, -- [button] = what the search last set (W.SetDimmed), so a grouped icon can be relit
 	size = { 100, 100 }, -- last content width, height
 	SLOT = 37,
 	GAP = 4,
@@ -641,6 +643,46 @@ local function paintTiles(pos)
 	W.tiled = now
 end
 
+local function recordOf(bag, slot)
+	return W.records[bag] and W.records[bag][slot]
+end
+
+-- Stack grouping (0.14.0), paintTiles' twin: each shown group's icon shows the total (Buttons.SetStack,
+-- never Blizzard's count field) and, in the list, its row the total and the group's value. Every
+-- button no longer grouped gets its own number and row back. O(groups); nothing moves.
+local function paintStacks(pos)
+	local B, now = SB.Buttons, {}
+	for _, e in ipairs(pos and pos.stacks or {}) do
+		local s = e.shown and SB.Stacks.Of(e, recordOf)
+		local button = s and B.Get(e.bag, e.slot)
+		if button then
+			B.SetStack(button, s)
+			now[button] = e
+			if isList() then
+				W.rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot), nil, nil, s.total)
+			end
+		end
+	end
+	for button, e in pairs(W.stacked) do
+		if not now[button] then
+			B.SetStack(button, nil)
+			if isList() then
+				W.rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot))
+			end
+		end
+	end
+	W.stacked = now
+end
+
+-- What makes two stacks one icon (Engine/Stacks.lua), or nil: nothing groups while bags.stacks is
+-- "all", without Engine/Stacks.lua, or in the grid (the physical order).
+function W.StackKey(record)
+	if SB.Stacks and SB.Stacks.Enabled() and W.drawn ~= "grid" then
+		return SB.Stacks.Key(record)
+	end
+	return nil
+end
+
 -- The grid is the physical order (AC3.6): every empty slot is shown there, no tile.
 local function layoutGrid(bags)
 	local A, B = SB.Adapter, SB.Buttons
@@ -656,6 +698,7 @@ local function layoutGrid(bags)
 			button:Show()
 		end
 	end
+	paintStacks(nil)
 	paintTiles(nil)
 	return g.width, g.height
 end
@@ -759,6 +802,7 @@ function W.RefreshRows()
 			W.rows.Paint(button, bag, slot, record)
 		end
 	end)
+	paintStacks(W.pos) -- a grouped row's value is the whole group's
 end
 
 SB.On("SB_PRICES_CHANGED", function()
@@ -790,6 +834,7 @@ local function render()
 		end
 	end
 	renderExtras(pos)
+	paintStacks(pos)
 	paintTiles(pos)
 	return pos.width, pos.height
 end
@@ -820,6 +865,7 @@ local function renderMoved(oldPos, newPos)
 	end
 	W.cells = cellsOf(newPos)
 	renderExtras(newPos)
+	paintStacks(newPos)
 	paintTiles(newPos)
 	return newPos.width, newPos.height
 end
@@ -857,14 +903,25 @@ local function layoutSections(bags)
 	end
 	-- The list view lays the slots out in its display order (Engine/Sort.lua): Layout keeps the
 	-- order it is given inside each section. Empty slots keep their physical order.
+	-- A stack group sorts by its total (0.14.0): an unseen stack stays in New, so it is no part of one.
 	if isList() then
-		slots = SB.Sort.DisplayOrder(slots, SB.Sort.Spec(), SB.Sort.Value)
+		local keys = {}
+		for _, s in ipairs(slots) do
+			keys[s] = s.record and not (SB.Inventory and SB.Inventory.IsUnseen(s.bag, s.slot)) and W.StackKey(s.record)
+				or nil
+		end
+		local totals = SB.Stacks and SB.Stacks.Totals(slots, function(s)
+			return keys[s]
+		end) or {}
+		slots = SB.Sort.DisplayOrder(slots, SB.Sort.Spec(), SB.Sort.Value, function(s)
+			return keys[s] and totals[keys[s]]
+		end)
 	end
 	-- New is hidden while empty unless bags.newAlways (ruling W4-15); the bank and guild bank windows follow it too.
 	W.state = SB.Layout.Build(slots, assignOf, SB.Categories.SectionOrder(),
 		{ columns = isList() and 1 or columns(),
 			newRows = isList() and W.LIST_NEW_ROWS or SB.Config.Get("bags.newRows"), freeTile = SB.Config.Get("bags.freeTile"),
-			family = SB.Adapter.BagFamily, hideEmptyNew = not SB.Config.Get("bags.newAlways") })
+			family = SB.Adapter.BagFamily, hideEmptyNew = not SB.Config.Get("bags.newAlways"), stackKey = W.StackKey })
 	W.view = snapshot(W.state, W.EffectiveCollapsed())
 	W.order = W.EffectiveOrder(W.state)
 	W.pos = position(W.state, W.view, W.order)
@@ -961,9 +1018,28 @@ W.ButtonBusy = buttonBusy
 
 -- Search dimming (UI/SearchBox.lua): the button, and in the list view its row (AC5.1: fully dimmed).
 function W.SetDimmed(button, dimmed)
+	W.dimmed[button] = dimmed
 	SB.Buttons.SetDimmed(button, dimmed)
 	if W.rows then
 		W.rows.SetDimmed(button, dimmed)
+	end
+end
+
+-- After each search (SearchBox afterApply, 0.14.0): a grouped icon stays lit while any of its hidden
+-- stacks matches (`count<10` finds the 7 under the 45's icon). Texts and alpha only; nothing moves.
+function W.RelightStacks()
+	local B = SB.Buttons
+	for _, e in ipairs(W.pos and W.pos.stacks or {}) do
+		local rep = e.shown and B.Get(e.bag, e.slot)
+		if rep and W.dimmed[rep] then
+			for _, m in ipairs(e.members) do
+				local member = B.Get(m.bag, m.slot)
+				if member and not W.dimmed[member] then
+					W.SetDimmed(rep, false)
+					break
+				end
+			end
+		end
 	end
 end
 
@@ -1326,15 +1402,24 @@ SB.SectionHeaders.onLeave = function(_, header)
 	end
 end
 
--- The items drawn in a section now: { { bag, slot, record } } (placeholders and empty slots left out).
+-- The items drawn in a section now: { { bag, slot, record } } (placeholders and empty slots left out),
+-- every stack of a grouped icon included (0.14.0: Sell all and Send all act on each real stack).
 function W.SectionSlots(id)
 	local out = {}
+	local function add(bag, slot)
+		local r = recordOf(bag, slot)
+		if r then
+			out[#out + 1] = { bag = bag, slot = slot, record = r }
+		end
+	end
 	local sec = W.state and W.state.sections[id]
 	for i = 1, sec and sec.size or 0 do
 		local c = sec.cells[i]
-		local r = c and c.bag and not c.placeholder and W.records[c.bag] and W.records[c.bag][c.slot]
-		if r then
-			out[#out + 1] = { bag = c.bag, slot = c.slot, record = r }
+		if c and c.bag and not c.placeholder then
+			add(c.bag, c.slot)
+			for _, key in ipairs(SB.Layout.MembersOf(W.state, SB.Layout.Key(c.bag, c.slot)) or {}) do
+				add(SB.Layout.BagSlot(key))
+			end
 		end
 	end
 	return out
@@ -1636,6 +1721,11 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 	if W.state and (#moves > 0 or #W.state.deferred > 0) then
 		applied = W.ApplyChanges(moves)
 	end
+	if W.state then
+		-- A group's total follows a count change in place, and a held change (the shown stack sold under
+		-- the mouse) takes the total off at once (0.14.0).
+		paintStacks(W.pos)
+	end
 	if W.state and not (applied and applied.rendered) then
 		-- Repaint tiles: a held drop picked back up shows its number again at once (Paint hides
 		-- the number on a filled button but never restores it). A redraw already did it.
@@ -1663,6 +1753,11 @@ end, "bags")
 SB.On("SB_FREE_TILE_CHANGED", function()
 	W.RequestLayout("free")
 end, "bags")
+
+-- /swagbag stacks one|all (Core/Commands.lua, 0.14.0): regroup silently, now or once the mouse leaves the items.
+SB.On("SB_STACKS_CHANGED", Guard("bags.stacksChanged", function()
+	W.RequestLayout("stacks")
+end, "bags"), "bags")
 
 -- /swagbag new always|auto (ruling W4-15): New keeps its rows when empty (always), or shows only
 -- once something new arrives (auto, the default). Regroups now, or once the mouse leaves the items.

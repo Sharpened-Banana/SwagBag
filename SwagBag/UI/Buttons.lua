@@ -188,14 +188,24 @@ function Buttons.Place(button, x, y)
 	button:SetPoint("TOPLEFT", button:GetParent(), "TOPLEFT", x / scale, y / scale)
 end
 
+local drawTotal -- below, with the stack grouping
+
 -- info: SB.Adapter.GetSlot(bag, slot) result, or nil for an empty slot. A filled button never
--- shows a free tile's number (plan D19).
+-- shows a free tile's number (plan D19). Stack grouping (0.14.0): Blizzard's count field keeps the real
+-- stack (its Shift-click split reads it); a grouped icon's total is drawn again on top, through the font
+-- string only. An empty paint forgets the group.
 function Buttons.Paint(button, info)
 	if info then
 		Buttons.SetFreeCount(button, nil)
+	else
+		Buttons.stacks[button] = nil
 	end
 	SetItemButtonTexture(button, info and info.icon or nil)
+	Buttons.realCount[button] = info and info.count or 0
 	SetItemButtonCount(button, info and info.count or 0)
+	if Buttons.stacks[button] then
+		drawTotal(button)
+	end
 	SetItemButtonQuality(button, info and info.quality or nil, info and info.link or nil)
 	SetItemButtonDesaturated(button, info ~= nil and info.isLocked)
 	if button.UpdateCooldown then
@@ -249,6 +259,52 @@ function Buttons.SetFreeCount(button, n)
 	fs:SetText(n)
 	fs:Show()
 end
+
+---------------------------------------------------------------------------
+-- Stack grouping (0.14.0): several stacks of one item show as ONE icon with the total. Display
+-- only, taint-free: the total is drawn with button.Count:SetText / :Show (method calls on the
+-- template's font string); no Blizzard field on the button is written with it. button.count stays the
+-- real stack, written only by SetItemButtonCount in Paint. SwagBag's state lives in weak side tables.
+--   Buttons.SetStack(button, stack | nil)   stack = { total, counts } (Stacks.Of); nil gives back
+--                                            Blizzard's own number (the real stack's)
+--   Buttons.StackOf(button) -> stack | nil
+--   Buttons.StackTooltipLine(tooltip)       the item tooltip's "2 stacks: 45 + 7" and which stack a click uses
+---------------------------------------------------------------------------
+Buttons.stacks = setmetatable({}, { __mode = "k" }) -- [button] = { total, counts }
+Buttons.realCount = setmetatable({}, { __mode = "k" }) -- [button] = the count of its last Paint
+
+function drawTotal(button)
+	local stack, fs = Buttons.stacks[button], button.Count
+	if stack and type(fs) == "table" and fs.SetText then
+		fs:SetText(SB.Stacks.CountText(stack.total))
+		fs:Show()
+	end
+end
+
+function Buttons.SetStack(button, stack)
+	Buttons.stacks[button] = stack
+	if stack then
+		drawTotal(button)
+	else
+		SetItemButtonCount(button, Buttons.realCount[button] or 0)
+	end
+end
+
+function Buttons.StackOf(button)
+	return Buttons.stacks[button]
+end
+
+function Buttons.StackTooltipLine(tooltip)
+	local owner = tooltip.GetOwner and tooltip:GetOwner()
+	local stack = owner and Buttons.stacks[owner]
+	if not stack then
+		return
+	end
+	local A = SB.Adapter
+	A.TooltipLine(tooltip, SB.Stacks.Line(stack.counts))
+	A.TooltipLine(tooltip, SB.L.STACKS_TIP_CLICK:format(stack.counts[1]))
+end
+SB.Adapter.HookItemTooltip(SB.ErrorTrap.Guard("tooltip.stacks", Buttons.StackTooltipLine, "none"))
 
 ---------------------------------------------------------------------------
 -- Placeholders (spec 4.1, 4.2 rule 3): pooled plain Frames showing the icon of an

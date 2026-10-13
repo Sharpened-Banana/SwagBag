@@ -80,6 +80,10 @@ describe("SearchBox", function()
 		function window.SetDimmed(button, d) -- the bags window dims the button (and a list row) through this
 			SB.Buttons.SetDimmed(button, d)
 		end
+		window.relit = 0
+		function window.RelightStacks() -- afterApply (0.14.0): a grouped icon whose hidden stack matches is relit
+			window.relit = window.relit + 1
+		end
 		SB.BagsWindow = window
 		SB.Buttons = { SetDimmed = function(button, d) dimmed[button] = d end }
 		CreateFrame = function() return newFake() end
@@ -205,6 +209,19 @@ describe("SearchBox", function()
 		assert.equal(SB.L.SEARCH_EVAL_FAILED, printed[1])
 		assert.falsy(SB.SafeMode.IsOn("bags"))
 	end)
+	-- 0.14.0 stack grouping. Mutation: drop the o.afterApply call in Box.Apply.
+	it("after each search that applies, the bags window relights its grouped icons; a failed one does not", function()
+		open()
+		local before = window.relit
+		assert.truthy(before >= 1, "the open's apply relit")
+		Box.editBox:SetText("potion")
+		SB.Adapter.Advance(0.2)
+		assert.equal(before + 1, window.relit, "after the dimming, once")
+		SB.Query.RegisterKeyword({ name = "boom", class = "volatile", eval = function() error("x") end })
+		SB.Slash.Dispatch("search boom")
+		assert.equal(before + 1, window.relit, "a search that failed relights nothing")
+	end)
+
 	it("the search error line wraps to two lines instead of being cut off", function()
 		local errorLine
 		for _, fs in ipairs(window.frame.created) do

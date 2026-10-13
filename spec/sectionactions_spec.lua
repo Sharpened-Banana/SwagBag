@@ -276,3 +276,52 @@ describe("Section actions (week 7)", function()
 		assert.equal(SB.L.SECTION_HINT_VENDOR, GameTooltip.calls.AddLine[1])
 	end)
 end)
+
+-- Stack grouping (0.14.0), Review Focus 4: Sell all acts on every real stack, also the ones hidden under a
+-- grouped icon. The real bags window here (its SectionSlots), not a stand-in.
+describe("Sell all with grouped stacks (0.14.0)", function()
+	local SB, A, SA, W
+	before_each(function()
+		local files = { unpack(Env.ENGINE) }
+		for _, f in ipairs({ "SwagBag/Engine/Locks.lua", "SwagBag/Engine/Mover.lua", "SwagBag/Engine/Vendor.lua" }) do
+			files[#files + 1] = f
+		end
+		SB = Loader.New(files)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		SB.Config.Set("vendor.autoSell", false)
+		Fixtures.SmallBags(A)
+		A.items[Fixtures.HERB].sellPrice = 10
+		A.Put(0, 7, Fixtures.HERB, 45)
+		A.Put(0, 8, Fixtures.HERB, 7)
+		Fake.Install()
+		Env.PaintGlobals()
+		StaticPopupDialogs = {}
+		for _, path in ipairs({ "SwagBag/UI/Buttons.lua", "SwagBag/UI/SectionHeaders.lua", "SwagBag/UI/ListRows.lua",
+			"SwagBag/UI/BagsWindow.lua", "SwagBag/UI/SectionActions.lua" }) do
+			Loader.LoadFile(SB, path)
+		end
+		W, SA = SB.BagsWindow, SB.SectionActions
+		SB.Emit("SB_LOGIN") -- the herbs are in the bags at login: seen
+		Fixtures.Settle(SB)
+	end)
+
+	after_each(function()
+		Env.ClearPaintGlobals()
+		Fake.Uninstall()
+		StaticPopupDialogs = nil
+	end)
+
+	-- Mutation: in W.SectionSlots, iterate the cells only (drop the members loop).
+	it("Sell all includes the hidden stack", function()
+		assert.truthy(W.Open())
+		assert.falsy(SB.Buttons.Get(0, 8):IsShown(), "the 7 hides under the 45's icon")
+		local shown = SB.Buttons.Get(0, 7)
+		assert.same({ 52, 45 }, { SB.Buttons.StackOf(shown).total, shown.count }, "the real pool: count stays the stack's")
+		local out = {}
+		for _, it in ipairs(SA.Sellable("c_herbs")) do
+			out[#out + 1] = it.slot .. "x" .. it.count
+		end
+		assert.same({ "7x45", "8x7" }, out)
+	end)
+end)
