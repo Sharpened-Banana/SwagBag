@@ -1290,3 +1290,281 @@ describe("Layout hidden New (ruling W4-15)", function()
 		assert.falsy(build({ freeTile = true }).newShown, "the next full layout hides it")
 	end)
 end)
+
+-- Stack grouping (0.14.0): several stacks of one item in one category section take ONE cell. The
+-- caller passes opts.stackKey; the largest stack is shown, the others are hidden members.
+describe("Layout stacks (0.14.0)", function()
+	local SB, L
+	before_each(function()
+		SB = Loader.New({ "SwagBag/Engine/Layout.lua" })
+		L = SB.Layout
+	end)
+
+	local function R(bag, slot, cat, key, count)
+		return { bag = bag, slot = slot, record = { cat = cat, key = key, count = count } }
+	end
+
+	local function stackKey(r)
+		return r.key
+	end
+
+	local function slotsOf(sec)
+		local out = {}
+		for i = 1, sec.size do
+			local c = sec.cells[i]
+			out[i] = c and (c.bag .. ":" .. c.slot) or "hole"
+		end
+		return out
+	end
+
+	local function change(bag, slot, kind, icon)
+		return { bag = bag, slot = slot, kind = kind, icon = icon }
+	end
+
+	-- a: herbs (0,1) x7 and (0,5) x45   Free: (0,2) (1,1)
+	local function build(extra, more)
+		local slots = { R(0, 1, "a", "h", 7), S(0, 2, false), R(0, 5, "a", "h", 45), S(1, 1, false) }
+		for _, s in ipairs(more or {}) do
+			table.insert(slots, #slots - 1, s)
+		end
+		local opts = { columns = 4, newRows = 2, stackKey = stackKey }
+		for k, v in pairs(extra or {}) do
+			opts[k] = v
+		end
+		return L.Build(slots, assign, { "a", "b" }, opts)
+	end
+
+	local function where(st, bag, slot)
+		local w = st.where[L.Key(bag, slot)]
+		return w and (w.section .. "#" .. (w.index or ("stackOf" .. tostring(w.stackOf))))
+	end
+
+	-- Mutation: in Build, keep the first stack as the representative (no swap for a larger one).
+	it("two stacks of one item in a section take one cell; the larger one is shown", function()
+		local st = build()
+		assert.same({ "0:5" }, slotsOf(st.sections.a))
+		assert.same({ section = "a", index = 1 }, st.where[L.Key(0, 5)])
+		assert.same({ section = "a", stackOf = L.Key(0, 5) }, st.where[L.Key(0, 1)])
+		assert.same({ L.Key(0, 1) }, L.MembersOf(st, L.Key(0, 5)))
+		assert.same({ [L.Key(0, 5)] = { members = { L.Key(0, 1) } } }, st.stacks)
+	end)
+
+	it("the group keeps the first stack's place in its section", function()
+		local st = L.Build({ R(0, 1, "a", "a1", 1), R(0, 2, "a", "x", 3), R(0, 3, "a", "h", 7), R(0, 4, "a", "h", 45) },
+			assign, { "a" }, { columns = 4, stackKey = stackKey })
+		assert.same({ "0:1", "0:2", "0:4" }, slotsOf(st.sections.a))
+		assert.same({ section = "a", index = 3 }, st.where[L.Key(0, 4)])
+		-- members are ordered by count, highest first; ties keep their input order
+		st = L.Build({ R(0, 1, "a", "h", 5), R(0, 2, "a", "h", 9), R(0, 3, "a", "h", 5), R(0, 4, "a", "h", 8),
+			R(0, 6, "a", "h", 9) }, assign, { "a" }, { columns = 4, stackKey = stackKey })
+		assert.same({ "0:2" }, slotsOf(st.sections.a))
+		assert.same({ L.Key(0, 6), L.Key(0, 4), L.Key(0, 1), L.Key(0, 3) }, L.MembersOf(st, L.Key(0, 2)))
+		for _, k in ipairs({ L.Key(0, 6), L.Key(0, 4), L.Key(0, 1), L.Key(0, 3) }) do
+			assert.same({ section = "a", stackOf = L.Key(0, 2) }, st.where[k])
+		end
+	end)
+
+	it("stacks in different sections never group", function()
+		local st = L.Build({ R(0, 1, "a", "h", 7), R(0, 2, "b", "h", 45) }, assign, { "a", "b" },
+			{ columns = 4, stackKey = stackKey })
+		assert.same({ "0:1" }, slotsOf(st.sections.a))
+		assert.same({ "0:2" }, slotsOf(st.sections.b))
+		assert.is_nil(L.MembersOf(st, L.Key(0, 1)))
+		assert.is_nil(L.MembersOf(st, L.Key(0, 2)))
+	end)
+
+	-- Mutation: call stackKey (and group) for New too.
+	it("New and Free never group", function()
+		local asked = 0
+		local st = L.Build({ R(0, 1, nil, "h", 7), R(0, 2, nil, "h", 45), S(0, 3, false), S(0, 4, false) }, assign, {},
+			{ columns = 4, stackKey = function(r)
+				asked = asked + 1
+				return r.key
+			end })
+		assert.same({ "0:1", "0:2" }, slotsOf(st.sections.new))
+		assert.same({ "0:3", "0:4" }, slotsOf(st.sections.free))
+		assert.equal(0, asked, "stackKey is asked only for slots in a category section")
+		assert.same({}, st.stacks)
+	end)
+
+	it("Position reports members hidden, with no position, and lists the group", function()
+		local st = build()
+		local pos = L.Position(st, OPTS, {})
+		local m = pos.byKey[L.Key(0, 1)]
+		assert.same({ false, nil, nil, L.Key(0, 5) }, { m.shown, m.x, m.y, m.stackOf })
+		assert.equal(1, #pos.stacks)
+		assert.same({ bag = 0, slot = 5, key = L.Key(0, 5), members = { { bag = 0, slot = 1 } }, shown = true },
+			pos.stacks[1])
+		assert.equal(1, pos.headers[2].count, "a group counts once")
+		-- the member's entry comes right after its representative's
+		for i, c in ipairs(pos.cells) do
+			if c.bag == 0 and c.slot == 5 then
+				assert.equal(m, pos.cells[i + 1])
+			end
+		end
+		assert.equal(false, L.Position(st, OPTS, { a = true }).stacks[1].shown)
+	end)
+
+	it("collapsing and expanding never moves a member", function()
+		local st = build()
+		local pos, closed = L.Position(st, OPTS, {}), L.Position(st, OPTS, { a = true })
+		for _, k in ipairs(L.Moves(pos, closed)) do
+			assert.truthy(k ~= L.Key(0, 1), "a member moved")
+		end
+		assert.same({}, L.Moves(closed, L.Position(st, OPTS, { a = true })))
+		for _, k in ipairs(L.Moves(closed, pos)) do
+			assert.truthy(k ~= L.Key(0, 1), "a member moved")
+		end
+	end)
+
+	-- Review focus 1. Mutation: in partner(), do not return the representative's first member.
+	it("a used-up shown stack hands its cell over only when nothing is busy", function()
+		local st = build()
+		local old = L.Position(st, OPTS, {})
+		local rep, member = L.Key(0, 5), L.Key(0, 1)
+		local r = L.Apply(st, { change(0, 5, "left", 55) }, function(bag, slot) return L.Key(bag, slot) == rep end)
+		assert.same({ {}, 1 }, { r.moved, r.deferred })
+		assert.same(old, L.Position(st, OPTS, {}), "nothing moved")
+		r = L.Apply(st, {}, function(bag, slot) return L.Key(bag, slot) == member end)
+		assert.same({ {}, 1 }, { r.moved, r.deferred }, "the swap waits while the member is busy too")
+		r = L.Apply(st, {}, function() return false end)
+		assert.same({ rep, member }, r.moved)
+		assert.equal(0, r.deferred)
+		assert.equal(0, r.placeholders)
+		assert.same({ section = "a", index = 1 }, st.where[member])
+		assert.equal("free", st.where[rep].section)
+		assert.is_nil(L.MembersOf(st, member))
+		assert.is_nil(L.MembersOf(st, rep))
+		local pos = L.Position(st, OPTS, {})
+		assert.same({}, pos.placeholders)
+		assert.same({ old.byKey[rep].x, old.byKey[rep].y, true },
+			{ pos.byKey[member].x, pos.byKey[member].y, pos.byKey[member].shown }, "the 7 is in the 45's cell")
+		assert.truthy(st.needsReflow)
+	end)
+
+	it("a shown stack leaving with no members left behaves as today", function()
+		local st = L.Build({ R(0, 1, "a", "h", 7), S(0, 2, false) }, assign, { "a" }, { columns = 4, stackKey = stackKey })
+		local r = L.Apply(st, { change(0, 1, "left", 11) })
+		assert.same({ L.Key(0, 1) }, r.moved)
+		assert.equal(1, r.placeholders)
+		assert.same({ bag = 0, slot = 1, placeholder = true, icon = 11 }, st.sections.a.cells[1])
+		assert.equal("free#2", where(st, 0, 1))
+	end)
+
+	it("a hidden stack used up goes to Free; the group shrinks", function()
+		for _, tile in ipairs({ false, true }) do
+			local st = build({ freeTile = tile })
+			local old = L.Position(st, OPTS, {})
+			local r = L.Apply(st, { change(0, 1, "left", 11) })
+			assert.same({ L.Key(0, 1) }, r.moved)
+			assert.equal(0, r.placeholders)
+			assert.is_nil(L.MembersOf(st, L.Key(0, 5)))
+			assert.is_nil(st.stacks[L.Key(0, 5)])
+			assert.same({ section = "a", index = 1 }, st.where[L.Key(0, 5)])
+			local pos = L.Position(st, OPTS, {})
+			assert.same({ old.byKey[L.Key(0, 5)].x, old.byKey[L.Key(0, 5)].y },
+				{ pos.byKey[L.Key(0, 5)].x, pos.byKey[L.Key(0, 5)].y }, "the shown stack does not move")
+			assert.same({}, pos.stacks)
+			if tile then
+				assert.same({ section = "free", spare = "any" }, st.where[L.Key(0, 1)])
+			else
+				assert.equal("free#3", where(st, 0, 1))
+			end
+			assert.truthy(st.needsReflow)
+		end
+	end)
+
+	it("a hidden stack that gets another item goes to New", function()
+		for _, tile in ipairs({ false, true }) do
+			local st = build({ freeTile = tile })
+			local r = L.Apply(st, { change(0, 1, "arrived", 12) })
+			assert.same({ L.Key(0, 1) }, r.moved)
+			assert.equal("new#1", where(st, 0, 1))
+			assert.is_nil(L.MembersOf(st, L.Key(0, 5)))
+			assert.same({ "0:5" }, slotsOf(st.sections.a))
+		end
+		-- New full: Free's end, counted as "+1 more below"
+		local st = build()
+		L.Apply(st, { change(0, 1, "arrived", 12) }, nil, { new = true })
+		assert.equal("free#3", where(st, 0, 1))
+		assert.equal(1, st.sections.new.overflow)
+	end)
+
+	it("a different item arriving at the shown stack: the next stack takes the cell, the arrival goes to New", function()
+		for _, tile in ipairs({ false, true }) do
+			local st = build({ freeTile = tile })
+			local r = L.Apply(st, { change(0, 5, "arrived", 13) })
+			assert.same({ L.Key(0, 5), L.Key(0, 1) }, r.moved)
+			assert.equal(0, r.placeholders)
+			assert.equal("new#1", where(st, 0, 5))
+			assert.same({ "0:1" }, slotsOf(st.sections.a))
+			assert.equal("a#1", where(st, 0, 1))
+			assert.same({}, L.Position(st, OPTS, {}).placeholders)
+		end
+	end)
+
+	it("a bag removal of the shown stack promotes the next stack", function()
+		for _, tile in ipairs({ false, true }) do
+			local st = build({ freeTile = tile })
+			local r = L.Apply(st, { change(0, 5, "removed") })
+			assert.same({ L.Key(0, 5), L.Key(0, 1) }, r.moved)
+			assert.is_nil(st.where[L.Key(0, 5)])
+			assert.same({ "0:1" }, slotsOf(st.sections.a))
+			assert.is_nil(L.MembersOf(st, L.Key(0, 1)))
+		end
+		-- a removed hidden stack just leaves its group
+		local st = build()
+		local r = L.Apply(st, { change(0, 1, "removed") })
+		assert.same({ L.Key(0, 1) }, r.moved)
+		assert.is_nil(st.where[L.Key(0, 1)])
+		assert.is_nil(L.MembersOf(st, L.Key(0, 5)))
+		assert.same({ "0:5" }, slotsOf(st.sections.a))
+	end)
+
+	it("three stacks: the next largest is promoted and keeps the third", function()
+		local st = build(nil, { R(0, 3, "a", "h", 20) })
+		assert.same({ L.Key(0, 3), L.Key(0, 1) }, L.MembersOf(st, L.Key(0, 5)))
+		local r = L.Apply(st, { change(0, 5, "left", 55) })
+		assert.same({ L.Key(0, 5), L.Key(0, 3) }, r.moved)
+		assert.same({ "0:3" }, slotsOf(st.sections.a))
+		assert.same({ L.Key(0, 1) }, L.MembersOf(st, L.Key(0, 3)))
+		assert.same({ section = "a", stackOf = L.Key(0, 3) }, st.where[L.Key(0, 1)])
+		assert.is_nil(st.stacks[L.Key(0, 5)])
+		local pos = L.Position(st, OPTS, {})
+		assert.same({ { bag = 0, slot = 1 } }, pos.stacks[1].members)
+		assert.equal(L.Key(0, 3), pos.byKey[L.Key(0, 1)].stackOf)
+	end)
+
+	it("the cursor holds a hidden stack's move", function()
+		local st = build()
+		local r = L.Apply(st, { change(0, 1, "left", 11) }, function() return true end)
+		assert.same({ {}, 1 }, { r.moved, r.deferred })
+		assert.same({ L.Key(0, 1) }, L.MembersOf(st, L.Key(0, 5)))
+		assert.falsy(st.needsReflow)
+		r = L.Apply(st, {}, function() return false end)
+		assert.same({ L.Key(0, 1) }, r.moved)
+	end)
+
+	it("builds and positions the 1,290-slot fixture with stack keys in under 20 ms", function()
+		local ids = { "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c14", "c15", "c16" }
+		local slots, n = {}, 0
+		for _, b in ipairs(Big.BAGS) do
+			for slot = 1, b[2] do
+				n = n + 1
+				local record
+				if n % 5 ~= 0 then
+					record = { cat = n % 23 ~= 0 and ids[n % #ids + 1] or nil, link = "item:" .. (n % 48), count = n % 20 + 1 }
+				end
+				slots[n] = { bag = b[1], slot = slot, record = record }
+			end
+		end
+		assert.equal(Big.SLOTS, n)
+		local t0 = os.clock()
+		local st = L.Build(slots, assign, ids, { columns = 12, newRows = 2, stackKey = function(r) return r.link end })
+		local pos = L.Position(st, { columns = 12, size = 37, gap = 4, padding = 4, header = 20, sectionGap = 6 }, {})
+		local ms = (os.clock() - t0) * 1000
+		assert.equal(n, #pos.cells, "every slot has an entry, hidden members included")
+		assert.truthy(#pos.stacks > 0)
+		assert.truthy(ms < 20, ("%.2f ms"):format(ms))
+	end)
+end)

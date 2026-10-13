@@ -13,7 +13,9 @@
 --   Sort.Ilvl(record) -> n | nil     the item level the list shows: equippable gear only (as the overlay)
 --   Sort.Value(record) -> copper | nil   the stack's value: Prices per unit x count. A bound or
 --                                    warbound-until-equipped item is worth its vendor price (D11, W3-35)
---   Sort.DisplayOrder(slots, spec, valueOf) -> list
+--   Sort.DisplayOrder(slots, spec, valueOf, totalOf) -> list
+--       totalOf(s) -> n | nil (optional, 0.14.0): the item count of the stack group s shows; a group
+--       sorts by its total count, and by its total value (the stack's value x total / its count).
 --       slots: { { bag, slot, record } } in physical order (record nil = an empty slot). The filled
 --       slots come first, sorted by spec.by; an item with no value for that column (a potion's item
 --       level, an unpriced item) goes last whatever the direction; ties by name, then physical
@@ -83,32 +85,38 @@ local function nameOf(record)
 	return type(name) == "string" and name:lower() or nil
 end
 
-local function keyOf(record, by, valueOf)
-	local key = Sort.rawKey(record, by, valueOf)
+local function keyOf(record, by, valueOf, total)
+	local key = Sort.rawKey(record, by, valueOf, total)
 	if key ~= key then
 		return nil -- NaN would break the comparator's ordering
 	end
 	return key
 end
 
-function Sort.rawKey(record, by, valueOf)
+-- total: the stack group's item count, or nil (a single stack).
+function Sort.rawKey(record, by, valueOf, total)
 	if by == "name" then
 		return nameOf(record)
 	elseif by == "count" then
-		return record.count or 1
+		return total or record.count or 1
 	elseif by == "ilvl" then
 		return Sort.Ilvl(record)
 	end
-	return valueOf(record)
+	local v = valueOf(record)
+	if v and total then
+		return v * total / (record.count or 1)
+	end
+	return v
 end
 
-function Sort.DisplayOrder(slots, spec, valueOf)
+function Sort.DisplayOrder(slots, spec, valueOf, totalOf)
 	spec = spec or { by = "value", desc = true }
 	valueOf = valueOf or Sort.Value
 	local filled, empty = {}, {}
 	for i, s in ipairs(slots) do
 		if s.record then
-			filled[#filled + 1] = { s = s, i = i, key = keyOf(s.record, spec.by, valueOf), name = nameOf(s.record) or "" }
+			local total = totalOf and totalOf(s) or nil
+			filled[#filled + 1] = { s = s, i = i, key = keyOf(s.record, spec.by, valueOf, total), name = nameOf(s.record) or "" }
 		else
 			empty[#empty + 1] = s
 		end

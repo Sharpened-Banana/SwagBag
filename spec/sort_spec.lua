@@ -91,6 +91,41 @@ describe("Sort", function()
 		assert.same({ "B", "A", "C" }, names(S.DisplayOrder(slots, { by = "count", desc = true }, value)))
 	end)
 
+	-- Stack grouping (0.14.0): a group sorts by its total. Mutation: ignore totalOf for "count".
+	it("a group sorts by its total count", function()
+		local group = slot(1, rec("Herb", 45))
+		local slots = { slot(2, rec("Single", 50)), group, slot(3, rec("Herb", 7)) }
+		local totals = { [1] = 52, [3] = 52 }
+		local function totalOf(s)
+			return totals[s.slot]
+		end
+		local out = S.DisplayOrder(slots, { by = "count", desc = true }, value, totalOf)
+		assert.same({ 1, 3, 2 }, { out[1].slot, out[2].slot, out[3].slot })
+	end)
+
+	-- Mutation: ignore totalOf for "value".
+	it("a group sorts by its total value", function()
+		-- 10 a unit: the group of 45 + 7 is worth 520, the single stack of 50 is worth 500
+		local slots = { slot(1, rec("Single", 50, { v = 500 })), slot(2, rec("Herb", 45, { v = 450 })),
+			slot(3, rec("Herb", 7, { v = 70 })) }
+		local function totalOf(s)
+			return s.slot ~= 1 and 52 or nil
+		end
+		local out = S.DisplayOrder(slots, { by = "value", desc = true }, value, totalOf)
+		assert.same({ 2, 3, 1 }, { out[1].slot, out[2].slot, out[3].slot })
+		out = S.DisplayOrder(slots, { by = "value", desc = false }, value, totalOf)
+		assert.same({ 1, 2, 3 }, { out[1].slot, out[2].slot, out[3].slot })
+	end)
+
+	it("without totalOf nothing changes", function()
+		local slots = { slot(1, rec("Single", 50, { v = 500 })), slot(2, rec("Herb", 45, { v = 450 })),
+			slot(3, rec("Herb", 7, { v = 70 })) }
+		local out = S.DisplayOrder(slots, { by = "count", desc = true }, value)
+		assert.same({ 1, 2, 3 }, { out[1].slot, out[2].slot, out[3].slot })
+		out = S.DisplayOrder(slots, { by = "value", desc = true }, value, function() return nil end)
+		assert.same({ 1, 2, 3 }, { out[1].slot, out[2].slot, out[3].slot })
+	end)
+
 	-- Mutation: in the comparator, drop the "a.key == nil -> false" branch.
 	it("an item without the value goes last in both directions (a potion's item level, an unpriced item)", function()
 		local helm = rec("Helm", 1, { equipLoc = "INVTYPE_HEAD", ilvl = 270 })

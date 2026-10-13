@@ -12,7 +12,7 @@
 --     display order); empty slots in physical order (record nil = empty slot)
 --   assign(record) -> section id, or nil (pending -> New); empty slots go to Free.
 --   order: section ids in display order; New is forced first and Free last.
---   opts: { columns, newRows, freeTile, family, hideEmptyNew }
+--   opts: { columns, newRows, freeTile, family, hideEmptyNew, stackKey }
 --     hideEmptyNew: an empty New is not drawn (no header, no reserved rows) until something
 --       arrives (ruling W4-15, every window unless bags.newAlways); state.newShown says which
 --     freeTile: Free shows ONE tile per bag family instead of every empty slot (plan D19)
@@ -20,6 +20,7 @@
 --       Called only when a slot JOINS the layout (Build, "added"); the answer is kept in
 --       tiles.of[key] and used from then on, so a bag swapped or taken off while open (its
 --       family changes before its slots are "removed") still finds its own tile (W3-21).
+--     stackKey(record) -> key | nil: stack grouping (0.14.0, below). Without it nothing groups.
 -- Layout.Position(state, opts, collapsed) -> pos   pixel positions (TOPLEFT offsets, y down
 --   negative). Collapsing changes section offsets only, so expanding returns every item
 --   to the same cell (spec 6.4). New shows its header and newRows reserved rows, except while
@@ -34,6 +35,9 @@
 --   With the free tile (plan D19) a tile's cell entry also has tile = family and count = that
 --   family's free slots, pos.tiles lists the tile entries, and each spare is a cell entry
 --   { bag, slot, shown = false, spare = family } with no x or y.
+--   With stack groups, right after a representative's entry each member is a cell entry
+--   { bag, slot, shown = false, stackOf = repKey } with no x or y, and pos.stacks lists the groups:
+--   { { bag, slot, key, members = { { bag, slot } }, shown } } (shown: the representative's).
 -- Layout.Moves(oldPos, newPos) -> keys whose button position changes (hover guard, 4.2 #5)
 -- Layout.Apply(state, changes, isBusy, collapsed, areaBusy) -> result   while the window is open
 --   areaBusy() -> true while the mouse is over the items or an item is on the cursor (nil: never).
@@ -56,6 +60,15 @@
 --   New full (its reserved rows) or collapsed -> the button goes to Free's end instead (one
 --     already in Free stays put) and New's header counts it ("+N more below")
 --   added -> a new button at Free's end;  removed -> its cell becomes a hole
+--   Stack groups (these rows come first, with or without the free tile):
+--   member left     -> leaves its group (no placeholder), then to Free like any emptied button
+--                      (with the tile: into its family; else Free's end)
+--   member arrived  -> leaves its group, to New (Free's end, "+N more below", when New is full)
+--   member removed  -> leaves its group
+--   representative left / arrived / removed, with members -> the first member takes its cell,
+--                      shown; the others are that member's members now. The representative then
+--                      does what the other rows say, but leaves NO placeholder (its cell is taken).
+--                      This SWAP moves two buttons: it waits while either is busy.
 -- Nothing else ever moves, so no other button changes position. Any placeholder, move or
 -- hole sets state.needsReflow; the next full Build (close + open, Reflow, sort) clears it.
 -- Free tile (opts.freeTile, plan D19). Free's cells hold one TILE per family -- a real empty
@@ -71,6 +84,15 @@
 --   any button that becomes empty (in a section: placeholder as above; in New; in a filled
 --   Free cell) and an added slot -> its family's last spare, hidden; or, when the family
 --   has no tile, its tile (in the family's tile cell when that is a hole, else Free's end)
+-- Stack groups (opts.stackKey, 0.14.0). Several stacks of one item in one CATEGORY section take one
+-- cell: the largest stack (the first of equal ones) is the REPRESENTATIVE, in the cell the group's
+-- first stack had; every other stack is a MEMBER: it has no cell (where = { section = id,
+-- stackOf = repKey }) and Position reports it hidden. New and Free never group. Display only: the
+-- caller's stackKey says what "one item" is. Only Build chooses the shown stack; a live change
+-- never re-chooses it, except when it leaves.
+--   state.stacks = { [repKey] = { members = { key } } }   only groups with a member; members by
+--     count, highest first (ties: input order)
+--   Layout.MembersOf(state, key) -> { key } | nil   a representative's members
 local _, SB = ...
 
 local Layout = { NEW = "new", FREE = "free" }
@@ -190,7 +212,7 @@ end
 function Layout.Build(slots, assign, order, opts)
 	local cols = opts.columns
 	local st = { columns = cols, newRows = opts.newRows or 2, order = { Layout.NEW }, sections = {}, where = {},
-		deferred = {}, needsReflow = false }
+		deferred = {}, needsReflow = false, stacks = {} }
 	if opts.freeTile then
 		st.tiles = { family = opts.family or function()
 			return "any"
@@ -204,7 +226,10 @@ function Layout.Build(slots, assign, order, opts)
 		end
 	end
 	st.order[#st.order + 1] = Layout.FREE
-	for _, s in ipairs(slots) do
+	-- index[id][stack key] = { repKey, repCount, cellIndex, n }; info[member key] = { count, n }
+	-- (n: the slot's place in the input, for ties)
+	local index, info = {}, {}
+	for n, s in ipairs(slots) do
 		local id
 		if s.record == nil then
 			id = Layout.FREE
@@ -215,13 +240,48 @@ function Layout.Build(slots, assign, order, opts)
 			known[id] = true
 			table.insert(st.order, #st.order, id)
 		end
+		local key = Layout.Key(s.bag, s.slot)
 		if st.tiles then
-			join(st, Layout.Key(s.bag, s.slot), s.bag)
+			join(st, key, s.bag)
 		end
-		if id == Layout.FREE and st.tiles then
-			Layout.ToFamily(st, Layout.Key(s.bag, s.slot), { bag = s.bag, slot = s.slot })
+		local sk = opts.stackKey and id ~= Layout.FREE and id ~= Layout.NEW and opts.stackKey(s.record)
+		local g = sk and index[id] and index[id][sk]
+		if g then
+			local count, member = s.record.count or 1, key
+			local group = st.stacks[g[1]] or { members = {} }
+			if count > g[2] then -- the larger stack takes the group's cell; the old one is a member
+				local cell = st.sections[id].cells[g[3]]
+				cell.bag, cell.slot = s.bag, s.slot
+				st.where[key] = { section = id, index = g[3] }
+				st.stacks[g[1]] = nil
+				member = g[1]
+				info[member] = { count = g[2], n = g[4] }
+				g[1], g[2], g[4] = key, count, n
+			else
+				info[member] = { count = count, n = n }
+			end
+			group.members[#group.members + 1] = member
+			st.stacks[g[1]] = group
+		elseif id == Layout.FREE and st.tiles then
+			Layout.ToFamily(st, key, { bag = s.bag, slot = s.slot })
 		else
-			append(st, id, { bag = s.bag, slot = s.slot })
+			local i = append(st, id, { bag = s.bag, slot = s.slot })
+			if sk then
+				index[id] = index[id] or {}
+				index[id][sk] = { key, s.record.count or 1, i, n }
+			end
+		end
+	end
+	for rep, group in pairs(st.stacks) do -- members by count, highest first; ties keep the input order
+		table.sort(group.members, function(a, b)
+			if info[a].count ~= info[b].count then
+				return info[a].count > info[b].count
+			end
+			return info[a].n < info[b].n
+		end)
+		local id = st.where[rep].section
+		for _, m in ipairs(group.members) do
+			st.where[m] = { section = id, stackOf = rep }
 		end
 	end
 	local new = section(st, Layout.NEW)
@@ -230,6 +290,11 @@ function Layout.Build(slots, assign, order, opts)
 	-- (bags.newAlways) New always keeps its header and rows.
 	st.newShown = not opts.hideEmptyNew or new.size > 0
 	return st
+end
+
+function Layout.MembersOf(st, key)
+	local group = st.stacks and st.stacks[key]
+	return group and group.members or nil
 end
 
 local function countButtons(sec)
@@ -247,7 +312,7 @@ function Layout.Position(st, opts, collapsed)
 	collapsed = collapsed or {}
 	local cols, size, gap, pad = opts.columns, opts.size, opts.gap, opts.padding
 	local step = size + gap
-	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {} }
+	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {}, stacks = {} }
 	local y = (opts.top or 0) + pad
 	for _, id in ipairs(opts.order or st.order) do
 		local sec = st.sections[id]
@@ -286,12 +351,24 @@ function Layout.Position(st, opts, collapsed)
 						entry.icon = cell.icon
 						pos.placeholders[#pos.placeholders + 1] = entry
 					else
+						local key = Layout.Key(cell.bag, cell.slot)
 						pos.cells[#pos.cells + 1] = entry
-						pos.byKey[Layout.Key(cell.bag, cell.slot)] = entry
-						local f = id == Layout.FREE and st.tiles and familyOf(st, Layout.Key(cell.bag, cell.slot))
+						pos.byKey[key] = entry
+						local f = id == Layout.FREE and st.tiles and familyOf(st, key)
 						if f and st.tiles.cell[f] == i then
 							entry.tile, entry.count = f, 1 + #st.tiles.spares[f]
 							pos.tiles[#pos.tiles + 1] = entry
+						end
+						local members = Layout.MembersOf(st, key)
+						if members then -- hidden, and never given a position
+							local group = { bag = cell.bag, slot = cell.slot, key = key, members = {}, shown = entry.shown }
+							for n, m in ipairs(members) do
+								local me = { bag = bagOf(m), slot = m % 1000, shown = false, stackOf = key }
+								pos.cells[#pos.cells + 1] = me
+								pos.byKey[m] = me
+								group.members[n] = { bag = me.bag, slot = me.slot }
+							end
+							pos.stacks[#pos.stacks + 1] = group
 						end
 					end
 				end
@@ -330,10 +407,24 @@ function Layout.Moves(oldPos, newPos)
 	return out
 end
 
--- Remove a button from its cell (leaving a hole). Returns where it was and the cell.
+-- Remove a button from its cell (leaving a hole), its spare list or its stack group. Returns where it
+-- was and the cell.
 local function take(st, key)
 	local w = st.where[key]
 	st.where[key] = nil
+	if w.stackOf then
+		local list = st.stacks[w.stackOf].members
+		for n = 1, #list do
+			if list[n] == key then
+				table.remove(list, n)
+				break
+			end
+		end
+		if #list == 0 then
+			st.stacks[w.stackOf] = nil
+		end
+		return w, { bag = bagOf(key), slot = key % 1000 }
+	end
 	if w.spare then
 		local list = st.tiles.spares[w.spare]
 		for n = 1, #list do
@@ -375,6 +466,54 @@ local function clearOverflow(st, key)
 	end
 end
 
+-- A button has just been taken from cell old.index of a category section. A representative with
+-- members hands that cell to its first member (shown), and the others follow it: returns that
+-- member's key. Otherwise the cell gets a placeholder (old icon), or stays a hole for "removed".
+local function vacate(st, key, old, ch, result)
+	local group = st.stacks[key]
+	if group then
+		st.stacks[key] = nil
+		local m = table.remove(group.members, 1)
+		st.sections[old.section].cells[old.index] = { bag = bagOf(m), slot = m % 1000 }
+		st.where[m] = { section = old.section, index = old.index }
+		if #group.members > 0 then
+			st.stacks[m] = group
+			for _, k in ipairs(group.members) do
+				st.where[k] = { section = old.section, stackOf = m }
+			end
+		end
+		return m
+	end
+	if ch.kind ~= "removed" then
+		st.sections[old.section].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
+		result.placeholders = result.placeholders + 1
+	end
+	return nil
+end
+
+-- A hidden stack (a member) changed: it leaves its group, and an emptied one goes to Free like any
+-- emptied button, a different item to New. Returns the keys that moved.
+local function applyMember(st, ch, collapsed, result, key)
+	local _, cell = take(st, key)
+	if ch.kind == "removed" then
+		if st.tiles then
+			st.tiles.of[key] = nil -- a slot that comes back is a new join
+		end
+	elseif ch.kind == "left" then
+		if st.tiles then
+			Layout.ToFamily(st, key, cell)
+		else
+			append(st, Layout.FREE, cell)
+		end
+	elseif newHasRoom(st, collapsed) then -- arrived
+		append(st, Layout.NEW, cell)
+	else
+		append(st, Layout.FREE, cell)
+		overflow(st, result, key)
+	end
+	return { key }
+end
+
 -- The transitions with the free tile (see the header). Returns the keys that moved.
 local function applyTile(st, ch, collapsed, result, key, w)
 	if ch.kind == "added" then
@@ -384,8 +523,11 @@ local function applyTile(st, ch, collapsed, result, key, w)
 	elseif ch.kind == "removed" then
 		clearOverflow(st, key)
 		local tile, f = isTile(st, key, w), familyOf(st, key)
-		take(st, key)
+		local old = take(st, key)
 		st.tiles.of[key] = nil -- a slot that comes back is a new join
+		if old.section ~= Layout.FREE and old.section ~= Layout.NEW then
+			return { key, vacate(st, key, old, ch, result) }
+		end
 		return { key, tile and promote(st, f, w.index) or nil }
 	elseif ch.kind == "left" then
 		clearOverflow(st, key)
@@ -393,12 +535,12 @@ local function applyTile(st, ch, collapsed, result, key, w)
 			return {} -- already an empty slot of Free: repaint only
 		end
 		local old, cell = take(st, key)
+		local member
 		if old.section ~= Layout.FREE and old.section ~= Layout.NEW then
-			st.sections[old.section].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
-			result.placeholders = result.placeholders + 1
+			member = vacate(st, key, old, ch, result)
 		end
 		Layout.ToFamily(st, key, cell)
-		return { key }
+		return { key, member }
 	elseif ch.kind ~= "arrived" or w.section == Layout.NEW then
 		return {}
 	end
@@ -410,17 +552,16 @@ local function applyTile(st, ch, collapsed, result, key, w)
 			return {}
 		end
 		clearOverflow(st, key)
-	elseif w.section ~= Layout.FREE then -- a category section: placeholder in its cell
+	elseif w.section ~= Layout.FREE then -- a category section: placeholder in its cell (or its next stack)
 		local old, cell = take(st, key)
-		st.sections[old.section].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
-		result.placeholders = result.placeholders + 1
+		local member = vacate(st, key, old, ch, result)
 		if room then
 			append(st, Layout.NEW, cell)
 		else
 			append(st, Layout.FREE, cell)
 			overflow(st, result, key)
 		end
-		return { key }
+		return { key, member }
 	elseif not room and tile then -- it stays, filled; the next spare is the tile, at Free's end
 		overflow(st, result, key)
 		return { promote(st, familyOf(st, key), nil) }
@@ -438,11 +579,18 @@ end
 
 local function applyOne(st, ch, collapsed, result)
 	local key = Layout.Key(ch.bag, ch.slot)
-	if st.tiles and (st.where[key] or ch.kind == "added") then
+	local member = st.where[key] and st.where[key].stackOf
+	if (member or st.tiles) and (st.where[key] or ch.kind == "added") then
 		if ch.kind == "added" and st.where[key] then
 			return
 		end
-		local moved = applyTile(st, ch, collapsed, result, key, st.where[key])
+		local moved
+		if member then
+			clearOverflow(st, key)
+			moved = applyMember(st, ch, collapsed, result, key)
+		else
+			moved = applyTile(st, ch, collapsed, result, key, st.where[key])
+		end
 		for _, k in ipairs(moved) do
 			result.moved[#result.moved + 1] = k
 		end
@@ -463,18 +611,20 @@ local function applyOne(st, ch, collapsed, result)
 	if not w then
 		return
 	end
-	local id = w.section
+	local id, partnerKey = w.section, nil
 	if ch.kind == "removed" then
 		clearOverflow(st, key)
-		take(st, key)
+		local old = take(st, key)
+		if id ~= Layout.FREE and id ~= Layout.NEW then
+			partnerKey = vacate(st, key, old, ch, result)
+		end
 	elseif ch.kind == "left" then
 		clearOverflow(st, key)
 		if id == Layout.FREE or id == Layout.NEW then
 			return
 		end
 		local old, cell = take(st, key)
-		st.sections[id].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
-		result.placeholders = result.placeholders + 1
+		partnerKey = vacate(st, key, old, ch, result)
 		append(st, Layout.FREE, cell)
 	elseif ch.kind == "arrived" then
 		if id == Layout.NEW then
@@ -490,8 +640,7 @@ local function applyOne(st, ch, collapsed, result)
 			append(st, Layout.NEW, cell)
 		else
 			local old, cell = take(st, key)
-			st.sections[id].cells[old.index] = { bag = ch.bag, slot = ch.slot, placeholder = true, icon = ch.icon }
-			result.placeholders = result.placeholders + 1
+			partnerKey = vacate(st, key, old, ch, result)
 			if newHasRoom(st, collapsed) then
 				append(st, Layout.NEW, cell)
 			else
@@ -504,15 +653,21 @@ local function applyOne(st, ch, collapsed, result)
 	end
 	st.needsReflow = true
 	result.moved[#result.moved + 1] = key
+	result.moved[#result.moved + 1] = partnerKey
 end
 
 -- Free tile: a change that makes the tile fill or go away hands its cell to the family's first
--- spare. Returns that spare's key, so the swap waits while either button is busy.
+-- spare. Stack groups: a representative that empties, changes or goes away hands its cell to its
+-- first member. Returns that button's key, so the swap waits while either button is busy.
 local function partner(st, ch)
+	local key = Layout.Key(ch.bag, ch.slot)
+	local members = ch.kind ~= "added" and Layout.MembersOf(st, key)
+	if members then
+		return members[1]
+	end
 	if not st.tiles or (ch.kind ~= "arrived" and ch.kind ~= "removed") then
 		return nil
 	end
-	local key = Layout.Key(ch.bag, ch.slot)
 	local w = st.where[key]
 	if not (w and isTile(st, key, w)) then
 		return nil
