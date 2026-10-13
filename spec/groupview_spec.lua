@@ -4,6 +4,7 @@
 -- groups, the grid view, and the 1,290-slot budget.
 local Loader = dofile("spec/helpers/loader.lua")
 local Fake = dofile("spec/helpers/fakeframe.lua")
+local Env = dofile("spec/helpers/uienv.lua")
 local Fixtures = dofile("spec/fixtures/items.lua")
 local Big = dofile("spec/fixtures/big.lua")
 
@@ -891,6 +892,116 @@ describe("GroupView", function()
 			f.cfg.groupColor = nil
 			v.Layout("again")
 			assert.equal(0, #v.bands)
+		end)
+	end)
+
+	-- Stack grouping (0.14.0): a view opts in with cfg.stacks (the character and warband banks); one Layout
+	-- state per group, so stacks in different groups never merge.
+	describe("stack grouping (cfg.stacks)", function()
+		before_each(function()
+			Env.PaintGlobals() -- Buttons.SetStack(button, nil) gives back Blizzard's number
+			Loader.LoadFile(SB, "SwagBag/Engine/Stacks.lua")
+			A.Put(6, 4, Fixtures.HERB, 45) -- with the 20 in (6, 2): one Herbs icon of 65
+		end)
+
+		after_each(function()
+			Env.ClearPaintGlobals()
+		end)
+
+		local function stackedView()
+			v, f = newView(SB)
+			f.cfg.stacks = function() return true end
+			return v
+		end
+
+		local function total(bag, slot)
+			local s = SB.Buttons.StackOf(btn(bag, slot))
+			return s and s.total
+		end
+
+		-- Mutation: build passes no stackKey to Layout.Build.
+		it("a view with cfg.stacks shows one icon per item in a group", function()
+			stackedView().Layout("open")
+			assert.truthy(btn(6, 4).shown, "the 45 is the icon")
+			assert.falsy(btn(6, 2).shown, "the 20 hides under it")
+			assert.equal(65, total(6, 4))
+			assert.same({ 45, 20 }, SB.Buttons.StackOf(btn(6, 4)).counts)
+			assert.equal(btn(6, 4), v.stacked and next(v.stacked))
+			assert.equal("bank:c_herbs=- Herbs (1)", labels()[5])
+		end)
+
+		-- Mutation: one shared key index across groups (build's `slots` declared once, outside the group loop).
+		it("stacks never merge across groups", function()
+			A.Clear(6, 2)
+			A.Put(12, 3, Fixtures.HERB, 7)
+			stackedView().Layout("open")
+			assert.same({ true, true }, { btn(6, 4).shown, btn(12, 3).shown }, "one icon in each bank")
+			assert.same({ nil, nil }, { total(6, 4), total(12, 3) }, "no stack")
+			assert.equal(0, #v.pos.stacks)
+		end)
+
+		-- The guild bank's and the alt viewer's contract. Mutation: build groups when cfg.stacks is nil.
+		it("a view without cfg.stacks never groups", function()
+			v.Layout("open")
+			assert.same({ true, true }, { btn(6, 2).shown, btn(6, 4).shown })
+			assert.same({ nil, nil }, { total(6, 2), total(6, 4) })
+			assert.equal("bank:c_herbs=- Herbs (2)", labels()[5])
+			assert.same({}, v.pos.stacks)
+		end)
+
+		-- Mutation: positionAll counts shown cells only (`records[...] and c.shown`).
+		it("a group header still counts every used slot", function()
+			stackedView().Layout("open")
+			assert.equal("#bank=- bank (4)", labels()[1], "the potion, the flask and both herb stacks")
+		end)
+
+		-- P5, Review Focus 1. Mutation: no paintStacks in v.Changes' not-drawn path (the total stays on the emptied icon).
+		it("a withdrawn shown stack hands its cell over once the mouse leaves", function()
+			stackedView().Layout("open")
+			local shown = btn(6, 4)
+			local cell = at(shown)
+			shown.mouseOver = true
+			A.Clear(6, 4)
+			v.SetRecord(6, 4, nil)
+			v.Changes("bank", { { bag = 6, slot = 4, kind = "left", icon = Fixtures.HERB } })
+			assert.falsy(btn(6, 2).shown, "nothing appears under the mouse")
+			assert.same(cell, at(shown), "the emptied button stays put")
+			assert.is_nil(total(6, 4), "the emptied icon no longer claims the total")
+			A.Advance(0.3)
+			assert.falsy(btn(6, 2).shown, "still under the mouse")
+			shown.mouseOver = false
+			A.Advance(0.3)
+			assert.truthy(btn(6, 2).shown)
+			assert.same(cell, at(btn(6, 2)), "the 20 takes the cell")
+			assert.equal(0, #SB.Buttons.placeholdersInUse, "its cell is taken: no placeholder")
+			assert.is_nil(total(6, 2), "one stack left: no group")
+			assert.same({}, v.stacked)
+		end)
+
+		-- Review Focus 4. Mutation: v.ForEachSlot skips cells with stackOf.
+		it("hidden stacks are visited by ForEachSlot and counted in section totals", function()
+			for _, path in ipairs({ "SwagBag/Core/Slash.lua", "SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua" }) do
+				Loader.LoadFile(SB, path)
+			end
+			A.items[Fixtures.HERB].sellPrice = 10000
+			stackedView().Layout("open")
+			local seen = {}
+			v.ForEachSlot(function(_, record, bag, slot)
+				if record and record.itemID == Fixtures.HERB then
+					seen[#seen + 1] = bag .. ":" .. slot .. "=" .. record.count
+				end
+			end)
+			table.sort(seen)
+			assert.same({ "6:2=20", "6:4=45" }, seen)
+			assert.equal("bank:c_herbs=- Herbs (1) - 65g vendor", labels()[5], "the header values both stacks")
+		end)
+
+		-- Mutation: v.Clear keeps v.stacked (or never clears the buttons' stacks).
+		it("Clear forgets the groups and gives the icon its own number back", function()
+			stackedView().Layout("open")
+			v.Clear()
+			assert.is_nil(total(6, 4))
+			assert.same({}, v.stacked)
 		end)
 	end)
 

@@ -1207,6 +1207,19 @@ describe("GuildBankWindow (check G1)", function()
 		GW.Close()
 		assert.same({}, GW.pending)
 	end)
+
+	-- Stack grouping (0.14.0) is for the character and warband banks: the guild bank passes no cfg.stacks.
+	-- Mutation: GuildBankWindow's GroupView cfg passes `stacks = function() return true end`.
+	it("the guild bank never groups", function()
+		A.guild.slots[1][3] = { itemID = Fixtures.HERB, count = 45 }
+		openVault()
+		answerQueries()
+		assert.same({ true, true }, { button(1, 1).shown, button(1, 3).shown }, "both herb stacks show")
+		assert.same({ nil, nil }, { SB.Buttons.StackOf(button(1, 1)), SB.Buttons.StackOf(button(1, 3)) },
+			"no stack text")
+		assert.same({ 20, 45 }, { button(1, 1).count, button(1, 3).count })
+		assert.equal("- Herbs (2)", header("tab1:c_herbs").text.text)
+	end)
 end)
 
 -- 0.13.1: New hides while empty in the guild bank too (bags.newAlways, one setting for every window), and the

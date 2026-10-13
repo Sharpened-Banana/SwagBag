@@ -27,7 +27,12 @@
 --   v.ToggleSection(groupId, sectionId), v.ToggleGroup(groupId)
 --   v.Relabel()                         redraw the headers only (nothing moves)
 --   v.RefreshTotals()                   section headers' text in place (a count or price changed)
---   v.ForEachSlot(fn)                   fn(button, record, bag, slot) for every slot (search)
+--   v.ForEachSlot(fn)                   fn(button, record, bag, slot) for every slot (search), the stacks
+--                                       hidden under a grouped icon included
+--   v.PaintStacks()                     stack grouping (0.14.0): each grouped icon's total (and list row) in
+--                                       place, after a count changed; nothing moves
+--   v.RelightStacks()                   after a search: a grouped icon stays lit while a hidden stack matches
+--   v.stacked                           [button] = its pos.stacks entry while it shows a group's total
 --   v.Record(bag, slot), v.SetRecord(bag, slot, record), v.GroupOf(bag), v.Size(bag), v.IsOpen()
 --   v.Clear()                           window closed: hide the buttons, forget the layout
 --   v.drawn                             the view the current layout was drawn in ("sections" |
@@ -47,6 +52,10 @@
 --   sectionLabel(groupId, header) optional: header = { id, count, collapsed, overflow },
 --   freeTile(view) optional -> true: each group's Free shows one tile per bag family with its
 --   number of free slots (Engine/Layout.lua, plan D19; families from cfg.family),
+--   stacks() optional -> bool, read at every build (0.14.0): true groups the stacks of one item in each
+--   group's sections into one icon with the total (Engine/Stacks.lua; the character and warband banks
+--   follow bags.stacks). Groups never mix: one Layout state per group. The guild bank and the alt
+--   viewer pass none and never group.
 --   hideEmptyNew optional: true, or a function returning a boolean (read at every build), hides each
 --   group's New while it is empty (the alt viewer passes true; the bank windows follow bags.newAlways),
 --   groupColor(groupId) optional -> r, g, b, a | nil: a faint band behind the whole group, from its header's
@@ -99,7 +108,9 @@ function GV.New(cfg)
 	local Guard = SB.ErrorTrap.Guard
 	local window = cfg.window or "bank" -- the ErrorTrap window of every entry point (spec P6)
 	local v = { groups = {}, byId = {}, records = {}, cells = {}, placed = {}, sizes = {}, groupOf = {}, pos = nil,
-		redrawPending = false, stats = {}, tiled = {}, drawn = "sections", listFailed = false, pendingNew = {} }
+		redrawPending = false, stats = {}, tiled = {}, drawn = "sections", listFailed = false, pendingNew = {},
+		stacked = {}, -- [button] = its pos.stacks entry while it shows a stack group's total (0.14.0)
+		dimmed = {} } -- [button] = what the search last set (v.SetDimmed), so a grouped icon can be relit
 	local rows = cfg.rows
 
 	-- The view a layout is built for: the setting, with "list" only when there are rows to draw it.
@@ -162,13 +173,14 @@ function GV.New(cfg)
 
 	-- Pixel positions of every group, stacked top to bottom. Combined result:
 	-- { cells, byKey, placeholders, headers = { { group, id, y, count, overflow, collapsed } },
-	--   groupHeaders = { { id, y, count, collapsed } }, tiles = { free tile cells }, width, height }
+	--   groupHeaders = { { id, y, count, collapsed } }, tiles = { free tile cells },
+	--   stacks = { every group's pos.stacks entries }, width, height }
 	-- groups/records/view default to the view's own (a full layout positions a candidate first).
 	local function positionAll(groups, records, view)
 		groups, records, view = groups or v.groups, records or v.records, view or v.drawn
 		local list = view == "list"
 		local cols = cfg.columns()
-		local all = { cells = {}, byKey = {}, placeholders = {}, headers = {}, groupHeaders = {}, tiles = {},
+		local all = { cells = {}, byKey = {}, placeholders = {}, headers = {}, groupHeaders = {}, tiles = {}, stacks = {},
 			width = list and GV.LIST_WIDTH or (GV.PAD * 2 + cols * GV.SLOT + (cols - 1) * GV.GAP) }
 		local y = 0
 		for _, g in ipairs(groups) do
@@ -203,6 +215,10 @@ function GV.New(cfg)
 			end
 			for _, t in ipairs(pos.tiles or {}) do -- the same tables as their cells (shown follows)
 				all.tiles[#all.tiles + 1] = t
+			end
+			for _, e in ipairs(pos.stacks or {}) do -- each group's own (0.14.0): a folded group's are not shown
+				e.shown = e.shown and not closed
+				all.stacks[#all.stacks + 1] = e
 			end
 			if not closed then
 				for _, h in ipairs(pos.headers) do
@@ -492,6 +508,38 @@ function GV.New(cfg)
 		v.tiled = now
 	end
 
+	local function recordOf(bag, slot)
+		return v.records[keyOf(bag, slot)]
+	end
+
+	-- Stack grouping (0.14.0), paintTiles' twin (the bags window's paintStacks): each shown group's icon
+	-- shows the total (Buttons.SetStack, never Blizzard's count field) and, in the list, its row the total
+	-- and the group's value. Every button no longer grouped gets its own number and row back.
+	-- O(groups); nothing moves.
+	local function paintStacks(pos)
+		local B, now = SB.Buttons, {}
+		for _, e in ipairs(pos and pos.stacks or {}) do
+			local s = e.shown and SB.Stacks.Of(e, recordOf)
+			local button = s and cfg.button(e.bag, e.slot)
+			if button then
+				B.SetStack(button, s)
+				now[button] = e
+				if isList() then
+					rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot), nil, nil, s.total)
+				end
+			end
+		end
+		for button, e in pairs(v.stacked) do
+			if not now[button] then
+				B.SetStack(button, nil)
+				if isList() then
+					rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot))
+				end
+			end
+		end
+		v.stacked = now
+	end
+
 	local function render(pos)
 		for _, c in ipairs(pos.cells) do
 			local button = cfg.button(c.bag, c.slot)
@@ -501,6 +549,7 @@ function GV.New(cfg)
 		end
 		v.cells = cellsOf(pos)
 		renderExtras(pos)
+		paintStacks(pos) -- before the tiles: a former icon that became the free tile keeps the tile's row
 		paintTiles(pos)
 		v.pos = pos
 		notifyHeaders(pos)
@@ -531,6 +580,7 @@ function GV.New(cfg)
 		hideGone(old, pos)
 		v.cells = cellsOf(pos)
 		renderExtras(pos)
+		paintStacks(pos) -- before the tiles: a former icon that became the free tile keeps the tile's row
 		paintTiles(pos)
 		v.pos = pos
 		notifyHeaders(pos)
@@ -601,6 +651,8 @@ function GV.New(cfg)
 		local sections = view ~= "grid"
 		local list = view == "list"
 		local order = sections and SB.Categories.SectionOrder() or nil
+		-- 0.14.0: the window's choice, read once per build (no cfg.stacks: the guild bank, the alt viewer)
+		local stackKey = sections and cfg.stacks and cfg.stacks() and SB.Stacks.Key or nil
 		local t = A.ProfileMs()
 		local defs = cfg.groups()
 		b.ms.groups = A.ProfileMs() - t
@@ -626,11 +678,24 @@ function GV.New(cfg)
 			if sections then
 				t = A.ProfileMs()
 				if list then -- each section lists its items in the list's order (Engine/Sort.lua)
-					slots = SB.Sort.DisplayOrder(slots, SB.Sort.Spec(), SB.Sort.Value)
+					local totalOf
+					if stackKey then -- a stack group sorts by its total, counted in this group only (0.14.0)
+						local keys = {}
+						for _, s in ipairs(slots) do
+							keys[s] = s.record and stackKey(s.record) or nil
+						end
+						local totals = SB.Stacks.Totals(slots, function(s)
+							return keys[s]
+						end)
+						totalOf = function(s)
+							return keys[s] and totals[keys[s]]
+						end
+					end
+					slots = SB.Sort.DisplayOrder(slots, SB.Sort.Spec(), SB.Sort.Value, totalOf)
 				end
 				g.state = SB.Layout.Build(slots, assign, order, { columns = list and 1 or cfg.columns(),
 					newRows = list and GV.LIST_NEW_ROWS or cfg.newRows(), freeTile = cfg.freeTile and cfg.freeTile(view) or nil,
-					family = cfg.family or SB.Adapter.BagFamily, hideEmptyNew = hideNew() })
+					family = cfg.family or SB.Adapter.BagFamily, hideEmptyNew = hideNew(), stackKey = stackKey })
 				b.ms.categories = b.ms.categories + A.ProfileMs() - t
 			end
 			b.groups[#b.groups + 1] = g
@@ -863,6 +928,8 @@ function GV.New(cfg)
 			drawn = redraw(exempt)
 		end
 		if not drawn then
+			-- a held change (the shown stack withdrawn under the mouse) takes the total off at once (0.14.0)
+			paintStacks(v.pos)
 			paintTiles(v.pos) -- a held drop shows its item; one picked back up, its number again
 		end
 		if res.deferred > 0 then
@@ -966,12 +1033,12 @@ function GV.New(cfg)
 	end
 
 	-- A live repaint (count, lock, loaded data, an item that arrived or left): in the list the row's texts
-	-- follow, in place (nothing moves).
+	-- follow, in place (nothing moves). A grouped icon's row is v.PaintStacks' (it shows the group's total).
 	function v.SetRecord(bag, slot, record)
 		v.records[keyOf(bag, slot)] = record
 		if isList() and v.pos then
 			local button = cfg.button(bag, slot)
-			if button and not v.tiled[button] then
+			if button and not v.tiled[button] and not v.stacked[button] then
 				rows.Paint(button, bag, slot, record)
 			end
 		end
@@ -987,13 +1054,39 @@ function GV.New(cfg)
 				rows.Paint(button, bag, slot, record)
 			end
 		end)
+		paintStacks(v.pos) -- a grouped row's value is the whole group's
+	end
+
+	-- A count changed with nothing moving (the bank's inventory handler): each group's total follows, in place.
+	function v.PaintStacks()
+		if v.pos then
+			paintStacks(v.pos)
+		end
 	end
 
 	-- Search dimming: the button, and in the list its row (AC5.1).
 	function v.SetDimmed(button, dimmed)
+		v.dimmed[button] = dimmed
 		SB.Buttons.SetDimmed(button, dimmed)
 		if rows then
 			rows.SetDimmed(button, dimmed)
+		end
+	end
+
+	-- After each search (the window's SearchBox afterApply, 0.14.0): a grouped icon stays lit while any of
+	-- its hidden stacks matches (`count<10` finds the 7 under the 45's icon). Alpha only; nothing moves.
+	function v.RelightStacks()
+		for _, e in ipairs(v.pos and v.pos.stacks or {}) do
+			local rep = e.shown and cfg.button(e.bag, e.slot)
+			if rep and v.dimmed[rep] then
+				for _, m in ipairs(e.members) do
+					local member = cfg.button(m.bag, m.slot)
+					if member and not v.dimmed[member] then
+						v.SetDimmed(rep, false)
+						break
+					end
+				end
+			end
 		end
 	end
 
@@ -1018,6 +1111,10 @@ function GV.New(cfg)
 				end
 			end
 		end
+		for button in pairs(v.stacked) do -- each grouped icon gets its own number back (0.14.0)
+			SB.Buttons.SetStack(button, nil)
+		end
+		v.stacked = {}
 		v.groups, v.byId, v.pos, v.cells, v.redrawPending, v.heldKey, v.pendingNew = {}, {}, nil, {}, false, nil, {}
 		v.listFailed, v.restackHeld = false, false
 		SB.Buttons.ReleasePlaceholders(cfg.child)
