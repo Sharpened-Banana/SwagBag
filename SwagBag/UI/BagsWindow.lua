@@ -647,31 +647,19 @@ local function recordOf(bag, slot)
 	return W.records[bag] and W.records[bag][slot]
 end
 
--- Stack grouping (0.14.0), paintTiles' twin: each shown group's icon shows the total (Buttons.SetStack,
--- never Blizzard's count field) and, in the list, its row the total and the group's value. Every
--- button no longer grouped gets its own number and row back. O(groups); nothing moves.
+-- Stack grouping (0.14.0), paintTiles' twin (Stacks.Paint): each shown group's icon shows the total
+-- (Buttons.SetStack, never Blizzard's count field) and, in the list, its row the total and the group's
+-- value. Every button no longer grouped gets its own number and row back. O(groups); nothing moves.
+-- Without Engine/Stacks.lua nothing is ever grouped.
 local function paintStacks(pos)
-	local B, now = SB.Buttons, {}
-	for _, e in ipairs(pos and pos.stacks or {}) do
-		local s = e.shown and SB.Stacks.Of(e, recordOf)
-		local button = s and B.Get(e.bag, e.slot)
-		if button then
-			B.SetStack(button, s)
-			now[button] = e
-			if isList() then
-				W.rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot), nil, nil, s.total)
-			end
-		end
+	if not SB.Stacks then
+		return
 	end
-	for button, e in pairs(W.stacked) do
-		if not now[button] then
-			B.SetStack(button, nil)
-			if isList() then
-				W.rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot))
-			end
-		end
-	end
-	W.stacked = now
+	local B = SB.Buttons
+	W.stacked = SB.Stacks.Paint(pos and pos.stacks, W.stacked, recordOf, B.Get, B.SetStack,
+		isList() and function(button, e, total)
+			W.rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot), nil, nil, total)
+		end or nil)
 end
 
 -- What makes two stacks one icon (Engine/Stacks.lua), or nil: nothing groups while bags.stacks is
@@ -1028,18 +1016,12 @@ end
 -- After each search (SearchBox afterApply, 0.14.0): a grouped icon stays lit while any of its hidden
 -- stacks matches (`count<10` finds the 7 under the 45's icon). Texts and alpha only; nothing moves.
 function W.RelightStacks()
-	local B = SB.Buttons
-	for _, e in ipairs(W.pos and W.pos.stacks or {}) do
-		local rep = e.shown and B.Get(e.bag, e.slot)
-		if rep and W.dimmed[rep] then
-			for _, m in ipairs(e.members) do
-				local member = B.Get(m.bag, m.slot)
-				if member and not W.dimmed[member] then
-					W.SetDimmed(rep, false)
-					break
-				end
-			end
-		end
+	if SB.Stacks then
+		SB.Stacks.Relight(W.pos and W.pos.stacks, SB.Buttons.Get, function(button)
+			return W.dimmed[button]
+		end, function(button)
+			W.SetDimmed(button, false)
+		end)
 	end
 end
 

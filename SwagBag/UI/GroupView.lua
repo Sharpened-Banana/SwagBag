@@ -512,32 +512,18 @@ function GV.New(cfg)
 		return v.records[keyOf(bag, slot)]
 	end
 
-	-- Stack grouping (0.14.0), paintTiles' twin (the bags window's paintStacks): each shown group's icon
+	-- Stack grouping (0.14.0), paintTiles' twin (Stacks.Paint, as the bags window): each shown group's icon
 	-- shows the total (Buttons.SetStack, never Blizzard's count field) and, in the list, its row the total
 	-- and the group's value. Every button no longer grouped gets its own number and row back.
-	-- O(groups); nothing moves.
+	-- O(groups); nothing moves. Without Engine/Stacks.lua nothing is ever grouped.
 	local function paintStacks(pos)
-		local B, now = SB.Buttons, {}
-		for _, e in ipairs(pos and pos.stacks or {}) do
-			local s = e.shown and SB.Stacks.Of(e, recordOf)
-			local button = s and cfg.button(e.bag, e.slot)
-			if button then
-				B.SetStack(button, s)
-				now[button] = e
-				if isList() then
-					rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot), nil, nil, s.total)
-				end
-			end
+		if not SB.Stacks then
+			return
 		end
-		for button, e in pairs(v.stacked) do
-			if not now[button] then
-				B.SetStack(button, nil)
-				if isList() then
-					rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot))
-				end
-			end
-		end
-		v.stacked = now
+		v.stacked = SB.Stacks.Paint(pos and pos.stacks, v.stacked, recordOf, cfg.button, SB.Buttons.SetStack,
+			isList() and function(button, e, total)
+				rows.Paint(button, e.bag, e.slot, recordOf(e.bag, e.slot), nil, nil, total)
+			end or nil)
 	end
 
 	local function render(pos)
@@ -652,7 +638,7 @@ function GV.New(cfg)
 		local list = view == "list"
 		local order = sections and SB.Categories.SectionOrder() or nil
 		-- 0.14.0: the window's choice, read once per build (no cfg.stacks: the guild bank, the alt viewer)
-		local stackKey = sections and cfg.stacks and cfg.stacks() and SB.Stacks.Key or nil
+		local stackKey = sections and cfg.stacks and SB.Stacks and cfg.stacks() and SB.Stacks.Key or nil
 		local t = A.ProfileMs()
 		local defs = cfg.groups()
 		b.ms.groups = A.ProfileMs() - t
@@ -1076,17 +1062,12 @@ function GV.New(cfg)
 	-- After each search (the window's SearchBox afterApply, 0.14.0): a grouped icon stays lit while any of
 	-- its hidden stacks matches (`count<10` finds the 7 under the 45's icon). Alpha only; nothing moves.
 	function v.RelightStacks()
-		for _, e in ipairs(v.pos and v.pos.stacks or {}) do
-			local rep = e.shown and cfg.button(e.bag, e.slot)
-			if rep and v.dimmed[rep] then
-				for _, m in ipairs(e.members) do
-					local member = cfg.button(m.bag, m.slot)
-					if member and not v.dimmed[member] then
-						v.SetDimmed(rep, false)
-						break
-					end
-				end
-			end
+		if SB.Stacks then
+			SB.Stacks.Relight(v.pos and v.pos.stacks, cfg.button, function(button)
+				return v.dimmed[button]
+			end, function(button)
+				v.SetDimmed(button, false)
+			end)
 		end
 	end
 
@@ -1114,7 +1095,7 @@ function GV.New(cfg)
 		for button in pairs(v.stacked) do -- each grouped icon gets its own number back (0.14.0)
 			SB.Buttons.SetStack(button, nil)
 		end
-		v.stacked = {}
+		v.stacked, v.dimmed = {}, {}
 		v.groups, v.byId, v.pos, v.cells, v.redrawPending, v.heldKey, v.pendingNew = {}, {}, nil, {}, false, nil, {}
 		v.listFailed, v.restackHeld = false, false
 		SB.Buttons.ReleasePlaceholders(cfg.child)
