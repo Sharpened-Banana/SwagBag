@@ -124,6 +124,67 @@ describe("Stacks", function()
 		assert.same({ a = 53, b = 3 }, totals)
 	end)
 
+	-- Paint and Relight (shared by the bags window and GroupView): plain tables stand in for the buttons.
+	local function world(counts)
+		local buttons, records = {}, {}
+		for slot, n in pairs(counts) do
+			buttons[slot] = { slot = slot }
+			records[slot] = { count = n }
+		end
+		local function buttonOf(_, slot) return buttons[slot] end
+		local function recordOf(_, slot) return records[slot] end
+		return buttons, records, buttonOf, recordOf
+	end
+
+	-- Mutations: Paint skips `e.shown`; Paint forgets to clear a button that left `prev`; paintRow without the total.
+	it("Paint sets each shown group's total, paints its row, and clears what is no longer grouped", function()
+		local buttons, records, buttonOf, recordOf = world({ [1] = 45, [2] = 7, [3] = 9, [4] = 2 })
+		local set, painted = {}, {}
+		local function setStack(b, st) set[b.slot] = st and st.total or false end
+		local function paintRow(b, _, total) painted[b.slot] = total or false end
+		local entries = {
+			{ bag = 0, slot = 1, members = { { bag = 0, slot = 2 } }, shown = true },
+			{ bag = 0, slot = 3, members = { { bag = 0, slot = 4 } }, shown = false }, -- in a folded section
+		}
+		local now = Stacks.Paint(entries, {}, recordOf, buttonOf, setStack, paintRow)
+		assert.same({ [1] = 52 }, set)
+		assert.same({ [1] = 52 }, painted)
+		assert.equal(entries[1], now[buttons[1]])
+		assert.is_nil(next(now, next(now)), "one group only")
+		records[1] = nil -- the shown stack left: Of has no first record
+		set, painted = {}, {}
+		now = Stacks.Paint(entries, now, recordOf, buttonOf, setStack)
+		assert.same({ [1] = false }, set, "its own number back")
+		assert.same({}, painted, "no paintRow given: no row")
+		assert.same({}, now)
+	end)
+
+	it("Paint with no entries clears every previous group", function()
+		local buttons, _, buttonOf, recordOf = world({ [1] = 45 })
+		local cleared = {}
+		local now = Stacks.Paint(nil, { [buttons[1]] = { bag = 0, slot = 1 } }, recordOf, buttonOf, function(b, st)
+			cleared[#cleared + 1] = { b.slot, st }
+		end)
+		assert.same({ { 1 } }, cleared)
+		assert.same({}, now)
+	end)
+
+	-- Mutations: Relight lights without checking the members; Relight ignores `e.shown`.
+	it("Relight lights a dimmed shown icon only while one of its hidden stacks is lit", function()
+		local buttons, _, buttonOf = world({ [1] = 45, [2] = 7, [3] = 9, [4] = 2, [5] = 1, [6] = 1 })
+		local dimmed = { [buttons[1]] = true, [buttons[2]] = false, -- the 7 matched: its icon lights
+			[buttons[3]] = true, [buttons[4]] = true, -- nothing matched
+			[buttons[5]] = true, [buttons[6]] = false } -- a folded group's: left alone
+		local lit = {}
+		Stacks.Relight({
+			{ bag = 0, slot = 1, members = { { bag = 0, slot = 2 } }, shown = true },
+			{ bag = 0, slot = 3, members = { { bag = 0, slot = 4 } }, shown = true },
+			{ bag = 0, slot = 5, members = { { bag = 0, slot = 6 } }, shown = false },
+		}, buttonOf, function(b) return dimmed[b] end, function(b) lit[#lit + 1] = b.slot end)
+		assert.same({ 1 }, lit)
+		Stacks.Relight(nil, buttonOf, function() return true end, error) -- no entries: nothing
+	end)
+
 	it("Enabled follows bags.stacks", function()
 		SB.Config.Init(nil, nil)
 		assert.equal(true, Stacks.Enabled())

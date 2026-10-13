@@ -7,6 +7,10 @@
 --   Stacks.Line(counts) -> string          the tooltip line: "3 stacks: 45 + 7 + 2"
 --   Stacks.Of(entry, recordOf) -> { total, counts } | nil
 --   Stacks.Enabled() -> bool               the bags.stacks setting
+--   Stacks.Paint(entries, prev, recordOf, buttonOf, setStack, paintRow) -> now   a window's repaint of its
+--                                           groups (the bags window and GroupView); pure, through callbacks
+--   Stacks.Relight(entries, buttonOf, isDimmed, light)   after a search: a grouped icon stays lit while a
+--                                           hidden stack matches
 local _, SB = ...
 
 local L = SB.L
@@ -112,6 +116,51 @@ function Stacks.Of(entry, recordOf)
 		return nil
 	end
 	return { total = total, counts = counts }
+end
+
+-- entries: pos.stacks (nil: none); prev: [button] = entry, what the last call returned. Each shown group's
+-- icon gets setStack(button, { total, counts }) and paintRow(button, entry, total); each button in prev no
+-- longer grouped gets setStack(button, nil) and paintRow(button, entry, nil). paintRow is optional (a list's
+-- row). Returns the new [button] = entry set. O(groups); nothing moves.
+function Stacks.Paint(entries, prev, recordOf, buttonOf, setStack, paintRow)
+	local now = {}
+	for _, e in ipairs(entries or {}) do
+		local s = e.shown and Stacks.Of(e, recordOf)
+		local button = s and buttonOf(e.bag, e.slot)
+		if button then
+			setStack(button, s)
+			now[button] = e
+			if paintRow then
+				paintRow(button, e, s.total)
+			end
+		end
+	end
+	for button, e in pairs(prev) do
+		if not now[button] then
+			setStack(button, nil)
+			if paintRow then
+				paintRow(button, e, nil)
+			end
+		end
+	end
+	return now
+end
+
+-- A shown icon the search dimmed is lit again (light(button)) while any of its hidden stacks' buttons is
+-- not dimmed (`count<10` finds the 7 under the 45's icon).
+function Stacks.Relight(entries, buttonOf, isDimmed, light)
+	for _, e in ipairs(entries or {}) do
+		local rep = e.shown and buttonOf(e.bag, e.slot)
+		if rep and isDimmed(rep) then
+			for _, m in ipairs(e.members) do
+				local member = buttonOf(m.bag, m.slot)
+				if member and not isDimmed(member) then
+					light(rep)
+					break
+				end
+			end
+		end
+	end
 end
 
 function Stacks.Enabled()
