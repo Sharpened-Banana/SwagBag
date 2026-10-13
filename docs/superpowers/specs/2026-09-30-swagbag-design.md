@@ -94,10 +94,11 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC3.1 A header toggle switches between category sections and a flat grid without /reload, in and out of combat.
 - AC3.2 Every section header is collapsible; collapse state persists per section per window.
 - AC3.3 A "New" section at the top holds items that came into the bags and were not hovered yet, and items not yet loaded. Final week-9 rule (the user's): an item that comes into the bags (loot, a purchase, mail, a trade, a bank withdrawal, crafting: a slot gains a stack and the bags hold more of that item than before), whether the window is open or closed and in combat too, stays in New, at the top, in every focus mode and both focus styles (a mode never collapses New), until its button (or its list row) is hovered; after that it joins its real category on the next open (or explicit Reflow), never while the window is open. A move or split inside the bags and Blizzard's sort add nothing to New; an unseen item moved inside the bags stays unseen. An item whose ID was secret when it came (an instance) counts from when it becomes readable; a secret link or name never keeps an item out of New. Hotfix 0.11.1 (the user's report: `New (133)` after a fresh client start): what is in the bags when the player gets control is never new. From the login scan, and from every loading screen (PLAYER_ENTERING_WORLD: login, /reload, zoning into or out of an instance), the bags *settle*: until 3 s pass with no bag change (at most 15 s after the world loads), slots that read empty and fill again add nothing to New, and an unseen item that reads empty and comes back stays unseen (the `new` search keyword likewise). Outside a settle, one bag update that would bring in 20 stacks or more, and more than half the stacks then in the bags, is the client's late login data and adds nothing (a mailbox Take-All or a vendor spree never fills half the bags). A slot whose item ID reads secret is not empty: it keeps its last known item, so reading again with that item adds nothing; what came while it was secret arrives when it reads, even during a settle and even if the slot reads empty for a moment in the loading screen, unless the slot was already secret at the login scan or a settle (then it holds what was there before). A bag whose size first reads holds nothing new (a bag can be put on only when empty), and a bag size that reads 0 while the bag holds items keeps its items. An item that truly arrives within the settle (rare: a loading screen just ended) is not put in New. Session only (a login or /reload starts empty); the bags and the reagent bag only, never the banks. SwagBag keeps its own "unseen" set: Blizzard's new-item flag is cleared when the bags close (W4-15), so it cannot carry an item to the next open. New grows past its reserved rows at a full layout; arrivals while open keep the "+N more below" cap (§4.3).
-- AC3.4 While a window is open, no item button changes position except into "New" or "Free". A removed item leaves a dimmed placeholder. (Busted test on the layout engine plus the spike's `noWrongItemInSection` invariant re-run as an in-game check.)
+- AC3.4 While a window is open, no item button changes position except into "New" or "Free", or a hidden stack of the same item taking its group's cell. A removed item leaves a dimmed placeholder. (Busted test on the layout engine plus the spike's `noWrongItemInSection` invariant re-run as an in-game check.)
 - AC3.5 Empty slots render in a "Free" section of real slot buttons, which is a valid drop target.
 - AC3.6 The grid view is the physical slot order of the bags (bag 0, 1–4, 5; then bank tabs) in a single scrolling grid.
 - AC3.7 Scroll offset is clamped when content shrinks (bank close), so the view is never scrolled past the end.
+- AC3.8 One icon per item (0.14.0). With `bags.stacks = "one"` (default), several stacks of one stackable item in a category section show as one icon with the total, in the category and list views of the bags and of both banks (never across the two banks). The key is the normalised item string plus the bind state, stackable items only, so gear, keystones, caged pets and items with other bonus IDs, quality ranks or bind states never merge. The shown stack is the largest one; its tooltip says "2 stacks: 45 + 7" and "Clicks use the stack of 45", and right-click, drag and split act on that stack only. The list sorts and counts by the total, Sell all sells every stack, and search lights the icon when any of its stacks matches. The grid view, the guild bank and the alt viewer are unchanged (every stack), New never groups, and Free never groups. Settings > Bags ("Same item in several stacks (bags and banks)") and `/swagbag stacks one|all` switch it; "all" shows every stack again. Display only: no item moves, splits or merges.
 
 #### F4. Default categories and the categorizer
 - AC4.1 First run ships ~18 built-in categories (see §7.6) that place every item in a sensible section; "Other" is the fallback.
@@ -166,6 +167,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 #### F15. Settings
 - AC15.1 Settings are account-wide; focus modes and professions-dependent settings can be overridden per character via "Use character-specific settings" on the relevant page.
 - AC15.2 Every setting has a default and shows its alternative(s) next to it.
+- AC15.3 The Bags page has a row "Same item in several stacks (bags and banks)": "One icon with the total" (default) or "Every stack" (0.14.0, AC3.8); `/swagbag stacks one|all` does the same.
 
 #### F16. Guild bank window (full replacement)
 - AC16.1 Opening a guild vault shows SwagBag's guild bank window instead of Blizzard's: all viewable tabs stacked as groups (or one tab at a time, option), with category sections or grid, search (full dim), and per-category AH value totals.
@@ -208,6 +210,8 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 | **v1.3** | List view (Sorted-style rows with name, count, ilvl, AH value column, sortable; delivered for the bags in week 5 and for the bank and the guild bank in week 8: the same rows and columns, one shared order (`bags.list`), a view button that cycles categories, list, grid in every window; the guild bank's list shows each tab's empty slots as one free row). Themes: modern flat; ElvUI-matching (auto-detect ElvUI, use its media). |
 
 Change log: v1.3 (week 13): bank window simplified: deposit bar, one bank at a time, slim header and menu.
+
+v1.4 (0.14.0): several stacks of one item show as one icon with the total (bags and banks); Settings > Bags or /swagbag stacks all turns it off.
 
 ### 2.3 Later (demand-driven)
 
@@ -317,7 +321,7 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 
 ### 4.2 Invariants
 
-1. **Identity:** a slot button always shows whatever is physically in its (bag, slot). We never pretend otherwise.
+1. **Identity:** a slot button always shows whatever is physically in its (bag, slot). We never pretend otherwise. **Recorded exception (0.14.0):** with `bags.stacks = "one"` (default) the shown stack of a group draws the group's total as its number; its tooltip lists every stack and says which one a click uses. `button.count`, the split, every click and drag act on that real stack only.
 2. **Section truth:** every slot button drawn inside a category section shows the item that section was built for, or it is not in that section. (The spike asserted this after every incremental update with zero violations.)
 3. **Placeholder honesty:** a placeholder never responds to item interaction. Its click shows a tooltip "This item moved or was used — items regroup when you close the bag" and does nothing else. (Spike check `placeholderClickIsHarmless` is the first in-dev verification; see §11.3.)
 4. **Free is real:** empty slots are drawn as their real buttons in the "Free" section, so dropping an item onto Free is a real drop into that slot.
@@ -331,6 +335,8 @@ Slot buttons are **never** reparented, destroyed, or re-`SetID`'d after creation
 | **Item leaves** and the button is in Free or New | Repaint only. With the free tile on (default, D19 / W3-13), a button emptied in New joins Free instead (as its family's hidden spare, or as the tile when the family had none), so the tile's number is always the real free count. | Same. |
 | **Different item arrives** in a slot whose button is in a section | Placeholder at old position; button moves to the next cell of **New**. | Same. |
 | **Item arrives** in a Free slot | Button moves to New. | Same. |
+| **The shown stack of a group leaves, gets another item, or its slot is removed** (0.14.0) | The group's next stack takes its cell (no placeholder) and the button does what the row above says. This waits while either button is busy. | Same. |
+| **A hidden stack leaves or gets another item** (0.14.0) | To Free / New as for any button; the total updates. | Same. |
 | **Item hovered** (its button or list row; week 9, AC3.3) | Nothing moves: it stays in New while the window is open and joins its category at the next open or Reflow. An item never hovered stays in New at every open, whatever the focus mode. | Same. |
 | **Count changes** | Repaint (`COUNT` reason). | Same. |
 | **Same item, changed link** (keystone level, enchant, gem) | Repaint only; re-categorized at the next open or Reflow. | Same. |
