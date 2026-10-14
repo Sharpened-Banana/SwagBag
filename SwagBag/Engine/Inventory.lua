@@ -36,12 +36,14 @@
 -- when the bags close (W4-15), so it cannot carry an item to the next open.
 --   Inv.IsUnseen(bag, slot) -> bool;  Inv.Seen(bag, slot);  Inv.SeenAll() -> n (/swagbag new seen)
 -- 0.14.1, the banks' late data (the Warband bank's New flood at the first visit after a full game restart): the
--- client can send a bank tab's contents after BANKFRAME_OPENED, so the tab reads empty at the visit's scan and fills
--- a moment later. A bank change ({ bag, slot, reasons }) that brings a stack into a bank or warband slot gets
--- c.late = true when the stack did not come from the bags (the bags do not hold less of that item than before the
--- flush: a deposit always leaves them in the same update) and either its tab read empty at the visit's scan
--- (Inv.visitEmpty, set by Inv.ScanKind(kind, true)) or the flush brings FLOOD_MIN such stacks or more. The bank
--- window regroups for it instead of keeping those stacks in New (UI/BankWindow.lua). The bags get the same mark: a
+-- client can send a bank tab's contents after BANKFRAME_OPENED, so the tab reads empty (or partly filled) at the
+-- visit's scan and fills a moment later. Within VISIT_LATE_WINDOW seconds of the visit's scan (Inv.ScanKind(kind,
+-- true) sets Inv.visitAt), a bank change ({ bag, slot, reasons }) that brings a stack into a bank or warband slot
+-- gets c.late = true unless a deposit explains it: what left the bags in the last LEFT_TTL seconds (the ledger
+-- Inv.leftBags, filled at every flush and pruned by the clock at the next one; no timer) is matched, by item and
+-- count, against the bank's new stacks, so a deposit whose bags' side came a flush earlier is still a deposit.
+-- After the window nothing is late. The bank window regroups for late stacks instead of keeping them in New
+-- (UI/BankWindow.lua). The bags get the same mark: a
 -- bags stack that came in during the settle, as a bag's first contents, or in a late-data flood (whatever is not an
 -- arrival only because it is the client's late data) has c.late = true, and an open bags window regroups for it
 -- (UI/BagsWindow.lua; an unseen item still stays in New). Data only: nothing is drawn here.
@@ -55,7 +57,10 @@ local Inv = {
 	newSet = {}, -- ["bag:slot"] = true for items that arrived this session
 	unseen = {}, -- ["bag:slot"] = itemID: bags items that arrived and were not hovered yet (see the header)
 	pending = {}, -- [itemID] = true while waiting for item data
-	visitEmpty = {}, -- [bag] = true: a bank tab that read empty at the bank visit's scan (0.14.1, see the header)
+	visitAt = nil, -- 0.14.1: the clock at the bank visit's scan (see the header)
+	leftBags = {}, -- 0.14.1: { { itemID, n, at } } what left the bags lately, for a deposit's other side
+	VISIT_LATE_WINDOW = 10, -- 0.14.1: seconds after the visit's scan in which a bank arrival can be late data
+	LEFT_TTL = 1, -- 0.14.1: seconds a bags departure stays in the ledger
 	hidden = {}, -- ["bag:slot"] = "known" | "base": the slot's item ID reads secret (see the header)
 	heldEmpty = {}, -- ["bag:slot"] = true: a hidden slot read empty during the settle; its marker waits
 	settling = false, -- true during the settle (see the header)
@@ -299,21 +304,52 @@ local function markUnseen(changes, set, before)
 	end
 end
 
--- 0.14.1 (see the header): mark the bank stacks of this flush that are the client's late data (c.late).
-local function markLate(changes, set, before)
-	local list, after = {}, nil
-	for _, c in ipairs(changes) do
-		local s = c.reasons == Inv.R.ITEM and not set[c.bag] and Inv.GetSlot(c.bag, c.slot)
-		if s then
-			after = after or totals(set)
-			if not before or (after[s.itemID] or 0) >= (before[s.itemID] or 0) then
-				list[#list + 1] = c
+-- 0.14.1 (see the header): the ledger of what left the bags. Entries older than LEFT_TTL go; this flush's
+-- departures (the bags hold less of an item than before it) join.
+local function noteLeft(set, before, now)
+	local keep = {}
+	for _, e in ipairs(Inv.leftBags) do
+		if now - e.at <= Inv.LEFT_TTL and e.n > 0 then
+			keep[#keep + 1] = e
+		end
+	end
+	Inv.leftBags = keep
+	if not before then
+		return
+	end
+	local after = totals(set)
+	for id, n in pairs(before) do
+		local gone = n - (after[id] or 0)
+		if gone > 0 then
+			keep[#keep + 1] = { itemID = id, n = gone, at = now }
+		end
+	end
+end
+
+-- Take up to count of itemID from the ledger; true when any of it was there (a deposit's other side).
+local function takeLeft(itemID, count)
+	local found = false
+	for _, e in ipairs(Inv.leftBags) do
+		if e.itemID == itemID and e.n > 0 then
+			found = true
+			local take = math.min(e.n, count)
+			e.n, count = e.n - take, count - take
+			if count <= 0 then
+				break
 			end
 		end
 	end
-	local flood = #list >= Inv.FLOOD_MIN
-	for _, c in ipairs(list) do
-		if flood or Inv.visitEmpty[c.bag] then
+	return found
+end
+
+-- 0.14.1 (see the header): mark the bank stacks of this flush that are the client's late data (c.late).
+local function markLate(changes, set, before)
+	local now = SB.Adapter.Now()
+	noteLeft(set, before, now)
+	local inWindow = Inv.visitAt ~= nil and now - Inv.visitAt <= Inv.VISIT_LATE_WINDOW
+	for _, c in ipairs(changes) do
+		local s = c.reasons == Inv.R.ITEM and not set[c.bag] and Inv.GetSlot(c.bag, c.slot)
+		if s and not takeLeft(s.itemID, s.count or 1) and inWindow then
 			c.late = true
 		end
 	end
@@ -419,8 +455,8 @@ end
 -- Rescan every bag of a kind without marking anything "new". The character bank can only be
 -- read at a banker (spec 5.7), so what is in it at a visit is not a new arrival. visit: true
 -- at the start of a bank visit, which also forgets what was new during an earlier visit
--- (ruling W3-25); a rescan inside a visit keeps this visit's arrivals new. At a visit it also notes which
--- tabs read empty (Inv.visitEmpty, 0.14.1: the bank's late data, see the header).
+-- (ruling W3-25); a rescan inside a visit keeps this visit's arrivals new. At a visit it also starts the
+-- visit's late-data window (Inv.visitAt, 0.14.1: the bank's late data, see the header).
 -- Inv.scanned is put back even when a scan errors; the error is raised again for the caller's
 -- trap.
 function Inv.ScanKind(kind, visit)
@@ -438,12 +474,12 @@ function Inv.ScanKind(kind, visit)
 			end
 			Inv.ScanBag(bag)
 			Inv.dirty[bag] = nil
-			if visit then -- 0.14.1: a tab that reads empty now may be filled by the client's late data
-				Inv.visitEmpty[bag] = next(Inv.slots[bag] or {}) == nil or nil
-			end
 		end
 	end)
 	Inv.scanned = was
+	if visit then -- 0.14.1: the client may still be sending this visit's contents (see the header)
+		Inv.visitAt = SB.Adapter.Now()
+	end
 	if not ok then
 		error(err, 0)
 	end

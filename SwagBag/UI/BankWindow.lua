@@ -1026,8 +1026,8 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 			v.Changes(gid, byGroup[gid])
 		end
 	end
-	-- 0.14.1: the client's late contents (a tab that read empty at the visit's start fills without the bags losing
-	-- anything; Inventory's c.late) went to New with the live change above, like a deposit; they were in the bank
+	-- 0.14.1: the client's late contents (a bank arrival in the visit's first seconds that no recent bags departure
+	-- explains; Inventory's c.late) went to New with the live change above, like a deposit; they were in the bank
 	-- all along, so the bank regroups (debounced, held like the "loaded" regroup) and they join their categories.
 	for _, c in ipairs(changes) do
 		if c.late and v.GroupOf(c.bag) then
@@ -1168,7 +1168,8 @@ SB.On("BANK_TAB_SETTINGS_UPDATED", function()
 	end
 	-- Ruling W3-25: a deposit still waiting on the 50 ms flush is notified (and marked new)
 	-- first; the rescan below would otherwise absorb it as "already there".
-	SB.Inventory.FlushKinds({ "bank", "warband" }, "tabs")
+	-- (0.14.1: with the bags, so a deposit's two sides stay in one flush: Inventory's late-data ledger)
+	SB.Inventory.FlushKinds({ "bags", "bank", "warband" }, "tabs")
 	SB.Inventory.ScanKind("bank")
 	SB.Inventory.ScanKind("warband")
 	SB.Buttons.EnsureBankTabs()

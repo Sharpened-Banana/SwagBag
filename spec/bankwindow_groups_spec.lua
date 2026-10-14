@@ -390,7 +390,9 @@ describe("BankWindow contents", function()
 		A.Advance(BW.SORT_TIMEOUT + 0.1)
 		assert.falsy(BW.sortPending)
 		BW.view.stats.lastLayoutReason = "marker"
-		A.Put(6, 7, Fixtures.JUNK, 1)
+		A.Clear(0, 6) -- a real deposit: the junk leaves the bags in the same update (0.14.1: else it is late data)
+		A.Put(6, 7, Fixtures.JUNK, 3)
+		SB.eventFrame:Fire("BAG_UPDATE", 0)
 		bankUpdate(6)
 		A.Advance(1)
 		assert.equal("marker", BW.view.stats.lastLayoutReason, "no regroup after the sort timed out")
@@ -1271,8 +1273,8 @@ describe("BankWindow contents", function()
 	-- 0.14.1 (the root cause of the Warband bank's New flood at the first visit after a full game restart): the
 	-- client sends a warband tab's contents AFTER BANKFRAME_OPENED. The tab reads empty at the visit's scan and the
 	-- first layout, then a bag update fills it: every stack came in as a live "arrived" change, so it went to New
-	-- like a deposit and stayed there (no data load concerns it, so 0.13.3's regroup never ran). Now what fills a tab
-	-- that read empty at the visit's start, and did not come from the bags, is the client's late data: the bank
+	-- like a deposit and stayed there (no data load concerns it, so 0.13.3's regroup never ran). Now a bank arrival
+	-- within the visit's first seconds that no recent bags departure explains is the client's late data: the bank
 	-- regroups (debounced and held like the "loaded" regroup) and it joins its categories.
 	local function lateWarband()
 		SB.Config.Set("bank.show", "both")
@@ -1331,56 +1333,149 @@ describe("BankWindow contents", function()
 		assert.equal("- New (0)", labels()[7], "landed once the mouse left")
 	end)
 
-	-- A real deposit comes out of the bags in the same update: it stays in New, even into a tab that read empty.
-	-- Mutation: in Inventory's markLate, drop the bags-total check (every fill of an empty tab is late).
-	it("0.14.1: a deposit into a tab that read empty stays in New", function()
-		lateWarband()
-		local layouts, request = 0, BW.view.RequestLayout
+	local function countRequests()
+		local n, request = { count = 0 }, BW.view.RequestLayout
 		BW.view.RequestLayout = function(reason)
-			layouts = layouts + 1
+			n.count = n.count + 1
 			return request(reason)
 		end
+		return n
+	end
+
+	local function bagsUpdate(bag) -- the bags' side of a deposit, in its own flush
+		SB.eventFrame:Fire("BAG_UPDATE", bag or 0)
+		SB.eventFrame:Fire("BAG_UPDATE_DELAYED")
+		A.Advance(0.06)
+	end
+
+	-- A real deposit comes out of the bags in the same update: it stays in New, even into a tab that read empty.
+	-- Mutation: in Inventory's markLate, treat every bank arrival as unmatched (skip the ledger).
+	it("0.14.1: a deposit into a tab that read empty stays in New", function()
+		lateWarband()
+		local n = countRequests()
 		A.Clear(12, 2)
 		A.Clear(0, 2) -- the flask leaves the bags ...
 		A.Put(12, 1, Fixtures.FLASK, 2) -- ... and lands in the warband tab, in one update
 		SB.eventFrame:Fire("BAG_UPDATE", 0)
 		bankUpdate(12)
 		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
-		assert.equal(0, layouts)
+		assert.equal(0, n.count)
 		assert.equal("- New (1)", labels()[7])
 	end)
 
-	-- A tab that held items at the visit's start: what comes into it (here not from the bags) is a live change as
-	-- before. Mutation: in Inventory's markLate, drop the visitEmpty check (every non-deposit fill is late).
-	it("0.14.1: a stack coming into a tab that held items at the visit's start stays in New", function()
+	-- Review fix: the two sides of a deposit can land in different flushes. The bags' side is remembered for a moment
+	-- (Inventory's ledger of what recently left the bags). Mutation: in Inventory's noteLeft, record nothing.
+	it("0.14.1: a deposit whose bags' side came in an earlier flush stays in New", function()
+		lateWarband()
+		local n = countRequests()
+		A.Clear(12, 2)
+		A.Clear(0, 2)
+		bagsUpdate(0) -- the flask leaves the bags ...
+		A.Put(12, 1, Fixtures.FLASK, 2)
+		bankUpdate(12) -- ... and lands in the warband tab one flush later
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
+		assert.equal(0, n.count)
+		assert.equal("- New (1)", labels()[7])
+	end)
+
+	-- "Deposit warbound" (25 stacks) split across flushes, bags' side first each time: all of it stays in New.
+	-- Mutation: in Inventory's noteLeft, record nothing (or in markLate, skip the ledger).
+	it("0.14.1: a 25-stack deposit split across flushes stays in New", function()
+		SB.Config.Set("bank.show", "both")
+		A.SetBagSize(1, 30)
+		for slot = 1, 25 do
+			A.Put(1, slot, Fixtures.HERB, slot)
+		end
+		SB.Inventory.ScanAll()
+		Fixtures.Settle(SB)
+		A.SetBagSize(12, 30)
+		openBank()
+		local n = countRequests()
+		for batch = 0, 4 do
+			for i = 1, 5 do
+				local slot = batch * 5 + i
+				A.Clear(1, slot)
+				A.Put(12, 2 + slot, Fixtures.HERB, slot)
+			end
+			bagsUpdate(1)
+			bankUpdate(12)
+		end
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
+		assert.equal(0, n.count)
+		assert.equal("- New (25)", labels()[7])
+	end)
+
+	-- The ledger only remembers a moment: a bag departure 2 s before is no longer a deposit's other side.
+	-- Mutation: in Inventory's noteLeft, never expire an entry.
+	it("0.14.1: a bags departure more than a second old matches no bank arrival", function()
 		SB.Config.Set("bank.show", "both")
 		openBank()
-		local layouts, request = 0, BW.view.RequestLayout
-		BW.view.RequestLayout = function(reason)
-			layouts = layouts + 1
-			return request(reason)
-		end
-		A.Put(12, 3, Fixtures.HERB, 5)
+		A.Clear(0, 2)
+		bagsUpdate(0)
+		A.Advance(2)
+		A.Put(12, 3, Fixtures.FLASK, 2)
 		bankUpdate(12)
-		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
-		assert.equal(0, layouts)
-		assert.equal("- New (1)", labels()[7])
+		A.Advance(SB.GroupView.LOADED_DELAY)
+		assert.equal("filled", BW.view.stats.lastLayoutReason)
 	end)
 
-	-- A tab that was only partly there at the visit's start: Inventory.FLOOD_MIN stacks or more in one update, none of
-	-- them from the bags, are late data too. Mutation: in Inventory's markLate, drop `flood or`.
-	it("0.14.1: a flood of stacks not from the bags into a tab that held items regroups the bank", function()
+	-- The ledger is spent as it matches: a deposit explains only as much as left the bags. Here 2 flasks leave the bags
+	-- and two flask stacks (2 and 5) come into the bank in the same update: the second is late data.
+	-- Mutation: in Inventory's takeLeft, take nothing from the entry (e.n stays).
+	it("0.14.1: a deposit explains only as much as left the bags", function()
+		SB.Config.Set("bank.show", "both")
+		openBank()
+		A.Clear(0, 2)
+		A.Put(12, 3, Fixtures.FLASK, 2)
+		A.Put(12, 4, Fixtures.FLASK, 5)
+		SB.eventFrame:Fire("BAG_UPDATE", 0)
+		bankUpdate(12)
+		A.Advance(SB.GroupView.LOADED_DELAY)
+		assert.equal("filled", BW.view.stats.lastLayoutReason)
+	end)
+
+	-- Review fix: a tab that was partly there at the visit's scan and gets the rest in small flushes is late data
+	-- too, within the visit's window. Mutation: in Inventory's markLate, keep the old "tab read empty" requirement.
+	it("0.14.1: a partly filled tab whose rest comes 3 s after the open in flushes of 5 regroups the bank", function()
 		SB.Config.Set("bank.show", "both")
 		A.SetBagSize(12, 30)
 		openBank()
-		for slot = 3, 2 + SB.Inventory.FLOOD_MIN do
-			A.Put(12, slot, Fixtures.HERB, slot)
+		A.Advance(3)
+		for batch = 0, 2 do
+			for i = 1, 5 do
+				local slot = 3 + batch * 5 + i
+				A.Put(12, slot, Fixtures.HERB, slot)
+			end
+			bankUpdate(12)
 		end
-		bankUpdate(12)
-		assert.equal("- New (" .. SB.Inventory.FLOOD_MIN .. ")", labels()[7])
+		assert.equal("- New (15)", labels()[7])
 		A.Advance(SB.GroupView.LOADED_DELAY)
 		assert.equal("- New (0)", labels()[7])
 		assert.equal("filled", BW.view.stats.lastLayoutReason)
+	end)
+
+	-- Past the visit's window nothing is late: an arrival no bag departure explains is a live change as before.
+	-- Mutation: in Inventory's markLate, drop the VISIT_LATE_WINDOW check.
+	it("0.14.1: an unmatched bank arrival 15 s after the open stays in New", function()
+		SB.Config.Set("bank.show", "both")
+		openBank()
+		A.Advance(15)
+		local n = countRequests()
+		A.Put(12, 3, Fixtures.HERB, 5)
+		bankUpdate(12)
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
+		assert.equal(0, n.count)
+		assert.equal("- New (1)", labels()[7])
+	end)
+
+	-- Review fix: a tab-settings change flushes the bags too, so a deposit waiting on the 50 ms flush keeps its two
+	-- sides together. Mutation: in BankWindow's BANK_TAB_SETTINGS_UPDATED handler, drop "bags" from FlushKinds.
+	it("0.14.1: a bank tab-settings change flushes the bags with the banks", function()
+		openBank()
+		A.Clear(0, 2)
+		SB.eventFrame:Fire("BAG_UPDATE", 0) -- dirty, not flushed yet
+		SB.eventFrame:Fire("BANK_TAB_SETTINGS_UPDATED")
+		assert.is_nil(SB.Inventory.GetSlot(0, 2), "the bags' side was flushed with the bank's")
 	end)
 
 	-- 0.14.1 (the report): a stack that overflowed a full New ("+N more below") still counts. Mutation: in
