@@ -1484,11 +1484,81 @@ describe("BagsWindow category view", function()
 		return n
 	end
 
+	-- 0.14.1 (the bank's root cause, the same gap in the bags): what Inventory says is the client's late data (a
+	-- loading screen blanks the bags and fills them again during the settle) is not an arrival, but while the window
+	-- was open each refilled stack went to New as a live change and stayed there until the next open. Now the bags
+	-- regroup for it (debounced, held like the "loaded" regroup). Mutation: in Inventory's markUnseen, never set
+	-- c.late; or in BagsWindow's handler drop the RegroupSoon("filled") call.
+	it("0.14.1: stacks a loading screen blanks and fills again while the bags are open leave New by themselves", function()
+		W.Open()
+		assert.equal("- New (0)", header("new").text.text)
+		SB.eventFrame:Fire("PLAYER_ENTERING_WORLD", false, false)
+		local saved = {}
+		for slot = 1, 6 do
+			saved[slot] = A.slots[0][slot]
+			A.Clear(0, slot)
+		end
+		bagUpdate()
+		for slot = 1, 6 do
+			A.slots[0][slot] = saved[slot]
+		end
+		bagUpdate()
+		assert.equal("- New (6)", header("new").text.text, "shown at once where a live change puts them")
+		assert.same({ unseen = 0, pending = 0, undecided = 0, arrived = 6 }, W.NewReasons(), "the report's line")
+		A.Advance(W.LOADED_DELAY)
+		assert.equal("- New (0)", header("new").text.text)
+		assert.equal("filled", W.stats.lastLayoutReason)
+	end)
+
+	-- Outside a settle, a late-data flood (Inventory.FLOOD_MIN stacks or more, more than half the bags) is late data
+	-- too. Mutation: in Inventory's markUnseen, drop the flood branch's c.late loop.
+	it("0.14.1: a late-data flood while the bags are open leaves New by itself", function()
+		A.SetBagSize(1, 30)
+		SB.Inventory.ScanAll()
+		Fixtures.Settle(SB)
+		W.Open()
+		for slot = 1, SB.Inventory.FLOOD_MIN do
+			A.Put(1, slot, Fixtures.HERB, slot)
+		end
+		bagUpdate(1)
+		assert.falsy(SB.Inventory.IsUnseen(1, 1), "late data: not unseen")
+		A.Advance(W.LOADED_DELAY)
+		assert.equal("- New (0)", header("new").text.text)
+		assert.equal("filled", W.stats.lastLayoutReason)
+	end)
+
+	-- The report's line counts the stacks past a full New too. Mutation: in W.NewReasons, drop the overflowKeys loop.
+	it("0.14.1: New's contents by reason count the stacks past a full New", function()
+		SB.Config.Set("bags.columns", 2)
+		SB.Config.Set("bags.newRows", 1)
+		W.Open()
+		for slot = 7, 10 do
+			A.Put(0, slot, Fixtures.HERB, slot)
+		end
+		bagUpdate()
+		assert.same({ unseen = 4, pending = 0, undecided = 0, arrived = 0 }, W.NewReasons())
+	end)
+
+	-- Loot is an arrival, never late data: it stays in New and lays nothing out. Mutation: in Inventory's
+	-- markUnseen, set c.late on every bags stack that came in.
+	it("0.14.1: a looted stack while the bags are open stays in New and regroups nothing", function()
+		W.Open()
+		local n = countLayouts()
+		A.Put(0, 7, Fixtures.HERB, 5)
+		bagUpdate()
+		A.Advance(W.LOADED_DELAY + W.RETRY)
+		assert.equal("- New (1)", header("new").text.text)
+		assert.equal(0, n.count)
+		assert.same({ unseen = 1, pending = 0, undecided = 0, arrived = 0 }, W.NewReasons(), "the report's line")
+		assert.same({ loads = 0, regroups = 0, stillPending = 0, filled = 0 }, W.newStats)
+	end)
+
 	-- Mutation: in BagsWindow's inventory handler, drop the pending-load check (no regroup on LOADED).
 	it("0.13.3: items pending at the open leave New for their category once their data loads", function()
 		putPending(PENDING, 7)
 		W.Open()
 		assert.equal("- New (3)", header("new").text.text, "pending: New")
+		assert.same({ unseen = 0, pending = 3, undecided = 0, arrived = 0 }, W.NewReasons(), "0.14.1: the report's line")
 		for _, id in ipairs(PENDING) do
 			load(id)
 		end

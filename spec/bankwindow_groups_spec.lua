@@ -1230,6 +1230,7 @@ describe("BankWindow contents", function()
 		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
 		assert.equal(0, layouts)
 		assert.equal("- New (5)", labels()[7])
+		assert.same({ loads = 1, regroups = 0, stillPending = 1, filled = 0 }, BW.view.newStats, "0.14.1: the report counts it")
 	end)
 
 	-- Mutation: in GroupView's PendingLoaded, drop the pendingNew lookup (every LOADED regroups).
@@ -1265,6 +1266,147 @@ describe("BankWindow contents", function()
 		A.Advance(SB.GroupView.LOADED_DELAY)
 		assert.equal(1, n)
 		assert.equal("- New (0)", labels()[7])
+	end)
+
+	-- 0.14.1 (the root cause of the Warband bank's New flood at the first visit after a full game restart): the
+	-- client sends a warband tab's contents AFTER BANKFRAME_OPENED. The tab reads empty at the visit's scan and the
+	-- first layout, then a bag update fills it: every stack came in as a live "arrived" change, so it went to New
+	-- like a deposit and stayed there (no data load concerns it, so 0.13.3's regroup never ran). Now what fills a tab
+	-- that read empty at the visit's start, and did not come from the bags, is the client's late data: the bank
+	-- regroups (debounced and held like the "loaded" regroup) and it joins its categories.
+	local function lateWarband()
+		SB.Config.Set("bank.show", "both")
+		A.Clear(12, 1)
+		A.Clear(12, 2)
+		openBank()
+		A.Put(12, 1, Fixtures.ORE, 10)
+		A.Put(12, 2, Fixtures.BOE_RING, 1)
+	end
+
+	-- Mutation: in Inventory's markLate, never set c.late; or in BankWindow's handler drop the RegroupSoon("filled") call.
+	it("0.14.1: a Warband tab whose contents arrive after the bank opened joins its categories, not New", function()
+		lateWarband()
+		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (0)",
+			"- New (0)", "- Consumables (1)", "- Herbs (1)", "- Free (6)",
+			"- New (0)", "- Free (8)" }, labels())
+		bankUpdate(12)
+		assert.equal("- New (2)", labels()[7], "shown at once where a live change puts it")
+		-- the report's line (Core/Report.lua): why New holds them, and the late-data regroup asked for
+		assert.same({ pending = 0, undecided = 0, arrived = 2 }, BW.view.NewReasons())
+		assert.same({ loads = 0, regroups = 1, stillPending = 0, filled = 1 }, BW.view.newStats)
+		A.Advance(SB.GroupView.LOADED_DELAY)
+		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (2)",
+			"- New (0)", "- Consumables (1)", "- Herbs (1)", "- Free (6)",
+			"- New (0)", "- BoE gear (1)", "- Ore (1)", "- Free (6)" }, labels())
+		assert.equal("filled", BW.view.stats.lastLayoutReason)
+	end)
+
+	-- Late contents that are still loading: the "filled" regroup puts them in New as pending, then their loads regroup.
+	it("0.14.1: late Warband contents whose data is still loading leave New once it loads", function()
+		lateWarband()
+		putPending()
+		bankUpdate(12)
+		A.Advance(SB.GroupView.LOADED_DELAY)
+		assert.equal("- New (5)", labels()[7], "pending at the filled regroup")
+		assert.same({ pending = 5, undecided = 0, arrived = 0 }, BW.view.NewReasons())
+		for _, id in ipairs(PENDING) do
+			load(id)
+		end
+		A.Advance(SB.GroupView.LOADED_DELAY)
+		assert.equal("- New (0)", labels()[7])
+		assert.equal("- BoE gear (6)", labels()[8])
+		assert.same({ loads = 5, regroups = 6, stillPending = 0, filled = 1 }, BW.view.newStats)
+		assert.same({ pending = 0, undecided = 0, arrived = 0 }, BW.view.NewReasons())
+	end)
+
+	-- P5: the late-data regroup waits while the mouse is over the bank's items.
+	it("0.14.1: the late-data regroup waits while the mouse is over the bank's items, then lands", function()
+		lateWarband()
+		bankUpdate(12)
+		BW.scroll.mouseOver = true
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY * 3)
+		assert.equal("- New (2)", labels()[7], "held")
+		BW.scroll.mouseOver = false
+		A.Advance(SB.GroupView.RETRY)
+		assert.equal("- New (0)", labels()[7], "landed once the mouse left")
+	end)
+
+	-- A real deposit comes out of the bags in the same update: it stays in New, even into a tab that read empty.
+	-- Mutation: in Inventory's markLate, drop the bags-total check (every fill of an empty tab is late).
+	it("0.14.1: a deposit into a tab that read empty stays in New", function()
+		lateWarband()
+		local layouts, request = 0, BW.view.RequestLayout
+		BW.view.RequestLayout = function(reason)
+			layouts = layouts + 1
+			return request(reason)
+		end
+		A.Clear(12, 2)
+		A.Clear(0, 2) -- the flask leaves the bags ...
+		A.Put(12, 1, Fixtures.FLASK, 2) -- ... and lands in the warband tab, in one update
+		SB.eventFrame:Fire("BAG_UPDATE", 0)
+		bankUpdate(12)
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
+		assert.equal(0, layouts)
+		assert.equal("- New (1)", labels()[7])
+	end)
+
+	-- A tab that held items at the visit's start: what comes into it (here not from the bags) is a live change as
+	-- before. Mutation: in Inventory's markLate, drop the visitEmpty check (every non-deposit fill is late).
+	it("0.14.1: a stack coming into a tab that held items at the visit's start stays in New", function()
+		SB.Config.Set("bank.show", "both")
+		openBank()
+		local layouts, request = 0, BW.view.RequestLayout
+		BW.view.RequestLayout = function(reason)
+			layouts = layouts + 1
+			return request(reason)
+		end
+		A.Put(12, 3, Fixtures.HERB, 5)
+		bankUpdate(12)
+		A.Advance(SB.GroupView.LOADED_DELAY + SB.GroupView.RETRY)
+		assert.equal(0, layouts)
+		assert.equal("- New (1)", labels()[7])
+	end)
+
+	-- A tab that was only partly there at the visit's start: Inventory.FLOOD_MIN stacks or more in one update, none of
+	-- them from the bags, are late data too. Mutation: in Inventory's markLate, drop `flood or`.
+	it("0.14.1: a flood of stacks not from the bags into a tab that held items regroups the bank", function()
+		SB.Config.Set("bank.show", "both")
+		A.SetBagSize(12, 30)
+		openBank()
+		for slot = 3, 2 + SB.Inventory.FLOOD_MIN do
+			A.Put(12, slot, Fixtures.HERB, slot)
+		end
+		bankUpdate(12)
+		assert.equal("- New (" .. SB.Inventory.FLOOD_MIN .. ")", labels()[7])
+		A.Advance(SB.GroupView.LOADED_DELAY)
+		assert.equal("- New (0)", labels()[7])
+		assert.equal("filled", BW.view.stats.lastLayoutReason)
+	end)
+
+	-- 0.14.1 (the report): a stack that overflowed a full New ("+N more below") still counts. Mutation: in
+	-- GroupView's v.NewReasons, drop the overflowKeys loop.
+	it("0.14.1: New's contents by reason count the stacks past a full New", function()
+		SB.Config.Set("bank.columns", 1)
+		SB.Config.Set("bags.newRows", 1)
+		lateWarband()
+		bankUpdate(12)
+		assert.same({ pending = 0, undecided = 0, arrived = 2 }, BW.view.NewReasons())
+	end)
+
+	-- 0.14.1 (the report): an item whose data loaded but whose rule cannot decide yet waits in New as "undecided".
+	it("0.14.1: New's contents are reported by reason: an undecided item", function()
+		SB.Config.Set("bank.show", "both")
+		local assign = SB.Categorizer.Assign
+		SB.Categorizer.Assign = function(record)
+			if record.itemID == Fixtures.ORE then
+				return nil, "pending"
+			end
+			return assign(record)
+		end
+		openBank()
+		assert.equal("- New (1)", labels()[7])
+		assert.same({ pending = 0, undecided = 1, arrived = 0 }, BW.view.NewReasons())
+		SB.Categorizer.Assign = assign
 	end)
 
 	-- Stack grouping (0.14.0): the character and warband banks show one icon per item (bags.stacks "one").

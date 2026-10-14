@@ -253,6 +253,14 @@ L.BANK_VIEW_SECTIONS = "SwagBag bank - category view"
 L.BANK_VIEW_LIST = "SwagBag bank - list view"
 L.REPORT_BANK_LAYOUT = "Last bank layout: %.1f ms (%s)"
 L.REPORT_BANK_PHASES = "Bank layout parts: tabs %.1f ms, reading %.1f ms, categories %.1f ms, positions %.1f ms, drawing %.1f ms"
+-- 0.14.1: why New holds what it holds (a New flood in game says its cause)
+L.REPORT_NEW_BAGS = "New in the bags: %s; %s"
+L.REPORT_NEW_BANK = "New in the bank: %s; %s"
+L.REPORT_NEW_UNSEEN = "%d unseen, "
+L.REPORT_NEW_CONTENTS = "%s%d pending (no data), %d undecided (data, no rule decided), %d arrived while open"
+L.REPORT_NEW_CLOSED = "not laid out (closed or grid view)"
+L.REPORT_NEW_FAILED = "unavailable (reading it failed)"
+L.REPORT_NEW_STATS = "since login: %d loads of New items, %d regroups asked, %d refused (still no data), %d for late data"
 
 -- Guild bank window (spec F16)
 L.GUILD_TITLE = "SwagBag guild bank"

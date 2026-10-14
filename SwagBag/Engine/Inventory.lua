@@ -35,6 +35,16 @@
 -- whatever the focus mode (UI/BagsWindow.lua). Blizzard's own new-item flag is not used: SwagBag clears it
 -- when the bags close (W4-15), so it cannot carry an item to the next open.
 --   Inv.IsUnseen(bag, slot) -> bool;  Inv.Seen(bag, slot);  Inv.SeenAll() -> n (/swagbag new seen)
+-- 0.14.1, the banks' late data (the Warband bank's New flood at the first visit after a full game restart): the
+-- client can send a bank tab's contents after BANKFRAME_OPENED, so the tab reads empty at the visit's scan and fills
+-- a moment later. A bank change ({ bag, slot, reasons }) that brings a stack into a bank or warband slot gets
+-- c.late = true when the stack did not come from the bags (the bags do not hold less of that item than before the
+-- flush: a deposit always leaves them in the same update) and either its tab read empty at the visit's scan
+-- (Inv.visitEmpty, set by Inv.ScanKind(kind, true)) or the flush brings FLOOD_MIN such stacks or more. The bank
+-- window regroups for it instead of keeping those stacks in New (UI/BankWindow.lua). The bags get the same mark: a
+-- bags stack that came in during the settle, as a bag's first contents, or in a late-data flood (whatever is not an
+-- arrival only because it is the client's late data) has c.late = true, and an open bags window regroups for it
+-- (UI/BagsWindow.lua; an unseen item still stays in New). Data only: nothing is drawn here.
 local _, SB = ...
 
 local Inv = {
@@ -45,6 +55,7 @@ local Inv = {
 	newSet = {}, -- ["bag:slot"] = true for items that arrived this session
 	unseen = {}, -- ["bag:slot"] = itemID: bags items that arrived and were not hovered yet (see the header)
 	pending = {}, -- [itemID] = true while waiting for item data
+	visitEmpty = {}, -- [bag] = true: a bank tab that read empty at the bank visit's scan (0.14.1, see the header)
 	hidden = {}, -- ["bag:slot"] = "known" | "base": the slot's item ID reads secret (see the header)
 	heldEmpty = {}, -- ["bag:slot"] = true: a hidden slot read empty during the settle; its marker waits
 	settling = false, -- true during the settle (see the header)
@@ -260,6 +271,7 @@ local function markUnseen(changes, set, before)
 		local s = c.reasons == Inv.R.ITEM and set[c.bag] and Inv.GetSlot(c.bag, c.slot)
 		if s then
 			local id = s.itemID
+			c.late = not canArrive(c) or nil -- 0.14.1: the client's late data, not something the player did
 			if canArrive(c) and (after[id] or 0) > (before[id] or 0) then
 				arrivals[#arrivals + 1] = c
 			elseif (carried[id] or 0) > 0 then
@@ -274,6 +286,9 @@ local function markUnseen(changes, set, before)
 				Inv.newSet[key(c.bag, c.slot)] = nil
 			end
 		end
+		for _, c in ipairs(arrivals) do
+			c.late = true
+		end
 		return
 	end
 	for _, c in ipairs(arrivals) do
@@ -281,6 +296,26 @@ local function markUnseen(changes, set, before)
 	end
 	if Inv.settling then
 		carryNew(changes)
+	end
+end
+
+-- 0.14.1 (see the header): mark the bank stacks of this flush that are the client's late data (c.late).
+local function markLate(changes, set, before)
+	local list, after = {}, nil
+	for _, c in ipairs(changes) do
+		local s = c.reasons == Inv.R.ITEM and not set[c.bag] and Inv.GetSlot(c.bag, c.slot)
+		if s then
+			after = after or totals(set)
+			if not before or (after[s.itemID] or 0) >= (before[s.itemID] or 0) then
+				list[#list + 1] = c
+			end
+		end
+	end
+	local flood = #list >= Inv.FLOOD_MIN
+	for _, c in ipairs(list) do
+		if flood or Inv.visitEmpty[c.bag] then
+			c.late = true
+		end
 	end
 end
 
@@ -309,6 +344,7 @@ function Inv.Flush(source)
 	if before then
 		markUnseen(all, set, before)
 	end
+	markLate(all, set, before)
 	if Inv.settling and Inv.worldLoaded then
 		Inv.Quiet() -- the bags are still filling: the settle waits for them to be quiet
 	end
@@ -383,7 +419,8 @@ end
 -- Rescan every bag of a kind without marking anything "new". The character bank can only be
 -- read at a banker (spec 5.7), so what is in it at a visit is not a new arrival. visit: true
 -- at the start of a bank visit, which also forgets what was new during an earlier visit
--- (ruling W3-25); a rescan inside a visit keeps this visit's arrivals new.
+-- (ruling W3-25); a rescan inside a visit keeps this visit's arrivals new. At a visit it also notes which
+-- tabs read empty (Inv.visitEmpty, 0.14.1: the bank's late data, see the header).
 -- Inv.scanned is put back even when a scan errors; the error is raised again for the caller's
 -- trap.
 function Inv.ScanKind(kind, visit)
@@ -401,6 +438,9 @@ function Inv.ScanKind(kind, visit)
 			end
 			Inv.ScanBag(bag)
 			Inv.dirty[bag] = nil
+			if visit then -- 0.14.1: a tab that reads empty now may be filled by the client's late data
+				Inv.visitEmpty[bag] = next(Inv.slots[bag] or {}) == nil or nil
+			end
 		end
 	end)
 	Inv.scanned = was
