@@ -1176,6 +1176,21 @@ end
 
 local MONEY_POPUPS = { deposit = "BANK_MONEY_DEPOSIT", withdraw = "BANK_MONEY_WITHDRAW" }
 
+-- Whether Blizzard's popup named which is shown (false when the client cannot say).
+local function popupShown(which)
+	local visible = _G.StaticPopup_Visible or _G.StaticPopup_FindVisible
+	if not which or type(visible) ~= "function" then
+		return false
+	end
+	local ok, open = pcall(visible, which)
+	return ok and open ~= nil and open ~= false
+end
+
+-- true while Blizzard's gold popup of kind "deposit" | "withdraw" is shown.
+function A.WarbandMoneyPopupShown(kind)
+	return popupShown(MONEY_POPUPS[kind])
+end
+
 -- Open Blizzard's popup for kind "deposit" | "withdraw" with the Warband bank type, as Blizzard's own button does:
 -- the other popup hides first, and this one, already shown, hides instead (a toggle). true when the popup opened
 -- or was toggled off; false when this client has no such popup or would not show it.
@@ -1188,13 +1203,9 @@ function A.ShowWarbandMoneyPopup(kind)
 	local other = MONEY_POPUPS[kind == "deposit" and "withdraw" or "deposit"]
 	if type(hide) == "function" then
 		pcall(hide, other)
-		local visible = _G.StaticPopup_Visible or _G.StaticPopup_FindVisible
-		if type(visible) == "function" then
-			local ok, open = pcall(visible, which)
-			if ok and open then
-				pcall(hide, which)
-				return true
-			end
+		if popupShown(which) then
+			pcall(hide, which)
+			return true
 		end
 	end
 	-- a table constructor (never a write to a frame's bankType field): the popup's data, read by Blizzard's OnAccept

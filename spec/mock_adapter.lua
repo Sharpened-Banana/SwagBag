@@ -221,6 +221,10 @@ function M.New(SB)
 	-- Blizzard's popup could not open); m.goldPopups lists the kinds asked for ("deposit" | "withdraw").
 	m.gold = { copper = 1234560000, canDeposit = true, canWithdraw = true, supported = true, popupOK = true }
 	m.goldPopups = {}
+	m.goldOpen = {} -- [kind] = true: Blizzard's popup of that kind is shown
+	function m.WarbandMoneyPopupShown(kind)
+		return m.goldOpen[kind] == true
+	end
 	function m.WarbandMoney()
 		if not m.gold.supported then
 			return nil

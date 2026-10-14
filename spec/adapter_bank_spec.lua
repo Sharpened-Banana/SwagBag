@@ -129,6 +129,9 @@ describe("Adapter warband deposit (real adapter, stubbed globals)", function()
 		assert.same({ "BANK_MONEY_WITHDRAW", "BANK_MONEY_WITHDRAW", "BANK_MONEY_DEPOSIT" }, hidden)
 		assert.equal(true, A.ShowWarbandMoneyPopup("withdraw"))
 		assert.same({ "BANK_MONEY_WITHDRAW", nil, nil, 2 }, shown[2])
+		assert.equal(true, A.WarbandMoneyPopupShown("withdraw"))
+		assert.equal(false, A.WarbandMoneyPopupShown("deposit"))
+		assert.equal(false, A.WarbandMoneyPopupShown("sideways"))
 		StaticPopupDialogs.BANK_MONEY_DEPOSIT = nil
 		assert.equal(false, A.ShowWarbandMoneyPopup("deposit"), "the popup is gone from this client")
 		StaticPopupDialogs.BANK_MONEY_DEPOSIT = {}

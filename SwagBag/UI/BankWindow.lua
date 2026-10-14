@@ -456,8 +456,10 @@ function BW.FooterHeight()
 end
 
 -- The window's size from the last content size: header, items (scrolling past 75 % of the screen), footer. Only
--- the bottom edge follows the footer; the scroll area's top and the window's anchor never move.
-function BW.FitHeight()
+-- the bottom edge follows the footer; the scroll area's top and the window's anchor never move. keepOffset: the
+-- footer shrank, so the scroll area may have grown at the bottom (at the 75 % cap the window keeps its height): the
+-- offset is kept, never clamped, so no item moves under a resting mouse (P5); the next wheel turn clamps it.
+function BW.FitHeight(keepOffset)
 	if not BW.content then
 		return
 	end
@@ -466,7 +468,9 @@ function BW.FitHeight()
 	scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, footer)
 	local maxHeight = UIParent:GetHeight() * BW.MAX_HEIGHT_FRACTION / frame:GetScale()
 	frame:SetSize(math.max(width + 8, BW.MIN_WIDTH), math.min(height, maxHeight - header - footer) + header + footer)
-	clampScroll()
+	if not keepOffset then
+		clampScroll()
+	end
 end
 
 
@@ -1085,6 +1089,8 @@ goldRow.label:SetPoint("LEFT", goldRow, "LEFT", 10, 0)
 goldRow.label:SetText(L.BANK_GOLD_LABEL)
 goldRow.amount = goldRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 goldRow.amount:SetPoint("LEFT", goldRow.label, "RIGHT", 6, 0)
+goldRow.amount:SetJustifyH("LEFT")
+goldRow.amount:SetWordWrap(false)
 goldRow:Hide()
 BW.goldRow = goldRow
 if SB.Theme then
@@ -1108,6 +1114,7 @@ BW.goldWithdraw = goldButton(L.BTN_GOLD_WITHDRAW, "withdraw")
 BW.goldWithdraw:SetPoint("RIGHT", goldRow, "RIGHT", -2, 0)
 BW.goldDeposit = goldButton(L.BTN_GOLD_DEPOSIT, "deposit")
 BW.goldDeposit:SetPoint("RIGHT", BW.goldWithdraw, "LEFT", -4, 0)
+goldRow.amount:SetPoint("RIGHT", BW.goldDeposit, "LEFT", -6, 0) -- a long balance is cut short, never under the buttons
 
 -- Whether gold can move that way now (kind "deposit" | "withdraw").
 local function goldCan(kind)
@@ -1118,9 +1125,11 @@ local function goldCan(kind)
 	return canWithdraw
 end
 
--- Open Blizzard's popup for kind, or say why not. true when the popup opened (or a second click closed it).
+-- Open Blizzard's popup for kind, or say why not. true when the popup opened (or a second click closed it). A popup
+-- already shown is closed whatever the state says now (the gold may have moved since it opened).
 function BW.MoveGold(kind)
-	if not goldCan(kind) or not SB.Adapter.ShowWarbandMoneyPopup(kind) then
+	local A = SB.Adapter
+	if not (A.WarbandMoneyPopupShown(kind) or goldCan(kind)) or not A.ShowWarbandMoneyPopup(kind) then
 		BW.Flash(L.GOLD_UNAVAILABLE)
 		return false
 	end
@@ -1141,7 +1150,7 @@ function BW.RefreshGold()
 	goldRow:SetShown(show)
 	if show ~= BW.goldShown then
 		BW.goldShown = show
-		BW.FitHeight()
+		BW.FitHeight(not show)
 	end
 end
 
