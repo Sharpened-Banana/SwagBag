@@ -21,6 +21,10 @@
 --                                       or a button that would move is under the mouse (4.3)
 --   v.PendingLoaded(changes) -> bool    0.13.3: Inventory LOADED changes; regroups (debounced, held) when one is
 --                                       for an item the last full layout put in New because it was pending
+--   v.RegroupSoon(reason) -> bool       0.14.1: that regroup for any change the player did not make ("filled": the
+--                                       client's late bank contents); false while nothing is laid out
+--   v.NewReasons() -> { pending, undecided, arrived } | nil   0.14.1: what New holds now, by reason (report)
+--   v.newStats                          0.14.1: { loads, regroups, stillPending, filled } since login (report)
 --   v.Changes(groupId, list)            live changes { { bag, slot, kind, icon } }, kind
 --                                       "left" | "arrived" | "added" | "removed" (Layout.Apply)
 --   v.Restack() -> bool                 redraw after a collapse or expand (held back like a move)
@@ -110,6 +114,9 @@ function GV.New(cfg)
 	local v = { groups = {}, byId = {}, records = {}, cells = {}, placed = {}, sizes = {}, groupOf = {}, pos = nil,
 		redrawPending = false, stats = {}, tiled = {}, drawn = "sections", listFailed = false, pendingNew = {},
 		stacked = {}, -- [button] = its pos.stacks entry while it shows a stack group's total (0.14.0)
+		-- 0.14.1 (/swagbag report), since login: LOADED for an item the last full layout put in New, the regroups
+		-- asked for (v.RegroupSoon), the loads the still-pending guard refused, the late-data regroups (the window's)
+		newStats = { loads = 0, regroups = 0, stillPending = 0, filled = 0 },
 		dimmed = {} } -- [button] = what the search last set (v.SetDimmed), so a grouped icon can be relit
 	local rows = cfg.rows
 
@@ -836,33 +843,91 @@ function GV.New(cfg)
 	-- burst is one regroup), through v.RequestLayout (held like any layout, P5). A load for an item already in its
 	-- category, or one after which the item still has no data, regroups nothing. It also waits while the mouse is
 	-- over cfg.scroll (the window's item area). Returns true when a regroup was asked for.
+	-- 0.14.1: the same regroup for any change the player did not make (data loading late, the client's late bank
+	-- contents): LOADED_DELAY after the last such call (a burst is one regroup), then v.RequestLayout(reason), held
+	-- like any layout and also while the mouse is anywhere over cfg.scroll (an item could slide into the empty cell
+	-- or placeholder under it), as the guild bank and the bags do. One debounce key: "loaded" and "filled" coming
+	-- together give one layout (the last reason asked).
+	local soonReason = "loaded"
+	local function land()
+		if not v.pos then
+			return
+		end
+		if cfg.scroll and cfg.scroll:IsMouseOver() then
+			SB.Debounce(cfg.key .. ".loaded", GV.RETRY, land, window)
+			return
+		end
+		v.RequestLayout(soonReason)
+	end
+	function v.RegroupSoon(reason)
+		if not v.pos then
+			return false
+		end
+		soonReason = reason
+		v.newStats.regroups = v.newStats.regroups + 1
+		SB.Debounce(cfg.key .. ".loaded", GV.LOADED_DELAY, land, window)
+		return true
+	end
+
 	function v.PendingLoaded(changes)
 		if not v.pos then
 			return false
 		end
-		local Inv = SB.Inventory
+		local Inv, n = SB.Inventory, v.newStats
 		for _, c in ipairs(changes) do
 			local itemID = Inv.Has(c.reasons, Inv.R.LOADED) and v.pendingNew[keyOf(c.bag, c.slot)]
 			local s = itemID and Inv.GetSlot(c.bag, c.slot)
 			local record = s and v.records[keyOf(c.bag, c.slot)] -- the window refreshed it before calling
-			if s and s.itemID == itemID and record and not record.pending then
-				local function land()
-					if not v.pos then
-						return
-					end
-					-- not started by the player: also waits while the mouse is anywhere over the items (an item
-					-- could slide into the empty cell or placeholder under it), as the guild bank and the bags do
-					if cfg.scroll and cfg.scroll:IsMouseOver() then
-						SB.Debounce(cfg.key .. ".loaded", GV.RETRY, land, window)
-						return
-					end
-					v.RequestLayout("loaded")
+			if s and s.itemID == itemID and record then
+				n.loads = n.loads + 1
+				if not record.pending then
+					return v.RegroupSoon("loaded")
 				end
-				SB.Debounce(cfg.key .. ".loaded", GV.LOADED_DELAY, land, window)
-				return true
+				n.stillPending = n.stillPending + 1 -- the 0.13.3 guard: no data yet, its next load decides
 			end
 		end
 		return false
+	end
+
+	-- 0.14.1 (/swagbag report): what each group's New holds now, by why it is there:
+	--   pending   the item's data has not loaded;  undecided  loaded, but a rule cannot decide yet;
+	--   arrived   it would join a category: a live change put it there (a deposit, or anything else that came while
+	--             the window was open), until the next full layout.
+	-- Returns { pending, undecided, arrived } (counts), or nil while nothing is laid out.
+	function v.NewReasons()
+		if not v.pos then
+			return nil
+		end
+		local out = { pending = 0, undecided = 0, arrived = 0 }
+		local NEW = SB.Layout.NEW
+		for _, g in ipairs(v.groups) do
+			local st = g.state
+			if st then
+				local keys = {}
+				for k, w in pairs(st.where) do
+					if w.section == NEW then
+						keys[k] = true
+					end
+				end
+				local new = st.sections[NEW]
+				for k in pairs(new and new.overflowKeys or {}) do
+					keys[k] = true
+				end
+				for k in pairs(keys) do
+					local r = v.records[k]
+					if r then
+						if r.pending then
+							out.pending = out.pending + 1
+						elseif SB.Categorizer.Assign(r) == nil then
+							out.undecided = out.undecided + 1
+						else
+							out.arrived = out.arrived + 1
+						end
+					end
+				end
+			end
+		end
+		return out
 	end
 
 	---------------------------------------------------------------------------

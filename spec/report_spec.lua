@@ -109,6 +109,29 @@ describe("Report", function()
 			.. " positions 6.1 ms, drawing 2.0 ms", 1, true))
 	end)
 
+	-- 0.14.1: why New holds what it holds in the bags and the bank, and the regroup counters since login, so a New
+	-- flood in game says its cause. Mutation: drop the REPORT_NEW_BAGS line; or the REPORT_NEW_BANK line.
+	it("shows New's contents by reason and the regroup counters, for the bags and the bank", function()
+		SB.Checks.last = {}
+		SB.BagsWindow = { stats = {}, newStats = { loads = 12, regroups = 3, stillPending = 1, filled = 2 },
+			NewReasons = function() return { unseen = 4, pending = 5, undecided = 6, arrived = 7 } end }
+		SB.BankWindow = { Mode = function() return "tiny" end, Show = function() return "one" end,
+			GroupName = function() return "Bank" end,
+			view = { stats = {}, newStats = { loads = 219, regroups = 1, stillPending = 0, filled = 0 },
+				NewReasons = function() return nil end } }
+		local text = SB.Report.Build()
+		assert.truthy(text:find("\nNew in the bags: 4 unseen, 5 pending (no data), 6 undecided (data, no rule decided),"
+			.. " 7 arrived while open; since login: 12 loads of New items, 3 regroups asked, 1 refused (still no data),"
+			.. " 2 for late data", 1, true), text)
+		assert.truthy(text:find("\nNew in the bank: not laid out (closed or grid view); since login: 219 loads of New items,"
+			.. " 1 regroups asked, 0 refused (still no data), 0 for late data", 1, true), text)
+		SB.BankWindow.view.NewReasons = function() return { pending = 1, undecided = 0, arrived = 190 } end
+		assert.truthy(SB.Report.Build():find("\nNew in the bank: 1 pending (no data), 0 undecided (data, no rule decided),"
+			.. " 190 arrived while open;", 1, true))
+		SB.BankWindow.view.NewReasons = function() error("boom") end -- a failure here must not blank the report
+		assert.truthy(SB.Report.Build():find("\nNew in the bank: unavailable (reading it failed);", 1, true))
+	end)
+
 	it("shows the guild bank setting and the last visit (check G1)", function()
 		SB.Checks.last = {}
 		SB.GuildBankWindow = { Mode = function() return "full" end, lastVisit = "view" }

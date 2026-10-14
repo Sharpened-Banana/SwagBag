@@ -27,6 +27,9 @@ local W = {
 	order = nil, -- sections view: the section order W.pos was built with (what is drawn, W4-1)
 	drawn = "sections", -- the view the current layout was drawn in (the setting may change before a held layout)
 	pendingNew = {}, -- [Layout.Key(bag, slot)] = itemID: put in New at the last full layout because it could not be categorised yet (0.13.3)
+	-- 0.14.1 (/swagbag report), since login: LOADED for an item the last full layout put in New, the regroups asked
+	-- for (W.RegroupSoon), the loads the still-pending guard refused, the late-data regroups
+	newStats = { loads = 0, regroups = 0, stillPending = 0, filled = 0 },
 	areaHeld = false, -- a world-started re-stack is waiting for the mouse to leave the items (W4-13)
 	placed = {}, -- [button] = "x,y" of its last SetPoint, so unchanged buttons are not touched
 	tiled = {}, -- [button] = its tile entry ({ bag, slot, ... }) while it shows a free tile's number (plan D19)
@@ -1590,23 +1593,74 @@ end
 -- category, a failed load (Inventory notifies nothing), or a load after which the item still has no data,
 -- regroups nothing. An item still pending at that layout
 -- waits for its next load: one regroup per burst, never a loop.
+-- 0.14.1: the same regroup for any change the player did not make ("filled": the client's late data, Inventory's
+-- c.late). One debounce key: "loaded" and "filled" together give one layout (the last reason asked).
+function W.RegroupSoon(reason)
+	if not W.state then
+		return false
+	end
+	W.newStats.regroups = W.newStats.regroups + 1
+	SB.Debounce("bags.loaded", W.LOADED_DELAY, function()
+		W.RequestLayout(reason)
+	end, "bags")
+	return true
+end
+
 function W.PendingLoaded(changes)
 	if not W.state then
 		return false
 	end
-	local Inv = SB.Inventory
+	local Inv, n = SB.Inventory, W.newStats
 	for _, c in ipairs(changes) do
 		local itemID = Inv.Has(c.reasons, Inv.R.LOADED) and W.pendingNew[SB.Layout.Key(c.bag, c.slot)]
 		local s = itemID and Inv.GetSlot(c.bag, c.slot)
 		local record = s and W.records[c.bag] and W.records[c.bag][c.slot] -- refreshed above in the same handler
-		if s and s.itemID == itemID and not Inv.IsUnseen(c.bag, c.slot) and record and not record.pending then
-			SB.Debounce("bags.loaded", W.LOADED_DELAY, function()
-				W.RequestLayout("loaded")
-			end, "bags")
-			return true
+		if s and s.itemID == itemID and not Inv.IsUnseen(c.bag, c.slot) and record then
+			n.loads = n.loads + 1
+			if not record.pending then
+				return W.RegroupSoon("loaded")
+			end
+			n.stillPending = n.stillPending + 1 -- the 0.13.3 guard: no data yet, its next load decides
 		end
 	end
 	return false
+end
+
+-- 0.14.1 (/swagbag report): what New holds now, by why it is there: unseen (came into the bags, not hovered yet),
+-- pending (no data yet), undecided (loaded, but a rule cannot decide yet), arrived (it would join a category: a live
+-- change put it there while the window was open, until the next full layout). nil while no sections are laid out.
+function W.NewReasons()
+	if not W.state then
+		return nil
+	end
+	local NEW, Inv = SB.Layout.NEW, SB.Inventory
+	local out = { unseen = 0, pending = 0, undecided = 0, arrived = 0 }
+	local keys = {}
+	for k, w in pairs(W.state.where) do
+		if w.section == NEW then
+			keys[k] = true
+		end
+	end
+	local new = W.state.sections[NEW]
+	for k in pairs(new and new.overflowKeys or {}) do
+		keys[k] = true
+	end
+	for k in pairs(keys) do
+		local bag, slot = math.floor(k / 1000), k % 1000
+		local r = W.records[bag] and W.records[bag][slot]
+		if r then
+			if Inv.IsUnseen(bag, slot) then
+				out.unseen = out.unseen + 1
+			elseif r.pending then
+				out.pending = out.pending + 1
+			elseif SB.Categorizer.Assign(r) == nil then
+				out.undecided = out.undecided + 1
+			else
+				out.arrived = out.arrived + 1
+			end
+		end
+	end
+	return out
 end
 
 -- Slots added or removed since the last layout (a bag was equipped or taken off).
@@ -1704,6 +1758,15 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 	end
 	if Inv.Has(mask, Inv.R.LOADED) then
 		W.PendingLoaded(changes)
+	end
+	-- 0.14.1: the client's late data (Inventory's c.late: a loading screen's refill, a bag's first contents, a late
+	-- flood) went to New with the live change below; the bags regroup for it (unseen items stay in New)
+	for _, c in ipairs(changes) do
+		if c.late and B.KindOf(c.bag) == "bags" and W.state then
+			W.newStats.filled = W.newStats.filled + 1
+			W.RegroupSoon("filled")
+			break
+		end
 	end
 	local applied
 	if W.state and (#moves > 0 or #W.state.deferred > 0) then

@@ -954,7 +954,8 @@ end
 -- Live updates while open (spec 4.3), for the bank tabs only: count, lock and loaded data
 -- repaint in place (0.13.3: loaded data for an item waiting in New because it was pending regroups the bank,
 -- debounced and held, GroupView's v.PendingLoaded); an emptied slot or a different item goes to GroupView.Changes; a tab
--- that appears or changes size lays the bank out again (held back like any full layout).
+-- that appears or changes size lays the bank out again (held back like any full layout). 0.14.1: the client's late
+-- contents (Inventory's c.late) regroup the bank the same way ("filled").
 local BANK_REASONS
 SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 	if not (frame:IsShown() and BW.view.IsOpen()) then
@@ -1023,6 +1024,16 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 	for _, gid in ipairs({ "bank", "warband" }) do
 		if byGroup[gid] then
 			v.Changes(gid, byGroup[gid])
+		end
+	end
+	-- 0.14.1: the client's late contents (a tab that read empty at the visit's start fills without the bags losing
+	-- anything; Inventory's c.late) went to New with the live change above, like a deposit; they were in the bank
+	-- all along, so the bank regroups (debounced, held like the "loaded" regroup) and they join their categories.
+	for _, c in ipairs(changes) do
+		if c.late and v.GroupOf(c.bag) then
+			v.newStats.filled = v.newStats.filled + 1
+			v.RegroupSoon("filled")
+			break
 		end
 	end
 	if touched then

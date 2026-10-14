@@ -141,6 +141,20 @@ function Report.Build()
 			end
 		end
 	end
+	-- 0.14.1: New's contents by reason, and the regroup counters since login (UI/BagsWindow.lua, UI/GroupView.lua)
+	local function newLine(format, owner)
+		if not (owner and owner.NewReasons and owner.newStats) then
+			return
+		end
+		local ok, r = pcall(owner.NewReasons) -- a failure here must not blank the report
+		local contents = not ok and L.REPORT_NEW_FAILED or (r == nil and L.REPORT_NEW_CLOSED
+			or L.REPORT_NEW_CONTENTS:format(r.unseen and L.REPORT_NEW_UNSEEN:format(r.unseen) or "", r.pending,
+				r.undecided, r.arrived))
+		local n = owner.newStats
+		lines[#lines + 1] = format:format(contents, L.REPORT_NEW_STATS:format(n.loads, n.regroups, n.stillPending, n.filled))
+	end
+	newLine(L.REPORT_NEW_BAGS, SB.BagsWindow)
+	newLine(L.REPORT_NEW_BANK, bank and bank.view)
 	if SB.Prices then
 		local source = (SB.Prices.SourceText or SB.Prices.Source)() -- week 9: TSM names its price string
 		lines[#lines + 1] = L.REPORT_PRICES:format(tostring(source or L.REPORT_NONE), SB.Prices.cached)
