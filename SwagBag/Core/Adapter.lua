@@ -1133,6 +1133,76 @@ function A.SetDepositReagents(on)
 end
 
 ---------------------------------------------------------------------------
+-- Warband gold (0.14.2). SwagBag shows the Warband bank's gold and opens Blizzard's own "BANK_MONEY_DEPOSIT" /
+-- "BANK_MONEY_WITHDRAW" popups, as Blizzard's bank buttons do (and ElvUI, BetterBags, Baganator): Blizzard's
+-- OnAccept reads the typed amount and makes the call. SwagBag never calls C_Bank.DepositMoney or WithdrawMoney itself.
+-- Only the Warband (Account) bank type is ever asked: the character bank holds no gold since 11.2.
+---------------------------------------------------------------------------
+-- A yes/no question to C_Bank about the Warband bank: true only for a plain true (missing, failing or secret: false).
+local function warbandAsk(name, account)
+	local fn = C_Bank and C_Bank[name]
+	if type(fn) ~= "function" then
+		return false
+	end
+	local ok, yes = pcall(fn, account)
+	return ok and not isSecret(yes) and yes == true
+end
+
+-- canDeposit, canWithdraw, supported: whether the Warband bank moves gold at all (supported) and each way now.
+function A.WarbandMoneyState()
+	local account = warbandType()
+	if account == nil or not warbandAsk("DoesBankTypeSupportMoneyTransfer", account) then
+		return false, false, false
+	end
+	return warbandAsk("CanDepositMoney", account), warbandAsk("CanWithdrawMoney", account), true
+end
+
+-- The Warband bank's gold in copper, or nil when it holds none it can move, or the client cannot say (missing,
+-- failing or secret).
+function A.WarbandMoney()
+	local account = warbandType()
+	if account == nil or not (C_Bank and C_Bank.FetchDepositedMoney) then
+		return nil
+	end
+	if not warbandAsk("DoesBankTypeSupportMoneyTransfer", account) then
+		return nil
+	end
+	local ok, copper = pcall(C_Bank.FetchDepositedMoney, account)
+	if not ok or type(copper) ~= "number" or isSecret(copper) then
+		return nil
+	end
+	return copper
+end
+
+local MONEY_POPUPS = { deposit = "BANK_MONEY_DEPOSIT", withdraw = "BANK_MONEY_WITHDRAW" }
+
+-- Open Blizzard's popup for kind "deposit" | "withdraw" with the Warband bank type, as Blizzard's own button does:
+-- the other popup hides first, and this one, already shown, hides instead (a toggle). true when the popup opened
+-- or was toggled off; false when this client has no such popup or would not show it.
+function A.ShowWarbandMoneyPopup(kind)
+	local which, account = MONEY_POPUPS[kind], warbandType()
+	local show, hide, dialogs = _G.StaticPopup_Show, _G.StaticPopup_Hide, _G.StaticPopupDialogs
+	if not which or account == nil or type(show) ~= "function" or type(dialogs) ~= "table" or dialogs[which] == nil then
+		return false
+	end
+	local other = MONEY_POPUPS[kind == "deposit" and "withdraw" or "deposit"]
+	if type(hide) == "function" then
+		pcall(hide, other)
+		local visible = _G.StaticPopup_Visible or _G.StaticPopup_FindVisible
+		if type(visible) == "function" then
+			local ok, open = pcall(visible, which)
+			if ok and open then
+				pcall(hide, which)
+				return true
+			end
+		end
+	end
+	-- a table constructor (never a write to a frame's bankType field): the popup's data, read by Blizzard's OnAccept
+	local ok, dialog = pcall(show, which, nil, nil, { bankType = account })
+	return ok and dialog ~= nil
+end
+
+---------------------------------------------------------------------------
 -- Guild bank (week 3, spec F16). Blizzard's guild bank functions are plain globals; the
 -- guild bank UI (GuildBankFrame) is load-on-demand, so nothing here may assume it exists.
 -- SwagBag never selects a guild bank tab: Blizzard's own tab buttons do (spec AC16.7).
@@ -1883,6 +1953,13 @@ A.CHECKS = {
 	{ path = "C_Item.DoesItemExist", window = "bank", required = false },
 	{ path = "C_CVar.GetCVarBool", window = "bank", required = false },
 	{ path = "C_CVar.SetCVar", window = "bank", required = false },
+	{ path = "C_Bank.FetchDepositedMoney", window = "bank", required = false },
+	{ path = "C_Bank.DoesBankTypeSupportMoneyTransfer", window = "bank", required = false },
+	{ path = "C_Bank.CanDepositMoney", window = "bank", required = false },
+	{ path = "C_Bank.CanWithdrawMoney", window = "bank", required = false },
+	{ path = "StaticPopup_Show", window = "bank", required = false },
+	{ path = "StaticPopupDialogs.BANK_MONEY_DEPOSIT", window = "bank", required = false },
+	{ path = "StaticPopupDialogs.BANK_MONEY_WITHDRAW", window = "bank", required = false },
 	{ path = "Enum.ItemClass", window = "bags", required = false },
 	{ path = "Enum.ItemBind", window = "bags", required = false },
 	{ path = "Enum.AddOnRestrictionType", window = "bags", required = false },

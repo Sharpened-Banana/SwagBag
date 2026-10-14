@@ -172,6 +172,11 @@ local function bankRows()
 				return run("bank " .. v)
 			end },
 		onOff(L.SET_BANK_COLORS, "bank.groupColors", "bank colors"),
+		{ kind = "choice", label = L.SET_BANK_GOLD, get = get("bank.gold"),
+			choices = { { value = true, text = L.SET_SHOW }, { value = false, text = L.SET_HIDE } },
+			apply = function(v)
+				return run("bank gold " .. (v and "on" or "off"))
+			end },
 		{ kind = "choice", label = L.SET_GUILD_MODE, get = get("guildBank.mode"),
 			choices = { { value = "full", text = L.SET_GUILD_FULL }, { value = "view", text = L.SET_GUILD_VIEW } },
 			apply = function(v)

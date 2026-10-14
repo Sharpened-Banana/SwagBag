@@ -42,7 +42,8 @@ Config.Defaults = {
 		-- view: "sections" | "grid"; columns: slots per row in the bank window.
 		-- show (week 13): "one" (the bank Blizzard's selected tab deposits into is open, the other folds to one
 		-- line) | "both" (both open; the saved group folds decide).
-		bank = { blizzardFrame = "tiny", show = "one", groupColors = true, view = "sections", columns = 14 },
+		-- gold (0.14.2): the Warband gold row (balance, Deposit, Withdraw) under the bank window's items.
+		bank = { blizzardFrame = "tiny", show = "one", groupColors = true, view = "sections", columns = 14, gold = true },
 		-- mode: "full" (SwagBag's window replaces Blizzard's; spec F16) | "view" (read-only window
 		-- with Blizzard's frame beside it; the fallback if check G1 fails). withdrawAnyTab: a
 		-- right-click withdraws from any tab (false: only from the tab Blizzard has selected).

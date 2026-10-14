@@ -1,4 +1,5 @@
--- luacheck: globals C_Bank C_Item C_CVar Enum ItemLocation issecretvalue
+-- luacheck: globals C_Bank C_Item C_CVar Enum ItemLocation issecretvalue StaticPopup_Show StaticPopup_Hide
+-- luacheck: globals StaticPopup_Visible StaticPopupDialogs
 -- The REAL Adapter's warband deposit helpers (week 6, user request 3), with stubbed game globals.
 describe("Adapter warband deposit (real adapter, stubbed globals)", function()
 	local A
@@ -11,6 +12,7 @@ describe("Adapter warband deposit (real adapter, stubbed globals)", function()
 
 	after_each(function()
 		C_Bank, C_Item, C_CVar, Enum, ItemLocation, issecretvalue = nil, nil, nil, nil, nil, nil
+		StaticPopup_Show, StaticPopup_Hide, StaticPopup_Visible, StaticPopupDialogs = nil, nil, nil, nil
 	end)
 
 	-- Mutation: pass Enum.BankType.Character (or Blizzard's selected type) to the game call.
@@ -71,5 +73,71 @@ describe("Adapter warband deposit (real adapter, stubbed globals)", function()
 		assert.equal(true, A.DepositReagents())
 		assert.truthy(A.SetDepositReagents(false))
 		assert.equal("0", cvar)
+	end)
+	-- 0.14.2 Warband gold. Mutation: ask Enum.BankType.Character, or return a secret amount.
+	it("WarbandMoney reads the Warband bank's gold; nil when unsupported, failing or secret", function()
+		assert.is_nil(A.WarbandMoney(), "no API")
+		local asked, supported = {}, true
+		C_Bank = { FetchDepositedMoney = function(t) asked[#asked + 1] = t return 50000 end,
+			DoesBankTypeSupportMoneyTransfer = function() return supported end }
+		assert.equal(50000, A.WarbandMoney())
+		assert.same({ 2 }, asked)
+		supported = false
+		assert.is_nil(A.WarbandMoney(), "unsupported")
+		supported = true
+		C_Bank.FetchDepositedMoney = function() error("boom") end
+		assert.is_nil(A.WarbandMoney())
+		C_Bank.FetchDepositedMoney = function() return 7 end
+		issecretvalue = function(v) return v == 7 end
+		assert.is_nil(A.WarbandMoney(), "secret")
+	end)
+
+	-- Mutation: drop a pcall (an error escapes), or report supported without DoesBankTypeSupportMoneyTransfer.
+	it("WarbandMoneyState: can deposit, can withdraw, supported; each answer guarded", function()
+		assert.same({ false, false, false }, { A.WarbandMoneyState() }, "no API")
+		local asked = {}
+		C_Bank = { DoesBankTypeSupportMoneyTransfer = function(t) asked[#asked + 1] = t return true end,
+			CanDepositMoney = function(t) asked[#asked + 1] = t return true end,
+			CanWithdrawMoney = function(t) asked[#asked + 1] = t return false end }
+		assert.same({ true, false, true }, { A.WarbandMoneyState() })
+		assert.same({ 2, 2, 2 }, asked)
+		C_Bank.CanWithdrawMoney = function() error("boom") end
+		C_Bank.CanDepositMoney = nil
+		assert.same({ false, false, true }, { A.WarbandMoneyState() })
+		C_Bank.DoesBankTypeSupportMoneyTransfer = function() error("boom") end
+		assert.same({ false, false, false }, { A.WarbandMoneyState() })
+	end)
+
+	-- Mutation: skip hiding the other popup, drop the toggle, or pass the Character bank type.
+	it("ShowWarbandMoneyPopup opens Blizzard's popup for the Warband bank, as Blizzard's buttons do", function()
+		assert.equal(false, A.ShowWarbandMoneyPopup("deposit"), "no popup API")
+		local shown, hidden, visible = {}, {}, {}
+		StaticPopupDialogs = { BANK_MONEY_DEPOSIT = {}, BANK_MONEY_WITHDRAW = {} }
+		StaticPopup_Show = function(which, a, b, data)
+			shown[#shown + 1] = { which, a, b, data.bankType }
+			visible[which] = true
+			return {}
+		end
+		StaticPopup_Hide = function(which) hidden[#hidden + 1] = which visible[which] = nil end
+		StaticPopup_Visible = function(which) return visible[which] and {} or nil end
+		assert.equal(false, A.ShowWarbandMoneyPopup("sideways"))
+		assert.equal(true, A.ShowWarbandMoneyPopup("deposit"))
+		assert.same({ { "BANK_MONEY_DEPOSIT", nil, nil, 2 } }, shown)
+		assert.same({ "BANK_MONEY_WITHDRAW" }, hidden, "the other one is hidden first")
+		assert.equal(true, A.ShowWarbandMoneyPopup("deposit"), "a second click hides it")
+		assert.equal(1, #shown)
+		assert.same({ "BANK_MONEY_WITHDRAW", "BANK_MONEY_WITHDRAW", "BANK_MONEY_DEPOSIT" }, hidden)
+		assert.equal(true, A.ShowWarbandMoneyPopup("withdraw"))
+		assert.same({ "BANK_MONEY_WITHDRAW", nil, nil, 2 }, shown[2])
+		StaticPopupDialogs.BANK_MONEY_DEPOSIT = nil
+		assert.equal(false, A.ShowWarbandMoneyPopup("deposit"), "the popup is gone from this client")
+		StaticPopupDialogs.BANK_MONEY_DEPOSIT = {}
+		visible = {}
+		StaticPopup_Show = function() return nil end
+		assert.equal(false, A.ShowWarbandMoneyPopup("deposit"), "the client refused to show it")
+		StaticPopup_Show = function() error("boom") end
+		assert.equal(false, A.ShowWarbandMoneyPopup("deposit"))
+		Enum = nil
+		assert.equal(false, A.ShowWarbandMoneyPopup("deposit"))
 	end)
 end)
