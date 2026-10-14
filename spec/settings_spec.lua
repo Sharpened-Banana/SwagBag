@@ -61,18 +61,27 @@ describe("Settings window", function()
 		Fake.Fire(button(text), "OnClick")
 	end
 
-	-- The n-th shown button with this text (several rows offer Show and Hide).
-	local function nth(text, n)
-		for i = 1, SW.used.buttons do
-			local b = SW.buttons[i]
-			if b.text == text then
-				n = n - 1
-				if n == 0 then
-					return b
-				end
+	-- The button with this text in the row labelled rowLabel (several rows offer Show and Hide): the label sits on its
+	-- row's line or the line above, so it is the nearest such button at or below the label.
+	local function inRow(rowLabel, text)
+		local function y(region)
+			return region.points[#region.points][5]
+		end
+		local labelY
+		for i = 1, SW.used.labels do
+			if SW.labels[i].text == rowLabel then
+				labelY = y(SW.labels[i])
 			end
 		end
-		error("no button " .. text)
+		assert(labelY, "no row " .. rowLabel)
+		local best
+		for i = 1, SW.used.buttons do
+			local b = SW.buttons[i]
+			if b.text == text and y(b) <= labelY and (best == nil or y(b) > y(best)) then
+				best = b
+			end
+		end
+		return assert(best, "no button " .. text .. " in " .. rowLabel)
 	end
 
 	it("a bare /swagbag opens the settings at the first page (spec 10.5)", function()
@@ -166,7 +175,7 @@ describe("Settings window", function()
 		click("Shown beside")
 		click("View only")
 		click("Any tab")
-		Fake.Fire(nth("Hide", 2), "OnClick") -- the first Hide is Warband gold's (0.14.2)
+		Fake.Fire(inRow(SB.L.SET_TOTALS, "Hide"), "OnClick")
 		assert.same({ "bank beside", "guild view", "guild anytab on" }, ran)
 		assert.equal(false, SB.Config.Get("prices.headerTotals"))
 		assert.equal(1, refreshed)
@@ -198,9 +207,9 @@ describe("Settings window", function()
 		end
 		assert.truthy(found, "the row is labelled")
 		assert.equal("Warband gold in SwagBag's bank", L.SET_BANK_GOLD)
-		assert.truthy(SW.selected[nth(L.SET_SHOW, 1)] == true, "Show is the default")
-		Fake.Fire(nth(L.SET_HIDE, 1), "OnClick")
-		Fake.Fire(nth(L.SET_SHOW, 1), "OnClick")
+		assert.truthy(SW.selected[inRow(L.SET_BANK_GOLD, L.SET_SHOW)] == true, "Show is the default")
+		Fake.Fire(inRow(L.SET_BANK_GOLD, L.SET_HIDE), "OnClick")
+		Fake.Fire(inRow(L.SET_BANK_GOLD, L.SET_SHOW), "OnClick")
 		assert.same({ "bank gold off", "bank gold on" }, ran)
 	end)
 

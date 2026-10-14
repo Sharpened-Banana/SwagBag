@@ -136,6 +136,41 @@ describe("Warband gold in the bank window (0.14.2)", function()
 		assert.equal(L.GOLD_UNAVAILABLE, BW.frame.title.text)
 	end)
 
+	-- Review fix 2. Mutation: test goldCan before the popup's shown state in BW.MoveGold.
+	it("a click on a button whose popup is open closes it, whatever the state says", function()
+		openBank()
+		A.gold.canWithdraw = false
+		A.goldOpen.withdraw = true
+		assert.equal(true, BW.MoveGold("withdraw"))
+		assert.same({ "withdraw" }, A.goldPopups, "the toggle closes it")
+		assert.equal(L.BANK_TITLE, BW.frame.title.text, "no refusal")
+	end)
+
+	-- Review fix 3. Mutation: drop the amount's RIGHT anchor or its SetWordWrap(false).
+	it("the balance ends left of Deposit on one line", function()
+		assert.same({ "RIGHT", BW.goldDeposit, "LEFT", -6, 0 }, lastPoint(BW.goldRow.amount, "RIGHT"))
+		assert.same({ false }, BW.goldRow.amount.calls.SetWordWrap)
+	end)
+
+	-- Review fix 1 (P5). Mutation: clamp the scroll offset when the footer shrinks.
+	it("at the height cap, scrolled to the bottom, hiding the row moves no item", function()
+		UIParent.h = 200 -- a small screen: the window is at its 75 % cap
+		BW.frame.SetSize = function(self, w, h) -- the scroll area follows the window, as in the client
+			self.w, self.h = w, h
+			BW.scroll.h = h - BW.HeaderHeight() - BW.FooterHeight()
+		end
+		openBank()
+		assert.truthy(BW.child.h > BW.scroll.h, "the items scroll")
+		local h0 = BW.frame.h
+		local bottom = BW.child.h - BW.scroll.h
+		BW.scroll:SetVerticalScroll(bottom)
+		SB.Slash.Run("bank gold off")
+		assert.equal(h0, BW.frame.h, "capped: the window keeps its height")
+		assert.equal(bottom, BW.scroll.vscroll, "the items stay where they were on screen")
+		SB.Slash.Run("bank gold on")
+		assert.equal(bottom, BW.scroll.vscroll, "a growing footer keeps the offset too")
+	end)
+
 	-- Mutation: add an InCombat refusal to BW.MoveGold.
 	it("gold moves in combat too (Blizzard's popup, plain frames)", function()
 		openBank()
@@ -176,7 +211,7 @@ describe("Warband gold in the bank window (0.14.2)", function()
 		assert.equal(L.GOLD_UNAVAILABLE, BW.frame.title.text)
 	end)
 
-	-- Mutation: ignore bank.gold in BW.GoldShown.
+	-- Mutation: ignore bank.gold in BW.RefreshGold.
 	it("bank.gold off hides the row; /swagbag bank gold on|off sets it", function()
 		openBank()
 		assert.equal(true, SB.Config.Get("bank.gold"))
