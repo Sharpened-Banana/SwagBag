@@ -61,6 +61,20 @@ describe("Settings window", function()
 		Fake.Fire(button(text), "OnClick")
 	end
 
+	-- The n-th shown button with this text (several rows offer Show and Hide).
+	local function nth(text, n)
+		for i = 1, SW.used.buttons do
+			local b = SW.buttons[i]
+			if b.text == text then
+				n = n - 1
+				if n == 0 then
+					return b
+				end
+			end
+		end
+		error("no button " .. text)
+	end
+
 	it("a bare /swagbag opens the settings at the first page (spec 10.5)", function()
 		SW.frame:Hide()
 		SB.Slash.Dispatch("")
@@ -152,7 +166,7 @@ describe("Settings window", function()
 		click("Shown beside")
 		click("View only")
 		click("Any tab")
-		click("Hide")
+		Fake.Fire(nth("Hide", 2), "OnClick") -- the first Hide is Warband gold's (0.14.2)
 		assert.same({ "bank beside", "guild view", "guild anytab on" }, ran)
 		assert.equal(false, SB.Config.Get("prices.headerTotals"))
 		assert.equal(1, refreshed)
@@ -172,6 +186,22 @@ describe("Settings window", function()
 		click(L.SET_BANK_SHOW_ONE)
 		assert.same({ "bank both", "bank one" }, ran)
 		assert.equal("ran bank one", SW.lastStatus)
+	end)
+
+	-- 0.14.2. Mutation: delete the Warband gold row from bankRows, or run "bank gold" with the wrong word.
+	it("Settings > Bank & guild has Warband gold, Show first", function()
+		local L = SB.L
+		SW.Show("bank")
+		local found = false
+		for i = 1, SW.used.labels do
+			found = found or SW.labels[i].text == L.SET_BANK_GOLD
+		end
+		assert.truthy(found, "the row is labelled")
+		assert.equal("Warband gold in SwagBag's bank", L.SET_BANK_GOLD)
+		assert.truthy(SW.selected[nth(L.SET_SHOW, 1)] == true, "Show is the default")
+		Fake.Fire(nth(L.SET_HIDE, 1), "OnClick")
+		Fake.Fire(nth(L.SET_SHOW, 1), "OnClick")
+		assert.same({ "bank gold off", "bank gold on" }, ran)
 	end)
 
 	-- Ruling W4-15. Mutation: delete the New row from bagsRows in SettingsPages.lua.

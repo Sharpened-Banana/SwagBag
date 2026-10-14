@@ -217,6 +217,29 @@ function M.New(SB)
 		return true
 	end
 
+	-- Warband gold (0.14.2): m.gold.copper (nil: unknown), .canDeposit, .canWithdraw, .supported, .popupOK (false:
+	-- Blizzard's popup could not open); m.goldPopups lists the kinds asked for ("deposit" | "withdraw").
+	m.gold = { copper = 1234560000, canDeposit = true, canWithdraw = true, supported = true, popupOK = true }
+	m.goldPopups = {}
+	function m.WarbandMoney()
+		if not m.gold.supported then
+			return nil
+		end
+		return m.gold.copper
+	end
+
+	function m.WarbandMoneyState()
+		if not m.gold.supported then
+			return false, false, false
+		end
+		return m.gold.canDeposit == true, m.gold.canWithdraw == true, true
+	end
+
+	function m.ShowWarbandMoneyPopup(kind)
+		m.goldPopups[#m.goldPopups + 1] = kind
+		return m.gold.popupOK ~= false
+	end
+
 	-- Guild bank: m.guild.tabs = { { tab, name, viewable, canDeposit, withdrawals } },
 	-- m.guild.slots[tab][slot] = { itemID, count, link?, isLocked? }; calls are recorded.
 	m.guild = { tabs = {}, slots = {}, current = 1, key = "Tidewatch-Argent Dawn", queried = {}, withdrawn = {},

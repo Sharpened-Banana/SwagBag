@@ -8,7 +8,7 @@
 --                     SwagBag's window sits to its right (spec 5.4; also forced for a visit that
 --                     starts in combat)
 -- The "..." menu's Show/Hide Blizzard's bank entry switches between the two for this visit only (tab
--- purchase and warband gold live in Blizzard's frame). /swagbag bank hidden|shown sets the setting
+-- purchase lives in Blizzard's frame). /swagbag bank hidden|shown sets the setting
 -- (tiny and beside still work as aliases).
 -- Layout (week 13), top to bottom: the title row (Sort and "...", then the close X); the search
 -- row; the deposit bar, which says "Right-click deposits to:" followed by Blizzard's tabs (without
@@ -33,6 +33,8 @@
 -- "Deposit warbound" (week 6, user request 3) sits on the Warband group's header and in the "..."
 -- menu. It runs the game's own warband deposit through the Adapter, beside a "With reagents" box
 -- that is Blizzard's own include-reagents choice; both hide when the window is too narrow.
+-- Warband gold (0.14.2): a slim footer row under the items says the Warband bank's gold and has Deposit and
+-- Withdraw, which open Blizzard's own popups (Adapter.ShowWarbandMoneyPopup); the "..." menu has the same two.
 local _, SB = ...
 
 local L = SB.L
@@ -53,7 +55,9 @@ local BW = {
 	MIN_WIDTH = 440, -- the window is never narrower: the bar's words and the tabs need the room
 	COLUMNS_H = 18, -- the list's column bar under the deposit line (week 8), shown while a list is drawn
 	scaleWarned = false, -- the list's F6 fallback was said this opening
-	FOOTER = 6,
+	FOOTER = 6, -- padding under the items
+	GOLD_FOOTER = 26, -- the footer while the Warband gold row shows (0.14.2)
+	goldShown = false, -- the gold row shows now (the footer is GOLD_FOOTER)
 	MAX_HEIGHT_FRACTION = 0.75,
 	SORT_SETTLE = 0.3,
 	SORT_TIMEOUT = 1.5,
@@ -314,6 +318,7 @@ function BW.ApplyMode()
 	end
 	BW.lastVisit = BW.VisitMode()
 	BW.RefreshTarget()
+	BW.RefreshGold()
 end
 
 -- The "..." menu's Show/Hide Blizzard's bank entry (UI/BankMenu.lua): show or hide Blizzard's bank for this visit. The window jumps
@@ -441,8 +446,26 @@ local function sizeFrame(width, height)
 	if BW.view and warbandDrawn() and BW.DepositControlsShown() ~= insetDrawn then
 		BW.view.Relabel()
 	end
+	BW.content = { width, height }
+	BW.FitHeight()
+end
+
+-- The footer: room for the Warband gold row while it shows (0.14.2), else padding only.
+function BW.FooterHeight()
+	return BW.goldShown and BW.GOLD_FOOTER or BW.FOOTER
+end
+
+-- The window's size from the last content size: header, items (scrolling past 75 % of the screen), footer. Only
+-- the bottom edge follows the footer; the scroll area's top and the window's anchor never move.
+function BW.FitHeight()
+	if not BW.content then
+		return
+	end
+	local width, height = BW.content[1], BW.content[2]
+	local header, footer = BW.HeaderHeight(), BW.FooterHeight()
+	scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, footer)
 	local maxHeight = UIParent:GetHeight() * BW.MAX_HEIGHT_FRACTION / frame:GetScale()
-	frame:SetSize(math.max(width + 8, BW.MIN_WIDTH), math.min(height, maxHeight - header - BW.FOOTER) + header + BW.FOOTER)
+	frame:SetSize(math.max(width + 8, BW.MIN_WIDTH), math.min(height, maxHeight - header - footer) + header + footer)
 	clampScroll()
 end
 
@@ -1045,6 +1068,110 @@ SB.Inventory.OnChanged(Guard("bank.inventory", function(mask, changes)
 end, "bank"))
 
 ---------------------------------------------------------------------------
+-- Warband gold (0.14.2)
+---------------------------------------------------------------------------
+-- A slim row under the items: "Warband gold:", the balance as the client writes it, and Deposit and Withdraw.
+-- It shows while the bank window is open for a visit, the Warband bank moves gold at all (Adapter.WarbandMoneyState)
+-- and bank.gold is on, in tiny and beside mode alike. Each button opens Blizzard's own popup, whose OnAccept moves
+-- the gold; SwagBag never calls the money functions itself. The popup appearing is the click's answer (P2); when it
+-- cannot open, the title says where Blizzard's own buttons are. Plain frames and Blizzard's popup: allowed in combat.
+-- The row's own frame sits under the scroll area, so it never covers an item.
+local goldRow = CreateFrame("Frame", nil, frame)
+goldRow:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 4, 3)
+goldRow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, 3)
+goldRow:SetHeight(20)
+goldRow.label = goldRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+goldRow.label:SetPoint("LEFT", goldRow, "LEFT", 10, 0)
+goldRow.label:SetText(L.BANK_GOLD_LABEL)
+goldRow.amount = goldRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+goldRow.amount:SetPoint("LEFT", goldRow.label, "RIGHT", 6, 0)
+goldRow:Hide()
+BW.goldRow = goldRow
+if SB.Theme then
+	SB.Theme.Text(goldRow.label, "small")
+	SB.Theme.Text(goldRow.amount, "small")
+end
+
+local function goldButton(text, kind)
+	local b = CreateFrame("Button", nil, goldRow, "UIPanelButtonTemplate")
+	b:SetSize(72, 18)
+	b:SetText(text)
+	b:SetScript("OnClick", Guard("bank.gold", function()
+		BW.MoveGold(kind)
+	end, "bank"))
+	if SB.Theme then
+		SB.Theme.Button(b)
+	end
+	return b
+end
+BW.goldWithdraw = goldButton(L.BTN_GOLD_WITHDRAW, "withdraw")
+BW.goldWithdraw:SetPoint("RIGHT", goldRow, "RIGHT", -2, 0)
+BW.goldDeposit = goldButton(L.BTN_GOLD_DEPOSIT, "deposit")
+BW.goldDeposit:SetPoint("RIGHT", BW.goldWithdraw, "LEFT", -4, 0)
+
+-- Whether gold can move that way now (kind "deposit" | "withdraw").
+local function goldCan(kind)
+	local canDeposit, canWithdraw = SB.Adapter.WarbandMoneyState()
+	if kind == "deposit" then
+		return canDeposit
+	end
+	return canWithdraw
+end
+
+-- Open Blizzard's popup for kind, or say why not. true when the popup opened (or a second click closed it).
+function BW.MoveGold(kind)
+	if not goldCan(kind) or not SB.Adapter.ShowWarbandMoneyPopup(kind) then
+		BW.Flash(L.GOLD_UNAVAILABLE)
+		return false
+	end
+	return true
+end
+
+-- Show or hide the row, write the balance and enable the buttons; the window's height follows a change of the row.
+function BW.RefreshGold()
+	local A = SB.Adapter
+	local canDeposit, canWithdraw, supported = A.WarbandMoneyState()
+	local show = (supported and frame:IsShown() and BW.interaction and SB.Config.Get("bank.gold") ~= false) and true or false
+	if show then
+		local copper = A.WarbandMoney()
+		goldRow.amount:SetText(copper and A.MoneyText(copper) or L.BANK_GOLD_UNKNOWN)
+		BW.goldDeposit:SetEnabled(canDeposit and true or false)
+		BW.goldWithdraw:SetEnabled(canWithdraw and true or false)
+	end
+	goldRow:SetShown(show)
+	if show ~= BW.goldShown then
+		BW.goldShown = show
+		BW.FitHeight()
+	end
+end
+
+-- A disabled button still shows its tooltip, which then says why it is off.
+local function goldTip(kind, title, body)
+	return Guard("bank.goldTip", function(self)
+		if not GameTooltip then
+			return
+		end
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText(title)
+		GameTooltip:AddLine(goldCan(kind) and body or L.TIP_GOLD_UNAVAILABLE, 1, 1, 1, true)
+		GameTooltip:Show()
+	end, "bank")
+end
+BW.goldDeposit:SetScript("OnEnter", goldTip("deposit", L.BTN_GOLD_DEPOSIT, L.TIP_GOLD_DEPOSIT))
+BW.goldDeposit:SetScript("OnLeave", hideTip)
+BW.goldWithdraw:SetScript("OnEnter", goldTip("withdraw", L.BTN_GOLD_WITHDRAW, L.TIP_GOLD_WITHDRAW))
+BW.goldWithdraw:SetScript("OnLeave", hideTip)
+
+-- The Warband bank's gold (ACCOUNT_MONEY) or this character's (PLAYER_MONEY, which changes what may move) changed.
+local function goldChanged()
+	if frame:IsShown() then
+		BW.RefreshGold()
+	end
+end
+SB.On("ACCOUNT_MONEY", goldChanged, "bank")
+SB.On("PLAYER_MONEY", goldChanged, "bank")
+
+---------------------------------------------------------------------------
 -- Open / close
 ---------------------------------------------------------------------------
 function BW.IsOpen()
@@ -1240,6 +1367,14 @@ SB.Slash.Register("bank", L.HELP_BANK, function(arg)
 			BW.view.Relabel()
 		end
 		return on and L.BANK_COLORS_ON or L.BANK_COLORS_OFF
+	end
+	if arg == "gold on" or arg == "gold off" then -- bank.gold (0.14.2): the row shows or hides at once
+		local on = arg == "gold on"
+		if not SB.Config.Set("bank.gold", on) then
+			return L.SETTINGS_READONLY
+		end
+		BW.RefreshGold()
+		return on and L.BANK_GOLD_ON or L.BANK_GOLD_OFF
 	end
 	if arg == "one" or arg == "both" then -- bank.show: the open window follows at once (held under the mouse, P5)
 		if not SB.Config.Set("bank.show", arg) then

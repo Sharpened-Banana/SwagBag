@@ -1,6 +1,7 @@
 -- The bank window's "..." menu (week 13). The title row keeps Sort, "..." and close; every other
 -- bank action is one row here, in this order: the three views (the current one marked), Sort either
--- bank, Regroup now, Show/Hide Blizzard's bank, Deposit all warbound items, Bank settings.
+-- bank, Regroup now, Show/Hide Blizzard's bank, Deposit all warbound items, Deposit gold and Withdraw gold (0.14.2,
+-- while the Warband bank moves gold), Bank settings.
 -- Plain frames only (a menu may open in combat); every row calls the same BankWindow function its old
 -- title button called, so each click is answered once, by that function (P2). The rows are rebuilt at
 -- every open, so the view mark and the Blizzard words are current. It closes with the bank window.
@@ -48,6 +49,18 @@ function BM.Entries()
 	list[#list + 1] = { text = L.BANK_MENU_DEPOSIT, tip = L.TIP_MENU_DEPOSIT, run = function()
 		BW.DepositWarband()
 	end }
+	-- Warband gold (0.14.2): the gold row's two actions, only while the Warband bank moves gold at all
+	local canDeposit, canWithdraw, supported = SB.Adapter.WarbandMoneyState()
+	if supported then
+		list[#list + 1] = { text = L.BANK_MENU_GOLD_DEPOSIT, tip = canDeposit and L.TIP_GOLD_DEPOSIT or L.TIP_GOLD_UNAVAILABLE,
+			run = function()
+				BW.MoveGold("deposit")
+			end }
+		list[#list + 1] = { text = L.BANK_MENU_GOLD_WITHDRAW,
+			tip = canWithdraw and L.TIP_GOLD_WITHDRAW or L.TIP_GOLD_UNAVAILABLE, run = function()
+				BW.MoveGold("withdraw")
+			end }
+	end
 	list[#list + 1] = { text = L.BANK_MENU_SETTINGS, tip = L.TIP_MENU_SETTINGS, run = function()
 		SB.SettingsWindow.Show("bank")
 	end }

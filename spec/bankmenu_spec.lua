@@ -139,6 +139,8 @@ describe("the bank window's header and its ... menu (week 13)", function()
 			L.BANK_MENU_REGROUP,
 			L.BANK_MENU_SHOW_BLIZZARD,
 			L.BANK_MENU_DEPOSIT,
+			L.BANK_MENU_GOLD_DEPOSIT, -- 0.14.2: while the Warband bank moves gold (the mock's default)
+			L.BANK_MENU_GOLD_WITHDRAW,
 			L.BANK_MENU_SETTINGS,
 		}, texts)
 	end)
@@ -146,7 +148,7 @@ describe("the bank window's header and its ... menu (week 13)", function()
 	it("the rows are the entries, rebuilt at every open (the view mark moves)", function()
 		openBank()
 		BM.Toggle(BW.moreButton)
-		assert.equal(9, #BM.rows)
+		assert.equal(11, #BM.rows)
 		assert.equal(L.BANK_MENU_VIEW:format(L.BANK_MENU_NOW:format(L.BANK_MENU_VIEW_SECTIONS)), BM.rows[1].text)
 		BM.Hide()
 		SB.Config.Set("bank.view", "grid")
