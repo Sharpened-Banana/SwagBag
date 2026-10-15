@@ -63,7 +63,7 @@ NOTES="$(awk -v v="## $VERSION" '
 	$0 == v || index($0, v " ") == 1 { on = 1; next }
 	on && /^## / { exit }
 	on { print }
-' CHANGELOG.md)"
+' CHANGELOG.md | sed '/./,$!d')"
 [ -n "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ] || fail "CHANGELOG.md has no notes under '## $VERSION'"
 
 if git rev-parse -q --verify "refs/tags/v$VERSION" > /dev/null; then
