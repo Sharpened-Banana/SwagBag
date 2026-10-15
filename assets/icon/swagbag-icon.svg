@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#2b4a6b"/>
+      <stop offset="0.55" stop-color="#16263d"/>
+      <stop offset="1" stop-color="#0a111d"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="55%" r="45%">
+      <stop offset="0" stop-color="#f4c55a" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#f4c55a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6d77e"/>
+      <stop offset="0.5" stop-color="#b8862b"/>
+      <stop offset="1" stop-color="#6e4a12"/>
+    </linearGradient>
+    <radialGradient id="leather" cx="40%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#c98a4a"/>
+      <stop offset="0.45" stop-color="#9a5a2a"/>
+      <stop offset="1" stop-color="#4a2510"/>
+    </radialGradient>
+    <linearGradient id="neck" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b8763c"/>
+      <stop offset="1" stop-color="#6b3a18"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff1b8"/>
+      <stop offset="0.4" stop-color="#f2c14e"/>
+      <stop offset="1" stop-color="#9c6a14"/>
+    </linearGradient>
+    <linearGradient id="rope" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8f6418"/>
+      <stop offset="0.5" stop-color="#f3cf6a"/>
+      <stop offset="1" stop-color="#8f6418"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <!-- tile -->
+  <rect x="8" y="8" width="496" height="496" rx="64" fill="url(#frame)"/>
+  <rect x="22" y="22" width="468" height="468" rx="52" fill="url(#bg)"/>
+  <rect x="22" y="22" width="468" height="468" rx="52" fill="url(#glow)"/>
+
+  <!-- spilled coins behind -->
+  <g filter="url(#shadow)">
+    <ellipse cx="128" cy="402" rx="40" ry="16" fill="#7a5110"/>
+    <ellipse cx="128" cy="396" rx="40" ry="16" fill="url(#gold)"/>
+    <ellipse cx="392" cy="412" rx="36" ry="14" fill="#7a5110"/>
+    <ellipse cx="392" cy="406" rx="36" ry="14" fill="url(#gold)"/>
+  </g>
+
+  <!-- bag -->
+  <g filter="url(#shadow)">
+    <!-- body -->
+    <path d="M196 196 C120 222 92 300 104 356 C116 418 180 440 256 440 C332 440 396 418 408 356 C420 300 392 222 316 196 Z"
+          fill="url(#leather)" stroke="#2e1608" stroke-width="6" stroke-linejoin="round"/>
+    <!-- stitched seam -->
+    <path d="M150 300 C190 330 322 330 362 300" fill="none" stroke="#e9b77a" stroke-width="4"
+          stroke-dasharray="10 9" stroke-linecap="round" opacity="0.75"/>
+    <!-- coins peeking out of the opening (behind the ruffled top) -->
+    <ellipse cx="226" cy="118" rx="26" ry="11" transform="rotate(-18 226 118)" fill="url(#gold)" stroke="#4a3006" stroke-width="4"/>
+    <ellipse cx="288" cy="112" rx="26" ry="11" transform="rotate(14 288 112)" fill="url(#gold)" stroke="#4a3006" stroke-width="4"/>
+    <ellipse cx="258" cy="104" rx="24" ry="10" fill="url(#gold)" stroke="#4a3006" stroke-width="4"/>
+    <!-- gathered, flared top: wide ruffles pinched into the rope -->
+    <path d="M216 198 C214 176 200 160 176 146 C186 130 200 136 208 140 C206 124 220 116 232 130 C240 116 252 114 258 130 C266 114 278 116 284 130 C294 116 308 124 304 140 C314 134 328 130 336 146 C312 160 298 176 296 198 Z"
+          fill="url(#neck)" stroke="#2e1608" stroke-width="6" stroke-linejoin="round"/>
+    <!-- fold lines in the gathered cloth -->
+    <path d="M232 192 C230 172 226 158 222 146 M256 192 L256 140 M280 192 C282 172 286 158 290 146"
+          fill="none" stroke="#3e1f0b" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+    <!-- gold rope tie -->
+    <rect x="186" y="186" width="140" height="26" rx="13" fill="url(#rope)" stroke="#4a3006" stroke-width="5"/>
+    <path d="M300 204 C330 220 338 248 326 270" fill="none" stroke="url(#rope)" stroke-width="12" stroke-linecap="round"/>
+    <path d="M300 204 C330 220 338 248 326 270" fill="none" stroke="#4a3006" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+    <circle cx="326" cy="276" r="11" fill="url(#gold)" stroke="#4a3006" stroke-width="4"/>
+    <!-- highlight -->
+    <path d="M150 268 C138 300 140 340 158 370" fill="none" stroke="#f0c48c" stroke-width="10" stroke-linecap="round" opacity="0.35"/>
+  </g>
+
+  <!-- medallion -->
+  <g filter="url(#shadow)">
+    <circle cx="256" cy="336" r="62" fill="url(#gold)" stroke="#4a3006" stroke-width="6"/>
+    <circle cx="256" cy="336" r="48" fill="none" stroke="#8f6418" stroke-width="4"/>
+    <!-- stylized S -->
+    <path d="M282 306 C272 296 244 294 236 308 C228 322 246 330 258 334 C272 339 286 346 278 362 C270 378 240 376 228 364"
+          fill="none" stroke="#5a3a08" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M282 306 C272 296 244 294 236 308 C228 322 246 330 258 334 C272 339 286 346 278 362 C270 378 240 376 228 364"
+          fill="none" stroke="#fff3c4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+  </g>
+
+  <!-- sparkles -->
+  <g fill="#fff6d0">
+    <path d="M384 136 L390 154 L408 160 L390 166 L384 184 L378 166 L360 160 L378 154 Z"/>
+    <path d="M134 150 L138 162 L150 166 L138 170 L134 182 L130 170 L118 166 L130 162 Z" opacity="0.8"/>
+    <path d="M420 300 L423 309 L432 312 L423 315 L420 324 L417 315 L408 312 L417 309 Z" opacity="0.7"/>
+  </g>
+</svg>
