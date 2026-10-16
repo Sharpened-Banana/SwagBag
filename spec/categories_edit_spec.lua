@@ -14,6 +14,7 @@ describe("Category editing (week 11)", function()
 		files[#files + 1] = "SwagBag/Engine/Profiles.lua"
 		SB = Loader.New(files)
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.auto", true) -- focus modes switch by themselves only when asked (0.14.3)
 		C, L = SB.Categories, SB.L
 		C.Load()
 		changed, focusChanged = 0, 0

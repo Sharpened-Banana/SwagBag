@@ -70,8 +70,10 @@ describe("Settings: focus modes page", function()
 			"Junk", L.SET_SECTION_TIP:format("M+") }, lines)
 	end)
 
+	-- 0.14.3: "Switch by themselves" is off by default. Mutation: Config default focus.auto back to true.
 	it("AC8.1 and P1: the defaults are selected, each with its alternative next to it", function()
-		assert.truthy(selected(L.SET_FOCUS_AUTO, L.SET_FOCUS_AUTO_ON))
+		assert.truthy(selected(L.SET_FOCUS_AUTO, L.SET_OFF))
+		assert.falsy(selected(L.SET_FOCUS_AUTO, L.SET_FOCUS_AUTO_ON))
 		assert.truthy(selected(L.SET_FOCUS_RESOLVE, L.SET_FOCUS_MERGE))
 		assert.truthy(selected(L.SET_FOCUS_PEEK, L.SET_FOCUS_PEEK_PEEK))
 		assert.truthy(selected(L.SET_FOCUS_ANNOUNCE, L.SET_FOCUS_QUIET))

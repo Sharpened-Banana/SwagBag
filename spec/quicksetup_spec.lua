@@ -282,7 +282,7 @@ describe("Quick setup", function()
 				shown = shown + 1
 			end
 		end
-		assert.equal(11, shown, "six modes and M+'s five switches")
+		assert.equal(12, shown, "Switch by themselves, six modes and M+'s five switches")
 		Fake.Fire(switch("Upgrade arrow on gear: On"), "OnClick")
 		assert.truthy(switch("Upgrade arrow on gear: Off"))
 		Fake.Fire(switch("Fishing mode: On"), "OnClick")
@@ -293,6 +293,24 @@ describe("Quick setup", function()
 		assert.equal(false, SB.Config.Get("overlays.upgrade"))
 		assert.equal(false, SB.Config.Get("focus.on.fishing"))
 		assert.equal(true, SB.Config.db.settings.overlays.keystone, "written, though it is the default (AC9.2)")
+	end)
+
+	-- 0.14.3. Mutation: Setup.Preset sets "focus.auto" for a picked style (Finish would write it), or paintStep2 shows it On.
+	it("step 2 shows Switch by themselves Off even with M+ picked; Finish leaves it unwritten unless clicked", function()
+		QS.Show()
+		pick("mplus")
+		step(2)
+		assert.truthy(switch("Focus modes switch by themselves: Off"))
+		assert.truthy(switch("M+ mode: On"))
+		finishWizard()
+		assert.equal(false, SB.Config.Get("focus.auto"))
+		assert.is_nil(SB.Config.db.settings.focus.auto, "not written: the user did not switch it")
+		QS.Show()
+		step(2)
+		Fake.Fire(switch("Focus modes switch by themselves: Off"), "OnClick")
+		assert.truthy(switch("Focus modes switch by themselves: On"))
+		finishWizard()
+		assert.equal(true, SB.Config.Get("focus.auto"))
 	end)
 
 	-- AC7.4 (week 12). Mutation: in QS.Show, `QS.draft, QS.step, QS.combatHidden = Setup.New(), 1, false` ->
@@ -529,7 +547,7 @@ describe("Quick setup", function()
 		for _, b in ipairs(QS.switchButtons) do
 			shown = shown + (b.shown and 1 or 0)
 		end
-		assert.equal(6, shown)
+		assert.equal(7, shown, "Switch by themselves and the six built-in modes")
 		table.remove(SB.Focus.MODES)
 	end)
 

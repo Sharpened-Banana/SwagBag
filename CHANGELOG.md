@@ -2,6 +2,13 @@
 
 Newest first. Each "## <version>" section is the changelog CurseForge shows for that upload (scripts/release.sh reads it).
 
+## 0.14.3
+
+- **Focus modes no longer switch by themselves until you ask:** your sections stay where you put them when a key starts, you open the vendor or the bank, or you go fishing. To have SwagBag bring up the sections you need, turn on "Switch by themselves" in Settings > Focus modes, or in step 2 of the setup wizard (`/swagbag setup`). It starts Off.
+- If you had already turned it on, nothing changes for you.
+- Modes of your own that you switch on by hand (`/swagbag mode on <name>`) work either way.
+- The tour, the setup wizard and the Focus modes page now say that this is opt-in.
+
 ## 0.14.2
 
 - **Warband gold in SwagBag's bank:** your Warband balance at the bottom of the bank window, with Deposit and Withdraw buttons (Blizzard's own gold boxes). Also in the "..." menu; hide it in Settings > Bank & guild or with `/swagbag bank gold off`.

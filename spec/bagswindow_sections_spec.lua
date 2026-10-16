@@ -1866,6 +1866,7 @@ describe("BagsWindow focus modes (spec 6)", function()
 		SB = Loader.New(files)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.auto", true) -- focus modes switch by themselves only when asked (0.14.3)
 		Fixtures.SmallBags(A) -- potion, flask, BoE ring, soulbound helm, keystone, junk
 		SB.Config.Set("bags.newAlways", true) -- New's reserved rows, as these tests were written
 		SB.Config.Set("focus.style", "collapse") -- these tests pin the collapse style (week 4); see "front" below
@@ -2658,6 +2659,7 @@ describe("BagsWindow focus front style (week 6)", function()
 		SB = Loader.New(files)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.auto", true) -- focus modes switch by themselves only when asked (0.14.3)
 		Fixtures.SmallBags(A) -- potion, flask, BoE ring, soulbound helm, keystone, junk
 		SB.Config.Set("bags.newAlways", true) -- New keeps its rows, so it is drawn first as in the game
 		CreateFrame = function(kind) return newFake(kind) end
@@ -2999,3 +3001,119 @@ for _, style in ipairs({ "front", "collapse" }) do
 		end)
 	end)
 end
+
+-- 0.14.3: "Switch by themselves" (focus.auto) is off by default. A player who never opened Settings > Focus
+-- modes sees no section move or collapse because of what they do. These tests start from a fresh Config and
+-- never turn the switch on (except where a test says so).
+describe("BagsWindow focus modes are opt-in (0.14.3)", function()
+	local SB, A, W, B, F
+	before_each(function()
+		local files = { unpack(FILES) }
+		files[#files + 1] = "SwagBag/Engine/Focus.lua"
+		SB = Loader.New(files)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		SB.Config.Set("bags.newAlways", true)
+		CreateFrame = function(kind) return newFake(kind) end
+		UIParent = newFake("Frame")
+		UIParent.h = 2000
+		UISpecialFrames = {}
+		IsControlKeyDown = function() return false end
+		B = fakeButtons()
+		SB.Buttons = B
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/ListRows.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/BagsWindow.lua")
+		W, F = SB.BagsWindow, SB.Focus
+		SB.Emit("SB_LOGIN")
+	end)
+
+	after_each(function()
+		UIParent, UISpecialFrames, IsControlKeyDown = nil, nil, nil
+	end)
+
+	local function headers()
+		local out = {}
+		for i, h in ipairs(SB.SectionHeaders.inUse) do
+			out[i] = h.text.text
+		end
+		return out
+	end
+
+	local USER = { "- New (0)", "- Keystone & Crests (1)", "- Consumables (2)", "- Gear (1)", "- BoE gear (1)",
+		"- Junk (1)", "- Free (10)" }
+
+	-- Mutation: Config.Defaults.settings.focus.auto = true again.
+	it("a fresh config has Switch by themselves off, and stores nothing for it", function()
+		assert.equal(false, SB.Config.Get("focus.auto"))
+		assert.is_nil(SB.Config.db.settings.focus, "the default is not written")
+	end)
+
+	-- Mutation: Focus.Active ignores focus.auto for the built-in modes (auto = true).
+	it("a key, the vendor, the bank, fishing: no mode is active", function()
+		for _, signal in ipairs({ "challengeMode", "merchantOpen", "auctionOpen", "bankOpen", "fishing", "gathering" }) do
+			F.SetSignal(signal, true)
+			assert.same({}, F.Active(), signal)
+			assert.is_nil(F.Label(), signal)
+			assert.is_nil(F.Front(), signal)
+			assert.falsy(F.Applies(), signal)
+			F.SetSignal(signal, false)
+		end
+	end)
+
+	-- Mutation: Focus.Front or Applies ignores focus.auto, or W.EffectiveOrder reorders on the signal alone.
+	it("a key starting or the vendor opening leaves the section order and what is collapsed as it was", function()
+		W.Open()
+		assert.same(USER, headers())
+		F.SetSignal("challengeMode", true)
+		assert.same(USER, headers(), "a key")
+		F.SetSignal("challengeMode", false)
+		F.SetSignal("merchantOpen", true)
+		assert.same(USER, headers(), "the vendor")
+		F.SetSignal("merchantOpen", false)
+		F.SetSignal("bankOpen", true)
+		assert.same(USER, headers(), "the bank")
+		assert.same({}, SB.Config.UI().collapsed.bags, "nothing collapsed or written")
+	end)
+
+	-- Mutation: Label (or the resting title) names the signal's mode without checking focus.auto.
+	it("the title shows no mode name", function()
+		W.Open()
+		local rest = W.frame.title.text
+		F.SetSignal("challengeMode", true)
+		assert.equal(rest, W.frame.title.text)
+		assert.is_nil(W.frame.title.text:find("M+", 1, true))
+		F.SetSignal("challengeMode", false)
+		F.SetSignal("merchantOpen", true)
+		assert.is_nil(W.frame.title.text:find("AH/Vendor/Bank", 1, true))
+	end)
+
+	-- Mutation: Focus.Active tests `auto == nil` instead of `~= false`, or reads the default as true.
+	it("with Switch by themselves on, a vendor visit moves its sections; off again puts them back", function()
+		W.Open()
+		SB.Config.Set("focus.auto", true)
+		F.SetSignal("merchantOpen", true)
+		assert.same({ "market" }, F.Active())
+		assert.equal("- Junk (1)", headers()[2], "Junk moved up behind New")
+		assert.equal("SwagBag — AH/Vendor/Bank", W.frame.title.text)
+		SB.Config.Set("focus.auto", false)
+		assert.same({}, F.Active())
+		assert.same(USER, headers())
+	end)
+
+	-- Mutation: Focus.Active drops the `or manual` branch (a manual mode needs auto).
+	it("a mode of your own, switched on by hand, still moves its sections with the switch off", function()
+		W.Open()
+		local id = F.CreateMode("Farming")
+		F.SetSections(id, { "c_junk" })
+		assert.same({}, F.Active(), "made, but off until switched on")
+		assert.same(USER, headers())
+		F.SetManual(id, true)
+		assert.same({ id }, F.Active())
+		assert.equal("- Junk (1)", headers()[2], "its section moved up behind New")
+		assert.equal("SwagBag — Farming", W.frame.title.text)
+		F.SetManual(id, false)
+		assert.same(USER, headers())
+	end)
+end)

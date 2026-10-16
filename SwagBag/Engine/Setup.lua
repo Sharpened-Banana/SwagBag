@@ -11,7 +11,8 @@
 --                                             picked style sets, else the setting now ("order.gold" and
 --                                             "order.collector": the picked style's categories move up)
 --   Setup.Set(d, key, value)                  a choice on steps 2 to 4
---   Setup.Switches(d) -> { key }              step 2's on/off lines: the six focus modes, what the picked styles set,
+--   Setup.Switches(d) -> { key }              step 2's on/off lines: "Switch by themselves" (focus.auto, off unless the
+--                                             user switches it on here; no style sets it), the six focus modes, what the picked styles set,
 --                                             then the categories they move up
 --   Setup.Label(key) -> text                  a switch's name in plain words
 --   Setup.Plan(d) -> { { path, value } }      what Finish writes, by path: every setting a picked style sets (an
@@ -178,6 +179,7 @@ function Setup.Switches(d)
 			out[#out + 1] = key
 		end
 	end
+	add("focus.auto") -- the master switch comes first: off unless the user switches it on here (0.14.3)
 	for _, m in ipairs(SB.Focus and SB.Focus.MODES or {}) do
 		if not m.custom and not m.id:match("^m_") then -- the user's own modes are managed in Settings
 			add("focus.on." .. m.id)
@@ -200,7 +202,7 @@ local LABELS = {
 	["consumables.warn"] = "WIZ_SW_WARN", ["overlays.keystone"] = "WIZ_SW_KEYSTONE", ["overlays.track"] = "WIZ_SW_TRACK",
 	["overlays.upgrade"] = "WIZ_SW_UPGRADE", ["overlays.ilvl"] = "WIZ_SW_ILVL", ["prices.headerTotals"] = "WIZ_SW_TOTALS",
 	["overlays.junk"] = "WIZ_SW_JUNK", ["overlays.uncollected"] = "WIZ_SW_UNCOLLECTED", ["overlays.learn"] = "WIZ_SW_LEARN",
-	["order.gold"] = "WIZ_SW_ORDER_GOLD", ["order.collector"] = "WIZ_SW_ORDER_COLLECTOR",
+	["focus.auto"] = "WIZ_SW_AUTO", ["order.gold"] = "WIZ_SW_ORDER_GOLD", ["order.collector"] = "WIZ_SW_ORDER_COLLECTOR",
 }
 
 function Setup.Label(key)

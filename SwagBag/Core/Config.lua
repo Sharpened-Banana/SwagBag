@@ -66,7 +66,8 @@ Config.Defaults = {
 		-- uncollected (week 7): a star on gear whose look is not collected, and on new toys, mounts, pets.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = false,
 			learn = true, lock = true, uncollected = true, usePawn = false },
-		-- Focus modes (spec 6, Engine/Focus.lua). auto: modes switch by themselves (AC8.1);
+		-- Focus modes (spec 6, Engine/Focus.lua). auto: modes switch by themselves (AC8.1); off by
+		-- default since 0.14.3 (user request: sections moving with what you do is opt-in);
 		-- resolve: "merge" (open the union, default) | "priority" (combat > activity > location,
 		-- AC8.4); peek: a click on a collapsed header opens it until the bag closes ("peek") or
 		-- until the mode changes ("keep", AC8.3); announce: one chat line per mode change (spec
@@ -75,7 +76,7 @@ Config.Defaults = {
 		-- a mode moves its sections to the top, right after New, and collapses nothing) | "collapse"
 		-- (a mode collapses every section it does not open; week 4's behaviour). Week 6, user request.
 		-- Equipment sets (c_sets, week 7) join every mode that opens Gear.
-		focus = { auto = true, resolve = "merge", peek = "peek", announce = false, style = "front",
+		focus = { auto = false, resolve = "merge", peek = "peek", announce = false, style = "front",
 			on = { mplus = true, raid = true, delves = true, gathering = true, fishing = true, market = true },
 			sections = {
 				mplus = "c_consumables,c_keystone,c_gear,c_sets",
