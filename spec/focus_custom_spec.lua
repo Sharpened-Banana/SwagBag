@@ -14,6 +14,7 @@ describe("Focus modes of your own (week 12)", function()
 		files[#files + 1] = "SwagBag/Engine/Focus.lua"
 		SB = Loader.New(files)
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.auto", true) -- focus modes switch by themselves only when asked (0.14.3)
 		F, C, L = SB.Focus, SB.Config, SB.L
 		events = {}
 		SB.On("SB_FOCUS_CHANGED", function(_, reason)

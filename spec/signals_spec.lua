@@ -17,6 +17,7 @@ describe("Signals", function()
 		SB = Loader.New(FILES)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.auto", true) -- focus modes switch by themselves only when asked (0.14.3)
 		Fixtures.SmallBags(A) -- slot 5 holds a keystone
 		F, S = SB.Focus, SB.Signals
 		SB.Emit("SB_LOGIN")
@@ -353,6 +354,7 @@ describe("Report focus lines", function()
 			"SwagBag/Engine/FocusData.lua", "SwagBag/Engine/Signals.lua" })
 		local A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.auto", true) -- focus modes switch by themselves only when asked (0.14.3)
 		Fixtures.SmallBags(A)
 		SB.Emit("SB_LOGIN")
 		A.instance = { instanceType = "party", difficultyID = 8 }
@@ -367,5 +369,45 @@ describe("Report focus lines", function()
 		SB.Config.Set("focus.style", "collapse")
 		text = SB.Report.Build()
 		assert.truthy(text:find("Focus: M+ (merge, collapse); zone party, collapsing yes;", 1, true), text)
+	end)
+end)
+
+-- 0.14.3: a fresh config leaves "Switch by themselves" off, so the client's own events (a key, a raid,
+-- the vendor, the bank, fishing) change no mode.
+describe("Signals on a fresh config (focus modes are opt-in, 0.14.3)", function()
+	local SB, A, F
+	before_each(function()
+		SB = Loader.New(FILES)
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		F = SB.Focus
+		SB.Emit("SB_LOGIN")
+	end)
+
+	-- Mutation: Config.Defaults.settings.focus.auto = true again.
+	it("a key starting, a raid, the vendor and the bank turn no mode on", function()
+		A.instance = { instanceType = "party", difficultyID = 8 }
+		A.challengeMode = true
+		SB.eventFrame:Fire("CHALLENGE_MODE_START")
+		assert.truthy(F.signals.challengeMode, "the signal itself is still read")
+		assert.same({}, F.Active())
+		SB.eventFrame:Fire("MERCHANT_SHOW")
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		assert.same({}, F.Active())
+		assert.is_nil(F.Label())
+		A.instance = { instanceType = "raid", difficultyID = 16 }
+		SB.eventFrame:Fire("PLAYER_ENTERING_WORLD")
+		assert.same({}, F.Active())
+	end)
+
+	-- Mutation: Config.Init copies focus.auto = true into a saved table that has none.
+	it("a player who saved Switch by themselves on keeps it", function()
+		local SB2 = Loader.New(FILES)
+		SB2.Config.Init({ settings = { focus = { auto = true } } }, nil)
+		Fixtures.SmallBags(SB2.Adapter)
+		SB2.Emit("SB_LOGIN")
+		SB2.Focus.SetSignal("merchantOpen", true)
+		assert.same({ "market" }, SB2.Focus.Active())
 	end)
 end)

@@ -121,6 +121,7 @@ describe("BagsWindow list view", function()
 		SB = Loader.New(FILES)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.auto", true) -- focus modes switch by themselves only when asked (0.14.3)
 		Fixtures.SmallBags(A) -- backpack 16 slots: potion x5, flask x2, BoE ring, soulbound helm, keystone, junk x3
 		A.items[Fixtures.HEALING_POTION].sellPrice = 100 -- the stack of 5: 500
 		A.items[Fixtures.FLASK].sellPrice = 1000 -- the stack of 2: 2000
@@ -861,6 +862,7 @@ describe("BagsWindow week-4 carry-overs (title flash, drop, default place)", fun
 		SB = Loader.New(FILES)
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.auto", true) -- focus modes switch by themselves only when asked (0.14.3)
 		SB.Config.Set("focus.style", "collapse") -- the grow tests need a mode that collapses (week 4)
 		Fixtures.SmallBags(A)
 		CreateFrame = function(kind) return newFake(kind) end

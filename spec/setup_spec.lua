@@ -119,13 +119,13 @@ describe("Setup wizard: the draft and Finish (week 12)", function()
 	-- Mutation: in Setup.Switches, drop the loop over Focus.MODES.
 	it("step 2 lists the six focus modes, then what the picked styles switch, once each, then the categories they move up", function()
 		local d = S.New()
-		assert.same({ "focus.on.mplus", "focus.on.raid", "focus.on.delves", "focus.on.gathering", "focus.on.fishing",
-			"focus.on.market" }, S.Switches(d))
+		assert.same({ "focus.auto", "focus.on.mplus", "focus.on.raid", "focus.on.delves", "focus.on.gathering",
+			"focus.on.fishing", "focus.on.market" }, S.Switches(d))
 		S.Toggle(d, "raid")
 		S.Toggle(d, "gold")
 		S.Toggle(d, "collector")
-		assert.same({ "focus.on.mplus", "focus.on.raid", "focus.on.delves", "focus.on.gathering", "focus.on.fishing",
-			"focus.on.market", "consumables.warn", "overlays.upgrade", "overlays.ilvl", "overlays.track",
+		assert.same({ "focus.auto", "focus.on.mplus", "focus.on.raid", "focus.on.delves", "focus.on.gathering",
+			"focus.on.fishing", "focus.on.market", "consumables.warn", "overlays.upgrade", "overlays.ilvl", "overlays.track",
 			"prices.headerTotals", "overlays.junk", "overlays.uncollected", "overlays.learn", "order.gold",
 			"order.collector" }, S.Switches(d))
 		assert.equal("Raid mode", S.Label("focus.on.raid"))
@@ -134,6 +134,36 @@ describe("Setup wizard: the draft and Finish (week 12)", function()
 			assert.truthy(S.Label(key) ~= key, "no words for " .. key)
 		end
 	end)
+
+	-- 0.14.3. Mutations: Setup.Preset sets "focus.auto" for M+ or Raid; Setup.Switches drops "focus.auto"; Setup.Label
+	-- has no words for it.
+	it("Switch by themselves: step 2's first line, off, and no picked style turns it on; only the user's click writes it",
+		function()
+			local d = S.New()
+			assert.equal("focus.auto", S.Switches(d)[1])
+			assert.equal(SB.L.WIZ_SW_AUTO, S.Label("focus.auto"))
+			assert.equal(false, S.Value(d, "focus.auto"))
+			for _, style in ipairs({ "mplus", "raid", "gold", "casual", "collector" }) do
+				S.Toggle(d, style)
+			end
+			assert.equal(false, S.Value(d, "focus.auto"), "picking every style leaves it off")
+			for _, p in ipairs(S.Plan(d)) do
+				assert.truthy(p[1] ~= "focus.auto", "no style sets the master switch")
+			end
+			S.Set(d, "focus.auto", true)
+			assert.equal(true, S.Value(d, "focus.auto"))
+			local found
+			for _, p in ipairs(S.Plan(d)) do
+				if p[1] == "focus.auto" then
+					found = p[2]
+				end
+			end
+			assert.equal(true, found, "switched on by the user: written")
+			S.Set(d, "focus.auto", false)
+			for _, p in ipairs(S.Plan(d)) do
+				assert.truthy(p[1] ~= "focus.auto", "switched back to what it is: nothing to write")
+			end
+		end)
 
 	-- Config keeps only explicit values. Mutation: in Setup.Plan, `if preset[key] ~= nil or v ~= get(key) then` ->
 	-- `if v ~= get(key) then` (a picked style's settings, equal to the defaults, would not be written).

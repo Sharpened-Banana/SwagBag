@@ -19,7 +19,7 @@
 ### 1.2 Goals
 
 1. **Zero-effort setup.** A first-run wizard turns "what do you play?" into categories, focus modes, layout and gold settings. The default result is good enough that most users never open the settings again.
-2. **Focus modes (headline feature).** The bag automatically collapses every section except the ones relevant to the current activity — M+ shows consumables and the keystone; a fishing trip shows fish and lures; the AH shows what's worth selling.
+2. **Focus modes (headline feature).** When the user turns on "Switch by themselves" (off by default since 0.14.3), the bag moves to the top the sections relevant to the current activity — M+ shows consumables and the keystone; a fishing trip shows fish and lures; the AH shows what's worth selling.
 3. **Gold awareness without an AH scanner.** Auctionator prices (when installed) on items and per-category totals; "worth money" highlight at the bank.
 4. **M+ first-class.** Consumables on top, keystone with level and dungeon, ilvl and upgrade-track overlays, crests in the bag, a low-consumables warning on dungeon entry and portal use.
 5. **Never breaks your bags.** Any Lua error or failed feature check flips the addon to Blizzard bags instantly (proven to work even in combat) and prints one line pointing to `/swagbag report`.
@@ -125,7 +125,7 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 - AC7.4 `/swagbag setup` re-runs the wizard.
 
 #### F8. Focus modes (6 core)
-- AC8.1 Built-in modes M+, Raid, Delves, Gathering, Fishing, and AH/Vendor/Bank are ON by default and switch automatically.
+- AC8.1 Built-in modes M+, Raid, Delves, Gathering, Fishing, and AH/Vendor/Bank switch automatically only when "Switch by themselves" (`focus.auto`) is on. 0.14.3: that switch is OFF by default; the user turns it on in Settings > Focus modes or the setup wizard (step 2). Until then no signal moves or collapses a section, and the title names no mode. Each mode is still ON in its own list, so turning the switch on needs no further setup. A mode of the user's own that they switch on by hand works with the switch off (AC8.7).
 - AC8.2 Entering a Mythic+ dungeon moves the M+ mode's sections to the top, right under New, within one `BAG_UPDATE_DELAYED` or `PLAYER_ENTERING_WORLD` cycle, and leaves every section open or collapsed as the user set it (the default `front` style, D15). With the `collapse` style it collapses every section except the M+ mode's set instead. Leaving restores the previous order or state.
 - AC8.3 With the `collapse` style, clicking a collapsed header in a mode peeks it (expanded until the window closes or mode changes). A small pin on the peeked header, or the option "Keep open until mode changes", makes it sticky. Default is peek. In the `front` style a header click is the user's own collapse or expand, saved as such; there is no peek or pin.
 - AC8.4 Overlapping modes expand the union of their sections (default). The option "Strict priority" uses combat > activity > location; week 12: a mode of the user's own that they switched on by hand (AC8.7) comes first of all (manual > combat > activity > location).
@@ -212,6 +212,8 @@ Each feature has acceptance criteria (AC). An AC is a statement the user can ver
 Change log: v1.3 (week 13): bank window simplified: deposit bar, one bank at a time, slim header and menu.
 
 v1.4 (0.14.0): several stacks of one item show as one icon with the total (bags and banks); Settings > Bags or /swagbag stacks all turns it off.
+
+v1.4 (0.14.3): "Switch by themselves" is off by default (AC8.1, section 6): focus modes move or collapse sections on their own only after the user turns it on in Settings > Focus modes or the setup wizard; manual modes of the user's own work either way.
 
 ### 2.3 Later (demand-driven)
 
@@ -909,7 +911,7 @@ M7 rule builder + full wizard + tour (≈2 weeks) · M8 offline alt view + toolt
 | All rights reserved, clean-room | §1 header; §11.5 private repo |
 | Category sections default + grid toggle; collapsible | §2.1 F3; §4 |
 | List view, per-bag, freeform later | §2.2 v1.3; §2.3 |
-| Focus modes: automatic, peek default / keep-open option, merge default / strict option, all ON, custom modes, full built-in list | §6 |
+| Focus modes: automatic (opt-in since 0.14.3, off by default), peek default / keep-open option, merge default / strict option, all ON, custom modes, full built-in list | §6 |
 | Gathering via spell-ID allowlist; restriction API signals | §6.2 |
 | Wizard + optional tour; visual rule builder; drag onto header | §2.1 F6, F7; §7.10; §2.1 AC4.3 |
 | Syndicator-compatible syntax, own implementation; categories {query, priority, itemList}; manual before rules; priority ≠ display order | §7.1, §7.7 |
