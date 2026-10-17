@@ -268,6 +268,19 @@ describe("BagsWindow", function()
 		assert.equal(1, closed)
 	end)
 
+	-- Mutation: delete the SetVerticalScroll(0) in the OnHide handler.
+	it("closing the window scrolls it back to the top for the next open", function()
+		A.sizes[0] = 160
+		W.Open()
+		W.scroll.h = 200
+		W.scroll.vscroll = 100
+		W.Close()
+		W.frame.scripts.OnHide(W.frame)
+		assert.equal(0, W.scroll.vscroll)
+		W.Open()
+		assert.equal(0, W.scroll.vscroll)
+	end)
+
 	it("OnHide while the frame is still shown (Alt+Z hiding UIParent) emits nothing", function()
 		local closed = 0
 		SB.On("SB_BAGS_CLOSED", function() closed = closed + 1 end)

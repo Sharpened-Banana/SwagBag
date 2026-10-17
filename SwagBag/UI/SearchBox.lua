@@ -146,6 +146,16 @@ SB.On("SB_BAGS_UPDATED", function()
 	Box.Apply()
 end, "bags")
 
+-- Closing the bags clears the search: the next open starts with every item lit. The search is
+-- cleared at once (not through the 150 ms debounce the emptied box schedules), so a quick reopen
+-- never dims with the old text.
+SB.On("SB_BAGS_CLOSED", function()
+	Box.editBox:ClearFocus()
+	Box.editBox:SetText("")
+	SB.Search.SetText("")
+	Box.ClearError()
+end, "bags")
+
 -- Week 7 (ruling R21): a lock or unlock re-applies the search, so a `locked` search follows it at once.
 SB.On("SB_LOCKS_CHANGED", function()
 	Box.Apply()

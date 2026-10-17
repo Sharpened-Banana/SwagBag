@@ -114,7 +114,8 @@ function W.ClampScroll()
 end
 
 -- Esc, the X button and W.Close() all hide the frame. Spec 4.3 "window closes":
--- placeholders are released and the layout is forgotten; the next open lays out fully.
+-- placeholders are released, the layout is forgotten and the scroll goes back to the top;
+-- the next open lays out fully (and UI/SearchBox.lua clears the search).
 -- Alt+Z hides UIParent, which fires OnHide while the frame itself is still shown: that guard
 -- stays first. A view toggle or reopen can emit SB_BAGS_CLOSED mid-frame, so the reset below
 -- is idempotent and the next Open always rebuilds everything from scratch.
@@ -129,6 +130,7 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 		SB.Focus.WindowClosed() -- peeks and closes end with the bag; pins stay until the mode changes (spec 6.1)
 	end
 	SB.Buttons.ReleasePlaceholders(child)
+	scroll:SetVerticalScroll(0) -- the next open starts at the top
 	SB.Emit("SB_BAGS_CLOSED")
 end, "bags"))
 
