@@ -812,6 +812,8 @@ frame:SetScript("OnHide", Guard("guild.hide", function(self)
 		host.Restore()
 	end
 	GW.view.Clear()
+	scroll:SetVerticalScroll(0) -- the next open starts at the top
+	searchBox.Clear() -- and with every item lit
 	SB.Emit("SB_GUILD_CLOSED")
 end, "bank"))
 

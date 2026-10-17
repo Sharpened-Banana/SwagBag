@@ -1242,6 +1242,8 @@ frame:SetScript("OnHide", Guard("bank.hide", function(self)
 	end
 	SB.BankMenu.Hide()
 	BW.view.Clear()
+	scroll:SetVerticalScroll(0) -- the next open starts at the top
+	searchBox.Clear() -- and with every item lit
 	BW.peek = {} -- the next opening starts from the one-bank rule again
 	BW.searchClosed, BW.searchOpen, BW.searchText = {}, {}, nil
 	BW.sortPending, BW.sortSawUpdate, BW.scaleWarned = false, false, false
