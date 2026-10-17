@@ -448,6 +448,23 @@ describe("BankWindow contents", function()
 		assert.equal("", SB.Search.text, "the bags window's search is untouched")
 	end)
 
+	-- Mutation: delete the searchBox.Clear() (or the SetVerticalScroll(0)) in the bank window's OnHide handler.
+	it("closing the bank window clears its search and scrolls it back to the top", function()
+		openBank()
+		BW.searchBox.editBox:SetText("ore")
+		Fake.Fire(BW.searchBox.editBox, "OnTextChanged")
+		A.Advance(0.2)
+		assert.equal(B.DIM_ALPHA, B.Get(6, 1).alpha)
+		BW.scroll.vscroll = 100
+		BW.Close()
+		assert.equal("", BW.searchBox.editBox:GetText())
+		assert.falsy(BW.searchBox.search.IsActive())
+		assert.equal(0, BW.scroll.vscroll)
+		openBank() -- before the emptied box's 150 ms debounce has run
+		assert.equal(1, B.Get(6, 1).alpha)
+		assert.equal(0, BW.scroll.vscroll)
+	end)
+
 	it("the grid view shows each group in physical order", function()
 		SB.Config.Set("bank.show", "both") -- both groups open (week 13: the default opens one)
 		SB.Config.Set("bank.view", "grid")

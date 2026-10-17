@@ -9,7 +9,7 @@
 --     rightInset (optional: room kept free at the row's right end; the bags window's Lock button, week 7),
 --     afterApply (optional, 0.14.0: runs after each search that applied; the bags window relights a grouped
 --     icon whose hidden stack matches) }
---   box.editBox, box.Apply(), box.Run(), box.ShowError(text, err), box.ClearError()
+--   box.editBox, box.Apply(), box.Run(), box.ShowError(text, err), box.ClearError(), box.Clear()
 local _, SB = ...
 
 local L = SB.L
@@ -95,6 +95,16 @@ local function new(o)
 		return matches, total, ms
 	end
 
+	-- Empties the box and the search (each window calls it when it closes, so the next open lights every
+	-- item). The search is cleared at once, not through the 150 ms debounce the emptied box schedules, so a
+	-- quick reopen never dims with the old text.
+	function Box.Clear()
+		box:ClearFocus()
+		box:SetText("")
+		o.search.SetText("")
+		Box.ClearError()
+	end
+
 	function Box.Run()
 		local text = box:GetText()
 		if o.search.SetText(text) then
@@ -144,6 +154,11 @@ end, "bags")
 
 SB.On("SB_BAGS_UPDATED", function()
 	Box.Apply()
+end, "bags")
+
+-- Closing the bags clears the search: the next open starts with every item lit.
+SB.On("SB_BAGS_CLOSED", function()
+	Box.Clear()
 end, "bags")
 
 -- Week 7 (ruling R21): a lock or unlock re-applies the search, so a `locked` search follows it at once.

@@ -503,6 +503,21 @@ describe("GuildBankWindow (check G1)", function()
 		assert.equal("", SB.Search.text)
 	end)
 
+	-- Mutation: delete the searchBox.Clear() (or the SetVerticalScroll(0)) in the guild window's OnHide handler.
+	it("closing the guild bank clears its search and scrolls it back to the top", function()
+		openVault()
+		answerQueries()
+		GW.searchBox.editBox:SetText("herb")
+		Fake.Fire(GW.searchBox.editBox, "OnTextChanged")
+		A.Advance(0.2)
+		assert.equal(SB.Buttons.DIM_ALPHA, button(1, 2).alpha)
+		GW.scroll.vscroll = 100
+		GW.Close()
+		assert.equal("", GW.searchBox.editBox:GetText())
+		assert.falsy(GW.searchBox.search.IsActive())
+		assert.equal(0, GW.scroll.vscroll)
+	end)
+
 	it("a snapshot of the tabs read is saved per guild after an answer and when the vault closes (AC16.4)", function()
 		openVault()
 		answerQueries()

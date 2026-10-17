@@ -2,6 +2,10 @@
 
 Newest first. Each "## <version>" section is the changelog CurseForge shows for that upload (scripts/release.sh reads it).
 
+## 0.14.4
+
+- **Closing a window starts it fresh:** your bags, bank (character and Warband) and guild bank clear their search and scroll back to the top when you close them, so the next open shows everything from the top.
+
 ## 0.14.3
 
 - **Focus modes no longer switch by themselves until you ask:** your sections stay where you put them when a key starts, you open the vendor or the bank, or you go fishing. To have SwagBag bring up the sections you need, turn on "Switch by themselves" in Settings > Focus modes, or in step 2 of the setup wizard (`/swagbag setup`). It starts Off.
