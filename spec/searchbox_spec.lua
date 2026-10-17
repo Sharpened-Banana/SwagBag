@@ -122,6 +122,21 @@ describe("SearchBox", function()
 		assert.equal(dimmedBefore, dimCount())
 	end)
 
+	-- Mutation: delete the SB_BAGS_CLOSED handler in SearchBox.lua (or its SB.Search.SetText("") line).
+	it("closing the bags clears the search, so a quick reopen lights every item", function()
+		open()
+		Box.editBox:SetText("potion")
+		SB.Adapter.Advance(0.2)
+		assert.truthy(dimCount() > 0)
+		window.open = false
+		SB.Emit("SB_BAGS_CLOSED")
+		assert.equal("", Box.editBox:GetText())
+		assert.falsy(SB.Search.IsActive())
+		dimmed = {}
+		open() -- before the emptied box's 150 ms debounce has run
+		assert.equal(0, dimCount())
+	end)
+
 	it("re-applies on slot updates (e.g. LOADED re-check)", function()
 		open()
 		Box.editBox:SetText("potion")
