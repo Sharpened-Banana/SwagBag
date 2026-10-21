@@ -130,7 +130,7 @@ describe("Theme", function()
 	end)
 
 	-- 0.14.5 (user request). Mutation: in styleWindow, ignore palette.edge (or in styleSlot, palette.slotTexture).
-	it("the Classic look: the dialog border and tiled stone background, the old slot squares, gold text; Blizzard comes back exactly", function()
+	it("the Classic look: dialog border, tiled stone, the old slot squares, gold text; Blizzard comes back exactly", function()
 		Loader.LoadFile(SB, "SwagBag/UI/Themes.lua")
 		local main, slot, fs = Fake.New("Frame"), Fake.New("Texture"), fontString("GameFontHighlight")
 		T.Window(main, "main")
