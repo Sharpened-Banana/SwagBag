@@ -103,7 +103,7 @@ Config.Defaults = {
 		-- them. This machine's state, like done: never in a profile or a share string (Engine/Profiles.lua KEEP).
 		setup = { done = false, styles = "" },
 		-- name: the look of SwagBag's own windows (UI/Theme.lua): "blizzard" (the default, AC14.1) |
-		-- "flat" | "elvui" (UI/Themes.lua).
+		-- "flat" | "classic" (0.14.5) | "elvui" (UI/Themes.lua).
 		theme = { name = "blizzard" },
 		-- counts: other characters' counts on item tooltips (UI/TooltipCounts.lua): "auto" (shown unless
 		-- Syndicator is loaded, which writes its own), "on", "off".

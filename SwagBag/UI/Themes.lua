@@ -2,6 +2,9 @@
 -- the /swagbag theme command and the Settings > Look page. A change applies at once, in or out of
 -- combat, with no /reload, and is saved (settings.theme.name).
 --   "flat"   Modern flat: dark flat panels, a black edge, white text, flat slots and buttons.
+--   "classic" Classic (0.14.5, user request): the original game's dialog windows, a dark stone background
+--            with the gold-trimmed border, gold title and header text, the old empty bag-slot squares.
+--            Only Blizzard's own textures; nothing of Blizzard's frames is restyled.
 --   "elvui"  Matches ElvUI: ElvUI's font, flat texture and colours, read from ElvUI itself through
 --            Adapter.ElvUIMedia each time it is applied. Only while ElvUI is loaded; otherwise the
 --            choice is refused with the reason, and a saved "elvui" shows the Blizzard look.
@@ -23,6 +26,26 @@ Theme.Register({
 			fonts = { titleLarge = "GameFontHighlightLarge", title = "GameFontHighlight", header = "GameFontHighlight", label = "GameFontHighlight",
 				body = "GameFontHighlightSmall", small = "GameFontHighlightSmall", row = "GameFontHighlightSmall" },
 			button = { bg = { 0.16, 0.16, 0.18, 1 } },
+		}
+	end,
+})
+
+Theme.Register({
+	id = "classic",
+	name = L.THEME_CLASSIC,
+	available = function()
+		return true
+	end,
+	palette = function()
+		return {
+			window = { 1, 1, 1, 1 }, dialog = { 1, 1, 1, 1 }, border = { 1, 1, 1, 1 },
+			header = { 1, 0.82, 0, 0.1 }, row = { 1, 0.82, 0, 0.04 },
+			backdrop = "Interface\\DialogFrame\\UI-DialogBox-Background", tile = 32,
+			edge = { file = "Interface\\DialogFrame\\UI-DialogBox-Border", size = 16, inset = 4 },
+			slotTexture = "Interface\\PaperDoll\\UI-Backpack-EmptySlot",
+			fonts = { titleLarge = "GameFontNormalLarge", title = "GameFontNormal", header = "GameFontNormal",
+				label = "GameFontNormal", body = "GameFontHighlightSmall", small = "GameFontHighlightSmall",
+				row = "GameFontHighlightSmall" },
 		}
 	end,
 })

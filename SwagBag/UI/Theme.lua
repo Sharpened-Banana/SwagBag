@@ -18,7 +18,10 @@
 -- from UI/Themes.lua. Theme.Register{ id, name, available() -> bool, unavailable (text), palette() }
 --   palette = { window, dialog, border = { r, g, b, a }, header = { r, g, b, a }, row = colour | nil,
 --     slot = colour | nil (nil: the bag-slot atlas), backdrop = texture path, fonts = nil | { [role] =
---     font object name } | { file, size, flags } (one font file, sizes by role), button = nil | { bg, border } }
+--     font object name } | { file, size, flags } (one font file, sizes by role), button = nil | { bg, border },
+--     edge = nil | { file, size, inset } (a textured window border; nil: a 1 px line in the backdrop texture),
+--     tile = nil | size (the backdrop texture repeats in squares of that size), slotTexture = nil | texture path
+--     (drawn under each slot instead of the slot colour or atlas; 0.14.5, the Classic look) }
 --   Theme.Apply(id, save) -> ok, why   why: "unknown" | "unavailable" | "readonly"; save writes
 --     settings.theme.name. Emits SB_THEME_CHANGED(id).
 -- The saved theme is applied at login; one that is not available then (ElvUI not loaded) shows the
@@ -103,6 +106,17 @@ local function validPalette(p)
 	if p.button ~= nil and not (type(p.button) == "table" and isColour(p.button.bg)) then
 		out.button = BLIZZARD.button
 	end
+	local e = p.edge
+	if e ~= nil and not (type(e) == "table" and type(e.file) == "string" and type(e.size) == "number"
+			and type(e.inset) == "number") then
+		out.edge = nil
+	end
+	if type(p.tile) ~= "number" then
+		out.tile = nil
+	end
+	if type(p.slotTexture) ~= "string" then
+		out.slotTexture = nil
+	end
 	return out
 end
 
@@ -129,7 +143,14 @@ end
 ---------------------------------------------------------------------------
 local function styleWindow(frame, kind)
 	local bg = palette[kind] or palette.window
-	frame:SetBackdrop({ bgFile = palette.backdrop, edgeFile = palette.backdrop, edgeSize = 1 })
+	local e = palette.edge
+	if e then
+		local i = e.inset
+		frame:SetBackdrop({ bgFile = palette.backdrop, edgeFile = e.file, edgeSize = e.size, tile = palette.tile ~= nil,
+			tileSize = palette.tile, insets = { left = i, right = i, top = i, bottom = i } })
+	else
+		frame:SetBackdrop({ bgFile = palette.backdrop, edgeFile = palette.backdrop, edgeSize = 1 })
+	end
 	frame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4])
 	local b = palette.border
 	frame:SetBackdropBorderColor(b[1], b[2], b[3], b[4])
@@ -182,7 +203,10 @@ end
 
 local function styleSlot(tex)
 	local c = palette.slot
-	if c then
+	if palette.slotTexture then
+		tex:SetTexture(palette.slotTexture)
+		tex:SetTexCoord(0, 1, 0, 1)
+	elseif c then
 		tex:SetColorTexture(c[1], c[2], c[3], c[4])
 	elseif not pcall(tex.SetAtlas, tex, Theme.SLOT_ATLAS) then
 		tex:SetColorTexture(0.15, 0.15, 0.15, 0.8)

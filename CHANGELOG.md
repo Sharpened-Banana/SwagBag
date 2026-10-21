@@ -6,6 +6,7 @@ Newest first. Each "## <version>" section is the changelog CurseForge shows for 
 
 - **Auto repair is now opt-in:** vendors no longer repair your gear by themselves until you ask. Turn it on in Settings > Vendor ("Repair at vendors": Your gold or Guild bank first) or with `/swagbag repair own` or `/swagbag repair guild`.
 - If you had already picked Your gold or Guild bank first, nothing changes for you.
+- **New look: Classic.** SwagBag's windows can wear the original game's style: the gold-trimmed border, the dark stone background, gold titles and the old empty bag-slot squares. Pick it in Settings > Look or with `/swagbag theme classic`.
 
 ## 0.14.4
 
