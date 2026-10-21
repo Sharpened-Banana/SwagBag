@@ -27,6 +27,7 @@ describe("Vendor (week 7)", function()
 			quality = 0, ilvl = 5, maxStack = 1, bind = "none", sellPrice = 50 })
 		A.money = 1000000
 		A.collected.defaultLook = true -- gray gear here has a collected look unless a test says otherwise
+		SB.Config.Set("vendor.repair", "own") -- repair is off by default (0.14.5); these tests repair unless they say otherwise
 		SB.Inventory.ScanAll()
 	end)
 
@@ -104,6 +105,20 @@ describe("Vendor (week 7)", function()
 		SB.Slash.Dispatch("sell junk")
 		assert.same({ SB.L.VENDOR_SELL_OFF, "Sold 1 junk item for 37s 2c.",
 			SB.L.VENDOR_NOT_OPEN }, A.Lines())
+	end)
+
+	-- 0.14.5 (user request: auto repair is opt-in). Mutation: Config.Defaults' vendor.repair back to "own".
+	it("repair is off by default: a vendor visit sells junk but repairs nothing until it is switched on", function()
+		SB.Config.Init(nil, nil) -- fresh settings: no saved repair choice
+		assert.equal("off", SB.Config.Get("vendor.repair"))
+		A.repairCost = 52000
+		visit()
+		assert.same({}, A.repairs)
+		assert.same({ "Sold 1 junk item for 37s 2c." }, A.Lines())
+		SB.eventFrame:Fire("MERCHANT_CLOSED")
+		SB.Slash.Dispatch("repair own")
+		visit()
+		assert.same({ "own" }, A.repairs)
 	end)
 
 	-- Mutation: in Vendor.Repair, skip the `money < cost` check (the call would fail at the vendor).
@@ -606,16 +621,16 @@ describe("Settings: vendor page (week 7)", function()
 	end)
 
 	-- P1 / P2. Mutation: in the repair row's apply, always run "repair own".
-	it("defaults first (On; Your gold), each click runs the command and answers in the status line", function()
+	it("defaults first (On; Off), each click runs the command and answers in the status line", function()
 		local shown = {}
 		for i = 1, SW.used.buttons do
 			shown[i] = { SW.buttons[i].text, SW.selected[SW.buttons[i]] == true }
 		end
-		assert.same({ { "On", true }, { "Off", false }, { "Your gold", true }, { "Guild bank first", false },
-			{ "Off", false }, { "Drop an item here", false }, { "List them", false }, { "Unlock all", false },
+		assert.same({ { "On", true }, { "Off", false }, { "Off", true }, { "Your gold", false },
+			{ "Guild bank first", false }, { "Drop an item here", false }, { "List them", false }, { "Unlock all", false },
 			{ "On", true }, { "Off", false } }, shown)
 		Fake.Fire(SW.buttons[2], "OnClick")
-		Fake.Fire(SW.buttons[4], "OnClick")
+		Fake.Fire(SW.buttons[5], "OnClick")
 		assert.same({ "sell off", "repair guild" }, ran)
 		assert.equal("ran repair guild", SW.lastStatus)
 	end)

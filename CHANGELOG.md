@@ -2,6 +2,11 @@
 
 Newest first. Each "## <version>" section is the changelog CurseForge shows for that upload (scripts/release.sh reads it).
 
+## 0.14.5
+
+- **Auto repair is now opt-in:** vendors no longer repair your gear by themselves until you ask. Turn it on in Settings > Vendor ("Repair at vendors": Your gold or Guild bank first) or with `/swagbag repair own` or `/swagbag repair guild`.
+- If you had already picked Your gold or Guild bank first, nothing changes for you.
+
 ## 0.14.4
 
 - **Closing a window starts it fresh:** your bags, bank (character and Warband) and guild bank clear their search and scroll back to the top when you close them, so the next open shows everything from the top.

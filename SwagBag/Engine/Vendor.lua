@@ -17,8 +17,8 @@
 --                                      selling past the room (up to BUYBACK more); why "full": no room left
 --   Vendor.Repair() -> line | nil      repair as vendor.repair says; the chat line, or nil (nothing to repair)
 --   Vendor.Money(copper) -> "1g 23s 4c"
--- Settings: vendor.autoSell (default on) and vendor.repair: "own" (default, your gold) | "guild" (the guild
--- bank first when the guild allows it, else your gold) | "off". Commands: /swagbag sell [on|off|junk],
+-- Settings: vendor.autoSell (default on) and vendor.repair: "off" (default since 0.14.5) | "own" (your gold) |
+-- "guild" (the guild bank first when the guild allows it, else your gold). Commands: /swagbag sell [on|off|junk],
 -- /swagbag repair [own|guild|off]; Settings > Vendor (UI/SettingsVendor.lua).
 -- Safety: at most BUYBACK (12) items per vendor visit (ruling R1), because Blizzard's buyback tab keeps only
 -- the last 12 sold: the auto-sell, /swagbag sell junk and Sell all share the count, and selling past it needs

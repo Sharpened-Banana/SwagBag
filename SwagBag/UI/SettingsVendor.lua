@@ -1,5 +1,5 @@
 -- SwagBag settings: the Vendor page (week 7, user pick 4). Auto-sell junk On (default) / Off, and the
--- repair: Your gold (default) / Guild bank first / Off. Every click runs the chat command, so the
+-- repair: Off (default since 0.14.5) / Your gold / Guild bank first. Every click runs the chat command, so the
 -- window and the command never disagree (P2: the status line answers). Item locks (user pick 5): a drop
 -- target that locks or unlocks the item on the cursor (as the bags' Lock button), and Unlock all. Week 10: the
 -- warnings before a locked item is destroyed, On (default) / Off.
@@ -34,8 +34,8 @@ local function rows()
 		end },
 		{ kind = "choice", label = L.SET_VENDOR_REPAIR, tip = L.SET_VENDOR_REPAIR_TIP, width = 130, get = function()
 			return SB.Config.Get("vendor.repair")
-		end, choices = { { value = "own", text = L.SET_VENDOR_REPAIR_OWN }, { value = "guild", text = L.SET_VENDOR_REPAIR_GUILD },
-			{ value = "off", text = L.SET_OFF } },
+		end, choices = { { value = "off", text = L.SET_OFF }, { value = "own", text = L.SET_VENDOR_REPAIR_OWN },
+			{ value = "guild", text = L.SET_VENDOR_REPAIR_GUILD } },
 		apply = function(v)
 			return run("repair " .. v)
 		end },

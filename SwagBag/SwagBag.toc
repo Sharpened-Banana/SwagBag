@@ -2,7 +2,7 @@
 ## Title: SwagBag
 ## Notes: Bags that set themselves up, show what matters, and never break.
 ## Author: lonezebra
-## Version: 0.14.4
+## Version: 0.14.5
 ## SavedVariables: SwagBagDB
 ## SavedVariablesPerCharacter: SwagBagCharDB
 ## OptionalDeps: Auctionator, Syndicator, ElvUI, TradeSkillMaster, Masque

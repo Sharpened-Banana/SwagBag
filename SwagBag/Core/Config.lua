@@ -87,8 +87,9 @@ Config.Defaults = {
 				market = "c_junk,c_tradegoods,c_boe,c_wue",
 			} },
 		-- At a vendor (week 7, user pick 4; Engine/Vendor.lua). autoSell: sell gray junk at every vendor (on).
-		-- repair: "own" (repair with your gold, default) | "guild" (the guild bank first) | "off".
-		vendor = { autoSell = true, repair = "own" },
+		-- repair: "off" (default since 0.14.5, user request: repairing by itself is opt-in) | "own" (repair with
+		-- your gold) | "guild" (the guild bank first).
+		vendor = { autoSell = true, repair = "off" },
 		-- mode: what the Sort buttons (bags, bank, warband) do (week 9, user pick 8): "blizzard" (Blizzard's own
 		-- sort, the default) | "stacks" (SwagBag merges partial stacks, then puts each item's partial stack in front
 		-- of its full ones, for TSM posting; Engine/Stacker.lua).
