@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Upload the current SwagBag version to CurseForge.
 #
-#   scripts/release.sh [--type alpha|beta|release] [--dry-run] [--yes]
+#   scripts/release.sh [--type release|beta|alpha] [--dry-run] [--yes]   (default: release)
 #
 # What it does, in order (it stops at the first problem):
 #   1. checks you are on main with nothing uncommitted (untracked files are ignored)
@@ -22,7 +22,7 @@ set -euo pipefail
 SITE="https://wow.curseforge.com"
 RETAIL_TYPE=517
 KEYCHAIN_SERVICE="swagbag-curseforge"
-TYPE="beta"
+TYPE="release" # every upload is a full release (user choice, 2026-10-22); --type beta|alpha only when asked
 DRY=0
 YES=0
 
