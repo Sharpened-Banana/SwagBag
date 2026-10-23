@@ -142,3 +142,20 @@ describe("Items.Describe", function()
 		assert.equal("12345#b", Items.Key({ itemID = 12345, isBound = true, isWUE = true }, "instance"))
 	end)
 end)
+
+-- Forever Stage A, Task 2: Forever's bank has 9 character tabs (6-14), so bag 13 is character bank tab 8.
+describe("Items on WoW Forever", function()
+	-- Mutation: restoring the literal ranges in Adapter.BagKind (13 would be warband tab 2).
+	it("an item in bag 13 on Forever is in the bank, not the warband", function()
+		local SB = Loader.New({ "SwagBag/Engine/Items.lua", "SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua",
+			"SwagBag/Engine/Query/Query.lua", "SwagBag/Engine/Keywords.lua" }, { flavor = "forever" })
+		local A = SB.Adapter
+		Fixtures.SmallBags(A)
+		A.SetBagSize(13, 98)
+		A.Put(13, 1, Fixtures.ORE, 10)
+		local r = SB.Items.Describe(13, 1)
+		assert.same({ "bank", 8 }, { r.location, r.tab })
+		assert.equal(true, SB.Query.Eval(SB.Query.Compile("bank"), r))
+		assert.equal(false, SB.Query.Eval(SB.Query.Compile("warband"), r))
+	end)
+end)

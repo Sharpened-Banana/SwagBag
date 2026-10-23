@@ -12,10 +12,11 @@ function Checks.Run()
 	local results = {}
 	for i, c in ipairs(A.CHECKS) do
 		local v = A.Resolve(c.path)
+		local want = A.CheckExpected(c)
 		local pass, detail
-		if c.value ~= nil then
-			pass = v == c.value
-			detail = pass and tostring(v) or L.CHECK_EXPECTED:format(tostring(c.value), tostring(v))
+		if want ~= nil then
+			pass = v == want
+			detail = pass and tostring(v) or L.CHECK_EXPECTED:format(tostring(want), tostring(v))
 		else
 			pass = v ~= nil
 			detail = pass and L.CHECK_PRESENT or L.CHECK_MISSING

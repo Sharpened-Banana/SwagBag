@@ -1,4 +1,4 @@
--- luacheck: globals WOW_PROJECT_ID WOW_PROJECT_MAINLINE WOW_PROJECT_CAMELOT WOW_PROJECT_FOREVER C_Bank
+-- luacheck: globals WOW_PROJECT_ID WOW_PROJECT_MAINLINE WOW_PROJECT_CAMELOT WOW_PROJECT_FOREVER C_Bank Enum
 -- Forever Stage A, Task 1: client flavor detection and the capability table (A.Flavor, A.FEATURES, A.Has,
 -- A.Allows), with the REAL Adapter and stubbed project constants; then the mock's Forever mode.
 local Loader = dofile("spec/helpers/loader.lua")
@@ -164,5 +164,161 @@ describe("Mock Forever mode", function()
 		assert.equal("retail", SB.Adapter.Flavor())
 		assert.equal(true, SB.Adapter.Has("keystones"))
 		assert.equal(120100, SB.Adapter.BuildInfo().toc)
+	end)
+end)
+
+-- Forever Stage A, Task 2: bag IDs derived from Enum.BagIndex (real Adapter, stubbed Enum).
+describe("Bag layout from Enum.BagIndex", function()
+	local Mock = dofile("spec/mock_adapter.lua")
+	local A
+	before_each(function()
+		Enum = nil
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+	end)
+
+	after_each(function()
+		Enum = nil
+	end)
+
+	local function copy(t)
+		local out = {}
+		for k, v in pairs(t) do
+			out[k] = v
+		end
+		return out
+	end
+
+	-- Mutation: an off-by-one in the consecutive scan.
+	it("Retail's 12.1.5 BagIndex derives exactly today's literals", function()
+		assert.same(Mock.RETAIL_BAG_INDEX, A.RETAIL_BAG_INDEX)
+		local layout = A.LayoutFromBagIndex(Mock.RETAIL_BAG_INDEX)
+		assert.same({ 0, 1, 2, 3, 4, 5 }, layout.bags)
+		assert.equal(5, layout.reagent)
+		assert.same({ first = 6, last = 11 }, layout.bank)
+		assert.same({ first = 12, last = 16 }, layout.warband)
+		local kind, tab = {}, {}
+		kind[0] = "backpack"
+		for id = 1, 4 do
+			kind[id] = "bags"
+		end
+		kind[5] = "reagentbag"
+		for id = 6, 11 do
+			kind[id], tab[id] = "bank", id - 5
+		end
+		for id = 12, 16 do
+			kind[id], tab[id] = "warband", id - 11
+		end
+		assert.same(kind, layout.kind)
+		assert.same(tab, layout.tab)
+		assert.same(A.RETAIL_LAYOUT.kind, layout.kind)
+		assert.same(A.RETAIL_LAYOUT.tab, layout.tab)
+	end)
+
+	-- Mutation: a hardcoded last = first + 5.
+	it("Forever's BagIndex gives bank 6-14 and warband 15-23", function()
+		local layout = A.LayoutFromBagIndex(Mock.FOREVER_BAG_INDEX)
+		assert.same({ 0, 1, 2, 3, 4, 5 }, layout.bags)
+		assert.same({ first = 6, last = 14 }, layout.bank)
+		assert.same({ first = 15, last = 23 }, layout.warband)
+		assert.equal(9, layout.tab[14])
+		assert.equal(9, layout.tab[23])
+	end)
+
+	it("Forever's extra names (-1, -2, -3) are never bags", function()
+		local layout = A.LayoutFromBagIndex(Mock.FOREVER_BAG_INDEX)
+		assert.is_nil(layout.kind[-1])
+		assert.is_nil(layout.kind[-2])
+		assert.is_nil(layout.kind[-3])
+	end)
+
+	-- Mutation: deriving a partial layout.
+	it("an incomplete BagIndex gives nil, and BagLayout falls back to Retail", function()
+		local bi = copy(Mock.FOREVER_BAG_INDEX)
+		bi.AccountBankTab_1 = nil
+		assert.is_nil(A.LayoutFromBagIndex(bi))
+		Enum = { BagIndex = bi }
+		assert.equal(A.RETAIL_LAYOUT, A.BagLayout())
+	end)
+
+	it("a gap ends a range; overlapping ranges are refused", function()
+		local gap = copy(Mock.RETAIL_BAG_INDEX)
+		gap.CharacterBankTab_3 = nil
+		assert.same({ first = 6, last = 7 }, A.LayoutFromBagIndex(gap).bank)
+		local overlap = copy(Mock.RETAIL_BAG_INDEX)
+		overlap.AccountBankTab_1 = 8
+		assert.is_nil(A.LayoutFromBagIndex(overlap))
+	end)
+
+	it("no ReagentBag: the bags are 0-4", function()
+		local bi = copy(Mock.RETAIL_BAG_INDEX)
+		bi.ReagentBag = nil
+		local layout = A.LayoutFromBagIndex(bi)
+		assert.same({ 0, 1, 2, 3, 4 }, layout.bags)
+		assert.is_nil(layout.reagent)
+		assert.is_nil(layout.kind[5])
+	end)
+
+	-- Mutation: re-deriving on every call (no cache), or caching forever (ignoring a new table).
+	it("BagLayout follows a new Enum.BagIndex table and caches the same one", function()
+		local reads = 0
+		local function proxy(real)
+			return setmetatable({}, { __index = function(_, k)
+				reads = reads + 1
+				return real[k]
+			end })
+		end
+		Enum = { BagIndex = proxy(Mock.FOREVER_BAG_INDEX) }
+		local first = A.BagLayout()
+		assert.same({ first = 6, last = 14 }, first.bank)
+		local once = reads
+		assert.truthy(once > 0)
+		assert.equal(first, A.BagLayout())
+		A.BagKind(12)
+		A.GetBagIDs("bags")
+		assert.equal(once, reads, "the same table is derived once")
+		Enum.BagIndex = proxy(Mock.RETAIL_BAG_INDEX)
+		local second = A.BagLayout()
+		assert.truthy(reads > once, "a new table is derived again")
+		assert.same({ first = 6, last = 11 }, second.bank)
+	end)
+
+	-- Mutation: restoring the literal ranges in BagKind.
+	it("Forever bank tabs 7-9 (bags 12-14) are character bank, not warband", function()
+		Enum = { BagIndex = Mock.FOREVER_BAG_INDEX }
+		assert.same({ "bank", 7 }, { A.BagKind(12) })
+		assert.same({ "bank", 9 }, { A.BagKind(14) })
+		assert.same({ "warband", 1 }, { A.BagKind(15) })
+		assert.same({ "warband", 9 }, { A.BagKind(23) })
+		assert.same({}, { A.BagKind(24) })
+	end)
+
+	it("GetBagIDs('bags') comes from the layout", function()
+		assert.same({ 0, 1, 2, 3, 4, 5 }, A.GetBagIDs("bags"), "no Enum: Retail")
+		Enum = { BagIndex = Mock.RETAIL_BAG_INDEX }
+		assert.same({ 0, 1, 2, 3, 4, 5 }, A.GetBagIDs("bags"), "Retail")
+		Enum = { BagIndex = Mock.FOREVER_BAG_INDEX }
+		assert.same({ 0, 1, 2, 3, 4, 5 }, A.GetBagIDs("bags"), "Forever")
+		local bi = copy(Mock.RETAIL_BAG_INDEX)
+		bi.ReagentBag = nil
+		Enum = { BagIndex = bi }
+		local ids = A.GetBagIDs("bags")
+		assert.same({ 0, 1, 2, 3, 4 }, ids, "no reagent bag")
+		ids[1] = 99
+		assert.same({ 0, 1, 2, 3, 4 }, A.GetBagIDs("bags"), "a copy: the caller cannot change the layout")
+	end)
+end)
+
+describe("Mock Forever bag layout", function()
+	it("Mock.Forever gives the Forever layout and bag lists; the default mock keeps Retail's", function()
+		local SB = Loader.New({}, { flavor = "forever" })
+		assert.same({ first = 6, last = 14 }, SB.Adapter.BagLayout().bank)
+		assert.same({ "bank", 7 }, { SB.Adapter.BagKind(12) })
+		assert.same({ 0, 1, 2, 3, 4, 5 }, SB.Adapter.GetBagIDs("bags"))
+		assert.same({}, SB.Adapter.GetBagIDs("warband"))
+		local R = Loader.New({})
+		assert.equal(R.Adapter.RETAIL_LAYOUT, R.Adapter.BagLayout())
+		assert.same({ "warband", 1 }, { R.Adapter.BagKind(12) })
 	end)
 end)

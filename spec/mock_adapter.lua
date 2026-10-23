@@ -455,12 +455,23 @@ M.RETAIL_BAG_INDEX = {
 	AccountBankTab_5 = 16,
 }
 
--- Puts a mock Adapter in WoW Forever mode (build 70532, Interface 16001). Completed in Forever Stage A Task 2.
+-- Puts a mock Adapter in WoW Forever mode (build 70532, Interface 16001): the flavor, the build, and the
+-- Forever bag layout (bags 0-5, bank 6-14, warband 15-23). The default mock keeps the real A.BagLayout,
+-- which gives A.RETAIL_LAYOUT with no global Enum.
 function M.Forever(m)
 	m.flavor = "forever"
 	function m.BuildInfo()
 		return { version = "1.60.1", build = "70532", toc = 16001, locale = "enUS" }
 	end
+	local layout = m.LayoutFromBagIndex(M.FOREVER_BAG_INDEX)
+	function m.BagLayout()
+		return layout
+	end
+	local bags = {}
+	for i, id in ipairs(layout.bags) do
+		bags[i] = id
+	end
+	m.bagIDs = { bags = bags, bank = {}, warband = {} }
 	return m
 end
 

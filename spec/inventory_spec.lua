@@ -687,3 +687,27 @@ describe("Inventory: SeenAll", function()
 		assert.same(A.GetBagIDs("bags"), A.newClearedBags[#A.newClearedBags])
 	end)
 end)
+
+-- Forever Stage A, Task 2: the Forever bank scan (Mock.Forever's layout: bank 6-14).
+describe("Inventory on WoW Forever", function()
+	-- Mutation: restoring the literal ranges in Adapter.BagKind (14 would be warband).
+	it("a Forever bank scan reads tabs 6-14 as bank", function()
+		local SB = Loader.New({ FILES[1], FILES[2], FILES[3], FILES[4], "SwagBag/Engine/Items.lua" }, { flavor = "forever" })
+		local A, Inv = SB.Adapter, SB.Inventory
+		Fixtures.SmallBags(A)
+		A.bagIDs.bank = { 6, 10, 14 }
+		for _, bag in ipairs(A.bagIDs.bank) do
+			A.SetBagSize(bag, 2)
+			A.Put(bag, 1, Fixtures.ORE, 10)
+		end
+		Inv.ScanKind("bank")
+		local seen = {}
+		for bag, slot, snap in Inv.Iterate("bank") do
+			if snap then
+				seen[#seen + 1] = bag
+				assert.equal("bank", SB.Items.Describe(bag, slot).location, "bag " .. bag)
+			end
+		end
+		assert.same({ 6, 10, 14 }, seen)
+	end)
+end)

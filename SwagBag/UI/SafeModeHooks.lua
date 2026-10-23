@@ -211,9 +211,10 @@ function Hooks.Install()
 		onBagKey("ToggleBackpack", "")
 	end, "bags"))
 	if ToggleBag then
-		-- Only the bag-bar IDs 0-5; never bank tabs, nil or other values.
+		-- Only the bag-bar IDs from the Adapter's bag layout; never bank tabs, nil or other values.
 		hooksecurefunc("ToggleBag", Guard("hook:ToggleBag", function(id)
-			if type(id) == "number" and id >= 0 and id <= 5 then
+			local k = type(id) == "number" and SB.Adapter.BagKind(id)
+			if k == "backpack" or k == "bags" or k == "reagentbag" then
 				onBagKey("ToggleBag", tostring(id))
 			end
 		end, "bags"))

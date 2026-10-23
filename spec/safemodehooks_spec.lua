@@ -344,3 +344,50 @@ describe("SafeModeHooks", function()
 		assert.is_nil(SB.SafeModeHooks.autoOpenedBy)
 	end)
 end)
+
+-- Forever Stage A, Task 2. Characterization (passes before and after): the filter now asks the Adapter's bag layout.
+describe("SafeModeHooks ToggleBag under both flavors", function()
+	local hooks, toggles
+
+	local function setup(flavor)
+		local SB = Loader.New(FILES, { flavor = flavor })
+		hooks, toggles = {}, 0
+		hooksecurefunc = function(name, fn) hooks[name] = fn end
+		NUM_CONTAINER_FRAMES = 0
+		ToggleBag = function() end
+		SB.Buttons = { created = true, KindOf = function(id) return id <= 5 and "bags" or "bank" end }
+		SB.BagsWindow = {
+			IsOpen = function() return false end,
+			Toggle = function() toggles = toggles + 1 end,
+			Open = function() return true end,
+			Close = function() end,
+		}
+		Loader.LoadFile(SB, "SwagBag/UI/SafeModeHooks.lua")
+		SB.Emit("SB_LOGIN")
+		return SB
+	end
+
+	after_each(function()
+		hooksecurefunc, NUM_CONTAINER_FRAMES, ToggleBag = nil, nil, nil
+	end)
+
+	-- Mutation: the filter `type(id) == "number" and id >= 0` only.
+	it("ToggleBag reacts to the bag-bar IDs only, from the layout", function()
+		for _, flavor in ipairs({ "retail", "forever" }) do
+			local SB = setup(flavor)
+			for id = 0, 5 do
+				local before = toggles
+				hooks.ToggleBag(id)
+				SB.Adapter.Advance(0.1)
+				assert.equal(before + 1, toggles, flavor .. " bag " .. id)
+			end
+			for _, id in ipairs({ 6, 12, -1 }) do
+				hooks.ToggleBag(id)
+				SB.Adapter.Advance(0.1)
+			end
+			hooks.ToggleBag(nil)
+			assert.equal(6, toggles, flavor .. ": 6, 12, -1 and nil do nothing")
+			assert.falsy(SB.SafeMode.IsOn("bags"), flavor)
+		end
+	end)
+end)

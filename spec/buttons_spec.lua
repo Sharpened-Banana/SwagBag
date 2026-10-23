@@ -508,3 +508,16 @@ describe("A grouped icon's total (0.14.0)", function()
 		assert.truthy(B.StackOf(bare))
 	end)
 end)
+
+-- Forever Stage A, Task 2: Buttons.KindOf follows the Adapter's bag layout.
+describe("Buttons on WoW Forever", function()
+	-- Mutation: restoring the literal ranges in Adapter.BagKind.
+	it("on Forever Buttons.KindOf(12) is bank and 15 is warband", function()
+		local SB = Loader.New(FILES, { flavor = "forever" })
+		Loader.LoadFile(SB, "SwagBag/UI/Buttons.lua")
+		assert.equal("bank", SB.Buttons.KindOf(12))
+		assert.equal("bank", SB.Buttons.KindOf(14))
+		assert.equal("warband", SB.Buttons.KindOf(15))
+		assert.equal("bags", SB.Buttons.KindOf(5))
+	end)
+end)

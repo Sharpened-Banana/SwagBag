@@ -52,6 +52,23 @@ describe("Checks", function()
 		local summary = ("Checks: %d passed, 1 failed (0 required)."):format(#A.CHECKS - 1)
 		assert.equal(summary, lines[#lines])
 	end)
+
+	-- Mutation: Checks.Run (or A.CheckExpected) ignoring foreverValue.
+	it("on Forever the warband bank's first ID is checked against 15", function()
+		A.globals.Enum.BagIndex.AccountBankTab_1 = 15
+		A.flavor = "forever"
+		assert.same({}, SB.Checks.Failed(SB.Checks.Run(), true, "bank"))
+	end)
+
+	-- Characterization (passes before and after Task 2). Mutation: using foreverValue on both clients.
+	it("on Retail, 15 still fails the warband check", function()
+		A.globals.Enum.BagIndex.AccountBankTab_1 = 15
+		A.flavor = "retail"
+		local failed = SB.Checks.Failed(SB.Checks.Run(), true, "bank")
+		assert.equal(1, #failed)
+		assert.equal("Enum.BagIndex.AccountBankTab_1", failed[1].name)
+		assert.equal("expected 12, got 15", failed[1].detail)
+	end)
 end)
 
 describe("Adapter pure helpers", function()

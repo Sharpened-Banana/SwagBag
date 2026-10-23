@@ -271,22 +271,103 @@ function A.BindKind(bindType)
 	return bindMap[bindType] or "none"
 end
 
--- Bag ID ranges from Enum.BagIndex (verified 12.1): 0 backpack, 1-4 bags,
--- 5 reagent bag, 6-11 character bank tabs, 12-16 warband bank tabs.
--- Returns location kind and, for bank tabs, the tab number (1-based).
-function A.BagKind(bag)
-	if bag == 0 then
-		return "backpack", nil
-	elseif bag >= 1 and bag <= 4 then
-		return "bags", nil
-	elseif bag == 5 then
-		return "reagentbag", nil
-	elseif bag >= 6 and bag <= 11 then
-		return "bank", bag - 5
-	elseif bag >= 12 and bag <= 16 then
-		return "warband", bag - 11
+-- Blizzard's Retail 12.1.5 Enum.BagIndex (Gethe/wow-ui-source, live branch, BagIndexConstantsDocumentation.lua),
+-- copied verbatim: the only bag-ID literals in SwagBag, and the whole-table fallback.
+A.RETAIL_BAG_INDEX = {
+	Accountbanktab = -3, Characterbanktab = -2, Keyring = -1,
+	Backpack = 0, Bag_1 = 1, Bag_2 = 2, Bag_3 = 3, Bag_4 = 4, ReagentBag = 5,
+	CharacterBankTab_1 = 6, CharacterBankTab_2 = 7, CharacterBankTab_3 = 8, CharacterBankTab_4 = 9,
+	CharacterBankTab_5 = 10, CharacterBankTab_6 = 11,
+	AccountBankTab_1 = 12, AccountBankTab_2 = 13, AccountBankTab_3 = 14, AccountBankTab_4 = 15,
+	AccountBankTab_5 = 16,
+}
+
+-- The bag layout from an Enum.BagIndex table (pure; reads only the names below):
+-- { bags = { ids }, reagent = id | nil, bank = { first, last }, warband = { first, last },
+--   kind = { [id] = "backpack" | "bags" | "reagentbag" | "bank" | "warband" }, tab = { [id] = n } }.
+-- A range runs while each name is the previous ID plus 1, so a gap ends it. nil when Backpack, Bag_1,
+-- CharacterBankTab_1 or AccountBankTab_1 is not a number, or when an ID would belong to two kinds.
+-- Every other name (Keyring, Characterbanktab, Accountbanktab, Bank...) is ignored.
+function A.LayoutFromBagIndex(bi)
+	if type(bi) ~= "table" then
+		return nil
 	end
-	return nil, nil
+	local function num(name)
+		local v = bi[name]
+		if type(v) == "number" then
+			return v
+		end
+		return nil
+	end
+	local backpack, bag1 = num("Backpack"), num("Bag_1")
+	local bank1, warband1 = num("CharacterBankTab_1"), num("AccountBankTab_1")
+	if not (backpack and bag1 and bank1 and warband1) then
+		return nil
+	end
+	local layout = { bags = {}, kind = {}, tab = {} }
+	local ok = true
+	local function claim(id, kind, tab)
+		if layout.kind[id] ~= nil then
+			ok = false
+			return
+		end
+		layout.kind[id], layout.tab[id] = kind, tab
+	end
+	layout.bags[1] = backpack
+	claim(backpack, "backpack")
+	local prev, i = backpack, 1
+	while num("Bag_" .. i) == prev + 1 do
+		prev = prev + 1
+		layout.bags[#layout.bags + 1] = prev
+		claim(prev, "bags")
+		i = i + 1
+	end
+	local reagent = num("ReagentBag")
+	if reagent then
+		layout.reagent = reagent
+		layout.bags[#layout.bags + 1] = reagent
+		claim(reagent, "reagentbag")
+	end
+	local function range(prefix, first, kind)
+		local last, n = first, 1
+		claim(first, kind, 1)
+		while num(prefix .. (n + 1)) == last + 1 do
+			last, n = last + 1, n + 1
+			claim(last, kind, n)
+		end
+		return { first = first, last = last }
+	end
+	layout.bank = range("CharacterBankTab_", bank1, "bank")
+	layout.warband = range("AccountBankTab_", warband1, "warband")
+	if not ok then
+		return nil
+	end
+	return layout
+end
+
+A.RETAIL_LAYOUT = A.LayoutFromBagIndex(A.RETAIL_BAG_INDEX)
+
+-- The live layout, from Enum.BagIndex: derived again only when the client's table changes (identity),
+-- else cached. Falls back whole to A.RETAIL_LAYOUT when there is no table or it does not derive.
+local layoutIndex, layoutCached
+function A.BagLayout()
+	local bi = Enum and Enum.BagIndex
+	if type(bi) ~= "table" then
+		return A.RETAIL_LAYOUT
+	end
+	if bi ~= layoutIndex then
+		layoutIndex = bi
+		layoutCached = A.LayoutFromBagIndex(bi) or A.RETAIL_LAYOUT
+	end
+	return layoutCached
+end
+
+-- Bag ID ranges derived from Enum.BagIndex names (Retail 6-11 / 12-16, Forever 6-14 / 15-23); the 12.1.5
+-- table is the fallback. 0 backpack, then the bags and the reagent bag, then character bank and warband tabs.
+-- Returns location kind and, for bank tabs, the tab number (1-based); nothing for an unknown bag.
+function A.BagKind(bag)
+	local layout = A.BagLayout()
+	return layout.kind[bag], layout.tab[bag]
 end
 
 -- Which empty slots belong together (the free tile, plan D19): "reagent" for the reagent bag
@@ -308,7 +389,11 @@ end
 -- kind: "bags" | "bank" | "warband". Bank kinds return PURCHASED tab IDs only.
 function A.GetBagIDs(kind)
 	if kind == "bags" then
-		return { 0, 1, 2, 3, 4, 5 }
+		local out = {}
+		for i, id in ipairs(A.BagLayout().bags) do
+			out[i] = id
+		end
+		return out
 	end
 	local bt = Enum and Enum.BankType
 	local bankType = bt and ((kind == "bank" and bt.Character) or (kind == "warband" and bt.Account))
@@ -1967,6 +2052,7 @@ end
 ---------------------------------------------------------------------------
 -- Feature checks (consumed by Core/Checks.lua). window: which Safe Mode
 -- flag a failed REQUIRED check turns on. value: exact value expected.
+-- foreverValue: the exact value expected on WoW Forever instead of value (A.CheckExpected).
 ---------------------------------------------------------------------------
 A.CHECKS = {
 	{ path = "C_Container.GetContainerNumSlots", window = "bags", required = true },
@@ -2032,7 +2118,7 @@ A.CHECKS = {
 	{ path = "Enum.BagIndex.Backpack", value = 0, window = "bags", required = true },
 	{ path = "Enum.BagIndex.ReagentBag", value = 5, window = "bags", required = true },
 	{ path = "Enum.BagIndex.CharacterBankTab_1", value = 6, window = "bank", required = true },
-	{ path = "Enum.BagIndex.AccountBankTab_1", value = 12, window = "bank", required = true },
+	{ path = "Enum.BagIndex.AccountBankTab_1", value = 12, foreverValue = 15, window = "bank", required = true },
 	{ path = "Enum.BankType.Character", value = 0, window = "bank", required = true },
 	{ path = "Enum.BankType.Account", value = 2, window = "bank", required = true },
 	{ path = "C_Bank.FetchPurchasedBankTabIDs", window = "bank", required = true },
@@ -2092,3 +2178,12 @@ A.CHECKS = {
 	{ path = "GetMoneyString", window = "bags", required = false },
 	{ path = "GetCoinTextureString", window = "bags", required = false },
 }
+
+-- The exact value a check expects on this client: foreverValue on WoW Forever when it has one, else value
+-- (nil for a presence-only check). Keeps the flavor read inside the Adapter for Core/Checks.lua.
+function A.CheckExpected(c)
+	if c.foreverValue ~= nil and A.Flavor() == "forever" then
+		return c.foreverValue
+	end
+	return c.value
+end
