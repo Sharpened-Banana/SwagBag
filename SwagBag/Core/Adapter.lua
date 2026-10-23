@@ -1,5 +1,8 @@
--- SwagBag Adapter: the ONLY file allowed to name C_* namespaces or Enum
+-- SwagBag Adapter: the ONLY file allowed to name C_* namespaces, Enum or the WOW_PROJECT_* constants
 -- (scripts/check.sh fails the build otherwise). Everything else calls SB.Adapter.*.
+-- Client flavor (Forever Stage A): A.Flavor() tells Retail from WoW Forever by the project constant, then by a
+-- Forever-only API; never by the Interface number. What each client may show lives only in A.FEATURES: UI files
+-- ask A.Has(feature) or A.Allows(surface, id), never A.Flavor(). On Retail both answer true for everything.
 -- Load-time code here must stay safe outside WoW: tests load this file and then
 -- replace the WoW-calling functions with fakes (spec/mock_adapter.lua).
 local _, SB = ...
@@ -120,6 +123,86 @@ function A.OtherBagAddons()
 		out[#out + 1] = "ElvUI"
 	end
 	return out
+end
+
+---------------------------------------------------------------------------
+-- Client flavor and capabilities (Forever Stage A)
+---------------------------------------------------------------------------
+-- "retail" or "forever". Gate on the project constant, then on the feature; never on the Interface number.
+-- Not cached, so tests can switch it. An unknown project that is not Retail takes the restricted profile.
+function A.Flavor()
+	local id = _G.WOW_PROJECT_ID
+	local forever = _G.WOW_PROJECT_FOREVER or _G.WOW_PROJECT_CAMELOT
+	local mainline = _G.WOW_PROJECT_MAINLINE
+	if id ~= nil and forever ~= nil and id == forever then
+		return "forever"
+	end
+	if id ~= nil and mainline ~= nil and id ~= mainline then
+		return "forever"
+	end
+	if id == nil and C_Bank and C_Bank.ShouldUsePlayerBagsInBank ~= nil then
+		return "forever" -- a client whose project constants were removed (report section 3 fallback)
+	end
+	return "retail"
+end
+
+-- The one table of Retail-only features. forever = true only once a feature is verified on WoW Forever;
+-- surfaces lists the entry points (overlay, footer, mode, trigger, style, setting ids) each feature owns.
+A.FEATURES = {
+	-- No Challenges UI, no Mythic+, no crests.
+	keystones = { forever = false, surfaces = {
+		overlay = { "keystone" }, footer = { "crests", "keystone" }, mode = { "mplus" }, trigger = { "mplus" },
+		style = { "mplus" }, setting = { "overlays.keystone", "focus.on.mplus" },
+	} },
+	-- The Delves UI is standard only.
+	delves = { forever = false, surfaces = { mode = { "delves" }, trigger = { "delve" }, setting = { "focus.on.delves" } } },
+	-- Retail's upgrade system.
+	upgradeTracks = { forever = false, surfaces = { overlay = { "track" }, setting = { "overlays.track" } } },
+	-- Housing is standard only (data only: DecorKnown).
+	housing = { forever = false, surfaces = {} },
+	-- Whether the warband bank is enabled is unverified (data only: warband tabs, WuE, warband snapshots).
+	warband = { forever = false, surfaces = {} },
+	-- Forever's bank-bag bank is unverified (Boot's Safe Mode).
+	bankWindow = { forever = false, surfaces = {} },
+}
+
+-- Is a declared feature on for this client? An undeclared name is off on both clients.
+function A.Has(feature)
+	local f = A.FEATURES[feature]
+	if f == nil then
+		return false
+	end
+	if A.Flavor() ~= "forever" then
+		return true
+	end
+	return f.forever == true
+end
+
+-- surface -> id -> { feature names that list it }, built once from A.FEATURES on first use.
+local surfaceIndex
+function A.Allows(surface, id)
+	if surfaceIndex == nil then
+		surfaceIndex = {}
+		for name, f in pairs(A.FEATURES) do
+			for s, ids in pairs(f.surfaces) do
+				surfaceIndex[s] = surfaceIndex[s] or {}
+				for _, i in ipairs(ids) do
+					local owners = surfaceIndex[s][i] or {}
+					owners[#owners + 1] = name
+					surfaceIndex[s][i] = owners
+				end
+			end
+		end
+	end
+	local owners = surfaceIndex[surface] and surfaceIndex[surface][id]
+	if owners then
+		for _, name in ipairs(owners) do
+			if not A.Has(name) then
+				return false
+			end
+		end
+	end
+	return true
 end
 
 ---------------------------------------------------------------------------

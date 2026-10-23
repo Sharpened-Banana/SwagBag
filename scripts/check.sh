@@ -2,7 +2,7 @@
 # SwagBag local CI (spec 11.2). Run from anywhere; exits non-zero on any failure.
 #   1 syntax  luac -p (Lua 5.5) and luajit -bl (Lua 5.1 rules, like WoW)
 #   2 lint    luacheck with .luacheckrc
-#   3 rules   forbidden tokens (spec 5.3), C_*/Enum only in Core/Adapter.lua, no goto
+#   3 rules   forbidden tokens (spec 5.3), C_*/Enum/WOW_PROJECT_* only in Core/Adapter.lua, no goto
 #   4 toc     scripts/toc_check.lua
 #   5 tests   luajit spec/runner.lua spec/*_spec.lua
 set -uo pipefail
@@ -32,6 +32,7 @@ if grep -rnE '(^|[^[:alnum:]_])goto[[:space:]]' SwagBag; then fail "forbidden: g
 if grep -rnE '(^|[^[:alnum:]_])(C_[A-Z][A-Za-z]*|Enum\.)' SwagBag | grep -v '^SwagBag/Core/Adapter.lua:'; then
 	fail "C_* or Enum named outside SwagBag/Core/Adapter.lua (comments included)"
 fi
+if grep -rnE '(^|[^[:alnum:]_])WOW_PROJECT_' SwagBag | grep -v '^SwagBag/Core/Adapter.lua:'; then fail "WOW_PROJECT_* named outside SwagBag/Core/Adapter.lua (comments included)"; fi
 
 # Week 9: other addons' API globals that SwagBag reads (TradeSkillMaster's TSM_API, Masque through LibStub) are
 # named only in the Adapter too, comments included.

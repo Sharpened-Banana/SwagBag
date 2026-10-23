@@ -97,6 +97,12 @@ function M.New(SB)
 		return { version = "12.1.0", build = "69933", toc = 120100, locale = "enUS" }
 	end
 
+	-- Client flavor: the real A.Has / A.Allows call A.Flavor() through this table. M.Forever switches it.
+	m.flavor = "retail"
+	function m.Flavor()
+		return m.flavor
+	end
+
 	function m.Resolve(path)
 		local cur = m.globals
 		for part in path:gmatch("[^%.]+") do
@@ -425,6 +431,36 @@ function M.New(SB)
 	end
 
 	M.AddContainers(m)
+	return m
+end
+
+-- Blizzard's Enum.BagIndex, copied from Gethe/wow-ui-source BagIndexConstantsDocumentation.lua:
+-- WoW Forever build 70532 (the forever branch) and Retail 12.1.5 (the live branch). Every name is kept.
+M.FOREVER_BAG_INDEX = {
+	Accountbanktab = -3, Characterbanktab = -2, Keyring = -1,
+	Backpack = 0, Bag_1 = 1, Bag_2 = 2, Bag_3 = 3, Bag_4 = 4, ReagentBag = 5,
+	CharacterBankTab_1 = 6, CharacterBankTab_2 = 7, CharacterBankTab_3 = 8, CharacterBankTab_4 = 9,
+	CharacterBankTab_5 = 10, CharacterBankTab_6 = 11, CharacterBankTab_7 = 12, CharacterBankTab_8 = 13,
+	CharacterBankTab_9 = 14,
+	AccountBankTab_1 = 15, AccountBankTab_2 = 16, AccountBankTab_3 = 17, AccountBankTab_4 = 18,
+	AccountBankTab_5 = 19, AccountBankTab_6 = 20, AccountBankTab_7 = 21, AccountBankTab_8 = 22,
+	AccountBankTab_9 = 23,
+}
+M.RETAIL_BAG_INDEX = {
+	Accountbanktab = -3, Characterbanktab = -2, Keyring = -1,
+	Backpack = 0, Bag_1 = 1, Bag_2 = 2, Bag_3 = 3, Bag_4 = 4, ReagentBag = 5,
+	CharacterBankTab_1 = 6, CharacterBankTab_2 = 7, CharacterBankTab_3 = 8, CharacterBankTab_4 = 9,
+	CharacterBankTab_5 = 10, CharacterBankTab_6 = 11,
+	AccountBankTab_1 = 12, AccountBankTab_2 = 13, AccountBankTab_3 = 14, AccountBankTab_4 = 15,
+	AccountBankTab_5 = 16,
+}
+
+-- Puts a mock Adapter in WoW Forever mode (build 70532, Interface 16001). Completed in Forever Stage A Task 2.
+function M.Forever(m)
+	m.flavor = "forever"
+	function m.BuildInfo()
+		return { version = "1.60.1", build = "70532", toc = 16001, locale = "enUS" }
+	end
 	return m
 end
 
