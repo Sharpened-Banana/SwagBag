@@ -160,8 +160,34 @@ local function worthChoices()
 end
 
 local function bankRows()
-	if SB.SafeMode.Reason("bank") == "forever" then -- WoW Forever: Blizzard's bank and guild bank for now
-		return { { kind = "note", label = L.SET_BANK_FOREVER_NOTE } }
+	-- The price rows drive the bags window too, so WoW Forever keeps them (built once, used by both lists).
+	local totals = { kind = "choice", label = L.SET_TOTALS, get = get("prices.headerTotals"),
+		choices = { { value = true, text = L.SET_SHOW }, { value = false, text = L.SET_HIDE } },
+		apply = function(v)
+			if not SB.Config.Set("prices.headerTotals", v) then
+				return L.SETTINGS_READONLY
+			end
+			SB.Emit("SB_PRICES_CHANGED") -- open windows re-read their header texts in place
+			return v and L.SET_TOTALS_ON or L.SET_TOTALS_OFF
+		end }
+	-- Week 9 (user pick 10): who prices items, and TSM's price; every click runs /swagbag price.
+	local source = { kind = "choice", label = L.SET_PRICE_SOURCE, tip = L.SET_PRICE_SOURCE_TIP, width = 90,
+		get = get("prices.source"),
+		choices = { { value = "auto", text = L.SET_PRICE_AUTO }, { value = "auctionator", text = "Auctionator" },
+			{ value = "tsm", text = "TSM" }, { value = "vendor", text = L.SET_PRICE_VENDOR } },
+		apply = function(v)
+			return run("price " .. v)
+		end }
+	-- TSM's price only (/swagbag price string): it never switches where prices come from (preflight S7).
+	local tsm = { kind = "choice", label = L.SET_PRICE_TSM, tip = L.SET_PRICE_TSM_TIP, width = 130, get = function()
+		return SB.Prices.TSMString()
+	end, choices = tsmChoices(),
+	apply = function(v)
+		return run("price string " .. v)
+	end }
+	-- WoW Forever: Blizzard's bank and guild bank for now; no bank, guild or gold-glow rows (the glow shows at the bank).
+	if SB.SafeMode.Reason("bank") == "forever" then
+		return { { kind = "note", label = L.SET_BANK_FOREVER_NOTE }, totals, source, tsm }
 	end
 	return {
 		{ kind = "choice", label = L.SET_BANK_FRAME, get = get("bank.blizzardFrame"),
@@ -190,15 +216,7 @@ local function bankRows()
 			apply = function(v)
 				return run("guild anytab " .. (v and "on" or "off"))
 			end },
-		{ kind = "choice", label = L.SET_TOTALS, get = get("prices.headerTotals"),
-			choices = { { value = true, text = L.SET_SHOW }, { value = false, text = L.SET_HIDE } },
-			apply = function(v)
-				if not SB.Config.Set("prices.headerTotals", v) then
-					return L.SETTINGS_READONLY
-				end
-				SB.Emit("SB_PRICES_CHANGED") -- open windows re-read their header texts in place
-				return v and L.SET_TOTALS_ON or L.SET_TOTALS_OFF
-			end },
+		totals,
 		-- Week 7 (user pick 7): the gold glow at the bank; every click runs /swagbag worth.
 		{ kind = "choice", label = L.SET_WORTH, tip = L.SET_WORTH_TIP, width = 90, get = function()
 			local mode = SB.Config.Get("prices.worth")
@@ -213,20 +231,8 @@ local function bankRows()
 			end
 			return run("worth " .. v)
 		end },
-		-- Week 9 (user pick 10): who prices items, and TSM's price; every click runs /swagbag price.
-		{ kind = "choice", label = L.SET_PRICE_SOURCE, tip = L.SET_PRICE_SOURCE_TIP, width = 90, get = get("prices.source"),
-			choices = { { value = "auto", text = L.SET_PRICE_AUTO }, { value = "auctionator", text = "Auctionator" },
-				{ value = "tsm", text = "TSM" }, { value = "vendor", text = L.SET_PRICE_VENDOR } },
-			apply = function(v)
-				return run("price " .. v)
-			end },
-		-- TSM's price only (/swagbag price string): it never switches where prices come from (preflight S7).
-		{ kind = "choice", label = L.SET_PRICE_TSM, tip = L.SET_PRICE_TSM_TIP, width = 130, get = function()
-			return SB.Prices.TSMString()
-		end, choices = tsmChoices(),
-		apply = function(v)
-			return run("price string " .. v)
-		end },
+		source,
+		tsm,
 		{ kind = "note", label = L.SET_BANK_NOTE },
 	}
 end

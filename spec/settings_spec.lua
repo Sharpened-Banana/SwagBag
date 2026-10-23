@@ -543,9 +543,15 @@ describe("Settings window on WoW Forever", function()
 	end)
 
 	-- Forever Stage A, Task 4. Mutation: bankRows without the reason check.
-	it("on Forever Settings > Bank & guild shows only the note", function()
+	-- Review fix: the price rows drive the bags window too, so they stay. Mutation: the Forever list without them.
+	it("on Forever Settings > Bank & guild shows the note and the price rows only", function()
+		local L, labels = SB.L, {}
 		SB.SafeMode.Enable("bank", "forever")
-		assert.same({ { kind = "note", label = SB.L.SET_BANK_FOREVER_NOTE } }, SW.byId.bank.rows())
+		for _, row in ipairs(SW.byId.bank.rows()) do
+			labels[#labels + 1] = row.label
+		end
+		assert.same({ L.SET_BANK_FOREVER_NOTE, L.SET_TOTALS, L.SET_PRICE_SOURCE, L.SET_PRICE_TSM }, labels,
+			"no bank, guild or gold-glow (SET_WORTH) rows")
 		SB.SafeMode.Disable("bank") -- the opt-in (/swagbag safe bank): the rows come back
 		assert.truthy(#SW.byId.bank.rows() > 1)
 	end)

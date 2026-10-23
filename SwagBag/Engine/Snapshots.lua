@@ -113,7 +113,8 @@ end
 
 -- A snapshot of every bag of a kind ("bags" | "bank" | "warband") from Inventory's model.
 -- WoW Forever: the warband bank is never read, so its capture is empty and store() writes nothing (Save, the
--- bank visit and the logout capture all come through here).
+-- bank visit and the logout capture all come through here). A second layer behind A.GetBagIDs's own warband
+-- gate (it already gives no bags there), so a later change to either one alone cannot save a warband snapshot.
 function Snap.Capture(kind)
 	local Inv = SB.Inventory
 	local snap = { v = 1, at = SB.Adapter.Time(), containers = {} }
