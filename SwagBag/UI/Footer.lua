@@ -550,6 +550,9 @@ SB.Slash.Register("footer", L.HELP_FOOTER, function(arg)
 		end
 		return L.FOOTER_STATE:format(table.concat(parts, ", "))
 	end
+	if KNOWN[id] and not SB.Adapter.Allows("footer", id) then
+		return L.FOREVER_LEFT_OUT:format(F.Name(id)) -- known, but this client leaves it out, whatever the verb
+	end
 	if not KNOWN[id] or not (what == "on" or what == "off" or what == "up" or what == "down") then
 		return L.FOOTER_USAGE
 	end

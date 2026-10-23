@@ -71,6 +71,15 @@ describe("Adapter flavor (real adapter, stubbed globals)", function()
 		assert.equal("retail", A.Flavor())
 	end)
 
+	-- Mutation: applying the API fallback only when WOW_PROJECT_ID is nil.
+	it("an ID with no MAINLINE constant and the Forever API is forever", function()
+		WOW_PROJECT_ID = 1
+		C_Bank = { ShouldUsePlayerBagsInBank = function() return true end }
+		assert.equal("forever", A.Flavor())
+		C_Bank = nil
+		assert.equal("retail", A.Flavor(), "an ID alone, without the API, stays retail")
+	end)
+
 	it("no constants but C_Bank.ShouldUsePlayerBagsInBank is forever", function()
 		C_Bank = { ShouldUsePlayerBagsInBank = function() return true end }
 		assert.equal("forever", A.Flavor())
@@ -243,13 +252,64 @@ describe("Bag layout from Enum.BagIndex", function()
 		assert.equal(A.RETAIL_LAYOUT, A.BagLayout())
 	end)
 
-	it("a gap ends a range; overlapping ranges are refused", function()
+	-- Mutation: ending a range at the gap instead of refusing the table (no gap scan).
+	it("a gap in the bank tabs gives nil and falls back to Retail; overlapping ranges are refused", function()
 		local gap = copy(Mock.RETAIL_BAG_INDEX)
 		gap.CharacterBankTab_3 = nil
-		assert.same({ first = 6, last = 7 }, A.LayoutFromBagIndex(gap).bank)
+		assert.is_nil(A.LayoutFromBagIndex(gap))
+		Enum = { BagIndex = gap }
+		assert.equal(A.RETAIL_LAYOUT, A.BagLayout())
 		local overlap = copy(Mock.RETAIL_BAG_INDEX)
 		overlap.AccountBankTab_1 = 8
 		assert.is_nil(A.LayoutFromBagIndex(overlap))
+	end)
+
+	-- Mutation: dropping both the Bag_1 == Backpack + 1 check and the bag gap scan (either one alone refuses it).
+	it("Bag_1 that does not follow the backpack gives nil", function()
+		local bi = copy(Mock.RETAIL_BAG_INDEX)
+		bi.Bag_1 = 7
+		assert.is_nil(A.LayoutFromBagIndex(bi))
+		Enum = { BagIndex = bi }
+		assert.equal(A.RETAIL_LAYOUT, A.BagLayout())
+		local bare = copy(bi)
+		bare.ReagentBag = nil
+		assert.is_nil(A.LayoutFromBagIndex(bare), "no ReagentBag to catch it")
+	end)
+
+	-- Mutation: no gap scan after the bag run.
+	it("a missing Bag_2 gives nil, not bags 0, 1, 5", function()
+		local bi = copy(Mock.RETAIL_BAG_INDEX)
+		bi.Bag_2 = nil
+		assert.is_nil(A.LayoutFromBagIndex(bi))
+		bi.ReagentBag = nil
+		assert.is_nil(A.LayoutFromBagIndex(bi), "no ReagentBag to catch it: not bags 0, 1")
+	end)
+
+	-- Mutation: no gap scan after the bank run (Forever's bank 6-6, tabs 7-11 with no kind).
+	it("a missing CharacterBankTab_2 on Forever gives nil", function()
+		local bi = copy(Mock.FOREVER_BAG_INDEX)
+		bi.CharacterBankTab_2 = nil
+		assert.is_nil(A.LayoutFromBagIndex(bi))
+		Enum = { BagIndex = bi }
+		assert.equal(A.RETAIL_LAYOUT, A.BagLayout())
+	end)
+
+	-- Mutation: no gap scan after the warband run.
+	it("a gap in the warband tabs gives nil", function()
+		local bi = copy(Mock.FOREVER_BAG_INDEX)
+		bi.AccountBankTab_4 = nil
+		assert.is_nil(A.LayoutFromBagIndex(bi))
+	end)
+
+	-- Mutation: accepting a ReagentBag that does not follow the last bag.
+	it("a ReagentBag that does not follow the last bag gives nil", function()
+		local bi = copy(Mock.RETAIL_BAG_INDEX)
+		bi.ReagentBag = 30
+		assert.is_nil(A.LayoutFromBagIndex(bi))
+		local early = copy(Mock.RETAIL_BAG_INDEX)
+		early.Bag_4 = nil
+		early.ReagentBag = 5
+		assert.is_nil(A.LayoutFromBagIndex(early), "bags 0-3 then reagent 5 skips 4")
 	end)
 
 	it("no ReagentBag: the bags are 0-4", function()

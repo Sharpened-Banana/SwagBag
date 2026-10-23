@@ -199,6 +199,21 @@ describe("SwagBag on WoW Forever (Stage A)", function()
 		assert.equal(0, BW.found.warband)
 	end)
 
+	-- Final review. Mutation: safe on/off switching the bank whatever its reason.
+	it("safe off keeps the forever bank", function()
+		login()
+		SB.Slash.Dispatch("safe bags")
+		A.printed = {}
+		SB.Slash.Dispatch("safe off")
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.equal("forever", SB.SafeMode.Reason("bank"))
+		SB.Slash.Dispatch("safe on")
+		assert.equal("forever", SB.SafeMode.Reason("bank"))
+		assert.equal(2, #A.Lines(), "one line each, for the bags only")
+		SB.Slash.Dispatch("safe bank")
+		assert.falsy(SB.SafeMode.IsOn("bank"), "only /swagbag safe bank lifts it")
+	end)
+
 	-- Review Focus 5. Mutation: Boot switching a window off at login when its saved safeMode is off.
 	it("the opt-in lasts one session", function()
 		login()

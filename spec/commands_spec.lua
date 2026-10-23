@@ -42,6 +42,17 @@ describe("Commands", function()
 		assert.equal("Safe Mode was already ON for bank.", A.Lines()[4])
 	end)
 
+	-- Forever Stage A final review. Mutation: skipping the bank in safe on/off on Retail too.
+	it("on Retail safe off still turns both windows off", function()
+		SB.Slash.Dispatch("safe on")
+		A.printed = {}
+		SB.Slash.Dispatch("safe off")
+		assert.falsy(SM.IsOn("bags"))
+		assert.falsy(SM.IsOn("bank"))
+		assert.equal(false, SB.Config.Get("safeMode.bank"))
+		assert.equal(2, #A.Lines())
+	end)
+
 	-- Week 9 (preflight S16). Mutation: in the otherbags command, set bags.warnOtherAddons without checking
 	-- Config.Set's answer.
 	it("otherbags says whether the login warning is on, switches it, and refuses while read-only", function()

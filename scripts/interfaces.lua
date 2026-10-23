@@ -9,8 +9,8 @@ function M.Parse(list)
 	local out = {}
 	for part in tostring(list or ""):gmatch("[^,]+") do
 		local digits = part:gsub("%s", "")
-		local n = tonumber(digits)
-		if n and digits:match("^%d+$") then
+		local n = digits:match("^%d+$") and tonumber(digits)
+		if n then
 			local kind = "unknown"
 			if n >= 16000 and n <= 16999 then
 				kind = "forever"
@@ -22,6 +22,8 @@ function M.Parse(list)
 				name = ("%d.%d.%d"):format(math.floor(n / 10000), math.floor(n / 100) % 100, n % 100),
 				type = kind,
 			}
+		elseif digits ~= "" then
+			out[#out + 1] = { iface = digits, name = digits, type = "unknown" } -- not a number: reported, never dropped
 		end
 	end
 	return out

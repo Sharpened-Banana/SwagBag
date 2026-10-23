@@ -33,6 +33,10 @@ Slash.Register("safe", L.HELP_SAFE, function(arg)
 	if arg == "" then
 		return L.SAFE_STATUS:format(SM.Describe("bags"), SM.Describe("bank"))
 	elseif arg == "on" or arg == "off" then
+		-- WoW Forever's bank (reason "forever") is lifted only by /swagbag safe bank, the Stage B opt-in.
+		if SM.Reason("bank") == "forever" then
+			return Commands.SetSafe("bags", arg == "on")
+		end
 		return { Commands.SetSafe("bags", arg == "on"), Commands.SetSafe("bank", arg == "on") }
 	elseif arg == "bags" or arg == "bank" then
 		return Commands.SetSafe(arg, not SM.IsOn(arg))

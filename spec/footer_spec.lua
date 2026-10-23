@@ -172,6 +172,12 @@ describe("Footer (ruling W4-14)", function()
 		assert.same({ "123", "500", "10 free", "AKCE +12" }, texts())
 	end)
 
+	-- Final review. Mutation: answering FOREVER_LEFT_OUT on Retail (Allows ignored).
+	it("on Retail /swagbag footer crests with no verb answers the usage", function()
+		SB.Slash.Dispatch("footer crests")
+		assert.same({ SB.L.FOOTER_USAGE }, A.Lines())
+	end)
+
 	-- Mutation: in Footer's save(), ignore SB.Config.Set's result (`SB.Config.Set(...) return true`).
 	it("read-only settings: the command refuses with the reason and changes nothing", function()
 		SB.Config.readOnly = true
@@ -552,6 +558,13 @@ describe("Footer on WoW Forever", function()
 		assert.same({ false, "unavailable" }, { F.SetEntry("crests", true) })
 		assert.same({ false, "unavailable" }, { F.Move("keystone", 1) })
 		assert.equal("gold,currencies,crests,keystone,free", SB.Config.Get("bags.footer.entries"))
+	end)
+
+	-- Final review. Mutation: the verb check before the Allows check in /swagbag footer.
+	it("on Forever /swagbag footer crests with no verb answers left out", function()
+		SB.Slash.Dispatch("footer crests")
+		SB.Slash.Dispatch("footer keystone maybe")
+		assert.same({ SB.L.FOREVER_LEFT_OUT:format("Crests"), SB.L.FOREVER_LEFT_OUT:format("Keystone") }, A.Lines())
 	end)
 
 	-- Mutation: F.Move swapping with the next saved entry (a hidden one) instead of the next shown one.

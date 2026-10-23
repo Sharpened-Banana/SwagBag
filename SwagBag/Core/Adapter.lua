@@ -140,8 +140,8 @@ function A.Flavor()
 	if id ~= nil and mainline ~= nil and id ~= mainline then
 		return "forever"
 	end
-	if id == nil and C_Bank and C_Bank.ShouldUsePlayerBagsInBank ~= nil then
-		return "forever" -- a client whose project constants were removed (report section 3 fallback)
+	if mainline == nil and C_Bank and C_Bank.ShouldUsePlayerBagsInBank ~= nil then
+		return "forever" -- no MAINLINE to compare with, but the Forever API: uncertain means Forever (report section 3)
 	end
 	return "retail"
 end
@@ -301,8 +301,17 @@ function A.LayoutFromBagIndex(bi)
 	end
 	local backpack, bag1 = num("Backpack"), num("Bag_1")
 	local bank1, warband1 = num("CharacterBankTab_1"), num("AccountBankTab_1")
-	if not (backpack and bag1 and bank1 and warband1) then
+	if not (backpack and bag1 and bank1 and warband1) or bag1 ~= backpack + 1 then
 		return nil
+	end
+	-- A run must not have a gap: once it ends at prefix..n, no higher prefix..k may exist.
+	local function gapAfter(prefix, n)
+		for k = n + 1, n + 32 do
+			if bi[prefix .. k] ~= nil then
+				return true
+			end
+		end
+		return false
 	end
 	local layout = { bags = {}, kind = {}, tab = {} }
 	local ok = true
@@ -322,8 +331,14 @@ function A.LayoutFromBagIndex(bi)
 		claim(prev, "bags")
 		i = i + 1
 	end
+	if gapAfter("Bag_", i - 1) then
+		return nil
+	end
 	local reagent = num("ReagentBag")
 	if reagent then
+		if reagent ~= prev + 1 then
+			return nil
+		end
 		layout.reagent = reagent
 		layout.bags[#layout.bags + 1] = reagent
 		claim(reagent, "reagentbag")
@@ -334,6 +349,9 @@ function A.LayoutFromBagIndex(bi)
 		while num(prefix .. (n + 1)) == last + 1 do
 			last, n = last + 1, n + 1
 			claim(last, kind, n)
+		end
+		if gapAfter(prefix, n) then
+			ok = false
 		end
 		return { first = first, last = last }
 	end

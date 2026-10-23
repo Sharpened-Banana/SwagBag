@@ -56,7 +56,7 @@ local names = {}
 for _, e in ipairs(I.Parse(interfaces)) do
 	names[#names + 1] = e.name
 	if e.type == "unknown" then
-		problem(("## Interface %d is neither Retail nor WoW Forever"):format(e.iface))
+		problem(("## Interface %s is neither Retail nor WoW Forever"):format(e.iface))
 	elseif e.type == "forever" and not FOREVER_READY then
 		problem(("## Interface %d is WoW Forever, which waits for the Stage B in-game checks"):format(e.iface))
 	end
