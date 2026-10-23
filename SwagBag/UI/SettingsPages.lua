@@ -160,6 +160,9 @@ local function worthChoices()
 end
 
 local function bankRows()
+	if SB.SafeMode.Reason("bank") == "forever" then -- WoW Forever: Blizzard's bank and guild bank for now
+		return { { kind = "note", label = L.SET_BANK_FOREVER_NOTE } }
+	end
 	return {
 		{ kind = "choice", label = L.SET_BANK_FRAME, get = get("bank.blizzardFrame"),
 			choices = { { value = "tiny", text = L.SET_BANK_TINY }, { value = "beside", text = L.SET_BANK_BESIDE } },

@@ -818,6 +818,7 @@ frame:SetScript("OnHide", Guard("guild.hide", function(self)
 end, "bank"))
 
 function GW.OnOpened()
+	SB.SafeMode.ForeverNotice() -- WoW Forever: one line, the first bank or guild-bank visit of the session
 	if GW.interaction then
 		GW.ApplyMode() -- a second signal for the same visit (event and OnShow): just re-apply
 		return
@@ -993,6 +994,9 @@ SB.On("SB_SAFEMODE_CHANGED", function(_, window, on)
 end, "none")
 
 SB.Slash.Register("guild", L.HELP_GUILD, function(arg)
+	if SB.SafeMode.Reason("bank") == "forever" then -- WoW Forever: Blizzard's guild bank; nothing to set
+		return L.FOREVER_BANK_OFF
+	end
 	arg = (arg or ""):lower()
 	local anyTab = arg:match("^anytab%s*(.*)$")
 	if anyTab then -- ruling W3-10: off until check G1 proves the client honours the tab

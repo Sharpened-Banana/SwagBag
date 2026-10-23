@@ -541,4 +541,12 @@ describe("Settings window on WoW Forever", function()
 		assert.same({ L.SET_OV_ILVL, L.SET_OV_UPGRADE, L.SET_OV_JUNK, L.SET_OV_BIND, L.SET_OV_LEARN, L.SET_OV_LOCK,
 			L.SET_OV_UNCOLLECTED, L.SET_OV_PAWN }, labels)
 	end)
+
+	-- Forever Stage A, Task 4. Mutation: bankRows without the reason check.
+	it("on Forever Settings > Bank & guild shows only the note", function()
+		SB.SafeMode.Enable("bank", "forever")
+		assert.same({ { kind = "note", label = SB.L.SET_BANK_FOREVER_NOTE } }, SW.byId.bank.rows())
+		SB.SafeMode.Disable("bank") -- the opt-in (/swagbag safe bank): the rows come back
+		assert.truthy(#SW.byId.bank.rows() > 1)
+	end)
 end)

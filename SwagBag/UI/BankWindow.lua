@@ -1252,6 +1252,7 @@ frame:SetScript("OnHide", Guard("bank.hide", function(self)
 end, "bank"))
 
 function BW.OnBankOpened()
+	SB.SafeMode.ForeverNotice() -- WoW Forever: one line, the first visit of the session
 	BW.interaction, BW.visit = true, nil
 	BW.Open()
 	BW.RefreshStillOpen()
@@ -1368,6 +1369,9 @@ SB.On("SB_SAFEMODE_CHANGED", function(_, window, on)
 end, "none")
 
 SB.Slash.Register("bank", L.HELP_BANK, function(arg)
+	if SB.SafeMode.Reason("bank") == "forever" then -- WoW Forever: Blizzard's bank; nothing to set
+		return L.FOREVER_BANK_OFF
+	end
 	arg = (arg or ""):lower()
 	if arg == "colors on" or arg == "colors off" then -- bank.groupColors: nothing moves, so a relabel redraws it
 		local on = arg == "colors on"

@@ -84,6 +84,12 @@ function Report.Build()
 	lines[#lines + 1] = L.REPORT_HEADER:format(SB.VERSION, tostring(build.version), tostring(build.build),
 		tostring(build.locale), A.Date("%Y-%m-%d %H:%M"))
 	lines[#lines + 1] = L.REPORT_SAFE:format(SB.SafeMode.Describe("bags"), SB.SafeMode.Describe("bank"))
+	if A.Flavor() == "forever" then -- the one flavor read outside the Adapter: a diagnostic line
+		local layout = A.BagLayout()
+		local bags, bank, warband = layout.bags, layout.bank, layout.warband
+		lines[#lines + 1] = L.REPORT_FOREVER:format(tostring(build.toc), bags[1] .. "-" .. bags[#bags], bank.first, bank.last,
+			warband.first, warband.last)
+	end
 
 	local failed = {}
 	for _, r in ipairs(SB.Checks.Failed(SB.Checks.last or {})) do

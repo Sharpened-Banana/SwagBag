@@ -112,9 +112,14 @@ function Snap.Char()
 end
 
 -- A snapshot of every bag of a kind ("bags" | "bank" | "warband") from Inventory's model.
+-- WoW Forever: the warband bank is never read, so its capture is empty and store() writes nothing (Save, the
+-- bank visit and the logout capture all come through here).
 function Snap.Capture(kind)
 	local Inv = SB.Inventory
 	local snap = { v = 1, at = SB.Adapter.Time(), containers = {} }
+	if kind == "warband" and not SB.Adapter.Has("warband") then
+		return snap
+	end
 	for _, bag in ipairs(SB.Adapter.GetBagIDs(kind)) do
 		local size, slots = Inv.Size(bag), {}
 		for slot = 1, size do

@@ -220,3 +220,35 @@ describe("Report", function()
 		assert.truthy(h1:match("^%x%x%x%x%x%x%x%x$"))
 	end)
 end)
+
+-- Forever Stage A, Task 4: on WoW Forever one diagnostic line names the client and its bag layout.
+describe("Report on WoW Forever", function()
+	local function lines(text)
+		local out = {}
+		for line in text:gmatch("[^\n]+") do
+			out[#out + 1] = line
+		end
+		return out
+	end
+
+	-- Mutation: drop the REPORT_FOREVER line in Report.Build.
+	it("on Forever the report names the client and the bag layout", function()
+		local SB = Loader.New(FILES, { flavor = "forever" })
+		SB.Config.Init(nil, nil)
+		SB.Checks.last = {}
+		SB.SafeMode.Enable("bank", "forever")
+		local out = lines(SB.Report.Build())
+		assert.equal("Safe Mode: bags=off bank=on (WoW Forever, 21:03)", out[2])
+		assert.equal("WoW Forever: Interface 16001 | bags 0-5 | bank tabs 6-14 | warband tabs 15-23", out[3])
+	end)
+
+	-- Characterization (passes before and after). Mutation by hand: the Forever line without the flavor check.
+	it("on Retail the report has no Forever line", function()
+		local SB = Loader.New(FILES)
+		SB.Config.Init(nil, nil)
+		SB.Checks.last = {}
+		local text = SB.Report.Build()
+		assert.falsy(text:find("WoW Forever", 1, true))
+		assert.equal("Failed checks: none", lines(text)[3])
+	end)
+end)

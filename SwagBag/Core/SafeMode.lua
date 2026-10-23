@@ -20,7 +20,27 @@ function SM.IsOn(window)
 	return s ~= nil and s.on
 end
 
--- reason: "manual" | "auto" | "check" | "schema". Returns true if it changed.
+-- The reason a window is in Safe Mode, or nil while it is off.
+function SM.Reason(window)
+	local s = SM.state[window]
+	if s and s.on then
+		return s.reason
+	end
+	return nil
+end
+
+-- WoW Forever (Forever Stage A): the bank and guild bank are Blizzard's (reason "forever", Core/Boot.lua). The first
+-- bank or guild-bank visit of the session says so in one chat line; never at login. True if it printed.
+function SM.ForeverNotice()
+	if SM.foreverTold or SM.Reason("bank") ~= "forever" then
+		return false
+	end
+	SM.foreverTold = true
+	SB.Print(SB.L.FOREVER_BANK_OFF)
+	return true
+end
+
+-- reason: "manual" | "auto" | "check" | "schema" | "forever". Returns true if it changed.
 function SM.Enable(window, reason)
 	local s = SM.state[window]
 	if not s or s.on then

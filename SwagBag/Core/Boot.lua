@@ -21,6 +21,11 @@ end, "none")
 
 SB.On("PLAYER_LOGIN", function()
 	local Config, SM = SB.Config, SB.SafeMode
+	-- WoW Forever: the bank windows wait until they are checked there. First, so the reason is always "forever";
+	-- /swagbag safe bank switches it off for one session (this runs again at the next login). Nothing is printed.
+	if not SB.Adapter.Has("bankWindow") then
+		SM.Enable("bank", "forever")
+	end
 	SB.Checks.Apply(SB.Checks.Run())
 	if Config.status == "newer" then
 		SM.Enable("bags", "schema")

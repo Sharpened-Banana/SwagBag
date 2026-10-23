@@ -511,3 +511,27 @@ describe("Snapshots (spec 8.3 format, 5.7 timing, 8.4 budget)", function()
 		assert.equal("item:" .. Fixtures.JUNK, slots[4] and slots[4].link)
 	end)
 end)
+
+-- Forever Stage A, Task 4: the warband bank is never read on WoW Forever, so it is never saved either.
+describe("Snapshots on WoW Forever", function()
+	-- Mutation: no gate in Snap.Capture (or in Save and the logout capture).
+	it("on Forever the warband bank is never saved", function()
+		local SB = Loader.New(FILES, { flavor = "forever" })
+		local A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.Install(A)
+		A.bagIDs.bank, A.bagIDs.warband = { 6 }, { 15 } -- a warband list, as if the client gave one
+		SB.Inventory.ScanAll()
+		A.SetBagSize(6, 4)
+		A.SetBagSize(15, 4)
+		A.Put(6, 2, Fixtures.HERB, 20)
+		A.Put(15, 1, Fixtures.ORE, 10)
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		A.Advance(0.3)
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		SB.eventFrame:Fire("BANKFRAME_OPENED")
+		SB.eventFrame:Fire("PLAYER_LOGOUT")
+		assert.truthy(SB.Config.db.chars[A.CharKey()].bank, "the character bank is saved")
+		assert.is_nil(SB.Config.db.warband)
+	end)
+end)

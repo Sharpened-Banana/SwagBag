@@ -49,3 +49,11 @@ describe("Locale", function()
 		end
 	end)
 end)
+
+-- Forever Stage A, Task 4: SM.Describe builds L["SAFE_REASON_" .. reason:upper()] for the reason "forever".
+describe("Locale for WoW Forever", function()
+	it("defines the Forever Safe Mode reason", function()
+		local SB = Loader.New()
+		assert.equal("WoW Forever", rawget(SB.L, "SAFE_REASON_FOREVER"))
+	end)
+end)

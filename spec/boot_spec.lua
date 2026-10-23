@@ -108,3 +108,53 @@ describe("Boot", function()
 		assert.equal("both", SB.ErrorTrap.Recent()[1].window)
 	end)
 end)
+
+-- Forever Stage A, Task 4: on WoW Forever the bank and guild bank stay Blizzard's (Safe Mode reason "forever"),
+-- switched on first at every login and said nowhere at login.
+describe("Boot on WoW Forever", function()
+	local SB, A
+	local LOADED
+
+	local function start(flavor)
+		SwagBagDB, SwagBagCharDB = nil, nil
+		SB = Loader.New(FILES, flavor and { flavor = flavor } or nil)
+		A = SB.Adapter
+		A.globals = Globals.AllPresent(A)
+		if flavor == "forever" then
+			A.globals.Enum.BagIndex.AccountBankTab_1 = 15 -- Forever's number: every check passes
+		end
+		LOADED = { "v" .. SB.VERSION .. " loaded. Type /swagbag help for commands." }
+		SB.eventFrame:Fire("ADDON_LOADED", "SwagBag")
+	end
+
+	after_each(function()
+		SwagBagDB, SwagBagCharDB = nil, nil
+	end)
+
+	-- Mutation: printing the notice at login.
+	it("a Forever login puts the bank, not the bags, in Safe Mode with reason forever", function()
+		start("forever")
+		SB.eventFrame:Fire("PLAYER_LOGIN")
+		assert.equal("forever", SB.SafeMode.Reason("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.same(LOADED, A.Lines())
+	end)
+
+	-- Mutation: enabling after Checks.Apply.
+	it("a Forever login keeps reason forever even when a bank check also fails", function()
+		start("forever")
+		A.globals.BankFrame = nil
+		SB.eventFrame:Fire("PLAYER_LOGIN")
+		assert.equal("forever", SB.SafeMode.Reason("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+	end)
+
+	-- Characterization (passes before and after). Mutation by hand: enabling "forever" without the Has check.
+	it("a Retail login is unchanged", function()
+		start(nil)
+		SB.eventFrame:Fire("PLAYER_LOGIN")
+		assert.falsy(SB.SafeMode.IsOn("bank"))
+		assert.falsy(SB.SafeMode.IsOn("bags"))
+		assert.same(LOADED, A.Lines())
+	end)
+end)

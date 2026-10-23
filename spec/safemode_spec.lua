@@ -43,3 +43,34 @@ describe("SafeMode state", function()
 		assert.falsy(SM.Enable("nonsense", "manual"))
 	end)
 end)
+
+-- Forever Stage A, Task 4: the reason, and the one-line Forever notice.
+describe("SafeMode reason and the Forever notice", function()
+	local SB, SM
+	before_each(function()
+		SB = Loader.New({ "SwagBag/Core/SafeMode.lua" })
+		SM = SB.SafeMode
+	end)
+
+	it("Reason is nil while off and the reason while on", function()
+		assert.is_nil(SM.Reason("bank"))
+		SM.Enable("bank", "forever")
+		assert.equal("forever", SM.Reason("bank"))
+		SM.Disable("bank")
+		assert.is_nil(SM.Reason("bank"))
+		assert.is_nil(SM.Reason("nope"))
+	end)
+
+	-- Mutation: ForeverNotice without the foreverTold check, or without the reason check.
+	it("ForeverNotice prints once, and only for reason forever", function()
+		SM.Enable("bank", "manual")
+		assert.falsy(SM.ForeverNotice())
+		assert.same({}, SB.Adapter.Lines())
+		SM.Disable("bank")
+		SM.Enable("bank", "forever")
+		assert.truthy(SM.ForeverNotice())
+		assert.falsy(SM.ForeverNotice())
+		assert.same({ SB.L.FOREVER_BANK_OFF }, SB.Adapter.Lines())
+		assert.truthy(SM.foreverTold)
+	end)
+end)
