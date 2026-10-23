@@ -20,7 +20,7 @@ local QS = { step = 1, STEPS = 4, styleButtons = {}, columnButtons = {}, scaleBu
 	worthButtons = {}, sellButtons = {}, switchButtons = {}, MAX_SWITCHES = 18, DELAY = 3 }
 SB.QuickSetup = QS
 
-QS.STYLES = Setup.STYLES
+QS.STYLES = Setup.Styles() -- the styles this client offers (no M+ on WoW Forever)
 QS.COLUMNS = { 10, 12, 14, 16 }
 QS.SCALES = { 0.8, 0.9, 1.0, 1.1, 1.25 }
 QS.WORTH = { "off", 50, 100, 500, 1000, "top" } -- "top" is shown only while it is the setting now

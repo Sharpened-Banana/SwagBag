@@ -161,8 +161,20 @@ function Ov.Context()
 	return Ov.context
 end
 
+-- An overlay this client leaves out (WoW Forever: track, keystone) is never drawn, whatever was saved.
 local function on(name)
-	return SB.Config.Get("overlays." .. name) == true
+	return SB.Adapter.Allows("overlay", name) and SB.Config.Get("overlays." .. name) == true
+end
+
+-- The overlays this client offers, in NAMES order (on Retail, all of them).
+function Ov.Names()
+	local out = {}
+	for _, n in ipairs(Ov.NAMES) do
+		if SB.Adapter.Allows("overlay", n) then
+			out[#out + 1] = n
+		end
+	end
+	return out
 end
 
 local function show(region, yes)
@@ -348,7 +360,7 @@ end
 --                                  title: the item level in the bags window's title)
 SB.Slash.Register("overlays", L.HELP_OVERLAYS, function(arg)
 	local name, value = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
-	local names = { unpack(Ov.NAMES) }
+	local names = Ov.Names()
 	names[#names + 1] = "pawn"
 	names[#names + 1] = "title"
 	if name == "" then
@@ -361,6 +373,11 @@ SB.Slash.Register("overlays", L.HELP_OVERLAYS, function(arg)
 	local known = false
 	for _, n in ipairs(names) do
 		known = known or n == name
+	end
+	for _, n in ipairs(Ov.NAMES) do
+		if not known and n == name then
+			return L.FOREVER_LEFT_OUT:format(name) -- known, but this client leaves it out: nothing is saved
+		end
 	end
 	if not known or (value ~= "on" and value ~= "off") then
 		return L.OVERLAYS_USAGE

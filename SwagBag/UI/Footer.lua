@@ -85,6 +85,18 @@ function F.Entries()
 	return out
 end
 
+-- The entries this client shows, in the user's order (on Retail, all of them). F.Entries() stays complete, so
+-- an entry WoW Forever leaves out keeps its saved place.
+function F.Shown()
+	local out = {}
+	for _, e in ipairs(F.Entries()) do
+		if SB.Adapter.Allows("footer", e.id) then
+			out[#out + 1] = e
+		end
+	end
+	return out
+end
+
 -- False (nothing written) while the settings are read-only.
 local function save(list)
 	local parts = {}
@@ -97,6 +109,9 @@ end
 function F.SetEntry(id, on)
 	if not KNOWN[id] then
 		return false, "unknown"
+	end
+	if not SB.Adapter.Allows("footer", id) then
+		return false, "unavailable"
 	end
 	local list = F.Entries()
 	for _, e in ipairs(list) do
@@ -112,9 +127,13 @@ function F.SetEntry(id, on)
 	return true
 end
 
+-- Swaps with the next shown entry that way, stepping over the ones this client leaves out (they keep their places).
 function F.Move(id, delta)
 	if not KNOWN[id] then
 		return false, "unknown"
+	end
+	if not SB.Adapter.Allows("footer", id) then
+		return false, "unavailable"
 	end
 	local list, i = F.Entries(), nil
 	for n, e in ipairs(list) do
@@ -123,6 +142,9 @@ function F.Move(id, delta)
 		end
 	end
 	local j = i + delta
+	while list[j] and not SB.Adapter.Allows("footer", list[j].id) do
+		j = j + delta
+	end
 	if j < 1 or j > #list then
 		return false, "edge"
 	end
@@ -136,7 +158,7 @@ function F.Move(id, delta)
 end
 
 function F.Position(id)
-	for n, e in ipairs(F.Entries()) do
+	for n, e in ipairs(F.Shown()) do
 		if e.id == id then
 			return n
 		end
@@ -270,7 +292,7 @@ function F.Items()
 			end
 		end
 	end
-	for _, e in ipairs(F.Entries()) do
+	for _, e in ipairs(F.Shown()) do
 		if e.on and e.id == "gold" then
 			-- A secret or missing amount shows the last known one; none known: no gold entry (never a
 			-- false "0g").
@@ -523,7 +545,7 @@ SB.Slash.Register("footer", L.HELP_FOOTER, function(arg)
 	local id, what = (arg or ""):lower():match("^(%S*)%s*(%S*)$")
 	if id == "" then
 		local parts = {}
-		for i, e in ipairs(F.Entries()) do
+		for i, e in ipairs(F.Shown()) do
 			parts[i] = L.FOOTER_ENTRY_STATE:format(F.Name(e.id), state(e.on))
 		end
 		return L.FOOTER_STATE:format(table.concat(parts, ", "))
@@ -537,7 +559,9 @@ SB.Slash.Register("footer", L.HELP_FOOTER, function(arg)
 	else
 		ok, why = F.Move(id, what == "up" and -1 or 1)
 	end
-	if why == "readonly" then
+	if why == "unavailable" then
+		return L.FOREVER_LEFT_OUT:format(F.Name(id))
+	elseif why == "readonly" then
 		return L.SETTINGS_READONLY
 	elseif why == "edge" then
 		return L.FOOTER_EDGE:format(F.Name(id))
@@ -555,7 +579,7 @@ end, "bags")
 if SB.SettingsWindow then
 	local function footerRows()
 		local rows = {}
-		for i, e in ipairs(F.Entries()) do
+		for i, e in ipairs(F.Shown()) do
 			local id = e.id
 			rows[#rows + 1] = { kind = "choice", label = L.FOOTER_ROW:format(i, F.Name(id)), width = 90,
 				get = function()

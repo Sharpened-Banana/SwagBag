@@ -489,3 +489,88 @@ describe("Adapter: money and currencies (the real Adapter)", function()
 		assert.same({}, A.CurrencyList())
 	end)
 end)
+
+-- Forever Stage A, Task 3: no crests and no keystone entry on WoW Forever, drawn, listed or offered.
+describe("Footer on WoW Forever", function()
+	local SB, A, F
+	before_each(function()
+		local files = { unpack(Env.ENGINE) }
+		files[#files + 1] = "SwagBag/Engine/Crests.lua"
+		SB = Loader.New(files, { flavor = "forever" })
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A) -- the keystone in slot 5
+		SB.Inventory.ScanAll()
+		Fake.Install()
+		local W = { frame = Fake.New("Frame", UIParent), size = { 495, 300 }, FOOTER = 6, open = true }
+		function W.IsOpen() return W.open end
+		function W.Resize() end
+		SB.BagsWindow = W
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsPages.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/Footer.lua")
+		F = SB.Footer
+		F.TextWidth = function(fs) return 8 * #(fs.text or "") end
+		A.money = 1234567
+		A.backpack = { { id = 3056, name = "Kej", quantity = 500, icon = 1 } }
+		A.currencies = { { id = 3107, name = "Weathered Ethereal Crest", quantity = 45, icon = 2 } }
+		A.dungeons[503] = "Ara-Kara, City of Echoes"
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	local function shownIds()
+		local out = {}
+		for i, e in ipairs(F.Shown()) do
+			out[i] = e.id
+		end
+		return out
+	end
+
+	-- Mutation: F.Items iterating F.Entries() instead of F.Shown().
+	it("on Forever the footer shows no crests or keystone", function()
+		local entries = {}
+		for _, item in ipairs(F.Items()) do
+			entries[#entries + 1] = item.entry
+		end
+		assert.same({ "gold", "currencies", "free" }, entries)
+	end)
+
+	-- Mutation: the slash listing walks F.Entries().
+	it("on Forever /swagbag footer lists gold, currencies and free only", function()
+		SB.Slash.Dispatch("footer")
+		assert.same({ "Footer, left to right: Gold on, Backpack currencies on, Free slots on" }, A.Lines())
+	end)
+
+	-- Mutation: SetEntry without the Allows check (the command saves "-crests").
+	it("on Forever /swagbag footer crests on answers left out", function()
+		SB.Slash.Dispatch("footer crests off")
+		SB.Slash.Dispatch("footer keystone up")
+		assert.same({ SB.L.FOREVER_LEFT_OUT:format("Crests"), SB.L.FOREVER_LEFT_OUT:format("Keystone") }, A.Lines())
+		assert.same({ false, "unavailable" }, { F.SetEntry("crests", true) })
+		assert.same({ false, "unavailable" }, { F.Move("keystone", 1) })
+		assert.equal("gold,currencies,crests,keystone,free", SB.Config.Get("bags.footer.entries"))
+	end)
+
+	-- Mutation: F.Move swapping with the next saved entry (a hidden one) instead of the next shown one.
+	it("on Forever moving currencies down passes the hidden crests", function()
+		SB.Slash.Dispatch("footer currencies down")
+		assert.same({ "gold", "free", "currencies" }, shownIds())
+		assert.same({ "Footer: Backpack currencies is now number 3." }, A.Lines())
+		local saved = SB.Config.Get("bags.footer.entries")
+		assert.truthy(saved:find("crests,keystone", 1, true), saved)
+		assert.equal(5, #F.Entries(), "a hidden entry keeps its saved place")
+	end)
+
+	-- Mutation: footerRows walking F.Entries().
+	it("on Forever Settings > Footer has three rows and the note", function()
+		local L, labels = SB.L, {}
+		for _, row in ipairs(SB.SettingsWindow.byId.footer.rows()) do
+			labels[#labels + 1] = row.label
+		end
+		assert.same({ L.FOOTER_ROW:format(1, "Gold"), L.FOOTER_ROW:format(2, "Backpack currencies"),
+			L.FOOTER_ROW:format(3, "Free slots"), L.FOOTER_NOTE }, labels)
+	end)
+end)

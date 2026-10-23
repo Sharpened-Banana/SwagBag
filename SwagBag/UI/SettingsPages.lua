@@ -240,8 +240,10 @@ local OVERLAYS = {
 local function overlayRows()
 	local rows = {}
 	for _, o in ipairs(OVERLAYS) do
-		rows[#rows + 1] = (SB.Config.Defaults.settings.overlays[o[1]] == false and offOn or onOff)(o[3], o[2],
-			"overlays " .. o[1])
+		if SB.Adapter.Allows("overlay", o[1]) then -- no row for an overlay this client leaves out
+			rows[#rows + 1] = (SB.Config.Defaults.settings.overlays[o[1]] == false and offOn or onOff)(o[3], o[2],
+				"overlays " .. o[1])
+		end
 	end
 	rows[#rows + 1] = { kind = "choice", label = L.SET_OV_PAWN, get = get("overlays.usePawn"),
 		choices = { { value = false, text = L.SET_PAWN_ILVL }, { value = true, text = L.SET_PAWN_PAWN } },

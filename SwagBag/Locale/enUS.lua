@@ -347,6 +347,7 @@ L.OVERLAYS_SET = "Overlay %s is now %s."
 L.OVERLAYS_USAGE = "Use /swagbag overlays, or /swagbag overlays"
 	.. " <ilvl|track|upgrade|keystone|junk|bind|learn|lock|uncollected|pawn|title> <on|off>."
 L.OVERLAYS_NO_PAWN = "Pawn is not loaded or not ready yet, so the item-level rule decides the upgrade arrow."
+L.FOREVER_LEFT_OUT = "%s is not part of WoW Forever, so SwagBag leaves it out there."
 
 -- Free tile (plan D19)
 L.HELP_FREE = "free tile|all: show free slots as one slot with a number (tile) or show every free slot (all)"

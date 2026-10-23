@@ -256,3 +256,65 @@ describe("Settings: focus modes page", function()
 		assert.equal("Editing the sections the Gathering mode opens (below).", SW.lastStatus)
 	end)
 end)
+
+-- Forever Stage A, Task 3: the Focus page offers no M+ or Delves mode or trigger on WoW Forever.
+describe("Settings: focus modes page, Retail and WoW Forever", function()
+	local SB
+	local function load(opts)
+		local files = { unpack(Env.ENGINE) }
+		files[#files + 1] = "SwagBag/Engine/Focus.lua"
+		SB = Loader.New(files, opts)
+		SB.Config.Init(nil, nil)
+		Fake.Install()
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsFocus.lua")
+		SB.Categories.Load()
+		SB.SettingsWindow.Show("focus")
+	end
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	local function row(label)
+		for _, r in ipairs(SB.SettingsWindow.byId.focus.rows()) do
+			if r.label == label then
+				return r
+			end
+		end
+		error("no row " .. label)
+	end
+
+	local function values(r)
+		local out = {}
+		for i, c in ipairs(r.choices) do
+			out[i] = c.value
+		end
+		return out
+	end
+
+	-- Mutation: SettingsFocus keeps editing = "mplus", or triggerChoices walks Focus.TRIGGERS.
+	it("on Forever the Focus page starts on Raid and offers no M+ or Delve trigger", function()
+		load({ flavor = "forever" })
+		local SF = SB.SettingsFocus
+		assert.equal("raid", SF.FirstMode())
+		assert.equal("raid", SF.editing)
+		assert.equal("raid", row(SB.L.SET_EDIT_MODE).get())
+		local picks = values(row(SB.L.SET_EDIT_MODE))
+		assert.is_nil(table.concat(picks, ","):find("mplus"), table.concat(picks, ","))
+		assert.is_nil(table.concat(picks, ","):find("delves"), table.concat(picks, ","))
+		row(SB.L.SET_CUSTOM_LABEL).actions[1].run() -- New mode: the form with its trigger row
+		assert.same({ "manual", "dungeon", "raid", "pvp", "fishing", "gathering", "vendor", "auction", "bank" },
+			values(row(SB.L.SET_CUSTOM_TRIGGER)))
+	end)
+
+	-- Characterization (passes before and after). Mutation: FirstMode returning Focus.All()[2].id.
+	it("on Retail the Focus page still starts on M+", function()
+		load(nil)
+		assert.equal("mplus", SB.SettingsFocus.FirstMode())
+		assert.equal("mplus", SB.SettingsFocus.editing)
+		assert.equal("mplus", row(SB.L.SET_EDIT_MODE).get())
+		row(SB.L.SET_CUSTOM_LABEL).actions[1].run()
+		assert.equal(#SB.Focus.TRIGGERS, #row(SB.L.SET_CUSTOM_TRIGGER).choices)
+	end)
+end)

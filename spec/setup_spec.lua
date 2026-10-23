@@ -255,3 +255,47 @@ describe("Setup wizard: the draft and Finish (week 12)", function()
 		assert.falsy(SB.SafeMode.IsOn("bags"))
 	end)
 end)
+
+-- Forever Stage A, Task 3: no M+ style, no Retail-only setting and no M+ or Delves switch on WoW Forever.
+describe("Setup wizard on WoW Forever", function()
+	local SB, S
+	before_each(function()
+		local files = { unpack(Env.ENGINE) }
+		files[#files + 1] = "SwagBag/Engine/Focus.lua"
+		files[#files + 1] = "SwagBag/Engine/Setup.lua"
+		SB = Loader.New(files, { flavor = "forever" })
+		SB.Config.Init(nil, nil)
+		SB.Categories.Load()
+		S = SB.Setup
+	end)
+
+	local function ids(list)
+		local out = {}
+		for i, x in ipairs(list) do
+			out[i] = x.id
+		end
+		return out
+	end
+
+	-- Mutation: Setup.Styles without the Allows filter.
+	it("on Forever there is no M+ style", function()
+		assert.same({ "raid", "gold", "casual", "collector" }, ids(S.Styles()))
+		assert.equal(5, #S.STYLES, "the table itself is unchanged")
+	end)
+
+	-- Mutation: no Allows filter in Preset's set().
+	it("on Forever Raid's preset sets no upgrade track", function()
+		assert.same({ { "focus.on.raid", true }, { "consumables.warn", true }, { "overlays.upgrade", true },
+			{ "overlays.ilvl", true } }, S.Preset({ raid = true }))
+		assert.same({ { "consumables.warn", false } }, S.Preset({ casual = true }))
+	end)
+
+	-- Mutation: the switch loop without the Allows check.
+	it("on Forever the switches list no M+ or Delves mode", function()
+		local keys = S.Switches(S.New())
+		local all = table.concat(keys, ",")
+		assert.is_nil(all:find("focus.on.mplus", 1, true), all)
+		assert.is_nil(all:find("focus.on.delves", 1, true), all)
+		assert.truthy(all:find("focus.on.raid", 1, true), all)
+	end)
+end)

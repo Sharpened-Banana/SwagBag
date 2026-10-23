@@ -32,6 +32,17 @@ Setup.STYLES = {
 	{ id = "mplus", name = "QS_MPLUS" }, { id = "raid", name = "QS_RAID" }, { id = "gold", name = "QS_GOLD" },
 	{ id = "casual", name = "QS_CASUAL" }, { id = "collector", name = "QS_COLLECTOR" },
 }
+-- The styles this client offers, in STYLES order (no M+ on WoW Forever; on Retail, all of them).
+function Setup.Styles()
+	local out = {}
+	for _, s in ipairs(Setup.STYLES) do
+		if SB.Adapter.Allows("style", s.id) then
+			out[#out + 1] = s
+		end
+	end
+	return out
+end
+
 local STYLE = {}
 for _, s in ipairs(Setup.STYLES) do
 	STYLE[s.id] = s
@@ -47,7 +58,9 @@ local ORDER_KEYS = { { key = "order.gold", style = "gold" }, { key = "order.coll
 function Setup.Preset(picked, get)
 	local out = {}
 	local function set(path, value)
-		out[#out + 1] = { path, value }
+		if SB.Adapter.Allows("setting", path) then -- never a setting this client leaves out (WoW Forever)
+			out[#out + 1] = { path, value }
+		end
 	end
 	if picked.mplus then
 		set("focus.on.mplus", true)
@@ -181,7 +194,8 @@ function Setup.Switches(d)
 	end
 	add("focus.auto") -- the master switch comes first: off unless the user switches it on here (0.14.3)
 	for _, m in ipairs(SB.Focus and SB.Focus.MODES or {}) do
-		if not m.custom and not m.id:match("^m_") then -- the user's own modes are managed in Settings
+		-- the user's own modes are managed in Settings; a mode this client leaves out (WoW Forever) has no switch
+		if not m.custom and not m.id:match("^m_") and SB.Adapter.Allows("mode", m.id) then
 			add("focus.on." .. m.id)
 		end
 	end

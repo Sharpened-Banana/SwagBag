@@ -152,14 +152,28 @@ function Focus.NameOf(id)
 	return m.custom and m.name or SB.L[m.name]
 end
 
--- Built-ins first, then the user's modes in the order they were made.
+-- Built-ins first (those this client offers: no M+ or Delves on WoW Forever), then the user's modes in the
+-- order they were made. Focus.Mode still knows every built-in, so saved settings and profiles keep working.
 function Focus.All()
 	local out = {}
 	for _, m in ipairs(Focus.MODES) do
-		out[#out + 1] = m
+		if SB.Adapter.Allows("mode", m.id) then
+			out[#out + 1] = m
+		end
 	end
 	for _, m in ipairs(Focus.custom) do
 		out[#out + 1] = m
+	end
+	return out
+end
+
+-- The triggers this client offers, in TRIGGERS order (on Retail, all of them).
+function Focus.Triggers()
+	local out = {}
+	for _, t in ipairs(Focus.TRIGGERS) do
+		if SB.Adapter.Allows("trigger", t.id) then
+			out[#out + 1] = t
+		end
 	end
 	return out
 end
@@ -280,7 +294,7 @@ function Focus.Active()
 	local out = {}
 	local auto = cfg("focus.auto") ~= false
 	for _, m in ipairs(Focus.MODES) do
-		if auto and Focus.IsEnabled(m.id) and m.trigger(Focus.signals) then
+		if auto and SB.Adapter.Allows("mode", m.id) and Focus.IsEnabled(m.id) and m.trigger(Focus.signals) then
 			out[#out + 1] = m.id
 		end
 	end

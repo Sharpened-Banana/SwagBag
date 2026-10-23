@@ -1,4 +1,5 @@
 -- luacheck: globals WOW_PROJECT_ID WOW_PROJECT_MAINLINE WOW_PROJECT_CAMELOT WOW_PROJECT_FOREVER C_Bank Enum
+-- luacheck: globals C_Item C_ChallengeMode C_PartyInfo C_HousingCatalog ItemLocation
 -- Forever Stage A, Task 1: client flavor detection and the capability table (A.Flavor, A.FEATURES, A.Has,
 -- A.Allows), with the REAL Adapter and stubbed project constants; then the mock's Forever mode.
 local Loader = dofile("spec/helpers/loader.lua")
@@ -320,5 +321,100 @@ describe("Mock Forever bag layout", function()
 		local R = Loader.New({})
 		assert.equal(R.Adapter.RETAIL_LAYOUT, R.Adapter.BagLayout())
 		assert.same({ "warband", 1 }, { R.Adapter.BagKind(12) })
+	end)
+end)
+
+-- Forever Stage A, Task 3: the gated reads give their "no data" answer on Forever before touching the game.
+describe("Gated Adapter reads (real adapter, stubbed game)", function()
+	local A, calls, saved
+	local NAMES = { "C_Item", "C_ChallengeMode", "C_PartyInfo", "C_HousingCatalog", "ItemLocation" }
+
+	local function counted(name, value)
+		return function()
+			calls[name] = (calls[name] or 0) + 1
+			return value
+		end
+	end
+
+	before_each(function()
+		saved = {}
+		for _, n in ipairs(NAMES) do
+			saved[n] = _G[n]
+		end
+		clearGlobals()
+		Enum = nil
+		calls = {}
+		C_Item = {
+			GetItemUpgradeInfo = counted("upgrade", { trackString = "Hero", currentLevel = 3, maxLevel = 6 }),
+			IsBoundToAccountUntilEquip = counted("wue", true),
+		}
+		C_ChallengeMode = {
+			GetMapUIInfo = counted("dungeon", "Ara-Kara, City of Echoes"),
+			IsChallengeModeActive = counted("challenge", true),
+		}
+		C_PartyInfo = { IsDelveInProgress = counted("delve", true) }
+		C_HousingCatalog = { GetCatalogEntryInfoByItem = counted("decor", { totalNumPlaced = 1 }) }
+		ItemLocation = { CreateFromBagAndSlot = function(_, bag, slot) return { bag = bag, slot = slot } end }
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+	end)
+
+	after_each(function()
+		clearGlobals()
+		Enum = nil
+		for _, n in ipairs(NAMES) do
+			_G[n] = saved[n]
+		end
+	end)
+
+	local function reads()
+		local info, hasTrack = A.UpgradeInfo("item:1")
+		return { info = info, hasTrack = hasTrack, dungeon = A.DungeonName(503), challenge = A.ChallengeModeActive(),
+			delve = A.InDelve({ instanceType = "scenario", difficultyID = 208 }), decor = A.DecorKnown(1),
+			wue = A.IsWarboundUntilEquip(0, 1) }
+	end
+
+	-- Mutation: gating after the API call (the answer is right, but the game is asked).
+	it("on Forever the gated reads return no data and never call the game", function()
+		WOW_PROJECT_ID, WOW_PROJECT_CAMELOT = 18, 18
+		local r = reads()
+		assert.is_nil(r.info)
+		assert.equal(false, r.hasTrack)
+		assert.is_nil(r.dungeon)
+		assert.equal(false, r.challenge)
+		assert.equal(false, r.delve)
+		assert.is_nil(r.decor)
+		assert.equal(false, r.wue)
+		assert.same({}, calls)
+	end)
+
+	-- Mutation: no warband gate in GetBagIDs.
+	it("on Forever GetBagIDs('warband') is empty even when C_Bank lists tabs", function()
+		WOW_PROJECT_ID, WOW_PROJECT_CAMELOT = 18, 18
+		Enum = { BankType = { Character = 0, Account = 2 } }
+		C_Bank = { FetchPurchasedBankTabIDs = function(t)
+			return t == 2 and { 15, 16 } or { 6, 7 }
+		end }
+		assert.same({}, A.GetBagIDs("warband"))
+		assert.same({ 6, 7 }, A.GetBagIDs("bank"))
+	end)
+
+	-- Characterization (passes before and after). Mutation: a gate that answers no data on Retail too.
+	it("on Retail the same reads still ask the game", function()
+		local r = reads()
+		assert.same({ track = "Hero", level = 3, max = 6 }, r.info)
+		assert.equal(true, r.hasTrack)
+		assert.equal("Ara-Kara, City of Echoes", r.dungeon)
+		assert.equal(true, r.challenge)
+		assert.equal(true, r.delve)
+		assert.equal(true, r.decor)
+		assert.equal(true, r.wue)
+		assert.same({ upgrade = 1, dungeon = 1, challenge = 1, delve = 1, decor = 1, wue = 1 }, calls)
+		Enum = { BankType = { Character = 0, Account = 2 } }
+		C_Bank = { FetchPurchasedBankTabIDs = function(t)
+			return t == 2 and { 12, 13 } or { 6, 7 }
+		end }
+		assert.same({ 12, 13 }, A.GetBagIDs("warband"))
 	end)
 end)

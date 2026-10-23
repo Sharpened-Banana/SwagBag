@@ -539,3 +539,55 @@ describe("Overlays (spec F9)", function()
 		assert.falsy(Ov.regions[g].arrow.shown, "285 does not beat 300")
 	end)
 end)
+
+-- Forever Stage A, Task 3: no upgrade track and no keystone overlay on WoW Forever, drawn or offered.
+describe("Overlays on WoW Forever", function()
+	local SB, A, Ov
+	before_each(function()
+		SB = Loader.New(FILES, { flavor = "forever" })
+		A = SB.Adapter
+		SB.Config.Init(nil, nil)
+		Fixtures.SmallBags(A)
+		Fake.Install()
+		Loader.LoadFile(SB, "SwagBag/UI/Overlays.lua")
+		Ov = SB.Overlays
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	local function draw(bag, slot)
+		local b = Fake.New("ItemButton")
+		Ov.Apply(b, SB.Items.Describe(bag, slot), bag)
+		return Ov.regions[b]
+	end
+
+	-- Mutation: no Allows in Overlays' on().
+	it("on Forever a keystone and an upgrade track draw nothing", function()
+		A.tracks["item:225001::upgradable"] = { track = "Champion", level = 2, max = 8 }
+		A.dungeons[503] = "Ara-Kara, City of Echoes"
+		local gear = draw(0, 3)
+		assert.same({ "285", "" }, { gear.topLeft.text, gear.bottomLeft.text })
+		local key = draw(0, 5)
+		assert.same({ "", "" }, { key.topLeft.text, key.bottomLeft.text })
+	end)
+
+	-- Mutation: the slash listing walks Ov.NAMES.
+	it("on Forever /swagbag overlays lists no track or keystone", function()
+		SB.Slash.Dispatch("overlays")
+		assert.same({ "Overlays: ilvl on, upgrade on, junk on, bind off, learn on, lock on, uncollected on, pawn off,"
+			.. " title on" }, A.Lines())
+		assert.same({ "ilvl", "upgrade", "junk", "bind", "learn", "lock", "uncollected" }, Ov.Names())
+	end)
+
+	-- Mutation: the slash command checks only that the name is known.
+	it("on Forever /swagbag overlays track on answers left out and saves nothing", function()
+		SB.Config.Set("overlays.track", false)
+		SB.Slash.Dispatch("overlays track on")
+		SB.Slash.Dispatch("overlays keystone off")
+		assert.same({ SB.L.FOREVER_LEFT_OUT:format("track"), SB.L.FOREVER_LEFT_OUT:format("keystone") }, A.Lines())
+		assert.equal(false, SB.Config.Get("overlays.track"))
+		assert.equal(true, SB.Config.Get("overlays.keystone"))
+	end)
+end)

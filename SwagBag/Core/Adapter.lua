@@ -388,6 +388,9 @@ end
 
 -- kind: "bags" | "bank" | "warband". Bank kinds return PURCHASED tab IDs only.
 function A.GetBagIDs(kind)
+	if kind == "warband" and not A.Has("warband") then
+		return {} -- WoW Forever: the warband bank is never read
+	end
 	if kind == "bags" then
 		local out = {}
 		for i, id in ipairs(A.BagLayout().bags) do
@@ -511,6 +514,9 @@ function A.GetLinkIlvl(link)
 end
 
 function A.IsWarboundUntilEquip(bag, slot)
+	if not A.Has("warband") then
+		return false
+	end
 	if not (C_Item and C_Item.IsBoundToAccountUntilEquip) then
 		return false
 	end
@@ -522,8 +528,11 @@ end
 
 -- Upgrade track of an item link: returns { track = "Hero", level = 3, max = 6 } or nil, then
 -- hasTrack (true when the item has any upgrade track at all). One client call per item. Real API
--- only; no tooltip reading (spec P7). Missing API: nil, false.
+-- only; no tooltip reading (spec P7). Missing API, or no upgrade tracks on this client: nil, false.
 function A.UpgradeInfo(link)
+	if not A.Has("upgradeTracks") then
+		return nil, false
+	end
 	if type(link) ~= "string" or not (C_Item and C_Item.GetItemUpgradeInfo) then
 		return nil, false
 	end
@@ -541,6 +550,9 @@ end
 
 -- Name of a Mythic+ dungeon (keystone link map ID), or nil.
 function A.DungeonName(mapID)
+	if not A.Has("keystones") then
+		return nil
+	end
 	if not (C_ChallengeMode and C_ChallengeMode.GetMapUIInfo) then
 		return nil
 	end
@@ -838,6 +850,9 @@ end
 
 -- Decor counts as collected once the account has one placed, in storage, or still to redeem.
 function A.DecorKnown(itemID)
+	if not A.Has("housing") then
+		return nil
+	end
 	local H = C_HousingCatalog
 	if not (H and H.GetCatalogEntryInfoByItem) then
 		return nil
@@ -1940,8 +1955,11 @@ end
 
 -- true / false: a Mythic+ key is running. Read from the challenge-mode API, else from the
 -- client's ChallengeMode add-on restriction. nil when neither exists: the M+ mode then uses its
--- fallback, a Mythic party dungeon with a keystone in the bags (check V5).
+-- fallback, a Mythic party dungeon with a keystone in the bags (check V5). false on a client without Mythic+.
 function A.ChallengeModeActive()
+	if not A.Has("keystones") then
+		return false
+	end
 	if C_ChallengeMode and C_ChallengeMode.IsChallengeModeActive then
 		local ok, v = pcall(C_ChallengeMode.IsChallengeModeActive)
 		if ok and not isSecret(v) then
@@ -1969,8 +1987,11 @@ function A.IsChallengeModeRestriction(kind)
 end
 
 -- true inside a delve: the party API when the client has it, else a scenario at the delve
--- difficulty (check V7). info: an InstanceInfo() result (read again when nil).
+-- difficulty (check V7). info: an InstanceInfo() result (read again when nil). false on a client without Delves.
 function A.InDelve(info)
+	if not A.Has("delves") then
+		return false
+	end
 	if C_PartyInfo and C_PartyInfo.IsDelveInProgress then
 		local ok, v = pcall(C_PartyInfo.IsDelveInProgress)
 		if ok and not isSecret(v) then

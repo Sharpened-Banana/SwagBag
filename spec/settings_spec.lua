@@ -512,3 +512,33 @@ describe("Settings window load order", function()
 		assert.truthy(ok, tostring(err))
 	end)
 end)
+
+-- Forever Stage A, Task 3: no Settings row for an overlay WoW Forever leaves out.
+describe("Settings window on WoW Forever", function()
+	local SB, SW
+	before_each(function()
+		SB = Loader.New(Env.ENGINE, { flavor = "forever" })
+		SB.Config.Init(nil, nil)
+		Fake.Install()
+		SB.BagsWindow = { View = function() return "category" end, SetView = function() end, SetScale = function() end,
+			RequestLayout = function() end }
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsPages.lua")
+		SW = SB.SettingsWindow
+		SB.Categories.Load()
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	-- Mutation: overlayRows without the Allows filter.
+	it("on Forever the Overlays page has no Upgrade track or Keystone row", function()
+		local L, labels = SB.L, {}
+		for _, row in ipairs(SW.byId.overlays.rows()) do
+			labels[#labels + 1] = row.label
+		end
+		assert.same({ L.SET_OV_ILVL, L.SET_OV_UPGRADE, L.SET_OV_JUNK, L.SET_OV_BIND, L.SET_OV_LEARN, L.SET_OV_LOCK,
+			L.SET_OV_UNCOLLECTED, L.SET_OV_PAWN }, labels)
+	end)
+end)

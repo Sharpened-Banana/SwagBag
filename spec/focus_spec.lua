@@ -585,3 +585,47 @@ describe("Focus front style (week 6)", function()
 		assert.same({ auto = true }, SB.Config.db.settings.focus, "nothing was stored but the switch the test turned on")
 	end)
 end)
+
+-- Forever Stage A, Task 3: no M+ and no Delves mode on WoW Forever; saved settings are kept.
+describe("Focus on WoW Forever", function()
+	local SB, F
+	before_each(function()
+		SB = Loader.New(FILES, { flavor = "forever" })
+		SB.Config.Init(nil, nil)
+		SB.Config.Set("focus.auto", true)
+		F = SB.Focus
+	end)
+
+	local function ids(list)
+		local out = {}
+		for i, x in ipairs(list) do
+			out[i] = x.id
+		end
+		return out
+	end
+
+	-- Mutation: gating Focus.All only (Focus.Active still walks Focus.MODES).
+	it("on Forever the M+ and Delves modes never switch on", function()
+		F.SetSignal("challengeMode", true)
+		F.SetSignal("delve", true)
+		F.SetSignal("instanceType", "raid")
+		assert.same({ "raid" }, F.Active())
+	end)
+
+	-- Mutation: Focus.All or Focus.Triggers without the Allows filter.
+	it("on Forever Focus.All and Focus.Triggers leave out M+ and Delves", function()
+		assert.same({ "raid", "gathering", "fishing", "market" }, ids(F.All()))
+		assert.same({ "manual", "dungeon", "raid", "pvp", "fishing", "gathering", "vendor", "auction", "bank" },
+			ids(F.Triggers()))
+	end)
+
+	-- Characterization (passes before and after). Mutation: filtering byId, so Focus.Mode("mplus") is nil on Forever.
+	it("on Forever a saved focus.on.mplus is kept, not deleted", function()
+		SB.Config.Set("focus.on.mplus", false)
+		F.SetSignal("challengeMode", true)
+		F.Recompute("signal")
+		assert.equal(false, SB.Config.Get("focus.on.mplus"))
+		assert.truthy(F.Mode("mplus"), "Focus.Mode still knows the built-in")
+		assert.equal(SB.L.MODE_MPLUS, F.NameOf("mplus"))
+	end)
+end)

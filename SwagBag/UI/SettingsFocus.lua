@@ -15,8 +15,14 @@
 local _, SB = ...
 
 local L = SB.L
-local SF = { editing = "mplus", creating = nil, confirmDelete = nil, renameText = nil }
+local SF = { editing = nil, creating = nil, confirmDelete = nil, renameText = nil }
 SB.SettingsFocus = SF
+
+-- The mode the page starts on: the first one this client offers ("mplus" on Retail, "raid" on WoW Forever).
+function SF.FirstMode()
+	return SB.Focus.All()[1].id
+end
+SF.editing = SF.FirstMode()
 
 -- Every focus setting: "This character only" makes each one a character override (AC15.1).
 function SF.Paths()
@@ -140,7 +146,7 @@ end
 -- The triggers as choices (manual first), for the new-mode form and a mode of the user's.
 local function triggerChoices()
 	local out = {}
-	for _, t in ipairs(SB.Focus.TRIGGERS) do
+	for _, t in ipairs(SB.Focus.Triggers()) do
 		out[#out + 1] = { value = t.id, text = L[t.name] }
 	end
 	return out
@@ -250,7 +256,7 @@ local function customRows(out)
 			if not ok then
 				return refusal(why)
 			end
-			SF.editing = "mplus"
+			SF.editing = SF.FirstMode()
 			return L.SET_CUSTOM_DELETED:format(name)
 		end } } }
 end
@@ -360,7 +366,7 @@ local function rows()
 	end
 	newModeRows(out)
 	if not F.Mode(SF.editing) then
-		SF.editing = "mplus" -- the mode being edited was deleted (here, or by a profile or a reset)
+		SF.editing = SF.FirstMode() -- the mode being edited was deleted (here, or by a profile or a reset)
 	end
 	local pick = { kind = "choice", label = L.SET_EDIT_MODE, width = 76, tip = L.SET_EDIT_MODE_TIP, choices = {}, get = function()
 		return SF.editing

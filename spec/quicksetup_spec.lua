@@ -697,3 +697,38 @@ describe("Quick setup load order", function()
 		assert.truthy(ok, tostring(err))
 	end)
 end)
+
+-- Forever Stage A, Task 3: the wizard offers no M+ style on WoW Forever.
+describe("Quick setup on WoW Forever", function()
+	local SB
+	before_each(function()
+		local files = { unpack(Env.ENGINE) }
+		files[#files + 1] = "SwagBag/Engine/Focus.lua"
+		files[#files + 1] = "SwagBag/Engine/Setup.lua"
+		SB = Loader.New(files, { flavor = "forever" })
+		SB.Config.Init(nil, nil)
+		Fake.Install()
+		SB.BagsWindow = { IsOpen = function() return false end, RequestLayout = function() end,
+			RefreshTitle = function() end }
+		Loader.LoadFile(SB, "SwagBag/UI/QuickSetup.lua")
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	-- Mutation: QS.STYLES = Setup.STYLES.
+	it("on Forever the wizard shows four style buttons", function()
+		local QS, ids = SB.QuickSetup, {}
+		for _, s in ipairs(QS.STYLES) do
+			ids[#ids + 1] = s.id
+		end
+		assert.same({ "raid", "gold", "casual", "collector" }, ids)
+		local buttons = 0
+		for _ in pairs(QS.styleButtons) do
+			buttons = buttons + 1
+		end
+		assert.equal(4, buttons)
+		assert.is_nil(QS.styleButtons.mplus)
+	end)
+end)
