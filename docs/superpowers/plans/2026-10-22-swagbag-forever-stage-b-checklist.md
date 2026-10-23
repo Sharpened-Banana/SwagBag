@@ -75,3 +75,5 @@ Strings to reword for Forever before launch, because they still name Retail-only
 ## After the checklist passes
 
 Claude appends 16001 and the launch Interface number to the single `SwagBag/SwagBag.toc`, sets `FOREVER_READY = true` in `scripts/toc_check.lua`, updates the `REQUIRED` header line there, and uploads with `scripts/release.sh --forever`.
+
+- Fix A.Flavor: when WOW_PROJECT_ID is nil (MAINLINE set) and the Forever bank API exists, answer "forever" — `(id == nil or mainline == nil)` — with a test (Stage A final review residual).
