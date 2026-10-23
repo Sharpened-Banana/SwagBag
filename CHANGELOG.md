@@ -2,6 +2,10 @@
 
 Newest first. Each "## <version>" section is the changelog CurseForge shows for that upload (scripts/release.sh reads it).
 
+## 0.15.0
+
+- Groundwork for WoW Forever. Nothing changes on Retail: your bags, bank and settings work exactly as before.
+
 ## 0.14.5
 
 - **Auto repair is now opt-in:** vendors no longer repair your gear by themselves until you ask. Turn it on in Settings > Vendor ("Repair at vendors": Your gold or Guild bank first) or with `/swagbag repair own` or `/swagbag repair guild`.

@@ -215,6 +215,8 @@ v1.4 (0.14.0): several stacks of one item show as one icon with the total (bags 
 
 v1.4 (0.14.3): "Switch by themselves" is off by default (AC8.1, section 6): focus modes move or collapse sections on their own only after the user turns it on in Settings > Focus modes or the setup wizard; manual modes of the user's own work either way.
 
+v1.5 (0.15.0): WoW Forever groundwork (Stage A). Flavor detection and the capability table in the Adapter, bag IDs from Enum.BagIndex, Retail-only features off on Forever, Forever's bank and guild bank left to Blizzard. Not declared in the TOC; no Forever upload.
+
 ### 2.3 Later (demand-driven)
 
 Per-bag view; freeform drag layout; i18n (localized keywords and UI strings); Wago distribution. (TSM price source and Masque skins shipped in week 9.)
@@ -244,6 +246,8 @@ v1.0 ships to CurseForge only after: 2 consecutive weeks of the user daily-drivi
 ```
 
 Rule: a module on the left may `require`/reference only other left modules and the `Adapter` **interface** (never `C_*` directly). Every left module runs under busted with `spec/mock_adapter.lua`.
+
+**WoW Forever (Stage A, 0.15.0).** The Adapter also owns the client flavor (`A.Flavor()`, from the project constants, never the Interface number) and one capability table (`A.FEATURES`); other modules ask `Adapter.Has(feature)` or `Adapter.Allows(surface, id)` and never learn which client they run on. On Forever, uncertain means Blizzard's: the bank and guild bank stay Blizzard's through bank Safe Mode (reason `forever`), the warband bank is never read, and Retail-only features give no data and have no entry point. The TOC stays Retail-only (`120100, 120105`) and `scripts/toc_check.lua` and `scripts/release.sh` refuse a Forever number until Stage B's in-game checklist (`docs/superpowers/plans/2026-10-22-swagbag-forever-stage-b-checklist.md`) passes.
 
 ### 3.2 Module catalogue
 

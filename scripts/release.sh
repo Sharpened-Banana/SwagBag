@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Upload the current SwagBag version to CurseForge.
 #
-#   scripts/release.sh [--type release|beta|alpha] [--dry-run] [--yes]   (default: release)
+#   scripts/release.sh [--type release|beta|alpha] [--dry-run] [--yes] [--forever]   (default: release)
 #
 # What it does, in order (it stops at the first problem):
 #   1. checks you are on main with nothing uncommitted (untracked files are ignored)
@@ -10,7 +10,9 @@
 #   4. builds dist/SwagBag-<version>.zip from the committed code (git archive)
 #   5. reads the CurseForge token from the macOS Keychain (service "swagbag-curseforge"),
 #      never from a file, an argument or the environment, and never prints it
-#   6. maps the TOC's "## Interface:" numbers to CurseForge's Retail game versions
+#   6. maps the TOC's "## Interface:" numbers to CurseForge's game versions (scripts/interfaces.lua): Retail
+#      numbers to Retail; a WoW Forever number is refused unless you pass --forever, which you do only after
+#      the in-game Stage B checks have passed
 #   7. shows what it will upload and asks you to type "upload" (--yes skips the question)
 #   8. uploads, prints the new file id, and tags the commit v<version> locally (nothing is pushed)
 # --dry-run does steps 1-7 (the Keychain and the game-version lookup included) and uploads nothing.
@@ -21,17 +23,20 @@ set -euo pipefail
 
 SITE="https://wow.curseforge.com"
 RETAIL_TYPE=517
+FOREVER_TYPE=88568
 KEYCHAIN_SERVICE="swagbag-curseforge"
 TYPE="release" # every upload is a full release (user choice, 2026-10-22); --type beta|alpha only when asked
 DRY=0
 YES=0
+ALLOW_FOREVER=0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--type) TYPE="${2:-}"; shift 2 ;;
 		--dry-run) DRY=1; shift ;;
 		--yes) YES=1; shift ;;
-		-h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+		--forever) ALLOW_FOREVER=1; shift ;;
+		-h|--help) sed -n '2,/^[^#]/{/^[^#]/!p;}' "$0"; exit 0 ;;
 		*) echo "Unknown option: $1 (try --help)"; exit 2 ;;
 	esac
 done
@@ -90,21 +95,27 @@ fi
 printf '%s' "$VERSIONS_JSON" | jq -e 'type == "array"' > /dev/null 2>&1 \
 	|| fail "CurseForge did not list its game versions (is the token right?): $(printf '%s' "$VERSIONS_JSON" | head -c 300)"
 
+lines="$(luajit scripts/interfaces.lua "$INTERFACES")" || fail "the TOC's ## Interface line ($INTERFACES) has a number SwagBag does not know"
 IDS=()
 NAMES=()
-IFS=',' read -r -a IFACES <<< "$INTERFACES"
-for i in "${IFACES[@]}"; do
-	[ -n "$i" ] || continue
-	name="$(printf '%d.%d.%d' "$((10#${i:0:${#i}-4}))" "$((10#${i: -4:2}))" "$((10#${i: -2:2}))")"
-	id="$(printf '%s' "$VERSIONS_JSON" | jq -r --arg n "$name" --argjson t "$RETAIL_TYPE" \
+while read -r kind name; do
+	[ -n "$kind" ] || continue
+	case "$kind" in
+		retail) type_id="$RETAIL_TYPE"; type_label="Retail" ;;
+		forever)
+			[ "$ALLOW_FOREVER" = 1 ] || fail "the TOC lists WoW Forever ($name). Forever uploads wait for the Stage B checks in game; add --forever when they pass."
+			type_id="$FOREVER_TYPE"; type_label="WoW Forever" ;;
+		*) fail "unknown game version type '$kind' ($name)" ;;
+	esac
+	id="$(printf '%s' "$VERSIONS_JSON" | jq -r --arg n "$name" --argjson t "$type_id" \
 		'map(select(.gameVersionTypeID == $t and .name == $n)) | max_by(.id) | .id // empty')"
 	if [ -z "$id" ]; then
-		echo "Note: CurseForge has no Retail version named $name; it is left out."
+		echo "Note: CurseForge has no $type_label version named $name; it is left out."
 		continue
 	fi
 	IDS+=("$id")
 	NAMES+=("$name")
-done
+done <<< "$lines"
 [ "${#IDS[@]}" -gt 0 ] || fail "none of the TOC's game versions ($INTERFACES) exist on CurseForge yet"
 GAME_IDS="$(printf '%s\n' "${IDS[@]}" | jq -s -c 'unique')"
 
