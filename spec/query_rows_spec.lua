@@ -44,7 +44,7 @@ describe("Rule rows (week 11)", function()
 			"!(a & b) | c", "#trade goods", "\"healing potion\" | lure", "<536", ">150", "=480", "536", "400-450",
 			"gear & 400-450", "ilvl>5 & !ilvl>600", "(a | b) | c", "(a & b) & c", "~boe || bop", "!\"x y\" & #rune",
 			"gear & (ilvl>=400 | uncollected) & !bound", "epic & boe | rare & boe | !(junk | trash)", "value>=100.5",
-			"gray", "fish | lure | bait",
+			"gray", "fish | lure | bait", "text:fire & gear", "!tip:\"fire damage\" | fire damage",
 		}
 		for _, text in ipairs(shapes) do
 			local rules, why = Rows.FromText(text)
@@ -223,6 +223,18 @@ describe("Rule rows (week 11)", function()
 		assert.is_nil(Rows.KindOf("fish"))
 		assert.equal("both", Rows.KindOf("gear"))
 		assert.equal("flag", Rows.KindOf("GRAY"))
+	end)
+
+	-- 0.16.0 (Q7, Q13): a tooltip-text row. Mutation: in Rows.lua's asRow, drop the "tip" kind.
+	it("a tooltip-text row reads and prints text:, and is checked like a quoted name", function()
+		assert.same({ join = "and", blocks = { { join = "and", negate = false, rows = {
+			{ kind = "tip", value = "fire damage", negate = true } } } } }, Rows.FromText("!text:fire damage"))
+		assert.same({ kind = "tip", value = "", negate = false }, Rows.NewTipRow())
+		assert.equal("EMPTY", Rows.Problem(Rows.NewTipRow()))
+		assert.is_nil(Rows.Problem({ kind = "tip", value = "deals (50) & more" }))
+		assert.equal("QUOTE", Rows.Problem({ kind = "tip", value = "say \"hi\"" }))
+		assert.equal("text:\"x y\"", Rows.ToText({ join = "and", blocks = { { join = "and", negate = false, rows = {
+			{ kind = "tip", value = "x y", negate = false } } } } }))
 	end)
 
 	-- Mutation: in Rows.Problem, drop the `elseif v:find("\"", 1, true) then return "QUOTE"` branch.

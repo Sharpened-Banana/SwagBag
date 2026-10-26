@@ -507,7 +507,7 @@ describe("Settings > Categories (week 11)", function()
 		local l = labels()
 		assert.truthy(has(l, L.PASTE_READS_AS:format("#gear & value>=1000 | pot | key")))
 		assert.truthy(has(l, L.PASTE_NOTE_GOLD))
-		assert.truthy(has(l, L.PASTE_NOTE_NAME:format("pot") .. L.PASTE_NOTE_PREFIX:format("potion")))
+		assert.truthy(has(l, L.PASTE_NOTE_NAME:format("pot", "pot") .. L.PASTE_NOTE_PREFIX:format("potion")))
 		assert.truthy(has(l, L.PASTE_NOTE_ALSO:format("key", "keystone")))
 		assert.truthy(has(l, "Matches 1 of the 6 items in your bags right now."), "the potion's name holds pot")
 		assert.falsy(has(l, L.CAT_WARN_WORD:format("pot") .. L.CAT_DID_YOU_MEAN:format("pet")), "Paste's own note says it")
@@ -704,6 +704,38 @@ describe("Settings > Categories (week 11)", function()
 		end
 	end)
 
+	-- 0.16.0 (Q7, Q13). Mutation: in SettingsCategories' valueRow, turn a tooltip row into a name row when typed in.
+	it("a tooltip-text rule: picked from the lists, typed in, saved as text:", function()
+		click(L.CAT_NEW_BUTTON)
+		type(1, "Fiery")
+		click(L.CAT_ADD_RULE)
+		assert.truthy(has(labels(), L.CAT_PICK_TIP_LABEL))
+		assert.equal(L.CAT_TYPE_VALUE, click(L.CAT_PICK_TIP))
+		assert.truthy(has(labels(), "Rule 1: " .. L.CAT_SUM_TIP:format("")))
+		assert.truthy(has(labels(), L.CAT_VALUE_TIP))
+		assert.equal(L.CAT_RULE_NOW:format("text:\"fire damage\""), enter(2, "fire damage"))
+		assert.truthy(has(labels(), "Rule 1: " .. L.CAT_SUM_TIP:format("fire damage")))
+		click(L.CAT_SAVE)
+		assert.equal("text:\"fire damage\"", C.Get("u_fiery").query)
+	end)
+
+	it("a keyword that reads tooltips says so on its rule", function()
+		click(L.CAT_NEW_BUTTON)
+		click(L.CAT_ADD_RULE)
+		click("fire damage")
+		assert.truthy(has(labels(), "Rule 1: " .. L.CAT_SUM_READS_TIPS:format("fire damage")))
+		click(L.CAT_ADD_RULE)
+		click("mail")
+		assert.truthy(has(labels(), "Rule 2: mail"))
+	end)
+
+	it("the lists offer the expansion keywords on Retail", function()
+		click(L.CAT_NEW_BUTTON)
+		click(L.CAT_ADD_RULE)
+		assert.truthy(has(texts(), "midnight"))
+		assert.truthy(has(labels(), L.KW_FAMILY_EXPANSION))
+	end)
+
 	-- Mutation: in Core/Events.lua, call `textBoxes[i]:ClearFocus()` directly, without the per-box trap.
 	it("one text box that errors in ClearFocus does not stop the others letting go", function()
 		local later = false
@@ -715,5 +747,47 @@ describe("Settings > Categories (week 11)", function()
 		end })
 		SB.Emit("PLAYER_REGEN_DISABLED")
 		assert.truthy(later)
+	end)
+end)
+
+-- 0.16.0 (Q6): keywords for facts WoW Forever lacks are not offered there.
+describe("Settings > Categories on WoW Forever (0.16.0)", function()
+	local SB, SW, L
+	before_each(function()
+		local files = { unpack(Env.ENGINE) }
+		table.insert(files, 12, "SwagBag/Engine/Query/Rows.lua")
+		table.insert(files, 13, "SwagBag/Engine/Query/Paste.lua")
+		SB = Loader.New(files, { flavor = "forever" })
+		SB.Config.Init(nil, nil)
+		Fake.Install()
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsWindow.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsPages.lua")
+		Loader.LoadFile(SB, "SwagBag/UI/SettingsCategories.lua")
+		SW, L = SB.SettingsWindow, SB.L
+		SB.Categories.Load()
+		SW.Show("categories")
+	end)
+
+	after_each(function()
+		Fake.Uninstall()
+	end)
+
+	-- Mutation: drop the Allows("keyword", word) check in SettingsCategories' pickerRows.
+	it("the expansion family and the expansion number are hidden; every other keyword stays", function()
+		SB.SettingsCategories.New()
+		SB.SettingsCategories.picking = { block = 1 }
+		SW.Render()
+		local texts, labels = {}, {}
+		for i = 1, SW.used.buttons do
+			texts[SW.buttons[i].text] = true
+		end
+		for i = 1, SW.used.labels do
+			labels[SW.labels[i].text] = true
+		end
+		assert.falsy(texts["midnight"])
+		assert.falsy(texts["expansion"])
+		assert.falsy(labels[L.KW_FAMILY_EXPANSION], "an empty family is not shown")
+		assert.truthy(texts["mail"])
+		assert.truthy(texts["crit"])
 	end)
 end)

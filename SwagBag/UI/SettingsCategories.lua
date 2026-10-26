@@ -265,15 +265,19 @@ local function isKeyword(r)
 	return kind == "flag" or kind == "both"
 end
 
--- One row in words, for its label: "ilvl >= 600", "boe", "not epic", "item name contains "fish"".
+-- One row in words, for its label: "ilvl >= 600", "boe", "not epic", "item name contains "fish"", "tooltip text
+-- contains "fire"". A keyword that reads tooltips says so (0.16.0, user answer Q13).
 local function summary(r)
 	local s
 	if r.kind == "num" then
 		s = r.name .. " " .. r.op .. " " .. (r.raw ~= "" and r.raw or "?")
 	elseif r.kind == "exact" then
 		s = "#" .. r.value
+	elseif r.kind == "tip" then
+		s = L.CAT_SUM_TIP:format(r.value)
 	elseif isKeyword(r) then
-		s = r.value
+		local kw = SB.Query.Lookup(r.value)
+		s = kw.tooltip and L.CAT_SUM_READS_TIPS:format(r.value) or r.value
 	else
 		s = L.CAT_SUM_NAME:format(r.value)
 	end
@@ -332,11 +336,12 @@ end
 ---------------------------------------------------------------------------
 -- The editor
 ---------------------------------------------------------------------------
-local function pick(word, asNumber)
+-- tip: an empty tooltip-text row (0.16.0) instead of a keyword or name row.
+local function pick(word, asNumber, tip)
 	return forget(function()
 		local d, p = SC.draft, SC.picking
 		local block = d.rules.blocks[p.block]
-		local row = Rows.NewRow(word, asNumber)
+		local row = tip and Rows.NewTipRow() or Rows.NewRow(word, asNumber)
 		if p.row and block.rows[p.row] then
 			row.negate = block.rows[p.row].negate
 			block.rows[p.row] = row
@@ -345,7 +350,7 @@ local function pick(word, asNumber)
 		end
 		SC.picking = nil
 		rulesChanged(d)
-		if word == nil or asNumber then
+		if word == nil or asNumber or tip then
 			return L.CAT_TYPE_VALUE
 		end
 		return ruleNow(d)
@@ -359,26 +364,37 @@ local function pickerRows(out)
 	end) } } }
 	out[#out + 1] = { kind = "actions", label = L.CAT_PICK_NAME_LABEL, actions = { { text = L.CAT_PICK_NAME,
 		run = pick(nil) } } }
+	out[#out + 1] = { kind = "actions", label = L.CAT_PICK_TIP_LABEL, actions = { { text = L.CAT_PICK_TIP,
+		run = pick(nil, false, true) } } }
+	-- A keyword for a fact this client lacks (WoW Forever: the expansion) is not offered (0.16.0, user answer Q6).
+	local A = SB.Adapter
 	for _, fam in ipairs(Rows.FAMILIES) do
 		local actions = {}
-		for i, word in ipairs(fam.words) do
-			actions[i] = { text = word, run = pick(word, fam.numbers) }
+		for _, word in ipairs(fam.words) do
+			if A.Allows("keyword", word) then
+				actions[#actions + 1] = { text = word, run = pick(word, fam.numbers) }
+			end
 		end
-		out[#out + 1] = { kind = "actions", label = L[fam.label], width = 60, actions = actions }
+		if #actions > 0 then
+			out[#out + 1] = { kind = "actions", label = L[fam.label], width = 60, actions = actions }
+		end
 	end
 end
 
 local function valueRow(out, r)
-	local isNum = r.kind == "num"
+	local isNum, isTip = r.kind == "num", r.kind == "tip"
 	local function put(text)
 		if isNum then
 			r.raw = text
+		elseif isTip then
+			r.value = text
 		else
 			r.kind, r.value = "text", text -- a name the user typed is always quoted: no word turns into a keyword
 		end
 		rulesChanged(SC.draft)
 	end
-	out[#out + 1] = { kind = "input", label = isNum and L.CAT_VALUE_NUMBER:format(r.name) or L.CAT_VALUE_NAME,
+	local label = isNum and L.CAT_VALUE_NUMBER:format(r.name) or (isTip and L.CAT_VALUE_TIP or L.CAT_VALUE_NAME)
+	out[#out + 1] = { kind = "input", label = label,
 		boxWidth = 200, maxLetters = C.MAX_QUERY + 20, -- over the limit: a longer paste is refused, not cut
 
 		get = function()
@@ -643,7 +659,7 @@ end
 local function noteText(n)
 	if n.kind == "NAME" then
 		local starting = Paste.Prefixed(n.value)
-		return L.PASTE_NOTE_NAME:format(n.value)
+		return L.PASTE_NOTE_NAME:format(n.value, n.value)
 			.. (#starting > 0 and L.PASTE_NOTE_PREFIX:format(table.concat(starting, ", ")) or "")
 	elseif n.kind == "ALSO" then
 		return L.PASTE_NOTE_ALSO:format(n.value, table.concat(Paste.Prefixed(n.value), ", "))

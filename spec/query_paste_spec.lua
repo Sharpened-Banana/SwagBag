@@ -91,6 +91,15 @@ describe("Paste a Baganator search (week 11)", function()
 		assert.same({}, P.Prefixed("zzz"))
 	end)
 
+	-- 0.16.0: "cloth armor" and "cloth material" only narrow cloth, and SwagBag's own tooltip keywords are nothing
+	-- Baganator matched. Mutation: drop the NARROWS table.
+	it("a keyword's own narrower phrases and the tooltip keywords are not prefixes Baganator matched", function()
+		assert.same({}, P.Prefixed("cloth"))
+		assert.same({}, P.Prefixed("leather"))
+		assert.same({}, P.Prefixed("fire"))
+		assert.same({}, kinds(P.Translate("cloth | leather")))
+	end)
+
 	-- Mutations: in Paste.Translate, drop the last `if #out > Paste.MAX then return nil, "GROWN", #out end` (gold
 	-- terms grow a string past what a category may hold); or `return nil, "GROWN", #out` -> `return nil, "LONG", #out`
 	-- (the answer says 799 characters of a 299-character paste).

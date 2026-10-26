@@ -3,7 +3,7 @@ local Fixtures = dofile("spec/fixtures/items.lua")
 
 local FILES = {
 	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
-	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Keywords.lua",
+	"SwagBag/Engine/Items.lua", "SwagBag/Engine/ItemFacts.lua", "SwagBag/Engine/Keywords.lua",
 }
 
 -- Backpack after setup:
@@ -231,6 +231,7 @@ describe("Keywords (v1.0, week-1 families)", function()
 		assert.truthy(SB.Items.Key(boe, "instance") ~= SB.Items.Key(wue, "instance"))
 	end)
 
+	-- 0.16.0: or a list of numbers (bonus=N).
 	it("every keyword returns only true/false/nil (eval) or number/false/nil (value) on every record", function()
 		local records = {}
 		for _, slot in ipairs(ALL) do
@@ -238,6 +239,8 @@ describe("Keywords (v1.0, week-1 families)", function()
 		end
 		records[#records + 1] = SB.Items.Describe(5, 1)
 		records[#records + 1] = SB.Items.Describe(7, 3)
+		SB.Adapter.Put(0, 15, Fixtures.BOE_RING, 1, { link = "item:225001::::::::80:250::13:2:6652:1540" })
+		records[#records + 1] = SB.Items.Describe(0, 15)
 		for name, kw in pairs(Q.keywords) do
 			for _, r in ipairs(records) do
 				if kw.eval then
@@ -246,7 +249,11 @@ describe("Keywords (v1.0, week-1 families)", function()
 				end
 				if kw.value then
 					local v = kw.value(r)
-					assert.truthy(type(v) == "number" or v == false or v == nil, name .. " value returned " .. tostring(v))
+					local list = type(v) == "table"
+					for _, n in ipairs(list and v or {}) do
+						list = list and type(n) == "number"
+					end
+					assert.truthy(type(v) == "number" or list or v == false or v == nil, name .. " value returned " .. tostring(v))
 				end
 			end
 		end

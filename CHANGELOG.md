@@ -2,9 +2,18 @@
 
 Newest first. Each "## <version>" section is the changelog CurseForge shows for that upload (scripts/release.sh reads it).
 
-## 0.15.0
+## 0.16.0
 
-- Groundwork for WoW Forever. Nothing changes on Retail: your bags, bank and settings work exactly as before.
+- **Search by armor type:** `plate`, `mail`, `cloth armor`, `leather armor`, `shield` (and `libram`, `idol`, `totem`, `sigil`, `relic` where the game has them).
+- **`cloth` and `leather` now find both** the crafting material and that armor. For the material only, use `cloth material` or `leather material`. The built-in Leather & Cloth section uses those, so it never collects armor. If one of your own saved rules uses `cloth` or `leather`, SwagBag names it once in chat at your next login. Your rules are not changed.
+- **Search by stats:** `crit`, `haste`, `mastery`, `vers`, `leech`, `avoidance`, `speed`, `str`, `agi`, `int`, `stam`. A bare word finds gear that has the stat, and a number compares it: `crit>200`, `haste & mastery`.
+- **Weapons and sockets:** `dps>500` (or `damage>500`), `sockets` (any socket), `socketed` (every socket filled), `sockets>1`.
+- **Expansion, sets, appearances and bonus IDs:** `midnight`, `tww`, `dragonflight`, `legion` and the other expansions, or `expansion=11`. `set` finds set pieces, `transmog` finds gear whose look you haven't collected, and `bonus=1540` matches a bonus ID.
+- **Damage types:** `fire damage` (or `damage fire`) finds gear whose tooltip has a fire damage line. Frost, nature, shadow, arcane, holy and physical work the same way, and `damage` finds any of them. Few modern items have these lines, so expect mostly older gear.
+- **Search a tooltip's text:** `text:fire`, or `text:"deals 50"` for a phrase. Plain words still only search item names, so everyday searches stay fast and predictable. Both work in your categories too. The category editor has a "Tooltip text contains..." rule and marks the rules that read tooltips.
+- Inside an instance, the game sometimes hides an item's details. Until they come back, a search can't check those items and dims them.
+- On WoW Forever the expansion keywords match nothing and are left out of the category editor.
+- Groundwork for WoW Forever. Nothing else changes on Retail: your bags, bank and settings work exactly as before.
 
 ## 0.14.5
 

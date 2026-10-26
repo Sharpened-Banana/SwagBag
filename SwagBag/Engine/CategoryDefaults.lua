@@ -31,7 +31,7 @@ SB.CategoryDefaults = {
 	{ id = "c_tradegoods", name = L.CAT_TRADEGOODS, query = "tradegoods | reagent", priority = 50, displayOrder = 50 },
 	{ id = "c_herbs", name = L.CAT_HERBS, query = "herb", priority = 55, displayOrder = 60 },
 	{ id = "c_ore", name = L.CAT_ORE, query = "ore", priority = 54, displayOrder = 70 },
-	{ id = "c_leathercloth", name = L.CAT_LEATHERCLOTH, query = "leather | cloth", priority = 53, displayOrder = 80 },
+	{ id = "c_leathercloth", name = L.CAT_LEATHERCLOTH, query = "leather material | cloth material", priority = 53, displayOrder = 80 },
 	{ id = "c_enchanting", name = L.CAT_ENCHANTING, query = "enchanting", priority = 52, displayOrder = 90 },
 	{ id = "c_cooking", name = L.CAT_COOKING, query = "cooking", priority = 51, displayOrder = 100 },
 	{ id = "c_fish", name = L.CAT_FISH, query = "fish | lure | bait", priority = 60, displayOrder = 110 },

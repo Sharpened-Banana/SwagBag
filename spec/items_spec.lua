@@ -33,6 +33,17 @@ describe("Items.Describe", function()
 		assert.equal(true, r.isUsable)
 	end)
 
+	-- 0.16.0 search. Mutation: leave setID off DescribeLink's record.
+	it("both records carry the expansion and set; only DescribeLink's says it came from a link", function()
+		A.items[Fixtures.BOE_RING].expansionID, A.items[Fixtures.BOE_RING].setID = 11, 1500
+		local r = Items.Describe(0, 3)
+		assert.same({ 11, 1500 }, { r.expansionID, r.setID })
+		assert.falsy(r.fromLink)
+		local g = Items.DescribeLink({ itemID = Fixtures.BOE_RING, link = "item:" .. Fixtures.BOE_RING, count = 1 }, 102, 5, 2)
+		assert.same({ 11, 1500 }, { g.expansionID, g.setID })
+		assert.equal(true, g.fromLink)
+	end)
+
 	it("DescribeLink builds a guild bank record from the link: location guild, never bound, cooldown or new", function()
 		local link = "|cffa335ee|Hitem:" .. Fixtures.BOE_RING .. "::::::::90:::::|h[Band of the Fallen]|h|r"
 		A.tracks[link] = { "Hero", 2, 6 }

@@ -1,10 +1,14 @@
 -- SwagBag query engine (spec 7). Pure Lua.
---   Query.RegisterKeyword{ name, aliases, class, eval, value }
+--   Query.RegisterKeyword{ name, aliases, class, eval, value, tooltip }
 --       class: "static" (per itemID) | "instance" (per link) | "volatile" (never cached)
 --       eval(record)  -> true | false | nil   for bare use:      boe
 --       value(record) -> number | false | nil for numeric use:   ilvl>250
 --                        (false = item has no such field -> comparison is false;
 --                         nil = data not loaded yet -> result unknown)
+--                        or a list of numbers (0.16.0, bonus=N): true when any of them compares
+--       tooltip = true   (0.16.0) the keyword reads tooltips: opts.prefix never expands a word into it
+--   text:fire / tip:"fire damage" (0.16.0, the "tip" node): tooltip text, case-insensitive, read through
+--       Engine/ItemFacts.lua (false when it is not loaded); instance class; compiled.tooltip = true
 --   Query.Compile(text [, opts]) -> { fn, cacheClass, keywords, errors, warnings, ast, id, text, empty }
 --       opts.prefix = true (0.13.6; only the search boxes pass it): a bare word of Query.PREFIX_MIN (3) or more
 --       characters that is not itself a keyword also matches every keyword or alias that starts with it, so "trink"
@@ -39,7 +43,8 @@ function Q.RegisterKeyword(def)
 	if not def.eval and not def.value then
 		error("RegisterKeyword: eval or value required", 2)
 	end
-	local entry = { name = def.name:lower(), class = def.class, eval = def.eval, value = def.value }
+	local entry = { name = def.name:lower(), class = def.class, eval = def.eval, value = def.value,
+		tooltip = def.tooltip == true }
 	Q.keywords[entry.name] = entry
 	for _, alias in ipairs(def.aliases or {}) do
 		Q.keywords[alias:lower()] = entry
@@ -72,6 +77,27 @@ local function textMatcher(needle)
 			return nil
 		end
 		return name:lower():find(needle, 1, true) ~= nil
+	end
+end
+
+-- Case-insensitive substring match on the item's tooltip lines (Engine/ItemFacts.lua gives them lower-cased).
+local function tipMatcher(needle)
+	needle = needle:lower()
+	return function(r)
+		local facts = SB.ItemFacts
+		if facts == nil then
+			return false
+		end
+		local lines = facts.Tooltip(r)
+		if not lines then
+			return lines
+		end
+		for _, line in ipairs(lines) do
+			if line:find(needle, 1, true) then
+				return true
+			end
+		end
+		return false
 	end
 end
 
@@ -140,7 +166,7 @@ end
 local function prefixKeywords(word)
 	local found, seen = {}, {}
 	for name, kw in pairs(Q.keywords) do
-		if kw.eval and name:sub(1, #word) == word and not seen[kw] then
+		if kw.eval and not kw.tooltip and name:sub(1, #word) == word and not seen[kw] then
 			seen[kw] = true
 			found[#found + 1] = kw
 		end
@@ -229,6 +255,12 @@ function Q.Compile(text, opts)
 			return textMatcher(node.value)
 		elseif node.type == "text" then
 			return textMatcher(node.value)
+		elseif node.type == "tip" then
+			compiled.tooltip = true
+			if RANK.instance > RANK[compiled.cacheClass] then
+				compiled.cacheClass = "instance"
+			end
+			return tipMatcher(node.value)
 		end
 		-- numeric
 		local kw = Q.keywords[node.name:lower()]
@@ -243,6 +275,13 @@ function Q.Compile(text, opts)
 			if v == nil then
 				return nil
 			elseif v == false then
+				return false
+			elseif type(v) == "table" then
+				for _, n in ipairs(v) do
+					if cmp(n, target) then
+						return true
+					end
+				end
 				return false
 			end
 			return cmp(v, target)
@@ -361,6 +400,8 @@ local function pretty(node)
 		return "#" .. node.value
 	elseif t == "text" then
 		return "\"" .. node.value .. "\""
+	elseif t == "tip" then
+		return "text:\"" .. node.value .. "\""
 	elseif t == "num" then
 		return node.name .. node.op .. node.raw
 	elseif t == "not" then

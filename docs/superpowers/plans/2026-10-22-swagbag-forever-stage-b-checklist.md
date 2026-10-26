@@ -63,7 +63,17 @@ Open your bags inside a dungeon. There is no Lua error and items stay visible.
 
 If Baganator or Bagnon is installed, SwagBag's login line names it.
 
+## F-11 Search (0.16.0)
+
+In the bags' search box, type each of these and check that the right items light up: `plate`, `cloth armor`, `crit`, `sockets`, `text:` followed by a word from one of your items' tooltips. There is no Lua error.
+
 ## For Claude (Stage B)
+
+0.16.0 search, to verify on Forever before turning anything on:
+
+- Whether `C_TooltipInfo` and `C_Item.GetItemStats` exist there (both are feature-detected; missing means those keywords match nothing).
+- Whether Forever items carry Retail's expansion IDs. If they do, set `A.FEATURES.expansion.forever = true` (the expansion keywords and the editor's Expansion list then show).
+
 
 Strings to reword for Forever before launch, because they still name Retail-only things:
 

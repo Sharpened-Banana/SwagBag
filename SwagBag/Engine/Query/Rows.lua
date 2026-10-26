@@ -7,6 +7,7 @@
 --           { kind = "text", value, negate }    a quoted item name ("Healing Potion")
 --           { kind = "exact", value, negate }   #keyword: the keyword only
 --           { kind = "num", name, op, raw, negate }   ilvl>=600 (op = < <= > >=, raw = the number as typed)
+--           { kind = "tip", value, negate }     text:"fire damage": the item's tooltip text (0.16.0)
 -- Lossless (AC6.1): for every query FromText accepts, ToText(FromText(t)) is Query.Pretty of t's tree (the same
 -- tree, the same items), and FromText(ToText(r)) gives r back for every r FromText made. A query the rows cannot
 -- show (nesting deeper than groups of rows, "!!", too many rows, too long, or not a query at all) opens as text
@@ -16,6 +17,7 @@
 --   Rows.FAMILIES                       the editor's keyword lists: { { label = Locale key, words = { ... } } }
 --   Rows.KindOf(word) -> "flag" | "number" | "both" | nil (not a keyword: an item-name match)
 --   Rows.NewRow(word, asNumber) -> row  a keyword row, a number row (asNumber), or an empty name row (word nil)
+--   Rows.NewTipRow() -> row             an empty tooltip-text row (0.16.0)
 --   Rows.Problem(row) -> nil | "EMPTY" | "QUOTE" | "NUMBER" | "WORD"   what keeps a row from being saved
 --   Rows.Nearest(word) -> keyword | nil  a keyword one letter away (spec 7.2's "did you mean"; week 11 Task 3)
 local _, SB = ...
@@ -26,13 +28,25 @@ SB.QueryRows = Rows
 -- Every registered keyword, once, by family (the spec 7.3 table). A test checks this against the registry.
 Rows.FAMILIES = {
 	{ label = "KW_FAMILY_TYPE", words = { "gear", "armor", "weapon", "consumable", "potion", "flask", "food", "elixir",
-		"rune", "reagent", "tradegoods", "herb", "ore", "leather", "cloth", "enchanting", "cooking", "gem", "recipe",
-		"questitem", "key", "keystone", "crest", "pet", "mount", "toy", "housing", "cosmetic", "container",
-		"miscellaneous", "junk", "profession", "profession tool", "profession gear" } },
+		"rune", "reagent", "tradegoods", "herb", "ore", "leather", "cloth", "leather material", "cloth material",
+		"enchanting", "cooking", "gem", "recipe", "questitem", "key", "keystone", "crest", "pet", "mount", "toy",
+		"housing", "cosmetic", "container", "miscellaneous", "junk", "profession", "profession tool",
+		"profession gear" } },
+	{ label = "KW_FAMILY_ARMOR", words = { "cloth armor", "leather armor", "mail", "plate", "shield", "libram", "idol",
+		"totem", "sigil", "relic" } },
+	{ label = "KW_FAMILY_STATS", words = { "crit", "haste", "mastery", "vers", "leech", "avoidance", "speed", "str",
+		"agi", "int", "stam", "sockets", "socketed", "set", "transmog" } },
+	{ label = "KW_FAMILY_STAT_NUMBERS", numbers = true, words = { "crit", "haste", "mastery", "vers", "leech",
+		"avoidance", "speed", "str", "agi", "int", "stam", "dps", "sockets", "bonus" } },
+	{ label = "KW_FAMILY_EXPANSION", words = { "classic", "tbc", "wrath", "cata", "mop", "wod", "legion", "bfa",
+		"shadowlands", "dragonflight", "tww", "midnight" } },
+	{ label = "KW_FAMILY_DAMAGE", words = { "damage", "fire damage", "frost damage", "nature damage", "shadow damage",
+		"arcane damage", "holy damage", "physical damage" } },
 	{ label = "KW_FAMILY_QUALITY", words = { "poor", "common", "uncommon", "rare", "epic", "legendary", "artifact",
 		"heirloom" } },
 	{ label = "KW_FAMILY_BINDING", words = { "boe", "bop", "warbound", "wue", "bound", "soulbound", "tradeable" } },
-	{ label = "KW_FAMILY_NUMBER", numbers = true, words = { "ilvl", "gear", "level", "value", "count", "stack", "tab" } },
+	{ label = "KW_FAMILY_NUMBER", numbers = true, words = { "ilvl", "gear", "level", "value", "count", "stack", "tab",
+		"expansion", "damage" } },
 	{ label = "KW_FAMILY_STATE", words = { "new", "locked", "inuse", "uncollected", "cooldown", "usable", "equipped",
 		"upgrade", "partial" } },
 	{ label = "KW_FAMILY_SLOT", words = { "head", "neck", "shoulder", "back", "chest", "wrist", "hands", "waist", "legs",
@@ -59,7 +73,7 @@ local function asRow(node)
 		negate, node = true, node.item
 	end
 	local t = node.type
-	if t == "word" or t == "text" or t == "exact" then
+	if t == "word" or t == "text" or t == "exact" or t == "tip" then
 		return { kind = t, value = node.value, negate = negate }
 	elseif t == "num" then
 		return { kind = "num", name = node.name, op = node.op, raw = node.raw, negate = negate }
@@ -137,6 +151,8 @@ local function rowText(r, negate)
 		s = r.name .. r.op .. r.raw
 	elseif r.kind == "text" then
 		s = "\"" .. r.value .. "\""
+	elseif r.kind == "tip" then
+		s = "text:\"" .. r.value .. "\""
 	elseif r.kind == "exact" then
 		s = "#" .. r.value
 	else
@@ -194,6 +210,10 @@ function Rows.NewRow(word, asNumber)
 	return { kind = "word", value = word, negate = false }
 end
 
+function Rows.NewTipRow()
+	return { kind = "tip", value = "", negate = false }
+end
+
 -- What keeps a row from being saved: an empty value, a double quote in a name (it would end the name), a number
 -- that is not one, or a bare word that would not read back as the same word.
 function Rows.Problem(row)
@@ -208,7 +228,7 @@ function Rows.Problem(row)
 		return "EMPTY"
 	elseif v:find("\"", 1, true) then
 		return "QUOTE"
-	elseif row.kind ~= "text" and (v:find("[&|!~()#=<>]") or v:find("%s%s") or v ~= v:match("^%s*(.-)%s*$")
+	elseif row.kind ~= "text" and row.kind ~= "tip" and (v:find("[&|!~()#=<>]") or v:find("%s%s") or v ~= v:match("^%s*(.-)%s*$")
 		or (row.kind == "word" and (v:match("^%d+$") or v:match("^%d+%-%d+$")))) then
 		return "WORD" -- a bare 536 or 400-450 is an item level, not a word
 	end

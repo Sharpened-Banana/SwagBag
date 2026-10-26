@@ -30,6 +30,9 @@ SB.QueryPaste = Paste
 local MONEY = { g = 1, s = 0.01, c = 0.0001 }
 local INCLUSIVE = { ["<"] = "<=", [">"] = ">=", ["="] = "=", ["<="] = "<=", [">="] = ">=" }
 local DIFFERENT = { upgrade = true, bop = true }
+-- 0.16.0: phrases that only narrow the word they start with (cloth already finds cloth armor), so no ALSO note.
+local NARROWS = { ["cloth armor"] = true, ["cloth material"] = true, ["leather armor"] = true,
+	["leather material"] = true }
 local TERM_START = { AND = true, OR = true, NOT = true, LPAREN = true }
 
 -- Gold as SwagBag's value keyword reads it: a plain number, never an exponent ("1e+06").
@@ -169,12 +172,14 @@ function Paste.Translate(text)
 	return { query = out, notes = notes }
 end
 
--- SwagBag keywords starting with a word, for a NAME note ("pot" -> potion): Baganator matched those too.
+-- SwagBag keywords starting with a word, for a NAME note ("pot" -> potion): Baganator matched those too. Never the
+-- word's own narrower phrases (NARROWS) or a keyword that reads tooltips (0.16.0: Baganator had none of those).
 function Paste.Prefixed(word)
 	word = word:lower()
 	local out = {}
 	for name, kw in pairs(SB.Query.keywords) do
-		if kw.name == name and kw.eval and name ~= word and name:sub(1, #word) == word then
+		if kw.name == name and kw.eval and not kw.tooltip and not NARROWS[name] and name ~= word
+			and name:sub(1, #word) == word then
 			out[#out + 1] = name
 		end
 	end

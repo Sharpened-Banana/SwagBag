@@ -14,6 +14,8 @@
 --   { type = "exact", value }  #word: keyword only
 --   { type = "text", value }   "quoted": always name text
 --   { type = "num", name, op, value = number, raw = string }
+--   { type = "tip", value }    text:fire, tip:"fire damage" (0.16.0): tooltip text, never a keyword. The prefix is
+--                              text: or tip: in any case; a phrase or a quoted string may follow it.
 -- Parse(text) -> ast | nil, { position, expected, got, after }
 local _, SB = ...
 
@@ -22,6 +24,7 @@ SB.QueryParser = Parser
 
 -- Bare < and > include the number, as in Syndicator.
 local INCLUSIVE = { ["<"] = "<=", [">"] = ">=" }
+local TIP_PREFIX = { text = true, tip = true }
 
 local function levelNode(op, value, raw, s, e)
 	return { type = "num", name = "ilvl", op = op, value = value, raw = raw, s = s, e = e }
@@ -64,6 +67,23 @@ function Parser.Parse(text)
 
 	local parseOr
 
+	-- tok is the WORD that starts with "text:" or "tip:"; rest is what follows the colon in it.
+	local function tip(tok, rest)
+		pos = pos + 1
+		local value, e = rest, tok.e
+		if rest == "" and peek().type == "STRING" then
+			value, e = peek().value, peek().e
+			pos = pos + 1
+		elseif peek().type == "WORD" then
+			local more, _, last = phrase()
+			value, e = rest == "" and more or (rest .. " " .. more), last
+		end
+		if not value:find("%S") then
+			fail("TIP_VALUE", tok.s)
+		end
+		return { type = "tip", value = value, s = tok.s, e = e }
+	end
+
 	local function parsePrimary()
 		local tok = peek()
 		if tok.type == "LPAREN" then
@@ -102,6 +122,10 @@ function Parser.Parse(text)
 			pos = pos + 1
 			return levelNode(INCLUSIVE[tok.value] or tok.value, n, num.value, tok.s, num.e)
 		elseif tok.type == "WORD" then
+			local prefix, rest = tok.value:match("^(%a+):(.*)$")
+			if prefix and TIP_PREFIX[prefix:lower()] then
+				return tip(tok, rest)
+			end
 			local value, s, e, wordCount = phrase()
 			if peek().type ~= "OP" then
 				if wordCount == 1 then

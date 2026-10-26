@@ -59,6 +59,21 @@ describe("Search", function()
 		assert.same({ 1, 2, 4, 5, 6, 7, 8 }, dimList(), "unloaded item's boe is unknown -> dimmed")
 	end)
 
+	-- 0.16.0 (Q5, Q11): a tooltip that has not loaded (or is a secret) is unknown, so its item dims; the next pass
+	-- after it loads lights it. Mutation: in ItemFacts, keep an unknown (nil) answer.
+	it("a tooltip search dims an item whose tooltip is not there yet, and lights it once it is", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/ItemFacts.lua")
+		local A = SB.Adapter
+		A.items[Fixtures.BOE_RING].tooltip = "secret"
+		assert.truthy(S.SetText("text:fallen | fire damage"))
+		S.Apply(forEach, setDimmed)
+		assert.same({ 1, 2, 3, 4, 5, 6, 7, 8 }, dimList())
+		A.items[Fixtures.BOE_RING].tooltip = { "Band of the Fallen", "+3 Fire Damage" }
+		local matches = S.Apply(forEach, setDimmed)
+		assert.equal(1, matches)
+		assert.same({ 1, 2, 4, 5, 6, 7, 8 }, dimList())
+	end)
+
 	it("keeps the previous valid search when the new text has an error", function()
 		S.SetText("potion")
 		local ok, message = S.SetText("potion &")

@@ -585,9 +585,56 @@ function M.AddContainers(m)
 			maxStack = it.maxStack or 1,
 			sellPrice = it.sellPrice or 0,
 			bind = it.bind or "none",
-			expansionID = 0,
+			expansionID = it.expansionID,
+			setID = it.setID,
 			isCraftingReagent = it.isCraftingReagent == true,
 		}
+	end
+
+	-- 0.16.0 search facts. AddItem's { stats = { crit = 120, emptySockets = 1, ... } | "secret", tooltip = { lines } |
+	-- "secret" }, or Put's { tooltip = ... } for one slot. A pending item has neither yet (nil). m.noStatsAPI and
+	-- m.noTooltipAPI: the client has no such API (false). m.statsCalls / m.tooltipCalls count the asks.
+	m.statsCalls, m.tooltipCalls = 0, 0
+	local function linkItem(link)
+		local id = type(link) == "string" and tonumber(link:match("item:(%d+)"))
+		return id and m.items[id]
+	end
+
+	function m.ItemStats(link)
+		if m.noStatsAPI or type(link) ~= "string" then
+			return false
+		end
+		m.statsCalls = m.statsCalls + 1
+		local it = linkItem(link)
+		if not it or it.pending or it.stats == "secret" then
+			return nil
+		end
+		local out = { emptySockets = 0 }
+		for k, v in pairs(it.stats or {}) do
+			out[k] = v
+		end
+		return out
+	end
+
+	function m.TooltipLines(bag, slot, link)
+		if m.noTooltipAPI then
+			return false
+		end
+		m.tooltipCalls = m.tooltipCalls + 1
+		local s = bag ~= nil and slot ~= nil and slotOf(bag, slot) or nil
+		local it = s and m.items[s.itemID] or linkItem(link)
+		if not it or it.pending then
+			return nil
+		end
+		local lines = (s and s.tooltip) or it.tooltip or { it.name or "" }
+		if lines == "secret" then
+			return nil
+		end
+		local out = {}
+		for i, l in ipairs(lines) do
+			out[i] = l:lower()
+		end
+		return out
 	end
 
 	function m.GetIlvl(bag, slot)

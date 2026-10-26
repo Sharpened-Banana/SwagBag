@@ -12,6 +12,8 @@
 --   reqLevel, maxStack                  number | nil (nil while loading)
 --   bind            "none"|"pickup"|"equip"|"use"|"quest"|"account"|"warbound"|"wue" | nil
 --   isCraftingReagent boolean | nil (nil while loading)
+--   expansionID, setID  number | nil (0.16.0 search; nil while loading, setID nil for an item in no set)
+--   fromLink        true on a record built from a link (guild bank, alt viewer): no bag slot to read
 --   isBound, isWUE, isLocked, onCooldown, inEquipmentSet, hasUpgradeTrack,
 --   isUsable, isToy, isQuestItem, isKeystone, isCagedPet, isNew    booleans
 --   location        "backpack"|"bags"|"reagentbag"|"bank"|"warband"|"guild"
@@ -80,6 +82,7 @@ function Items.Describe(bag, slot, s)
 		r.maxStack = info.maxStack
 		r.bind = info.bind
 		r.isCraftingReagent = info.isCraftingReagent
+		r.expansionID, r.setID = info.expansionID, info.setID
 		r.ilvl = A.GetIlvl(bag, slot) or info.baseIlvl
 	else
 		r.name = nil
@@ -134,6 +137,7 @@ function Items.DescribeLink(info, bag, slot, tab, location)
 		location = location or "guild",
 		tab = tab,
 		pending = data == nil,
+		fromLink = true,
 	}
 	if data then
 		r.name = data.name
@@ -154,6 +158,7 @@ function Items.DescribeLink(info, bag, slot, tab, location)
 			end
 		end
 		r.isCraftingReagent = data.isCraftingReagent
+		r.expansionID, r.setID = data.expansionID, data.setID
 		r.ilvl = A.GetLinkIlvl(info.link) or data.baseIlvl
 	else
 		A.RequestLoad(info.itemID)

@@ -4,7 +4,7 @@
 -- A.Allows), with the REAL Adapter and stubbed project constants; then the mock's Forever mode.
 local Loader = dofile("spec/helpers/loader.lua")
 
-local SURFACES = { overlay = true, footer = true, mode = true, trigger = true, style = true, setting = true }
+local SURFACES = { overlay = true, footer = true, mode = true, trigger = true, style = true, setting = true, keyword = true }
 
 -- Literal Allows ids that no feature gates (none yet). An id listed here is known to be always allowed.
 local UNGATED = {}
@@ -99,8 +99,8 @@ describe("Adapter flavor (real adapter, stubbed globals)", function()
 				end
 			end
 		end
-		assert.equal(6, features)
-		assert.equal(13, pairsSeen)
+		assert.equal(7, features)
+		assert.equal(26, pairsSeen)
 	end)
 
 	-- Mutation: Allows returning Has of the first feature for every id.
@@ -117,6 +117,10 @@ describe("Adapter flavor (real adapter, stubbed globals)", function()
 		assert.equal(false, A.Allows("setting", "overlays.track"))
 		assert.equal(true, A.Allows("overlay", "ilvl"))
 		assert.equal(true, A.Allows("footer", "gold"))
+		-- 0.16.0: expansion keywords are hidden on Forever (Q6); other keywords stay
+		assert.equal(false, A.Allows("keyword", "midnight"))
+		assert.equal(false, A.Allows("keyword", "expansion"))
+		assert.equal(true, A.Allows("keyword", "crit"))
 	end)
 
 	it("an undeclared feature is off on both clients", function()

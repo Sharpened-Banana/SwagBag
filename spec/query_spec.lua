@@ -218,6 +218,25 @@ describe("Query compile and eval", function()
 		assert.truthy(a.id ~= b.id)
 	end)
 
+	-- 0.16.0: bonus=N. Mutation: compare only the first number of a list.
+	it("a value may be a list of numbers: a comparison is true when any of them passes", function()
+		Q.RegisterKeyword({ name = "bonus", class = "instance", value = function(r) return r.bonus or false end })
+		local r = { name = "x", bonus = { 10, 1540, 6652 } }
+		assert.equal(true, run("bonus=6652", r))
+		assert.equal(true, run("bonus<11", r))
+		assert.equal(false, run("bonus=1", r))
+		assert.equal(false, run("bonus=1", { name = "y" }))
+	end)
+
+	it("text: is an instance-class tooltip search that says so", function()
+		local c = Q.Compile("potion & text:fire")
+		assert.same({}, c.errors)
+		assert.equal("instance", c.cacheClass)
+		assert.equal(true, c.tooltip)
+		assert.falsy(Q.Compile("potion").tooltip)
+		assert.equal(false, Q.Eval(Q.Compile("text:fire"), POTION), "no ItemFacts loaded: no tooltip to read")
+	end)
+
 	it("evaluates a gear, item level and boe combination", function()
 		local c = Q.Compile("gear & ilvl>280 & !boe")
 		assert.equal(false, Q.Eval(c, RING))
@@ -264,6 +283,7 @@ describe("Query errors, Validate, Pretty, registry", function()
 		assert.equal("a & (b & c)", p("a&(b&c)"))
 		assert.equal("#rune | \"x y\" | ilvl>=250", p("#rune|\"x y\"|ilvl >= 250"))
 		assert.equal("!!healing potion", p("! ! healing   potion"))
+		assert.equal("text:\"fire damage\" & !text:\"x\"", p("tip:fire damage & !TEXT:x"))
 	end)
 
 	it("Pretty round-trips: parsing the pretty text gives the same tree", function()
@@ -279,6 +299,7 @@ describe("Query errors, Validate, Pretty, registry", function()
 			"gear & ilvl>280 & !bound", "(potion | flask | food) & lvl>=80", "keystone | crest",
 			"junk | (gray & !quest)", "\"Healing Potion\"", "#rune", "a & (b | (c & !d)) | e",
 			"!(a | b) & !c", "trade goods & count<=5 | tab=2", "#gear & <536", "400-450 | ~boe", "a || b",
+			"text:fire & !tip:\"deals 50\"", "tip:fire damage | text: frost",
 		}
 		for _, q in ipairs(queries) do
 			local ast = Q.Compile(q).ast
@@ -404,6 +425,14 @@ describe("Query compile with opts.prefix (0.13.6)", function()
 	end
 
 	-- Mutation: the prefix branch is not added (the word stays a name match only).
+	-- 0.16.0 (Q4): a keyword that reads tooltips never joins the expansion. Mutation: drop the tooltip check.
+	it("tooltip keywords are never reached by a typed word's expansion", function()
+		Q.RegisterKeyword({ name = "fire damage", class = "instance", tooltip = true, eval = function() return true end })
+		local c = Q.Compile("fire", { prefix = true })
+		assert.same({}, c.keywords)
+		assert.equal(true, Q.Eval(Q.Compile("fire damage", { prefix = true }), {}))
+	end)
+
 	it("trink and trinke find the trinket by keyword and not the ring", function()
 		assert.equal(true, match("trink", TRINKET, P))
 		assert.equal(true, match("trinke", TRINKET, P))

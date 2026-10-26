@@ -11,7 +11,8 @@ globals = {
 
 -- WoW globals SwagBag may READ.
 read_globals = {
-	"C_AddOns", "C_Bank", "C_Container", "C_CVar", "C_Item", "C_Timer", "C_ToyBox", "Enum", "ItemLocation",
+	"C_AddOns", "C_Bank", "C_Container", "C_CVar", "C_Item", "C_Timer", "C_TooltipInfo", "C_ToyBox", "Enum",
+	"ItemLocation",
 	"CreateFrame", "UIParent", "UISpecialFrames", "DEFAULT_CHAT_FRAME", "ChatFontNormal",
 	"GetTime", "debugprofilestop", "debugstack", "date", "GetBuildInfo", "GetLocale",
 	"InCombatLockdown", "issecretvalue", "hooksecurefunc", "IsControlKeyDown", "ToggleBag",

@@ -76,8 +76,27 @@ function K.RegisterAll()
 	kw("tradegoods", "static", classIs(C.Tradegoods), { "trade goods", "tradeskill" })
 	kw("herb", "static", subIs(C.Tradegoods, TS.Herb))
 	kw("ore", "static", subIs(C.Tradegoods, TS.MetalStone))
-	kw("leather", "static", subIs(C.Tradegoods, TS.Leather))
-	kw("cloth", "static", subIs(C.Tradegoods, TS.Cloth))
+	-- 0.16.0 (user answer Q1): bare cloth and leather are the crafting material AND that armor type; the phrases
+	-- narrow them ("cloth armor", "cloth material"). Mail and plate are only armor.
+	local function either(a, b)
+		return function(r)
+			return a(r) or b(r)
+		end
+	end
+	kw("leather", "static", either(subIs(C.Tradegoods, TS.Leather), subIs(C.Armor, AS.Leather)))
+	kw("cloth", "static", either(subIs(C.Tradegoods, TS.Cloth), subIs(C.Armor, AS.Cloth)))
+	kw("leather material", "static", subIs(C.Tradegoods, TS.Leather))
+	kw("cloth material", "static", subIs(C.Tradegoods, TS.Cloth))
+	kw("cloth armor", "static", subIs(C.Armor, AS.Cloth))
+	kw("leather armor", "static", subIs(C.Armor, AS.Leather))
+	kw("mail", "static", subIs(C.Armor, AS.Mail), { "mail armor" })
+	kw("plate", "static", subIs(C.Armor, AS.Plate), { "plate armor" })
+	kw("shield", "static", subIs(C.Armor, AS.Shield))
+	kw("libram", "static", subIs(C.Armor, AS.Libram))
+	kw("idol", "static", subIs(C.Armor, AS.Idol))
+	kw("totem", "static", subIs(C.Armor, AS.Totem))
+	kw("sigil", "static", subIs(C.Armor, AS.Sigil))
+	kw("relic", "static", subIs(C.Armor, AS.Relic))
 	kw("enchanting", "static", subIs(C.Tradegoods, TS.Enchanting))
 	kw("cooking", "static", subIs(C.Tradegoods, TS.Cooking))
 	kw("gem", "static", classIs(C.Gem))
@@ -248,6 +267,150 @@ function K.RegisterAll()
 		local copper = SB.Prices and SB.Prices.Value(r.link, r.itemID, SB.Prices.Bound(r))
 		return copper and copper / 10000 or false
 	end, { "gold" })
+
+	-- Item facts (0.16.0, user answer Q9): stats, sockets, expansion, set, bonus IDs, appearance ----------------
+	-- Stats and tooltips cost a client call, so they come from Engine/ItemFacts.lua (read once per instance).
+	local function stats(r)
+		local F = SB.ItemFacts
+		if F == nil then
+			return false
+		end
+		return F.Stats(r)
+	end
+	-- crit: the gear has it; crit>200: compare it. Gear without the stat has 0; an item that is not gear has none.
+	local STATS = {
+		{ "crit", { "critical strike" } }, { "haste" }, { "mastery" }, { "vers", { "versatility" } }, { "leech" },
+		{ "avoidance" }, { "speed" }, { "str", { "strength" } }, { "agi", { "agility" } }, { "int", { "intellect" } },
+		{ "stam", { "stamina" } },
+	}
+	for _, def in ipairs(STATS) do
+		local key = def[1]
+		local function value(r)
+			local st = stats(r)
+			if not st then
+				return st
+			end
+			return st[key] or 0
+		end
+		Q.RegisterKeyword({ name = key, class = "instance", aliases = def[2], value = value, eval = function(r)
+			local v = value(r)
+			if not v then
+				return v
+			end
+			return v > 0
+		end })
+	end
+	local function dps(r)
+		local st = stats(r)
+		if not st then
+			return st
+		end
+		return st.dps or false
+	end
+	num("dps", "instance", dps)
+	-- sockets: empty sockets (the stats) plus filled ones (the link's gems); socketed: it has some, all filled.
+	local function sockets(r)
+		local st = stats(r)
+		if not st then
+			return st
+		end
+		return st.emptySockets + (A.LinkGemCount(r.link) or 0)
+	end
+	Q.RegisterKeyword({ name = "sockets", class = "instance", value = sockets, eval = function(r)
+		local n = sockets(r)
+		if not n then
+			return n
+		end
+		return n > 0
+	end, aliases = { "socket" } })
+	kw("socketed", "instance", function(r)
+		local n = sockets(r)
+		if not n then
+			return n
+		end
+		return n > 0 and stats(r).emptySockets == 0
+	end)
+	-- Expansion: off on WoW Forever (A.FEATURES.expansion; user answer Q6).
+	local function expansion(r)
+		if not A.Has("expansion") then
+			return false
+		end
+		if r.pending then
+			return nil
+		end
+		return r.expansionID or false
+	end
+	num("expansion", "instance", expansion)
+	local E = A.EXPANSION
+	local EXPANSIONS = {
+		{ "classic", E.Classic, { "vanilla" } }, { "tbc", E.BurningCrusade, { "burning crusade" } },
+		{ "wrath", E.Wrath, { "wotlk" } }, { "cata", E.Cataclysm, { "cataclysm" } }, { "mop", E.Pandaria, { "pandaria" } },
+		{ "wod", E.Draenor, { "draenor" } }, { "legion", E.Legion }, { "bfa", E.BattleForAzeroth, { "battle for azeroth" } },
+		{ "shadowlands", E.Shadowlands }, { "dragonflight", E.Dragonflight }, { "tww", E.WarWithin, { "war within",
+		"the war within" } }, { "midnight", E.Midnight },
+	}
+	for _, def in ipairs(EXPANSIONS) do
+		local id = def[2]
+		kw(def[1], "instance", function(r)
+			local v = expansion(r)
+			if not v then
+				return v
+			end
+			return v == id
+		end, def[3])
+	end
+	kw("set", "instance", function(r)
+		if r.pending then
+			return nil
+		end
+		return r.setID ~= nil and r.setID ~= 0
+	end, { "item set" })
+	-- bonus=6652: one of the link's bonus IDs (a list value: true when any of them compares).
+	num("bonus", "instance", function(r)
+		local ids = A.LinkBonusIDs(r.link)
+		if ids == nil or #ids == 0 then
+			return false
+		end
+		return ids
+	end)
+	-- transmog: gear whose appearance the account has not collected (the uncollected keyword's appearance half).
+	kw("transmog", "volatile", function(r)
+		return isGear(r) and SB.Collections ~= nil and SB.Collections.Uncollected(r) == "appearance"
+	end)
+
+	-- Damage types (0.16.0, user answer Q11): "fire damage" or "damage fire" on a piece of gear's tooltip. The
+	-- recorded P7 exception: tooltip = true, so the search box's word expansion never reaches them (Q4).
+	local SCHOOLS = { "fire", "frost", "nature", "shadow", "arcane", "holy", "physical" }
+	local function tooltipHas(r, needles)
+		if not isGear(r) then
+			return false
+		end
+		local lines = SB.ItemFacts and SB.ItemFacts.Tooltip(r)
+		if not lines then
+			return lines
+		end
+		for _, line in ipairs(lines) do
+			for _, n in ipairs(needles) do
+				if line:find(n, 1, true) then
+					return true
+				end
+			end
+		end
+		return false
+	end
+	local ANY = {}
+	for _, school in ipairs(SCHOOLS) do
+		local needle = { school .. " damage" }
+		ANY[#ANY + 1] = needle[1]
+		Q.RegisterKeyword({ name = school .. " damage", aliases = { "damage " .. school }, class = "instance",
+			tooltip = true, eval = function(r)
+				return tooltipHas(r, needle)
+			end })
+	end
+	-- damage: any damage type on the tooltip; damage>500: the weapon's damage per second, like dps.
+	Q.RegisterKeyword({ name = "damage", class = "instance", tooltip = true, value = dps, eval = function(r)
+		return tooltipHas(r, ANY)
+	end })
 
 	-- State (volatile) ---------------------------------------------------------
 	local function flag(field)

@@ -14,7 +14,7 @@ local EXPECTED = {
 	c_keystone = { "crest", "keystone" }, c_consumables = { "consumable" }, c_gear = { "gear" },
 	c_sets = { "equipped" }, c_boe = { "boe", "gear" }, c_wue = { "gear", "wue" },
 	c_tradegoods = { "reagent", "tradegoods" }, c_herbs = { "herb" }, c_ore = { "ore" },
-	c_leathercloth = { "cloth", "leather" }, c_enchanting = { "enchanting" }, c_cooking = { "cooking" },
+	c_leathercloth = { "cloth material", "leather material" }, c_enchanting = { "enchanting" }, c_cooking = { "cooking" },
 	c_quest = { "questitem" }, c_housing = { "housing" }, c_collect = { "mount", "pet", "toy" },
 	c_tools = { "profession gear", "profession tool" }, c_reagents = { "reagentbag" }, c_junk = { "junk" },
 }

@@ -164,6 +164,9 @@ A.FEATURES = {
 	warband = { forever = false, surfaces = {} },
 	-- Forever's bank-bag bank is unverified (Boot's Safe Mode).
 	bankWindow = { forever = false, surfaces = {} },
+	-- 0.16.0 search: whether Forever's items carry Retail's expansion IDs is unverified (the expansion keywords).
+	expansion = { forever = false, surfaces = { keyword = { "expansion", "classic", "tbc", "wrath", "cata", "mop", "wod",
+		"legion", "bfa", "shadowlands", "dragonflight", "tww", "midnight" } } },
 }
 
 -- Is a declared feature on for this client? An undeclared name is off on both clients.
@@ -221,7 +224,28 @@ A.ITEM_CLASS = {
 A.CONSUMABLE_SUB = { Potion = 1, Elixir = 2, Flask = 3, FoodDrink = 5, VantusRune = 9 }
 A.TRADEGOODS_SUB = { Cloth = 5, Leather = 6, MetalStone = 7, Cooking = 8, Herb = 9, Enchanting = 12 }
 A.MISC_SUB = { Junk = 0, CompanionPet = 2, Mount = 5 }
-A.ARMOR_SUB = { Cosmetic = 5 }
+A.ARMOR_SUB = {
+	Generic = 0, Cloth = 1, Leather = 2, Mail = 3, Plate = 4, Cosmetic = 5, Shield = 6, Libram = 7, Idol = 8,
+	Totem = 9, Sigil = 10, Relic = 11,
+}
+-- Expansion numbers (GetItemInfo's expansionID); the LE_EXPANSION_* globals override them when present.
+A.EXPANSION = {
+	Classic = 0, BurningCrusade = 1, Wrath = 2, Cataclysm = 3, Pandaria = 4, Draenor = 5, Legion = 6,
+	BattleForAzeroth = 7, Shadowlands = 8, Dragonflight = 9, WarWithin = 10, Midnight = 11,
+}
+local EXPANSION_GLOBALS = {
+	Classic = "LE_EXPANSION_CLASSIC", BurningCrusade = "LE_EXPANSION_BURNING_CRUSADE",
+	Wrath = "LE_EXPANSION_WRATH_OF_THE_LICH_KING", Cataclysm = "LE_EXPANSION_CATACLYSM",
+	Pandaria = "LE_EXPANSION_MISTS_OF_PANDARIA", Draenor = "LE_EXPANSION_WARLORDS_OF_DRAENOR",
+	Legion = "LE_EXPANSION_LEGION", BattleForAzeroth = "LE_EXPANSION_BATTLE_FOR_AZEROTH",
+	Shadowlands = "LE_EXPANSION_SHADOWLANDS", Dragonflight = "LE_EXPANSION_DRAGONFLIGHT",
+	WarWithin = "LE_EXPANSION_WAR_WITHIN", Midnight = "LE_EXPANSION_MIDNIGHT",
+}
+for name, global in pairs(EXPANSION_GLOBALS) do
+	if type(_G[global]) == "number" then
+		A.EXPANSION[name] = _G[global]
+	end
+end
 
 local function overrideFromEnum(target, enumTable)
 	if type(enumTable) ~= "table" then
@@ -488,7 +512,7 @@ end
 -- Full item facts, or nil while the client has not loaded the item yet.
 function A.GetItemInfo(item)
 	local ok, name, _, quality, baseIlvl, reqLevel, _, _, maxStack, _, _, sellPrice, _, _, bindType,
-		expansionID, _, isCraftingReagent = pcall(C_Item.GetItemInfo, item)
+		expansionID, setID, isCraftingReagent = pcall(C_Item.GetItemInfo, item)
 	if not ok or name == nil then
 		return nil
 	end
@@ -501,8 +525,134 @@ function A.GetItemInfo(item)
 		sellPrice = sellPrice,
 		bind = A.BindKind(bindType),
 		expansionID = expansionID,
+		setID = setID,
 		isCraftingReagent = isCraftingReagent == true,
 	}
+end
+
+-- The client's stat names -> SwagBag's. A combined primary stat (ITEM_MOD_STRENGTH_AGILITY_INTELLECT_SHORT) counts
+-- for each primary stat it names; EMPTY_SOCKET_* add up to emptySockets.
+local STAT_NAMES = {
+	ITEM_MOD_CRIT_RATING_SHORT = "crit", ITEM_MOD_HASTE_RATING_SHORT = "haste",
+	ITEM_MOD_MASTERY_RATING_SHORT = "mastery", ITEM_MOD_VERSATILITY = "vers", ITEM_MOD_CR_LIFESTEAL_SHORT = "leech",
+	ITEM_MOD_CR_AVOIDANCE_SHORT = "avoidance", ITEM_MOD_CR_SPEED_SHORT = "speed", ITEM_MOD_STAMINA_SHORT = "stam",
+	ITEM_MOD_DAMAGE_PER_SECOND_SHORT = "dps",
+}
+local PRIMARY_PARTS = { STRENGTH = "str", AGILITY = "agi", INTELLECT = "int" }
+
+-- An item link's stats (0.16.0 search): { crit, haste, mastery, vers, leech, avoidance, speed, str, agi, int, stam,
+-- dps = number (only the stats it has), emptySockets = number }. false: no stats API on this client; nil: no answer
+-- yet (not loaded, a broken call) or a secret value.
+function A.ItemStats(link)
+	local api = (C_Item and C_Item.GetItemStats) or _G.GetItemStats
+	if type(link) ~= "string" or api == nil then
+		return false
+	end
+	local ok, raw = pcall(api, link)
+	if not ok or type(raw) ~= "table" or isSecret(raw) then
+		return nil
+	end
+	local out = { emptySockets = 0 }
+	for key, v in pairs(raw) do
+		if isSecret(key) or isSecret(v) or type(v) ~= "number" then
+			return nil
+		end
+		if STAT_NAMES[key] then
+			out[STAT_NAMES[key]] = v
+		elseif key:find("^EMPTY_SOCKET_") then
+			out.emptySockets = out.emptySockets + v
+		elseif key:find("^ITEM_MOD_") then
+			for part, name in pairs(PRIMARY_PARTS) do
+				if key:find(part, 1, true) then
+					out[name] = math.max(out[name] or 0, v)
+				end
+			end
+		end
+	end
+	return out
+end
+
+-- The colon-separated fields of a link's item string (field 1 is the item ID), or nil when it has none.
+local function itemFields(link)
+	local s = type(link) == "string" and link:match("item:([^|]*)")
+	if not s then
+		return nil
+	end
+	local fields = {}
+	for f in (s .. ":"):gmatch("([^:]*):") do
+		fields[#fields + 1] = f
+	end
+	return fields
+end
+
+-- Filled sockets: the four gem fields of the item string (fields 3-6) that hold a gem. nil: not an item link.
+function A.LinkGemCount(link)
+	local fields = itemFields(link)
+	if not fields then
+		return nil
+	end
+	local n = 0
+	for i = 3, 6 do
+		if tonumber(fields[i] or "") then
+			n = n + 1
+		end
+	end
+	return n
+end
+
+-- The bonus IDs of an item link: field 13 holds their count and the IDs follow. {} for none; nil: not an item link.
+function A.LinkBonusIDs(link)
+	local fields = itemFields(link)
+	if not fields then
+		return nil
+	end
+	local out = {}
+	for i = 1, tonumber(fields[13] or "") or 0 do
+		local id = tonumber(fields[13 + i] or "")
+		if id then
+			out[#out + 1] = id
+		end
+	end
+	return out
+end
+
+-- An item's tooltip text (0.16.0 search, the recorded P7 exception: only `text:` and the damage phrases read it):
+-- every left and right line, lower-cased, from C_TooltipInfo for a bag slot, else for the link (guild and alt items).
+-- false: no tooltip API; nil: no answer yet, a broken call or a secret line.
+function A.TooltipLines(bag, slot, link)
+	local api = C_TooltipInfo
+	if api == nil then
+		return false
+	end
+	local ok, data
+	if bag ~= nil and slot ~= nil and api.GetBagItem then
+		ok, data = pcall(api.GetBagItem, bag, slot)
+	elseif type(link) == "string" and api.GetHyperlink then
+		ok, data = pcall(api.GetHyperlink, link)
+	else
+		return false
+	end
+	if not ok or type(data) ~= "table" or isSecret(data) or type(data.lines) ~= "table" then
+		return nil
+	end
+	local out = {}
+	for _, line in ipairs(data.lines) do
+		for _, key in ipairs({ "leftText", "rightText" }) do
+			local t = type(line) == "table" and line[key]
+			if t ~= nil and t ~= false then
+				if isSecret(t) then
+					return nil
+				end
+				if type(t) == "string" and t ~= "" then
+					out[#out + 1] = t:lower()
+				end
+			end
+		end
+	end
+	if #out == 0 then
+		return nil
+	end
+	return out
 end
 
 local function location(bag, slot)

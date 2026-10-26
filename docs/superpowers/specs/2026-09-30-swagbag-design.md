@@ -48,7 +48,7 @@
 | P4 | **No hard dependencies** | Syndicator (alt data), Auctionator and TradeSkillMaster (prices; TSM read only through its public `TSM_API`, week 9) are detected at load and used through internal provider interfaces; Masque (skins) gets each item button through `AddButton` only. Absence degrades a feature, never errors. Other bag addons are detected and named (one login line, the report), never disabled (week 9). |
 | P5 | **Layout never moves under the cursor** | Placeholders hold spots; new items go to a "New" section and stay there until hovered (AC3.3); reflow happens on close. |
 | P6 | **Fail to Blizzard, loudly once** | One Lua error in our refresh path → Safe Mode → one chat line → `/swagbag report`. |
-| P7 | **Real APIs over tooltip parsing** | `C_Item.IsBound`, `C_Item.GetCurrentItemLevel`, `C_Item.IsBoundToAccountUntilEquip`, `C_TooltipInfo` with secret-value guards only as a last resort. |
+| P7 | **Real APIs over tooltip parsing** | `C_Item.IsBound`, `C_Item.GetCurrentItemLevel`, `C_Item.IsBoundToAccountUntilEquip`, `C_TooltipInfo` with secret-value guards only as a last resort. **Recorded exception (0.16.0, user-agreed 2026-10-26):** search reads tooltip text for `text:` / `tip:` and the damage-type phrases (`fire damage`) only, through `C_TooltipInfo`, lazily, cached per item instance, secret-guarded (a secret line is unknown). Never for core fields. |
 | P8 | **All UI strings live in one table** | `Locale/enUS.lua` defines `L["..."]`. No literal UI strings elsewhere. Keyword matching is registered English + (later) localized; nothing depends on `string.lower` of non-ASCII. |
 
 ### 1.5 Personas
@@ -517,13 +517,14 @@ or       := and ( ("|" | "||") and )*
 and      := not ( "&" not )*               -- explicit & only; adjacent words are NOT implicit AND (see 7.5)
 not      := ("!" | "~") not | primary
 primary  := "(" expr ")" | term
-term     := keyword | numeric | level | range | exact | text
+term     := keyword | numeric | level | range | exact | text | tip
 keyword  := WORD                            -- registered keyword: boe, junk, potion, reagent, ...
 numeric  := WORD op NUMBER                  -- ilvl>250, lvl<80, gear<210, count>=5 (strict < >)
 level    := op NUMBER | DIGITS              -- Syndicator item level: <536 = ilvl<=536, >150 = ilvl>=150, 536 = ilvl=536
 range    := DIGITS "-" DIGITS               -- one word: 400-450 = ilvl>=400 & ilvl<=450 (either order)
 exact    := "#" WORD                        -- keyword only; never a name-text match; unknown = warning, false
 text     := WORD | '"' chars '"'            -- item-name substring (case-insensitive, ASCII-folded in enUS)
+tip      := ("text:" | "tip:") (WORD+ | '"' chars '"')   -- 0.16.0: tooltip-text substring (any case); P7 exception
 op       := "=" | "<" | "<=" | ">" | ">="
 ```
 
@@ -535,7 +536,11 @@ Unknown-keyword policy: a bare word that is not a registered keyword is a text m
 
 | Family | Keywords | Cache class | Source |
 |---|---|---|---|
-| Type | `armor`, `weapon`, `gear` (= armor or weapon), `consumable`, `potion`, `flask`, `food`, `drink`, `elixir`, `rune`, `reagent`, `tradegoods`, `trade goods` (as `"trade goods"`), `herb`, `ore`, `leather`, `cloth`, `enchanting`, `gem`, `recipe`, `questitem`, `quest`, `key`, `keystone`, `pet` (caged), `mount`, `toy`, `housing` / `decor`, `cosmetic`, `container`, `miscellaneous`, `junk` (quality 0), `profession tool`, `profession gear` | static (type/subtype from `C_Item.GetItemInfoInstant`); `keystone` and `pet` instance | `C_Item.GetItemInfoInstant` class/subclass IDs |
+| Type | `armor`, `weapon`, `gear` (= armor or weapon), `consumable`, `potion`, `flask`, `food`, `drink`, `elixir`, `rune`, `reagent`, `tradegoods`, `trade goods` (as `"trade goods"`), `herb`, `ore`, `leather`, `cloth` (0.16.0: the material **or** that armor type), `leather material`, `cloth material` (the material only), `enchanting`, `gem`, `recipe`, `questitem`, `quest`, `key`, `keystone`, `pet` (caged), `mount`, `toy`, `housing` / `decor`, `cosmetic`, `container`, `miscellaneous`, `junk` (quality 0), `profession tool`, `profession gear` | static (type/subtype from `C_Item.GetItemInfoInstant`); `keystone` and `pet` instance | `C_Item.GetItemInfoInstant` class/subclass IDs |
+| Armor type (0.16.0) | `cloth armor`, `leather armor`, `mail` / `mail armor`, `plate` / `plate armor`, `shield`, `libram`, `idol`, `totem`, `sigil`, `relic` | static | armor subclass from `Enum.ItemArmorSubclass` |
+| Stats (0.16.0) | `crit`, `haste`, `mastery`, `vers`, `leech`, `avoidance`, `speed`, `str`, `agi`, `int`, `stam` (bare: the gear has it; `crit>200`: compare), `dps` (= `damage>N`), `sockets` (empty + filled), `socketed` (all filled), `set`, `bonus=N` (any of the link's bonus IDs) | instance | `C_Item.GetItemStats` (lazy, Engine/ItemFacts.lua), link gem and bonus fields, `GetItemInfo` set ID |
+| Expansion (0.16.0) | `classic`, `tbc`, `wrath`, `cata`, `mop`, `wod`, `legion`, `bfa`, `shadowlands`, `dragonflight`, `tww`, `midnight`, `expansion=N` | instance; off on WoW Forever (`A.FEATURES.expansion`) | `GetItemInfo` expansion ID, `LE_EXPANSION_*` |
+| Damage type (0.16.0) | `fire damage` / `damage fire`, and frost, nature, shadow, arcane, holy, physical; `damage` (any) | instance; reads tooltips (P7 exception), gear only; never reached by the search box's prefix expansion | `C_TooltipInfo` |
 | Slot | `head`, `neck`, `shoulder`, `back`, `chest`, `wrist`, `hands`, `waist`, `legs`, `feet`, `finger`, `trinket`, `mainhand`, `offhand`, `twohand`, `ranged`, `shirt`, `tabard`, `bag` | static | equip location |
 | Quality | `poor`, `common`, `uncommon`, `rare`, `epic`, `legendary`, `artifact`, `heirloom` | instance | link quality |
 | Binding | `boe`, `bop`, `boa`, `warbound`, `wue` (warbound until equipped), `bound`, `soulbound`, `tradeable` | instance | `C_Item.IsBound`, `C_Item.IsBoundToAccountUntilEquip`, bind type from `C_Item.GetItemInfo` |
@@ -543,7 +548,7 @@ Unknown-keyword policy: a bare word that is not a registered keyword is a text m
 | State | `new` (session-new set), `locked` (locked by the user, week 7; the client's own lock is `inuse`; a one-time login note names saved queries that use the word), `cooldown`, `usable`, `equipped` (in an equipment set), `upgrade` (upgrade track present), `partial` (count < stack) | **volatile** | container info, `C_Container`, `C_Item.GetItemUpgradeInfo`-family (feature-detected) |
 | Location | `bags`, `backpack`, `reagentbag`, `bank`, `warband`, `tab=N` | volatile (slot-bound) | bag ID |
 | Crafting (Midnight) | `crafting reagent`, `quality1`..`quality5` (crafting quality tier) | instance | `C_TradeSkillUI.GetItemReagentQualityByItemInfo` (feature-detected) |
-| Collection (v1.1+) | `uncollected`, `transmog`, `collected` | instance; `uncollected` (week 7: appearances, toys, mounts, pets) is registered **volatile**, since its answer changes when the account learns something, not with the item's link; tooltip-derived where no API, `issecretvalue()`-guarded → `nil` | `C_TransmogCollection`, `C_PetJournal`, `C_ToyBox`, `C_Housing*` (feature-detected) |
+| Collection (v1.1+) | `uncollected`, `transmog` (0.16.0: gear whose appearance is uncollected), `collected` | instance; `uncollected` (week 7: appearances, toys, mounts, pets) is registered **volatile**, since its answer changes when the account learns something, not with the item's link; tooltip-derived where no API, `issecretvalue()`-guarded → `nil` | `C_TransmogCollection`, `C_PetJournal`, `C_ToyBox`, `C_Housing*` (feature-detected) |
 | Currency-like | `crest`, `upgrade currency` | static | item ID allowlist in data file (per season; updated with patches) |
 
 Keywords are registered English-only in v1.0 through `Query.RegisterKeyword{name, aliases, class, eval}`. The registry is the single place localization will plug in later (register localized aliases alongside English; `#` exact remains English). Matching never lowercases non-ASCII; the enUS implementation ASCII-folds and lowercases; a UTF-8-aware fold is a documented i18n task.
@@ -568,7 +573,7 @@ Verified against Syndicator v284 by desk spike F (`docs/research/2026-10-syndica
 4. **Undefined branches are defined.** Numeric comparisons on items lacking the field (ilvl on a potion) evaluate `false`, not `nil`.
 5. **Tri-state**: items with unloaded data evaluate `nil` and are held in New rather than mis-filed (Syndicator also passes "unknown" through).
 6. **`#` is keyword-only in both** (exact keyword: no prefix expansion, no name text). Confirmed by spike F; the `=word` fallback is dropped.
-7. **Bare words search item names only.** Syndicator also searches selected tooltip lines and treats a bare word as a keyword *prefix* (`pot` finds potions). We match whole keywords, else the name; only the search boxes (0.13.6, `Query.Compile(text, { prefix = true })`) also match a word of 3 or more characters against the start of every keyword and alias, so `trink` finds trinkets while it is typed, and rules, focus modes, watch lists and share strings never do. The editor hints at the nearest keyword.
+7. **Bare words search item names only.** Syndicator also searches selected tooltip lines and treats a bare word as a keyword *prefix* (`pot` finds potions). Tooltip text is searched only on request: `text:fire` (0.16.0), and the damage-type phrases, which the prefix expansion never reaches. We match whole keywords, else the name; only the search boxes (0.13.6, `Query.Compile(text, { prefix = true })`) also match a word of 3 or more characters against the start of every keyword and alias, so `trink` finds trinkets while it is typed, and rules, focus modes, watch lists and share strings never do. The editor hints at the nearest keyword.
 8. **Item-level syntax.** Syndicator's bare forms are accepted: `<N`, `>N`, `=N`, `N` and the range `N-M`. Bare `<`/`>` **include** N as in Syndicator (`<536` = `ilvl<=536`), and the range includes both ends. Our named forms `ilvl>N`, `gear<N`, `lvl<N` are SwagBag extensions with **strict** `<`/`>`. A bare number is an item-level test only; it does not also match item names. Our `ilvl` counts equippable gear only; Syndicator reads the tooltip item level of any item.
 9. **Quotes** are a SwagBag extension (always name text). In Syndicator `"` is a literal character.
 10. **Same word, different meaning:** `upgrade` (ours: has an upgrade track; theirs: is an upgrade for this character) and `bop` (ours: bind type; theirs: currently bound). Both are explained in the editor's keyword help.
