@@ -10,8 +10,8 @@
 -- It also answers wealth (every character's gold and currencies) while it has saved money.
 -- Slot data read (names only): bags[i] (bag i - 1), bankTabs[i].slots (bag 5 + i), the warband's
 -- bank[i].slots (bag 11 + i); a slot is { itemLink, itemCount }. Details: character, realm,
--- realmNormalized, className, money, currencies ({ [currencyID] = quantity }), show.inventory (false:
--- the user hid the character in Syndicator).
+-- realmNormalized, className, show.inventory (false: the user hid the character in Syndicator).
+-- Wealth reads money and currencies ({ [currencyID] = quantity }) from the character data itself, not details.
 -- Everything it reads is checked for secret values (never expected: it is saved data). An error
 -- here is AltData's to count (three switch the provider off) and trap under "none".
 local _, SB = ...
@@ -84,17 +84,18 @@ local function byCurrent(a, b)
 	return a.key < b.key
 end
 
--- Every shown character as { key, name, realm, class, current, d = its details }, current first.
+-- Every shown character as { key, name, realm, class, current, data = its character data }, current first.
 local function shownList(S)
 	local me, list = AD.Canon(SB.Adapter.CharKey()), {}
 	local cur = SB.Adapter.SyndicatorCurrentKey() -- a regional key ("Name-PvE") is not Name-Realm (F17)
 	for _, full in ipairs(S.GetAllCharacters() or {}) do
-		local d = str(full) and shown(S.GetByCharacterFullName(full))
+		local data = str(full) and S.GetByCharacterFullName(full)
+		local d = data and shown(data)
 		if d then
 			local key = AD.Canon(full)
 			list[#list + 1] = { key = key, name = str(d.character) or full:match("^[^%-]+"),
 				realm = str(d.realm) or str(d.realmNormalized), class = str(d.className),
-				current = full == cur or key == me, d = d }
+				current = full == cur or key == me, data = data }
 		end
 	end
 	table.sort(list, byCurrent)
@@ -108,7 +109,7 @@ function P.characters()
 	end
 	local list = shownList(S)
 	for _, e in ipairs(list) do
-		e.d = nil
+		e.data = nil
 	end
 	return list
 end
@@ -122,8 +123,8 @@ function P.wealth()
 	end
 	local list, any = shownList(S), false
 	for _, e in ipairs(list) do
-		local d = e.d
-		e.d = nil
+		local d = e.data
+		e.data = nil
 		e.money = n(d.money)
 		any = any or (type(d.money) == "number" and not secret(d.money))
 		e.currencies = {}

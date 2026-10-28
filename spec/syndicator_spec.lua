@@ -359,9 +359,9 @@ describe("Syndicator provider", function()
 	end)
 
 	it("wealth comes from Syndicator's saved money and currencies", function()
-		api.chars["Swagger-ArgentDawn"].details.money = 10000
-		api.chars["Swagger-ArgentDawn"].details.currencies = { [3008] = 4 }
-		api.chars["Abby-ArgentDawn"].details.money = 50
+		api.chars["Swagger-ArgentDawn"].money = 10000
+		api.chars["Swagger-ArgentDawn"].currencies = { [3008] = 4 }
+		api.chars["Abby-ArgentDawn"].money = 50
 		local list, source = AD.Wealth()
 		assert.equal("Syndicator", source)
 		assert.equal(2, #list) -- the hidden character is left out
@@ -378,7 +378,7 @@ describe("Syndicator provider", function()
 	end)
 
 	it("a secret or non-number currency is skipped", function()
-		local d = api.chars["Swagger-ArgentDawn"].details
+		local d = api.chars["Swagger-ArgentDawn"]
 		d.money = 5
 		d.currencies = { [3008] = "x", [3009] = 7, [3010] = 2 }
 		A.IsSecret = function(v) return v == 2 end
