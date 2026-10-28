@@ -74,6 +74,22 @@ describe("Snapshots (spec 8.3 format, 5.7 timing, 8.4 budget)", function()
 		assert.equal(Snap.Bytes(), k.bags + k.bank + k.warband + k.guild)
 	end)
 
+	-- Final review. Mutation: Bytes counts only the container strings (saved wealth is invisible to the budget).
+	it("the saved gold, currencies and warband gold count toward Bytes", function()
+		local before = Snap.Bytes()
+		local c = Snap.Char()
+		c.money = 123456
+		local withGold = Snap.Bytes()
+		assert.truthy(withGold > before)
+		c.currencies = { [3008] = 50, [3100] = 7, [3101] = 9 }
+		local withCur = Snap.Bytes()
+		assert.truthy(withCur >= withGold + 3 * 8)
+		Snap.DB().warbandMoney = 5000
+		assert.truthy(Snap.Bytes() > withCur)
+		local k = Snap.BytesByKind()
+		assert.equal(Snap.Bytes(), k.bags + k.bank + k.warband + k.guild)
+	end)
+
 	it("round-trips caged pets, keystones and a link that contains a semicolon", function()
 		local odd = "|Hitem:1|h[Odd;Name]|h"
 		local slots = { [2] = { link = PET, count = 1 }, [5] = { link = KEY, count = 1 }, [9] = { link = odd, count = 20 } }

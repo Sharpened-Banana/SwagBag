@@ -2,8 +2,9 @@
 -- show every character (spec 2). Pure Lua over the Adapter; the data lives on the character's
 -- own table in SwagBagDB.chars (Engine/Snapshots.lua), read back through AltData.Wealth.
 --   Wealth.Save() -> bool   writes c.money (copper) and c.currencies ({ [currencyID] = quantity })
---       on the current character; the currencies are the union by id of the backpack list and the
---       Currency tab list, a quantity of 0 leaves the id out; lists that come back empty leave the
+--       on the current character; the currencies are the union by id of the backpack list, the
+--       Currency tab list (collapsed headers hide theirs) and every id in SB.Crests.currencies,
+--       a quantity of 0 leaves the id out; lists that come back empty leave the
 --       saved ones as they were. Gold the game cannot say leaves
 --       money as it was. Read-only settings: nothing written, false
 --   Wealth.MAX_LINES   the most character lines a tooltip lists; the rest become one { more = n } entry
@@ -12,7 +13,8 @@
 --       the name, capped with a last { more = n }; total = every character's gold + warband (nil: 0)
 --   Wealth.CurrencyLines(list, currencyID) -> lines   the same with quantity, most first
 --   Wealth.RefreshWarband() -> copper|nil   the Warband bank's gold when the client says, saved in
---       SwagBagDB.warbandMoney (not while read-only); else the saved amount. Also on BANKFRAME_OPENED
+--       SwagBagDB.warbandMoney (not while read-only); else the saved amount. Also on BANKFRAME_OPENED.
+--       nil without the "warband" capability (WoW Forever): never read, never saved
 --   Wealth.lastWarband() -> copper|nil   the saved warband gold
 --   Wealth.DELAY   seconds the saves after PLAYER_MONEY / CURRENCY_DISPLAY_UPDATE wait for the last
 --       one (SB.Debounce); PLAYER_ENTERING_WORLD saves the same way, PLAYER_LOGOUT at once
@@ -40,7 +42,17 @@ function Wealth.Save()
 		c.money = money
 	end
 	local currencies, any = {}, false
-	for _, list in ipairs({ A.BackpackCurrencies() or {}, A.CurrencyList() or {} }) do
+	local lists = { A.BackpackCurrencies() or {}, A.CurrencyList() or {} }
+	-- the Currency tab list hides what a collapsed header holds: the season's crests are read by id too
+	local crestIds = SB.Crests and SB.Crests.currencies
+	if type(crestIds) == "table" and #crestIds > 0 then
+		local extra = {}
+		for _, id in ipairs(crestIds) do
+			extra[#extra + 1] = A.CurrencyInfo(id)
+		end
+		lists[#lists + 1] = extra
+	end
+	for _, list in ipairs(lists) do
 		for _, cur in ipairs(list) do
 			local q = quantityOf(cur)
 			if type(cur.id) == "number" and q then
@@ -59,15 +71,19 @@ end
 -- the total is over every such entry (the cap hides lines, not gold).
 local function lines(list, value, field)
 	local shared = {}
+	local function nameOf(e)
+		return e.name or e.key or "?"
+	end
 	for _, e in ipairs(list) do
-		shared[e.name] = (shared[e.name] or 0) + 1
+		shared[nameOf(e)] = (shared[nameOf(e)] or 0) + 1
 	end
 	local rows, total = {}, 0
 	for _, e in ipairs(list) do
 		local v = value(e)
 		if type(v) == "number" and v > 0 then
 			total = total + v
-			local name = shared[e.name] > 1 and e.realm and (e.name .. "-" .. e.realm) or e.name
+			local name = nameOf(e)
+			name = shared[name] > 1 and e.realm and (name .. "-" .. e.realm) or name
 			rows[#rows + 1] = { name = name, [field] = v, class = e.class }
 		end
 	end
@@ -101,12 +117,18 @@ function Wealth.CurrencyLines(list, currencyID)
 end
 
 function Wealth.lastWarband()
+	if not SB.Adapter.Has("warband") then
+		return nil
+	end
 	local v = SB.Snapshots.DB().warbandMoney
 	return type(v) == "number" and v or nil
 end
 
 function Wealth.RefreshWarband()
 	local A = SB.Adapter
+	if not A.Has("warband") then
+		return nil -- WoW Forever has no Warband bank: nothing read, nothing saved, no line
+	end
 	local live = A.WarbandMoney()
 	if type(live) ~= "number" or A.IsSecret(live) then
 		return Wealth.lastWarband()

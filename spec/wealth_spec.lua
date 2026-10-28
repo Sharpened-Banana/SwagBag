@@ -128,4 +128,41 @@ describe("Wealth", function()
 		SB.eventFrame:Fire("BANKFRAME_OPENED")
 		assert.equal(5, SB.Snapshots.DB().warbandMoney)
 	end)
+
+	-- Final review. Mutation: no gate in RefreshWarband (Forever reads and saves a warband it does not have).
+	it("on WoW Forever the warband gold is never read or saved", function()
+		local F = Loader.New(FILES, { flavor = "forever" })
+		F.Config.Init(nil, nil)
+		local reads = 0
+		F.Adapter.WarbandMoney = function() reads = reads + 1 return 777 end
+		assert.is_nil(F.Wealth.RefreshWarband())
+		assert.equal(0, reads)
+		assert.is_nil(F.Snapshots.DB().warbandMoney)
+		assert.is_nil(F.Wealth.lastWarband())
+	end)
+
+	-- Mutation: Save reads only the two lists (a currency under a collapsed header is dropped).
+	it("saves a crest currency the Currency tab list leaves out", function()
+		SB.Crests = { currencies = { 3100, 3101 } }
+		A.money = 1
+		A.backpack = {}
+		A.currencies = { { id = 3008, name = "Valorstones", quantity = 5 } }
+		local real = A.CurrencyInfo
+		A.CurrencyInfo = function(id)
+			if id == 3100 then
+				return { id = 3100, name = "Crest", quantity = 12 }
+			end
+			return real(id)
+		end
+		W.Save()
+		assert.same({ [3008] = 5, [3100] = 12 }, me().currencies)
+	end)
+
+	-- Mutation: lines() indexes e.name unguarded.
+	it("an entry with no name never errors", function()
+		local rows = W.GoldLines({ { key = "x", money = 50 }, { money = 70 } }, nil)
+		assert.equal(2, #rows)
+		assert.equal("?", rows[1].name)
+		assert.equal("x", rows[2].name)
+	end)
 end)

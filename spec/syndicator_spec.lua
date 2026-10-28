@@ -385,6 +385,25 @@ describe("Syndicator provider", function()
 		assert.same({ [3008] = 9 }, list[2].currencies)
 	end)
 
+	-- Final review. Mutation: P.wealth lists only Syndicator's shown characters (a hidden current one vanishes).
+	it("wealth adds the current character with its live gold when Syndicator hides it", function()
+		api.chars["Swagger-ArgentDawn"].details.show.inventory = false
+		api.chars["Abby-ArgentDawn"].money = 50
+		A.money = 999
+		local list, source = AD.Wealth()
+		assert.equal("Syndicator", source)
+		local mine
+		for _, e in ipairs(list) do
+			if e.current then
+				mine = e
+			end
+		end
+		assert.truthy(mine)
+		assert.equal(999, mine.money)
+		assert.equal("Swagger", mine.name)
+		assert.equal(2, #list)
+	end)
+
 	it("a Syndicator without money hands wealth to Own", function()
 		local _, source = AD.Wealth()
 		assert.equal("Own", source)

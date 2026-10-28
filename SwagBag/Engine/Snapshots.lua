@@ -247,14 +247,29 @@ local function snapshotBytes(snap)
 	return n
 end
 
+-- The saved wealth of one character (Engine/Wealth.lua): about 16 bytes for the gold and per currency.
+local function wealthBytes(c)
+	local n = type(c.money) == "number" and 16 or 0
+	if type(c.currencies) == "table" then
+		for _ in pairs(c.currencies) do
+			n = n + 16
+		end
+	end
+	return n
+end
+
 -- Approximate saved size of every snapshot (strings plus a small per-container overhead), split by
--- kind (week 6, D21: /swagbag report): { bags, bank, warband, guild } in bytes.
+-- kind (week 6, D21: /swagbag report): { bags, bank, warband, guild } in bytes. A character's saved gold and
+-- currencies count under bags, the warband gold under warband (Enforce never drops them).
 function Snap.BytesByKind()
 	local db = Snap.DB()
 	local out = { bags = 0, bank = 0, warband = snapshotBytes(db.warband), guild = 0 }
+	if type(db.warbandMoney) == "number" then
+		out.warband = out.warband + 16
+	end
 	for _, c in pairs(db.chars) do
 		if type(c) == "table" then
-			out.bags = out.bags + snapshotBytes(c.bags)
+			out.bags = out.bags + snapshotBytes(c.bags) + wealthBytes(c)
 			out.bank = out.bank + snapshotBytes(c.bank)
 		end
 	end

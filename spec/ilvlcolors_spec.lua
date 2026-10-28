@@ -55,6 +55,24 @@ describe("IlvlColors", function()
 		assert.is_nil(IC.For(nil))
 	end)
 
+	-- Final review: For sorts the steps once per setting change, not once per painted button.
+	-- Mutation: For calls Pick (a fresh sort and a fresh table per call).
+	it("For sorts the steps once while the setting stays", function()
+		SB.Config.Set("overlays.ilvlColors", true)
+		SB.Config.Set("overlays.ilvlSteps", "700:purple,680:green,690:blue")
+		local sorts, real = 0, table.sort
+		rawset(table, "sort", function(...) sorts = sorts + 1 return real(...) end)
+		local ok, err = pcall(function()
+			for lvl = 600, 720 do
+				IC.For(lvl)
+			end
+		end)
+		rawset(table, "sort", real)
+		assert.equal(true, ok, err)
+		assert.equal(true, sorts <= 1, "sorts: " .. sorts)
+		assert.same(IC.PALETTE.blue, { IC.For(695) })
+	end)
+
 	it("the parsed steps follow a change of the setting", function()
 		SB.Config.Set("overlays.ilvlColors", true)
 		SB.Config.Set("overlays.ilvlSteps", "680:green")

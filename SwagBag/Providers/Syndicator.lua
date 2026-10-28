@@ -122,8 +122,9 @@ function P.wealth()
 	if not S then
 		return nil
 	end
-	local out = {}
+	local out, listed = {}, false
 	for _, e in ipairs(shownList(S)) do
+		listed = listed or e.current
 		local d = e.data
 		e.data = nil
 		e.money = type(d.money) == "number" and not secret(d.money) and d.money or nil
@@ -138,6 +139,15 @@ function P.wealth()
 		if e.money or next(e.currencies) then
 			out[#out + 1] = e
 		end
+	end
+	local A = SB.Adapter
+	local live = A.Money()
+	if not listed and type(live) == "number" and not A.IsSecret(live) then
+		-- hidden in Syndicator: you still see yourself, with the live gold (Own's rule)
+		local me = A.CharKey()
+		out[#out + 1] = { key = AD.Canon(me), name = me:match("^[^%-]+") or me, realm = me:match("%-(.+)$"),
+			class = A.CharInfo().class, current = true, money = live, currencies = {} }
+		table.sort(out, byCurrent)
 	end
 	return #out > 0 and out or nil
 end

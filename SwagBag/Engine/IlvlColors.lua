@@ -13,7 +13,7 @@
 --                                            level (ties: the earlier row wins; the caller's table is untouched);
 --                                            nil below the lowest step
 --   IlvlColors.For(level) -> r, g, b | nil   nil unless overlays.ilvlColors is true; else Pick over the parsed
---                                            overlays.ilvlSteps (parse cached until SB_CONFIG_CHANGED)
+--                                            overlays.ilvlSteps (parse and sort cached until SB_CONFIG_CHANGED)
 --   IlvlColors.Fill(equipped) -> steps       the first-time steps: floor(equipped) green, +10 blue, +20 purple;
 --                                            {} when equipped is not a positive number
 local _, SB = ...
@@ -57,11 +57,9 @@ function IC.Format(steps)
 	return table.concat(parts, ",")
 end
 
--- table.sort is not stable, so the row number breaks a tie: the earlier row wins.
-function IC.Pick(steps, level)
-	if type(level) ~= "number" or type(steps) ~= "table" then
-		return nil
-	end
+-- The steps ordered by level for reading, the row number in each (table.sort is not stable, so it breaks a
+-- tie: the earlier row wins). The caller's table is untouched.
+local function sortSteps(steps)
 	local sorted = {}
 	for i, s in ipairs(steps) do
 		sorted[i] = { level = s.level, color = s.color, row = i }
@@ -72,6 +70,10 @@ function IC.Pick(steps, level)
 		end
 		return a.row > b.row -- the earlier row sorts last of its level, so it is the one reached
 	end)
+	return sorted
+end
+
+local function pickSorted(sorted, level)
 	local hit
 	for _, s in ipairs(sorted) do
 		if s.level <= level then
@@ -85,17 +87,27 @@ function IC.Pick(steps, level)
 	return nil
 end
 
-local cache -- { text = <setting text>, steps = parsed }; dropped on SB_CONFIG_CHANGED
+function IC.Pick(steps, level)
+	if type(level) ~= "number" or type(steps) ~= "table" then
+		return nil
+	end
+	return pickSorted(sortSteps(steps), level)
+end
+
+local cache -- { steps = parsed, sorted = the same ordered for Pick }; dropped on SB_CONFIG_CHANGED
 
 function IC.For(level)
 	if SB.Config.Get("overlays.ilvlColors") ~= true then
 		return nil
 	end
 	if not cache then
-		local text = SB.Config.Get("overlays.ilvlSteps")
-		cache = { steps = IC.Parse(text) }
+		local steps = IC.Parse(SB.Config.Get("overlays.ilvlSteps"))
+		cache = { steps = steps, sorted = sortSteps(steps) }
 	end
-	return IC.Pick(cache.steps, level)
+	if type(level) ~= "number" then
+		return nil
+	end
+	return pickSorted(cache.sorted, level)
 end
 
 function IC.Fill(equipped)

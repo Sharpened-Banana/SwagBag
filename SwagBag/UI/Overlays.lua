@@ -357,12 +357,17 @@ SB.On("SB_CONFIG_CHANGED", function(_, path)
 		return
 	end
 	Ov.RefreshAll()
-	local bags, bank = SB.BagsWindow, SB.BankWindow
-	if bags and bags.IsOpen() and bags.RequestLayout then
+	-- RefreshAll recolored the icons; only list rows are drawn by a layout, so only a window drawn as a list
+	-- asks for one (a Categories view would otherwise regroup for a color change).
+	local bags, bank, guild = SB.BagsWindow, SB.BankWindow, SB.GuildBankWindow
+	if bags and bags.IsOpen() and bags.drawn == "list" and bags.RequestLayout then
 		bags.RequestLayout("ilvlcolors")
 	end
-	if bank and bank.IsOpen() and bank.view and bank.view.RequestLayout then
+	if bank and bank.IsOpen() and bank.view and bank.view.drawn == "list" and bank.view.RequestLayout then
 		bank.view.RequestLayout("ilvlcolors")
+	end
+	if guild and guild.IsOpen() and guild.view and guild.view.drawn == "list" and guild.view.RequestLayout then
+		guild.view.RequestLayout("ilvlcolors")
 	end
 end, "none")
 

@@ -102,6 +102,46 @@ describe("Overlays (spec F9)", function()
 		assert.same({ 1, 0.5, 0 }, r.topLeft.calls.SetTextColor)
 	end)
 
+	-- Final review: a color change re-draws icons (RefreshAll) and asks a layout only where list rows are drawn.
+	-- Mutation: request the layout unconditionally (a Categories view regroups for a color change).
+	local function fakeWindows(bagsDrawn, bankDrawn, guildDrawn)
+		local calls = {}
+		local function win(name, drawn, viaView)
+			local w = { IsOpen = function() return true end, ForEachSlot = function() end, drawn = drawn,
+				RequestLayout = function(why) calls[#calls + 1] = name .. ":" .. why end }
+			if viaView then
+				return { IsOpen = w.IsOpen, view = w }
+			end
+			return w
+		end
+		SB.BagsWindow = win("bags", bagsDrawn)
+		SB.BankWindow = win("bank", bankDrawn, true)
+		SB.GuildBankWindow = win("guild", guildDrawn, true)
+		SB.BankWindow.view.ForEachSlot = function() end
+		SB.GuildBankWindow.view.ForEachSlot = function() end
+		return calls
+	end
+
+	it("an item-level color change asks no layout while categories or sections are drawn", function()
+		local calls = fakeWindows("categories", "sections", "grid")
+		SB.Config.Set("overlays.ilvlColors", true)
+		SB.Config.Set("overlays.ilvlSteps", "280:blue")
+		assert.same({}, calls)
+	end)
+
+	it("an item-level color change asks a layout from each window drawn as a list", function()
+		local calls = fakeWindows("list", "list", "list")
+		SB.Config.Set("overlays.ilvlColors", true)
+		table.sort(calls)
+		assert.same({ "bags:ilvlcolors", "bank:ilvlcolors", "guild:ilvlcolors" }, calls)
+	end)
+
+	it("another setting asks no layout, even with lists drawn", function()
+		local calls = fakeWindows("list", "list", "list")
+		SB.Config.Set("overlays.bind", true)
+		assert.same({}, calls)
+	end)
+
 	it("a junk coin on gray items; nothing on a potion", function()
 		local _, junk = draw(0, 6)
 		assert.truthy(junk.junk.shown)
