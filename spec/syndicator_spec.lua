@@ -357,6 +357,36 @@ describe("Syndicator provider", function()
 		A.globals.Syndicator = nil
 		assert.truthy(SB.Report.Build():find("Alt data: Own, 0 characters", 1, true))
 	end)
+
+	it("wealth comes from Syndicator's saved money and currencies", function()
+		api.chars["Swagger-ArgentDawn"].details.money = 10000
+		api.chars["Swagger-ArgentDawn"].details.currencies = { [3008] = 4 }
+		api.chars["Abby-ArgentDawn"].details.money = 50
+		local list, source = AD.Wealth()
+		assert.equal("Syndicator", source)
+		assert.equal(2, #list) -- the hidden character is left out
+		assert.same({ key = "Swagger-ArgentDawn", name = "Swagger", realm = "Argent Dawn", class = "MAGE", current = true,
+			money = 10000, currencies = { [3008] = 4 } }, list[1])
+		assert.equal("Abby-ArgentDawn", list[2].key)
+		assert.equal(50, list[2].money)
+		assert.equal(false, list[2].current)
+	end)
+
+	it("a Syndicator without money hands wealth to Own", function()
+		local _, source = AD.Wealth()
+		assert.equal("Own", source)
+	end)
+
+	it("a secret or non-number currency is skipped", function()
+		local d = api.chars["Swagger-ArgentDawn"].details
+		d.money = 5
+		d.currencies = { [3008] = "x", [3009] = 7, [3010] = 2 }
+		A.IsSecret = function(v) return v == 2 end
+		local list = AD.Wealth()
+		assert.is_nil(list[1].currencies[3008])
+		assert.is_nil(list[1].currencies[3010])
+		assert.equal(7, list[1].currencies[3009])
+	end)
 end)
 
 describe("Adapter: Syndicator and currency reads (the real Adapter.lua)", function()

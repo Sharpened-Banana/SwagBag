@@ -7,9 +7,11 @@
 -- counts. Guild banks stay SwagBag's own (D11): container "guild" answers nil here, so Own answers,
 -- and counts() appends Own's guild entries for any guild Syndicator did not report (F18).
 -- SwagBag keeps saving its own snapshots either way, so removing Syndicator loses nothing.
+-- It also answers wealth (every character's gold and currencies) while it has saved money.
 -- Slot data read (names only): bags[i] (bag i - 1), bankTabs[i].slots (bag 5 + i), the warband's
 -- bank[i].slots (bag 11 + i); a slot is { itemLink, itemCount }. Details: character, realm,
--- realmNormalized, className, show.inventory (false: the user hid the character in Syndicator).
+-- realmNormalized, className, money, currencies ({ [currencyID] = quantity }), show.inventory (false:
+-- the user hid the character in Syndicator).
 -- Everything it reads is checked for secret values (never expected: it is saved data). An error
 -- here is AltData's to count (three switch the provider off) and trap under "none".
 local _, SB = ...
@@ -82,11 +84,8 @@ local function byCurrent(a, b)
 	return a.key < b.key
 end
 
-function P.characters()
-	local S = api()
-	if not S then
-		return nil
-	end
+-- Every shown character as { key, name, realm, class, current, d = its details }, current first.
+local function shownList(S)
 	local me, list = AD.Canon(SB.Adapter.CharKey()), {}
 	local cur = SB.Adapter.SyndicatorCurrentKey() -- a regional key ("Name-PvE") is not Name-Realm (F17)
 	for _, full in ipairs(S.GetAllCharacters() or {}) do
@@ -95,11 +94,48 @@ function P.characters()
 			local key = AD.Canon(full)
 			list[#list + 1] = { key = key, name = str(d.character) or full:match("^[^%-]+"),
 				realm = str(d.realm) or str(d.realmNormalized), class = str(d.className),
-				current = full == cur or key == me }
+				current = full == cur or key == me, d = d }
 		end
 	end
 	table.sort(list, byCurrent)
 	return list
+end
+
+function P.characters()
+	local S = api()
+	if not S then
+		return nil
+	end
+	local list = shownList(S)
+	for _, e in ipairs(list) do
+		e.d = nil
+	end
+	return list
+end
+
+-- Gold and currencies of every shown character; nil when none has a number money (an older Syndicator
+-- that does not save it), so Own answers. Currencies keep numbers only.
+function P.wealth()
+	local S = api()
+	if not S then
+		return nil
+	end
+	local list, any = shownList(S), false
+	for _, e in ipairs(list) do
+		local d = e.d
+		e.d = nil
+		e.money = n(d.money)
+		any = any or (type(d.money) == "number" and not secret(d.money))
+		e.currencies = {}
+		if type(d.currencies) == "table" and not secret(d.currencies) then
+			for id, q in pairs(d.currencies) do
+				if type(id) == "number" and type(q) == "number" and not secret(q) then
+					e.currencies[id] = q
+				end
+			end
+		end
+	end
+	return any and list or nil
 end
 
 -- One Syndicator container (a list of slots) as { size, slots = { [slot] = { link, count } } }.
