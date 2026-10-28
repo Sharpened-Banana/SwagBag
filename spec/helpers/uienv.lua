@@ -15,6 +15,7 @@ Env.ENGINE = {
 	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua", "SwagBag/Engine/Stacks.lua",
 	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua", "SwagBag/Engine/OverlayData.lua",
 	"SwagBag/Engine/Sort.lua",
+	"SwagBag/Engine/IlvlColors.lua", -- 0.17 (item-level color steps; the Settings rows edit them)
 	"SwagBag/Engine/ItemFacts.lua", -- 0.16.0 (the TOC loads it after Items.lua; last here so the indices above stay)
 }
 

@@ -246,12 +246,87 @@ local OVERLAYS = {
 	{ "uncollected", "overlays.uncollected", L.SET_OV_UNCOLLECTED },
 }
 
+-- The color steps, edited by place in the order the text lists them (not sorted): each write goes back through
+-- IlvlColors.Format, so a damaged text is repaired as a side effect.
+local function ilvlStepRows(rows)
+	local IC = SB.IlvlColors
+	local function steps()
+		return IC.Parse(SB.Config.Get("overlays.ilvlSteps"))
+	end
+	local function save(list)
+		if not SB.Config.Set("overlays.ilvlSteps", IC.Format(list)) then
+			return L.SETTINGS_READONLY
+		end
+		return L.SET_ILVL_SAVED
+	end
+	local choices = {}
+	for _, name in ipairs(IC.ORDER) do
+		choices[#choices + 1] = { value = name, text = L["ILVL_COLOR_" .. name:upper()] }
+	end
+	local existing = #steps()
+	for i = 1, IC.MAX do
+		rows[#rows + 1] = { kind = "input", label = L.SET_ILVL_LEVEL:format(i), maxLetters = 4, boxWidth = 60,
+			get = function()
+				local step = steps()[i]
+				return step and tostring(step.level) or ""
+			end,
+			set = function() end,
+			commit = function(text)
+				local list = steps()
+				text = (text or ""):match("^%s*(.-)%s*$")
+				if text == "" then
+					if not list[i] then
+						return L.SET_ILVL_SAVED
+					end
+					table.remove(list, i)
+					return save(list)
+				end
+				local level = text:match("^%d+$") and tonumber(text)
+				if not level or level < IC.MIN_LEVEL or level > IC.MAX_LEVEL then
+					return L.SET_ILVL_BAD
+				end
+				if list[i] then
+					list[i].level = level
+				elseif #list == i - 1 then
+					list[i] = { level = level, color = "white" }
+				else
+					list[#list + 1] = { level = level, color = "white" } -- past the end: it joins the end
+				end
+				return save(list)
+			end }
+		if i <= existing then
+			rows[#rows + 1] = { kind = "choice", label = L.SET_ILVL_COLOR:format(i), choices = choices, width = 72,
+				get = function()
+					local step = steps()[i]
+					return step and step.color
+				end,
+				apply = function(v)
+					local list = steps()
+					if not list[i] then
+						return L.SET_ILVL_SAVED
+					end
+					list[i].color = v
+					return save(list)
+				end }
+		end
+	end
+	if existing == 0 then
+		rows[#rows + 1] = { kind = "note", label = L.ILVLCOLORS_SET_BY_HAND }
+	end
+end
+
 local function overlayRows()
 	local rows = {}
 	for _, o in ipairs(OVERLAYS) do
 		if SB.Adapter.Allows("overlay", o[1]) then -- no row for an overlay this client leaves out
 			rows[#rows + 1] = (SB.Config.Defaults.settings.overlays[o[1]] == false and offOn or onOff)(o[3], o[2],
 				"overlays " .. o[1])
+			if o[1] == "ilvl" then
+				rows[#rows + 1] = offOn(L.SET_OV_ILVLCOLORS, "overlays.ilvlColors", "ilvlcolors")
+				if SB.Config.Get("overlays.ilvlColors") then
+					ilvlStepRows(rows)
+				end
+			end
 		end
 	end
 	rows[#rows + 1] = { kind = "choice", label = L.SET_OV_PAWN, get = get("overlays.usePawn"),

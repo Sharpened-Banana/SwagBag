@@ -150,6 +150,38 @@ describe("Overlays (spec F9)", function()
 		assert.equal(false, SB.Config.Get("overlays.bind"))
 	end)
 
+	it("ilvlcolors on fills the steps from the equipped level; off keeps them", function()
+		A.avgIlvl = 684.7
+		SB.Slash.Dispatch("ilvlcolors on")
+		assert.equal(true, SB.Config.Get("overlays.ilvlColors"))
+		assert.equal("684:green,694:blue,704:purple", SB.Config.Get("overlays.ilvlSteps"))
+		SB.Slash.Dispatch("ilvlcolors off")
+		assert.equal(false, SB.Config.Get("overlays.ilvlColors"))
+		assert.equal("684:green,694:blue,704:purple", SB.Config.Get("overlays.ilvlSteps"))
+		A.avgIlvl = 700
+		SB.Slash.Dispatch("ilvlcolors on")
+		assert.equal("684:green,694:blue,704:purple", SB.Config.Get("overlays.ilvlSteps"), "not refilled")
+		SB.Slash.Dispatch("ilvlcolors maybe")
+		assert.same({ SB.L.ILVLCOLORS_ON, SB.L.ILVLCOLORS_OFF, SB.L.ILVLCOLORS_ON, SB.L.ILVLCOLORS_USAGE }, A.Lines())
+	end)
+
+	it("ilvlcolors on with no equipped level leaves the steps empty and says to set them by hand", function()
+		A.avgIlvl = nil
+		SB.Slash.Dispatch("ilvlcolors on")
+		assert.equal(true, SB.Config.Get("overlays.ilvlColors"))
+		assert.equal("", SB.Config.Get("overlays.ilvlSteps"))
+		assert.same({ SB.L.ILVLCOLORS_ON, SB.L.ILVLCOLORS_SET_BY_HAND }, A.Lines())
+	end)
+
+	it("read-only: ilvlcolors changes nothing and says so", function()
+		A.avgIlvl = 684
+		SB.Config.readOnly = true
+		SB.Slash.Dispatch("ilvlcolors on")
+		assert.same({ SB.L.SETTINGS_READONLY }, A.Lines())
+		assert.equal(false, SB.Config.Get("overlays.ilvlColors"))
+		assert.equal("", SB.Config.Get("overlays.ilvlSteps"))
+	end)
+
 	-- Week 7 (user pick 3). Mutations: in Overlays.Apply, `local glow = on("learn") and d.learn ~= nil` ->
 	-- `d.learn ~= nil` (the switch is ignored); or drop `learn = SB.Collections and ...` from the context.
 	it("a green glow on an item to open or learn; overlays learn off hides it; an empty slot never glows", function()

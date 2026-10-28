@@ -425,6 +425,35 @@ SB.Slash.Register("overlays", L.HELP_OVERLAYS, function(arg)
 	return line
 end)
 
+-- /swagbag ilvlcolors on|off       color item levels by the steps in Settings > Overlays; turning it on with no
+--                                  steps yet fills them from the equipped item level
+SB.Slash.Register("ilvlcolors", L.HELP_ILVLCOLORS, function(arg)
+	local value = (arg or ""):lower():match("^%s*(%S*)%s*$")
+	if value ~= "on" and value ~= "off" then
+		return L.ILVLCOLORS_USAGE
+	end
+	local C, IC = SB.Config, SB.IlvlColors
+	local byHand = false
+	if value == "on" and C.Get("overlays.ilvlSteps") == "" then
+		local steps = IC.Fill(SB.Adapter.EquippedItemLevel())
+		if #steps == 0 then
+			byHand = true
+		elseif not C.Set("overlays.ilvlSteps", IC.Format(steps)) then
+			return L.SETTINGS_READONLY
+		end
+	end
+	if not C.Set("overlays.ilvlColors", value == "on") then
+		return L.SETTINGS_READONLY
+	end
+	if value == "off" then
+		return L.ILVLCOLORS_OFF
+	end
+	if byHand then
+		return { L.ILVLCOLORS_ON, L.ILVLCOLORS_SET_BY_HAND }
+	end
+	return L.ILVLCOLORS_ON
+end)
+
 -- /swagbag worth                   what glows gold at the bank, and how to change it
 -- /swagbag worth <gold>            items worth that much gold or more a stack (1 to 10,000,000)
 -- /swagbag worth top <percent>     your most valuable percent of items (1 to 50)

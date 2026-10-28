@@ -21,7 +21,7 @@ describe("Settings window", function()
 		SB.BagsWindow = bags
 		-- The chat commands the rows run (their real versions live in the windows' files).
 		ran = {}
-		for _, name in ipairs({ "free", "stacks", "bank", "guild", "overlays" }) do
+		for _, name in ipairs({ "free", "stacks", "bank", "guild", "overlays", "ilvlcolors" }) do
 			SB.Slash.Register(name, "test", function(arg)
 				ran[#ran + 1] = name .. " " .. arg
 				return "ran " .. name .. " " .. arg
@@ -249,13 +249,87 @@ describe("Settings window", function()
 		assert.same({ "overlays ilvl off", "overlays pawn on" }, ran)
 	end)
 
+	local function labelsOf(format)
+		local n = 0
+		for _, row in ipairs(SW.byId.overlays.rows()) do
+			for i = 1, SB.IlvlColors.MAX do
+				if row.label == format:format(i) then
+					n = n + 1
+				end
+			end
+		end
+		return n
+	end
+
+	it("the overlays page shows level and color rows only while colors are on", function()
+		local L = SB.L
+		local lvl, col = L.SET_ILVL_LEVEL, L.SET_ILVL_COLOR
+		assert.equal(0, labelsOf(lvl))
+		assert.equal(0, labelsOf(col))
+		SB.Config.Set("overlays.ilvlColors", true)
+		SB.Config.Set("overlays.ilvlSteps", "680:green,690:blue,700:purple")
+		assert.equal(4, labelsOf(lvl))
+		assert.equal(3, labelsOf(col))
+		SB.Config.Set("overlays.ilvlSteps", "")
+		assert.equal(0, labelsOf(col))
+		local notes = 0
+		for _, row in ipairs(SW.byId.overlays.rows()) do
+			if row.kind == "note" and row.label == L.ILVLCOLORS_SET_BY_HAND then
+				notes = notes + 1
+			end
+		end
+		assert.equal(1, notes, "empty steps while on: the note")
+		SW.Show("overlays")
+		Fake.Fire(inRow(L.SET_OV_ILVLCOLORS, "On"), "OnClick")
+		assert.equal("ilvlcolors on", ran[#ran])
+	end)
+
+	it("a level row writes its step, empty removes it, a word is refused", function()
+		local L = SB.L
+		SB.Config.Set("overlays.ilvlColors", true)
+		SB.Config.Set("overlays.ilvlSteps", "680:green,690:blue")
+		local function row(i)
+			for _, r in ipairs(SW.byId.overlays.rows()) do
+				if r.label == L.SET_ILVL_LEVEL:format(i) then
+					return r
+				end
+			end
+		end
+		local function colorRow(i)
+			for _, r in ipairs(SW.byId.overlays.rows()) do
+				if r.label == L.SET_ILVL_COLOR:format(i) then
+					return r
+				end
+			end
+		end
+		assert.equal("680", row(1).get())
+		assert.equal("", row(3).get())
+		row(1).commit("685")
+		assert.equal("685:green,690:blue", SB.Config.Get("overlays.ilvlSteps"))
+		assert.equal(L.SET_ILVL_BAD, row(2).commit("high"))
+		assert.equal(L.SET_ILVL_BAD, row(2).commit("0"))
+		assert.equal(L.SET_ILVL_BAD, row(2).commit("100000"))
+		assert.equal("685:green,690:blue", SB.Config.Get("overlays.ilvlSteps"))
+		row(3).commit("700")
+		assert.equal("685:green,690:blue,700:white", SB.Config.Get("overlays.ilvlSteps"))
+		colorRow(3).apply("orange")
+		assert.equal("685:green,690:blue,700:orange", SB.Config.Get("overlays.ilvlSteps"))
+		assert.equal("orange", colorRow(3).get())
+		row(1).commit("")
+		assert.equal("690:blue,700:orange", SB.Config.Get("overlays.ilvlSteps"))
+		SB.Config.readOnly = true
+		assert.equal(L.SETTINGS_READONLY, row(1).commit("1"))
+		assert.equal(L.SETTINGS_READONLY, colorRow(1).apply("gray"))
+		assert.equal("690:blue,700:orange", SB.Config.Get("overlays.ilvlSteps"))
+	end)
+
 	-- P1: the default is the first choice. Mutation: build the bind row with onOff (On first) again.
 	it("overlays page: Show BoE/WuE is Off first (its default); the others stay On first", function()
 		SW.Show("overlays")
 		local list = buttons()
 		assert.equal("On", list[1][1])
-		assert.same({ "Off", true }, list[11], "default Off: listed first and selected")
-		assert.same({ "On", false }, list[12])
+		assert.same({ "Off", true }, list[13], "default Off: listed first and selected")
+		assert.same({ "On", false }, list[14])
 		click("Pawn")
 	end)
 
@@ -538,7 +612,7 @@ describe("Settings window on WoW Forever", function()
 		for _, row in ipairs(SW.byId.overlays.rows()) do
 			labels[#labels + 1] = row.label
 		end
-		assert.same({ L.SET_OV_ILVL, L.SET_OV_UPGRADE, L.SET_OV_JUNK, L.SET_OV_BIND, L.SET_OV_LEARN, L.SET_OV_LOCK,
+		assert.same({ L.SET_OV_ILVL, L.SET_OV_ILVLCOLORS, L.SET_OV_UPGRADE, L.SET_OV_JUNK, L.SET_OV_BIND, L.SET_OV_LEARN, L.SET_OV_LOCK,
 			L.SET_OV_UNCOLLECTED, L.SET_OV_PAWN }, labels)
 	end)
 
