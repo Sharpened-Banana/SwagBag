@@ -372,6 +372,19 @@ describe("Syndicator provider", function()
 		assert.equal(false, list[2].current)
 	end)
 
+	it("wealth leaves out a character with no money and no currencies; keeps one with currencies only", function()
+		api.chars["Swagger-ArgentDawn"].money = 10000
+		api.chars["Zed-ArgentDawn"] = { details = { character = "Zed", realm = "Argent Dawn", className = "ROGUE",
+			show = { inventory = true } }, currencies = { [3008] = 9 } }
+		local list, source = AD.Wealth()
+		assert.equal("Syndicator", source)
+		assert.equal(2, #list) -- Abby has neither: left out, never shown as 0
+		assert.equal("Swagger-ArgentDawn", list[1].key)
+		assert.equal("Zed-ArgentDawn", list[2].key)
+		assert.is_nil(list[2].money)
+		assert.same({ [3008] = 9 }, list[2].currencies)
+	end)
+
 	it("a Syndicator without money hands wealth to Own", function()
 		local _, source = AD.Wealth()
 		assert.equal("Own", source)

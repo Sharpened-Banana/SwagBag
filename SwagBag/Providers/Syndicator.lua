@@ -114,19 +114,19 @@ function P.characters()
 	return list
 end
 
--- Gold and currencies of every shown character; nil when none has a number money (an older Syndicator
--- that does not save it), so Own answers. Currencies keep numbers only.
+-- Gold and currencies of every shown character that has either (Own's rule: a character with neither is
+-- left out, never shown as 0; money is nil when not a number). nil when none qualifies (an older Syndicator
+-- that does not save them), so Own answers. Currencies keep numbers only.
 function P.wealth()
 	local S = api()
 	if not S then
 		return nil
 	end
-	local list, any = shownList(S), false
-	for _, e in ipairs(list) do
+	local out = {}
+	for _, e in ipairs(shownList(S)) do
 		local d = e.data
 		e.data = nil
-		e.money = n(d.money)
-		any = any or (type(d.money) == "number" and not secret(d.money))
+		e.money = type(d.money) == "number" and not secret(d.money) and d.money or nil
 		e.currencies = {}
 		if type(d.currencies) == "table" and not secret(d.currencies) then
 			for id, q in pairs(d.currencies) do
@@ -135,8 +135,11 @@ function P.wealth()
 				end
 			end
 		end
+		if e.money or next(e.currencies) then
+			out[#out + 1] = e
+		end
 	end
-	return any and list or nil
+	return #out > 0 and out or nil
 end
 
 -- One Syndicator container (a list of slots) as { size, slots = { [slot] = { link, count } } }.
