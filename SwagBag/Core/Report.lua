@@ -194,6 +194,8 @@ function Report.Build()
 	if SB.AltData and SB.Config.db then
 		local list, source = SB.AltData.Characters()
 		lines[#lines + 1] = L.REPORT_ALTDATA:format(tostring(source or L.REPORT_NONE), list and #list or 0)
+		local wealth, wsource = SB.AltData.Wealth()
+		lines[#lines + 1] = L.REPORT_WEALTH:format(wealth and #wealth or 0, tostring(wsource or L.REPORT_NONE))
 	end
 	if SB.TooltipCounts and SB.TooltipCounts.hookFailed then
 		lines[#lines + 1] = L.TIP_HOOK_UNAVAILABLE

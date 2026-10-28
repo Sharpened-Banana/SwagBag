@@ -44,6 +44,7 @@ Engine/Layout.lua
 Engine/Stacks.lua
 Engine/Snapshots.lua
 Engine/AltData.lua
+Engine/Wealth.lua
 Engine/Prices.lua
 Engine/OverlayData.lua
 Engine/Collections.lua

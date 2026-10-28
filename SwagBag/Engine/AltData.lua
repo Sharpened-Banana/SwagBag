@@ -14,6 +14,9 @@
 --   AltData.Container(key, kind) -> c, source   kind "bags" | "bank" | "warband" | "guild":
 --       { at = epoch | nil, title = text | nil, containers = { [bag or guild tab] = { size, slots =
 --       { [slot] = { link, count } } } } }, or nil when nothing is saved
+--   AltData.Wealth() -> list, source   { { key, name, realm, class, current, money, currencies } }: the
+--       characters with saved gold or currencies (money in copper, currencies = { [currencyID] = quantity });
+--       a character saved before 0.17 has neither and is left out. {} when nothing is saved
 --   AltData.Generation() -> n   moves on every SB_ALTDATA_CHANGED; providers may define invalidate()
 --   AltData.OwnGuildCounts(itemID) -> { { key, name, count } }   SwagBag's own guild banks
 --   AltData.Source() -> name   the provider that answers first now
@@ -150,6 +153,10 @@ function AD.Container(key, kind)
 	return call("container", key, kind)
 end
 
+function AD.Wealth()
+	return call("wealth")
+end
+
 ---------------------------------------------------------------------------
 -- The built-in provider "Own": SwagBag's snapshots (Engine/Snapshots.lua)
 ---------------------------------------------------------------------------
@@ -259,6 +266,36 @@ function own.characters()
 			list[#list + 1] = { key = AD.Canon(raw), name = name, realm = realm, class = c.class, level = c.level,
 				lastSeen = c.lastSeen, guild = c.guild, current = raw == me }
 		end
+	end
+	table.sort(list, function(a, b)
+		if a.current ~= b.current then
+			return a.current
+		end
+		return a.key < b.key
+	end)
+	return list
+end
+
+-- Saved gold and currencies (Engine/Wealth.lua). The current character's gold is read live and the
+-- character is listed even before its first save, so a tooltip always has "you".
+function own.wealth()
+	local me, list = SB.Adapter.CharKey(), {}
+	local live = SB.Adapter.Money()
+	if type(live) ~= "number" or SB.Adapter.IsSecret(live) then
+		live = nil
+	end
+	local db = SB.Snapshots.DB()
+	for raw, c in pairs(db.chars) do
+		if type(c) == "table" and (type(c.money) == "number" or type(c.currencies) == "table") then
+			local name, realm = splitKey(raw)
+			list[#list + 1] = { key = AD.Canon(raw), name = name, realm = realm, class = c.class,
+				current = raw == me, money = raw == me and live or c.money, currencies = c.currencies }
+		end
+	end
+	if not db.chars[me] and live then
+		local name, realm = splitKey(me)
+		list[#list + 1] = { key = AD.Canon(me), name = name, realm = realm, class = SB.Adapter.CharInfo().class,
+			current = true, money = live }
 	end
 	table.sort(list, function(a, b)
 		if a.current ~= b.current then

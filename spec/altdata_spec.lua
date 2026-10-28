@@ -57,6 +57,19 @@ describe("AltData", function()
 		assert.equal("Tidewatch-Argent Dawn", list[2].guild)
 	end)
 
+	it("Own wealth lists saved characters; a 0.16 character with neither field is left out", function()
+		A.money = 4200
+		alt("Alt-Realm", nil, nil, { money = 900, currencies = { [3008] = 3 } })
+		alt("Old-Realm")
+		local list, source = AD.Wealth()
+		assert.equal("Own", source)
+		assert.equal(2, #list)
+		assert.equal(true, list[1].current)
+		assert.equal(4200, list[1].money)
+		assert.same({ name = "Alt", realm = "Realm", class = "PRIEST", key = "Alt-Realm", money = 900,
+			currencies = { [3008] = 3 }, current = false }, list[2])
+	end)
+
 	it("Own containers: bags, bank, the warband bank and the character's guild bank, decoded", function()
 		alt("Abby-Argent Dawn", "1:item:210796;20\n3:item:211880;2\n", "5:item:210930;100\n",
 			{ guild = "Tidewatch-Argent Dawn" })

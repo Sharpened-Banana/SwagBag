@@ -849,6 +849,7 @@ L.SET_LIST_ASC = "Lowest first"
 -- Alt data (week 5): other characters' items
 L.ALTDATA_PROVIDER_OFF = "The %s alt data stopped working this session; SwagBag uses its own saved data instead."
 L.REPORT_ALTDATA = "Alt data: %s, %d characters"
+L.REPORT_WEALTH = "Gold saved for %d characters (%s)"
 L.TIP_TOTAL = "SwagBag: %d in all"
 L.TIP_THIS_CHAR = "%s (this character)"
 L.TIP_BAGS = "Bags %d"
