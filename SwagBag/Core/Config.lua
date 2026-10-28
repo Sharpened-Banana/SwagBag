@@ -40,7 +40,8 @@ Config.Defaults = {
 		safeMode = { bags = false, bank = false },
 		-- blizzardFrame: "tiny" (Blizzard's bank invisible, its tabs on SwagBag's window) |
 		-- "beside" (Blizzard's bank visible, SwagBag's window next to it; spec 5.4, check V2).
-		-- view: "sections" | "grid"; columns: slots per row in the bank window.
+		-- view: "sections" | "grid" | "list" | "bags" (one section per bank tab, 0.17); columns: slots per row in
+		-- the bank window.
 		-- show (week 13): "one" (the bank Blizzard's selected tab deposits into is open, the other folds to one
 		-- line) | "both" (both open; the saved group folds decide).
 		-- gold (0.14.2): the Warband gold row (balance, Deposit, Withdraw) under the bank window's items.

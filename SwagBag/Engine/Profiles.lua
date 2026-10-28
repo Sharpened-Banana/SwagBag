@@ -84,7 +84,7 @@ local VALID = {
 	["bags.list.sort"] = words("value", "name", "count", "ilvl"),
 	["bags.footer.entries"] = pattern("^[%a,%-]*$"),
 	["bank.blizzardFrame"] = words("tiny", "beside"), ["bank.show"] = words("one", "both"),
-	["bank.view"] = words("sections", "grid", "list"), ["bank.columns"] = COLUMNS,
+	["bank.view"] = words("sections", "grid", "list", "bags"), ["bank.columns"] = COLUMNS,
 	["guildBank.mode"] = words("full", "view"), ["guildBank.view"] = words("sections", "grid", "list"),
 	["guildBank.columns"] = COLUMNS,
 	["prices.worth"] = words("fixed", "top", "off"), ["prices.worthGold"] = range(1, 10000000, true),

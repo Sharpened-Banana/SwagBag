@@ -20,7 +20,9 @@
 -- Contents (UI/GroupView.lua): the "Character bank" group on top, the "Warband bank" group
 -- below, each with its own category sections (or grid), for the purchased tabs the client
 -- reports, as categories, a list (week 8: one row per slot, the bags window's columns and order,
--- UI/ListRows.lua) or a grid. The receiving group is tinted and says "right-clicked items land here". Items move only into
+-- UI/ListRows.lua), a grid, or (0.17, spec 4) bags: one section per purchased tab, its header the tab's
+-- own name (Adapter.BankTabNames, "Tab N" when it cannot be read), its slots and its free slots. The
+-- receiving group is tinted and says "right-clicked items land here". Items move only into
 -- New or Free while the window is open (spec 4.3). One bank at a time (bank.show "one", the
 -- default): only the group the selected tab deposits into is open; the other folds to one line, and
 -- a click on its header shows it until the tab changes ("both": /swagbag bank both, Settings). While a
@@ -350,11 +352,12 @@ BW.TitleButton = titleButton
 -- Contents: two groups in one GroupView
 ---------------------------------------------------------------------------
 -- The views the "..." menu offers, and what the title says after each one.
-local VIEW_FLASH = { sections = L.BANK_VIEW_SECTIONS, list = L.BANK_VIEW_LIST, grid = L.BANK_VIEW_GRID }
+local VIEW_FLASH = { sections = L.BANK_VIEW_SECTIONS, list = L.BANK_VIEW_LIST, grid = L.BANK_VIEW_GRID,
+	bags = L.BANK_VIEW_BAGS }
 
 function BW.View()
 	local v = SB.Config.Get("bank.view")
-	if v == "grid" or v == "list" then
+	if v == "grid" or v == "list" or v == "bags" then
 		return v
 	end
 	return "sections"
@@ -484,7 +487,27 @@ BW.view = SB.GroupView.New({
 	end,
 	describe = describe,
 	groups = function()
+		-- the tabs' names are read with the tabs, at every full layout (a renamed tab: BANK_TAB_SETTINGS_UPDATED)
+		BW.tabNames = { bank = SB.Adapter.BankTabNames("bank"), warband = SB.Adapter.BankTabNames("warband") }
 		return { { id = "bank", bags = bagsOf("bank") }, { id = "warband", bags = bagsOf("warband") } }
+	end,
+	-- The bags view's tab headers (0.17): the tab's own name, else "Tab N" by its place among the bank's tabs;
+	-- its slots and free slots (h.free, from the view's records). Every other header keeps GroupView's label.
+	sectionLabel = function(gid, h)
+		if not h.bag then
+			return nil
+		end
+		local name = BW.tabNames and BW.tabNames[gid] and BW.tabNames[gid][h.bag]
+		if not name then
+			local place = h.bag
+			for i, bag in ipairs(SB.Adapter.GetBagIDs(gid)) do
+				if bag == h.bag then
+					place = i
+				end
+			end
+			name = L.PERBAG_TAB:format(place)
+		end
+		return SB.PerBag.Label(name, h.size, h.free, h.collapsed)
 	end,
 	groupLabel = function(id, collapsed, count)
 		local text = L.BANK_GROUP_LABEL:format(collapsed and "+" or "-", groupName(id), count)

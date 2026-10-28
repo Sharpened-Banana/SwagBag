@@ -1,7 +1,7 @@
 -- The bank window's "..." menu (week 13). The title row keeps Sort, "..." and close; every other
--- bank action is one row here, in this order: the three views (the current one marked), Sort either
--- bank, Regroup now, Show/Hide Blizzard's bank, Deposit all warbound items, Deposit gold and Withdraw gold (0.14.2,
--- while the Warband bank moves gold), Bank settings.
+-- bank action is one row here, in this order: the four views (the current one marked; 0.17: Bags, one
+-- section per bank tab), Sort either bank, Regroup now, Show/Hide Blizzard's bank, Deposit all warbound
+-- items, Deposit gold and Withdraw gold (0.14.2, while the Warband bank moves gold), Bank settings.
 -- Plain frames only (a menu may open in combat); every row calls the same BankWindow function its old
 -- title button called, so each click is answered once, by that function (P2). The rows are rebuilt at
 -- every open, so the view mark and the Blizzard words are current. It closes with the bank window.
@@ -21,6 +21,7 @@ local VIEWS = {
 	{ id = "sections", name = L.BANK_MENU_VIEW_SECTIONS },
 	{ id = "list", name = L.BANK_MENU_VIEW_LIST },
 	{ id = "grid", name = L.BANK_MENU_VIEW_GRID },
+	{ id = "bags", name = L.BANK_MENU_VIEW_BAGS },
 }
 
 function BM.Entries()

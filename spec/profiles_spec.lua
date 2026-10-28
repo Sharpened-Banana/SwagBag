@@ -111,6 +111,15 @@ describe("Profiles (week 7)", function()
 		assert.equal("bags", data.settings["bags.view"])
 	end)
 
+	-- 0.17 (ruling R8): the bank's per-tab view too; the guild bank has no such view. Mutation: drop "bags" from
+	-- VALID["bank.view"], or add it to VALID["guildBank.view"].
+	it("bank.view \"bags\" round-trips; guildBank.view \"bags\" is refused", function()
+		C.Set("bank.view", "bags")
+		local data = assert(Pr.Parse(Pr.Export(false)))
+		assert.equal("bags", data.settings["bank.view"])
+		assert.same({ nil, "type", "guildBank.view" }, { Pr.Parse("SWAGBAG:1:s.guildBank.view=sbags") })
+	end)
+
 	-- 0.13.1. Mutation: drop ["bank.groupColors"] from Profiles.LABELS (the preview would show a dotted path), or
 	-- drop `groupColors = true` from Config.Defaults (no default to export against).
 	it("bank.groupColors round-trips false and is named in the preview", function()

@@ -1088,6 +1088,25 @@ describe("GuildBankWindow (check G1)", function()
 		assert.falsy(GW.view.Collapsed("tab1").c_herbs)
 	end)
 
+	-- 0.17 (spec 4): the per-bag view is the bags' and the bank's; the guild bank keeps its three views. Mutation:
+	-- add `grid = "bags"` (or a bags entry) to GroupView.VIEW_NEXT, or accept "bags" in GW.View.
+	it("the guild bank's view cycle is unchanged: sections, list, grid", function()
+		assert.same({ sections = "list", list = "grid", grid = "sections" }, SB.GroupView.VIEW_NEXT)
+		openVault()
+		answerQueries()
+		local seen = { GW.view.drawn }
+		for _ = 1, 3 do
+			Fake.Fire(GW.viewButton, "OnClick")
+			seen[#seen + 1] = GW.view.drawn
+		end
+		assert.same({ "sections", "list", "grid", "sections" }, seen)
+		SB.Config.Set("guildBank.view", "bags") -- a hand-edited saved value
+		assert.equal("sections", GW.View())
+		GW.view.Layout("view")
+		assert.equal("sections", GW.view.drawn)
+		assert.truthy(header("tab1:c_herbs"), "category sections, no per-tab headers")
+	end)
+
 	-- Week-3 carry-over (final review M8). Mutation: ignore SB.Config.Set's result in GW.ToggleView.
 	it("the view toggle with read-only settings says so and changes nothing", function()
 		openVault()

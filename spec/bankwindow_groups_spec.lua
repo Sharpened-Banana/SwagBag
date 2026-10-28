@@ -475,6 +475,185 @@ describe("BankWindow contents", function()
 		assert.equal(10, #labels())
 	end)
 
+	-- 0.17 (spec 4): the bank's per-tab view. Two character tabs (6 "Mats", 7 "Gear") and one warband tab.
+	local function perTab(names)
+		SB.Config.Set("bank.show", "both")
+		SB.Config.Set("bank.view", "bags")
+		A.bagIDs.bank = { 6, 7 }
+		A.SetBagSize(7, 8)
+		A.tabNames.bank = names or { [6] = "Mats", [7] = "Gear" }
+	end
+
+	local function sectionY(id)
+		return header(id).points[1][5]
+	end
+
+	-- Mutation: GroupView positions a "bags" group with gridPos (no tab headers), or BankWindow's sectionLabel
+	-- counts the free slots from the slot reads instead of the view's records (the in-place update would lag).
+	it("the bags view shows one section per bank tab with its own name and free slots", function()
+		perTab()
+		openBank()
+		assert.same({ "- Character bank (2)  - right-clicked items land here", "- Warband bank (2)",
+			"- Mats · 8 slots · 6 free", "- Gear · 8 slots · 8 free", "- Tab 1 · 8 slots · 6 free" }, labels())
+		assert.equal("bags", BW.view.drawn)
+		assert.is_nil(BW.view.groups[1].state, "no Layout state: no New, no Free, no stack grouping")
+		local GV = SB.GroupView
+		-- physical order, empty slots in place, each tab's first row under its own header
+		assert.same({ GV.PAD, sectionY("bank:bag:6") - GV.SECTION_HEADER }, at(6, 1))
+		assert.same({ GV.PAD + GV.SLOT + GV.GAP, sectionY("bank:bag:6") - GV.SECTION_HEADER }, at(6, 2))
+		assert.truthy(B.Get(6, 8).shown, "an empty slot is shown in place")
+		assert.same({ GV.PAD, sectionY("bank:bag:7") - GV.SECTION_HEADER }, at(7, 1))
+		assert.truthy(sectionY("bank:bag:7") < at(6, 8)[2])
+		assert.equal(24, #BW.view.cells)
+		-- a deposit repaints in place: no full layout, nothing moves, the tab's free count follows
+		local before = { at(6, 1), at(6, 2), at(7, 1), at(12, 1) }
+		A.Put(6, 5, Fixtures.FLASK, 2)
+		bankUpdate(6)
+		assert.equal("open", BW.view.stats.lastLayoutReason, "no full layout")
+		assert.same(before, { at(6, 1), at(6, 2), at(7, 1), at(12, 1) })
+		assert.equal(Fixtures.FLASK, BW.view.Record(6, 5).itemID, "painted in place")
+		assert.equal("- Mats · 8 slots · 5 free", header("bank:bag:6").text.text)
+		A.Clear(6, 1)
+		bankUpdate(6)
+		assert.equal(0, #B.placeholdersInUse, "no placeholder: the slot stays where it is, empty")
+		assert.same(before[1], at(6, 1))
+		assert.equal("- Mats · 8 slots · 6 free", header("bank:bag:6").text.text)
+	end)
+
+	-- Mutation: in BankWindow's sectionLabel, drop the L.PERBAG_TAB fallback (or number it by the bag ID).
+	it("a tab whose name cannot be read is Tab N", function()
+		perTab({ [6] = "Mats" })
+		openBank()
+		assert.equal("- Mats · 8 slots · 6 free", header("bank:bag:6").text.text)
+		assert.equal("- Tab 2 · 8 slots · 8 free", header("bank:bag:7").text.text)
+		assert.equal("- Tab 1 · 8 slots · 6 free", header("warband:bag:12").text.text)
+	end)
+
+	-- Mutation: GroupView passes `{}` instead of collapsedFor(g.id) to PerBag.Compute.
+	it("a tab header click folds that tab only", function()
+		perTab()
+		openBank()
+		local gearY, wbY = at(7, 1)[2], at(12, 1)[2]
+		header("bank:bag:6").scripts.OnClick(header("bank:bag:6"), "LeftButton")
+		assert.equal(true, SB.Config.UI().collapsed["bank:bank"]["bag:6"], "saved per character, by tab ID")
+		assert.equal("+ Mats · 8 slots · 6 free", header("bank:bag:6").text.text)
+		for slot = 1, 8 do
+			assert.falsy(B.Get(6, slot).shown, "tab 6 slot " .. slot)
+			assert.truthy(B.Get(7, slot).shown, "tab 7 slot " .. slot)
+		end
+		assert.truthy(at(7, 1)[2] > gearY, "the tab below moved up")
+		assert.truthy(at(12, 1)[2] > wbY)
+		assert.equal("- Gear · 8 slots · 8 free", header("bank:bag:7").text.text)
+		assert.is_nil(SB.Config.UI().collapsed["bank:warband"]["bag:12"])
+		SB.eventFrame:Fire("BANKFRAME_CLOSED")
+		openBank()
+		assert.equal("+ Mats · 8 slots · 6 free", header("bank:bag:6").text.text, "kept across visits")
+		header("bank:bag:6").scripts.OnClick(header("bank:bag:6"), "LeftButton")
+		assert.is_nil(SB.Config.UI().collapsed["bank:bank"]["bag:6"])
+		assert.truthy(B.Get(6, 1).shown)
+		assert.same({ gearY, wbY }, { at(7, 1)[2], at(12, 1)[2] })
+	end)
+
+	-- A tab header has no category: an item on the cursor is never dropped there (DropOnSection), and a
+	-- right-click does nothing. Mutation: let GroupView's owner.onClick / onDrop treat "bag:" ids as sections.
+	it("a tab header's right-click, drop and click with an item on the cursor do nothing", function()
+		perTab()
+		openBank()
+		local h = header("bank:bag:6")
+		h.scripts.OnClick(h, "RightButton")
+		assert.is_nil(SB.Config.UI().collapsed["bank:bank"]["bag:6"], "a right-click folds nothing")
+		A.cursor = { itemID = Fixtures.JUNK }
+		h.scripts.OnReceiveDrag(h)
+		assert.is_nil(SB.Config.UI().collapsed["bank:bank"]["bag:6"], "a drop folds nothing")
+		h.scripts.OnClick(h, "LeftButton")
+		assert.is_nil(SB.Config.UI().collapsed["bank:bank"]["bag:6"], "a click with an item on the cursor folds nothing")
+		A.cursor = nil
+		A.Advance(1)
+		assert.same({}, SB.BagsWindow.dropped)
+		assert.truthy(B.Get(6, 1).shown)
+		assert.equal(0, #SB.ErrorTrap.Recent())
+		h.scripts.OnClick(h, "LeftButton") -- no drop guard left behind: a plain click folds at once
+		assert.falsy(B.Get(6, 1).shown)
+	end)
+
+	-- P5 (Review Focus 5). Mutation: GroupView's v.RequestLayout skips its Moves check for a "bags" build.
+	it("switching to the bags view under the mouse waits", function()
+		openBank()
+		local potion = at(6, 1)
+		BW.scroll.mouseOver = true
+		B.Get(6, 1).mouseOver = true
+		BW.SetView("bags")
+		assert.equal("bags", SB.Config.Get("bank.view"))
+		assert.equal("sections", BW.view.drawn, "held: still drawn as categories")
+		assert.same(potion, at(6, 1))
+		A.Advance(0.3)
+		assert.equal("sections", BW.view.drawn)
+		B.Get(6, 1).mouseOver = false
+		BW.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("bags", BW.view.drawn)
+		assert.equal("- Tab 1 · 8 slots · 6 free", header("bank:bag:6").text.text)
+	end)
+
+	-- P5, as the category view's folds (GroupView's Restack). Mutation: fold a tab with a plain re-draw (no
+	-- v.Restack guard).
+	it("a tab fold waits while a button it would move is under the mouse or anything is on the cursor", function()
+		perTab()
+		openBank()
+		local gear = B.Get(7, 1)
+		local y = at(7, 1)[2]
+		BW.scroll.mouseOver = true
+		gear.mouseOver = true -- tab 7 moves up when tab 6 folds
+		header("bank:bag:6").scripts.OnClick(header("bank:bag:6"), "LeftButton")
+		assert.truthy(B.Get(6, 1).shown, "held")
+		assert.equal(y, at(7, 1)[2])
+		gear.mouseOver = false
+		A.cursorOther = "targeting"
+		A.Advance(0.3)
+		assert.truthy(B.Get(6, 1).shown, "still held: a spell waits for its target")
+		A.cursorOther = nil
+		A.Advance(0.3)
+		assert.falsy(B.Get(6, 1).shown)
+		assert.truthy(at(7, 1)[2] > y)
+		assert.equal("+ Mats · 8 slots · 6 free", header("bank:bag:6").text.text)
+	end)
+
+	-- The pointer rests on the clicked header (no button under it): the fold lands at once, as a category fold.
+	it("a tab fold with the mouse over its header lands at once", function()
+		perTab()
+		openBank()
+		BW.scroll.mouseOver = true
+		header("bank:bag:7").scripts.OnClick(header("bank:bag:7"), "LeftButton")
+		assert.falsy(B.Get(7, 1).shown, "folded at once")
+		header("bank:bag:6").scripts.OnClick(header("bank:bag:6"), "LeftButton")
+		assert.falsy(B.Get(6, 1).shown, "the top tab folds at once too")
+	end)
+
+	-- Task 7's rule: a fold never draws a held layout early. GroupView's fold is a Restack of what is drawn
+	-- (never v.Layout), so a view change held under the mouse stays held and the fold lands in the bags view.
+	-- Mutation: fold a tab through v.Layout / v.RequestLayout instead of v.ToggleSection.
+	it("a tab fold while a view change is held draws only the fold; the view change waits for the mouse", function()
+		perTab()
+		openBank()
+		BW.scroll.mouseOver = true
+		B.Get(6, 1).mouseOver = true
+		BW.SetView("sections")
+		assert.equal("bags", BW.view.drawn, "held")
+		B.Get(6, 1).mouseOver = false -- the pointer moves onto the Gear tab's header (nothing above it moves)
+		header("bank:bag:7").scripts.OnClick(header("bank:bag:7"), "LeftButton")
+		assert.equal("bags", BW.view.drawn, "the held view change is not drawn by the click")
+		assert.falsy(B.Get(7, 1).shown, "the fold landed in the bags view")
+		assert.equal("+ Gear · 8 slots · 8 free", header("bank:bag:7").text.text)
+		B.Get(6, 1).mouseOver = true
+		A.Advance(0.3)
+		assert.equal("bags", BW.view.drawn, "still held")
+		B.Get(6, 1).mouseOver = false
+		BW.scroll.mouseOver = false
+		A.Advance(0.3)
+		assert.equal("sections", BW.view.drawn)
+		assert.equal(true, SB.Config.UI().collapsed["bank:bank"]["bag:7"], "the fold is kept for the next bags view")
+	end)
+
 	-- Preflight a11: headers take right-clicks for focus pins; the bank view ignores the button, so a
 	-- right-click is a plain click there. Mutation: GroupView owner.onClick returns on "RightButton".
 	it("a right-click on a bank section header collapses it like a left-click (a11)", function()

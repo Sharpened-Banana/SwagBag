@@ -13,7 +13,7 @@ local FILES = {
 	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Inventory.lua", "SwagBag/Engine/GridLayout.lua",
 	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/CategoryDefaults.lua", "SwagBag/Engine/Categories.lua",
-	"SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
+	"SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua", "SwagBag/Engine/PerBag.lua",
 }
 
 -- A view over bank tab 6 ("bank") and warband tab 12 ("warband"), with fake buttons.
@@ -403,6 +403,74 @@ describe("GroupView", function()
 		v.ToggleGroup("bank")
 		assert.falsy(btn(6, 2).shown, "a collapsed group hides its grid")
 		assert.equal(-56, at(btn(12, 1))[2], "warband moved up: bank header, gap, warband header")
+	end)
+
+	-- 0.17 (spec 4): the "bags" view is the grid's physical order cut into one section per bag (Engine/PerBag.lua),
+	-- with no Layout state. Mutation: in positionAll, position a "bags" group with gridPos; or build it with sections.
+	it("the bags view shows one section per bag under each group header, slots in physical order", function()
+		v, f = newView(SB, { view = "bags" })
+		v.Layout("open")
+		assert.same({ "#bank=- bank (3)", "#warband=- warband (2)", "bank:bag:6=- Bag 6 · 8 slots · 5 free",
+			"warband:bag:12=- Bag 12 · 8 slots · 6 free" }, labels())
+		assert.equal("bags", v.drawn)
+		assert.is_nil(v.groups[1].state)
+		assert.equal(-26, header("bank:bag:6").points[1][5], "group header, then padding")
+		assert.same({ 4, -46 }, at(btn(6, 1)))
+		assert.same({ 45, -46 }, at(btn(6, 2)))
+		assert.same({ 4, -87 }, at(btn(6, 5)))
+		assert.equal(16, #v.cells)
+		A.Clear(6, 1)
+		v.SetRecord(6, 1, nil)
+		v.Changes("bank", { { bag = 6, slot = 1, kind = "left" } })
+		assert.same({ 4, -46 }, at(btn(6, 1)), "the bags view never moves a button")
+		assert.equal(0, #SB.Buttons.placeholdersInUse)
+		v.RefreshTotals()
+		assert.equal("- Bag 6 · 8 slots · 6 free", header("bank:bag:6").text.text, "free counted from the records")
+		local wb = at(btn(12, 1))[2]
+		assert.equal(true, v.ToggleSection("bank", "bag:6"))
+		assert.equal(true, v.Collapsed("bank")["bag:6"])
+		assert.falsy(btn(6, 1).shown)
+		assert.equal("+ Bag 6 · 8 slots · 6 free", header("bank:bag:6").text.text)
+		assert.truthy(at(btn(12, 1))[2] > wb, "the warband moved up")
+		v.ToggleGroup("warband")
+		assert.falsy(btn(12, 1).shown, "a folded group hides its bags' sections")
+		assert.is_nil(header("warband:bag:12"))
+	end)
+
+	-- Mutation: GroupView's owner.onClick drops onto a "bag:" section header (cfg.onDrop) or folds it on a
+	-- right-click; or owner.onDrop drops there.
+	it("a bag section header is no drop target: an item on the cursor stays, a right-click does nothing", function()
+		local dropped = {}
+		v, f = newView(SB, { view = "bags" })
+		f.cfg.onDrop = function(sid) dropped[#dropped + 1] = sid end
+		v.Layout("open")
+		local h = header("bank:bag:6")
+		A.cursor = { itemID = Fixtures.JUNK }
+		h.scripts.OnReceiveDrag(h)
+		h.scripts.OnClick(h, "LeftButton")
+		assert.is_nil(v.Collapsed("bank")["bag:6"], "an item on the cursor: no fold")
+		A.cursor = nil
+		h.scripts.OnClick(h, "RightButton")
+		assert.is_nil(v.Collapsed("bank")["bag:6"], "a right-click: no fold")
+		assert.same({}, dropped)
+		h.scripts.OnClick(h, "LeftButton")
+		assert.equal(true, v.Collapsed("bank")["bag:6"], "a plain left-click folds at once (no drop guard)")
+	end)
+
+	-- P5, as every fold. Mutation: v.ToggleSection skips Restack's busy check.
+	it("a bag fold waits while a button it would move is under the mouse", function()
+		v, f = newView(SB, { view = "bags" })
+		v.Layout("open")
+		local ore = btn(12, 1)
+		local y = at(ore)[2]
+		ore.mouseOver = true
+		assert.equal(false, v.ToggleSection("bank", "bag:6"))
+		assert.truthy(btn(6, 1).shown)
+		assert.equal(y, at(ore)[2])
+		ore.mouseOver = false
+		A.Advance(0.3)
+		assert.falsy(btn(6, 1).shown)
+		assert.truthy(at(ore)[2] > y)
 	end)
 
 	it("dropping an item on a section header calls onDrop once; the click of the same press does not collapse", function()

@@ -134,6 +134,7 @@ describe("the bank window's header and its ... menu (week 13)", function()
 			L.BANK_MENU_VIEW:format(L.BANK_MENU_NOW:format(L.BANK_MENU_VIEW_SECTIONS)),
 			L.BANK_MENU_VIEW:format(L.BANK_MENU_VIEW_LIST),
 			L.BANK_MENU_VIEW:format(L.BANK_MENU_VIEW_GRID),
+			L.BANK_MENU_VIEW:format(L.BANK_MENU_VIEW_BAGS),
 			L.BANK_MENU_SORT:format(L.BANK_GROUP_BANK),
 			L.BANK_MENU_SORT:format(L.BANK_GROUP_WARBAND),
 			L.BANK_MENU_REGROUP,
@@ -148,7 +149,7 @@ describe("the bank window's header and its ... menu (week 13)", function()
 	it("the rows are the entries, rebuilt at every open (the view mark moves)", function()
 		openBank()
 		BM.Toggle(BW.moreButton)
-		assert.equal(11, #BM.rows)
+		assert.equal(12, #BM.rows)
 		assert.equal(L.BANK_MENU_VIEW:format(L.BANK_MENU_NOW:format(L.BANK_MENU_VIEW_SECTIONS)), BM.rows[1].text)
 		BM.Hide()
 		SB.Config.Set("bank.view", "grid")
@@ -156,6 +157,30 @@ describe("the bank window's header and its ... menu (week 13)", function()
 		assert.equal(L.BANK_MENU_VIEW:format(L.BANK_MENU_VIEW_SECTIONS), BM.rows[1].text)
 		assert.equal(L.BANK_MENU_VIEW:format(L.BANK_MENU_NOW:format(L.BANK_MENU_VIEW_GRID)), BM.rows[3].text)
 		assert.same({ "TOPRIGHT", BW.moreButton, "BOTTOMRIGHT", 0, -2 }, BM.frame.points[1])
+	end)
+
+	-- 0.17 (spec 4): the per-tab view is the fourth view row. Mutation: drop the "bags" row from BankMenu's VIEWS,
+	-- or drop `or v == "bags"` from BW.View (the mark would stay on Categories).
+	it("the menu offers four views and marks Bags when it is on", function()
+		openBank()
+		assert.equal("Bags", L.BANK_MENU_VIEW_BAGS)
+		assert.equal("SwagBag bank - bag view", L.BANK_VIEW_BAGS)
+		local texts = {}
+		for i, e in ipairs(BM.Entries()) do
+			texts[i] = e.text
+		end
+		assert.same({ L.BANK_MENU_VIEW:format(L.BANK_MENU_NOW:format(L.BANK_MENU_VIEW_SECTIONS)),
+			L.BANK_MENU_VIEW:format(L.BANK_MENU_VIEW_LIST), L.BANK_MENU_VIEW:format(L.BANK_MENU_VIEW_GRID),
+			L.BANK_MENU_VIEW:format(L.BANK_MENU_VIEW_BAGS) }, { texts[1], texts[2], texts[3], texts[4] })
+		pick(L.BANK_MENU_VIEW:format(L.BANK_MENU_VIEW_BAGS))
+		assert.equal("bags", SB.Config.Get("bank.view"))
+		assert.equal("bags", BW.View())
+		assert.equal("bags", BW.view.drawn)
+		assert.equal(L.BANK_VIEW_BAGS, BW.frame.title.text)
+		assert.falsy(BM.frame.shown)
+		BM.Toggle(BW.moreButton)
+		assert.equal(L.BANK_MENU_VIEW:format(L.BANK_MENU_VIEW_SECTIONS), BM.rows[1].text)
+		assert.equal(L.BANK_MENU_VIEW:format(L.BANK_MENU_NOW:format(L.BANK_MENU_VIEW_BAGS)), BM.rows[4].text)
 	end)
 
 	-- Mutation: in BW.SetView, skip the Config.Set; or leave the menu shown after a pick.
@@ -211,15 +236,15 @@ describe("the bank window's header and its ... menu (week 13)", function()
 	-- Mutation: read BW.Mode() instead of BW.VisitMode() for the words.
 	it("Blizzard's bank entry flips its words", function()
 		openBank()
-		assert.equal(L.BANK_MENU_SHOW_BLIZZARD, BM.Entries()[7].text)
+		assert.equal(L.BANK_MENU_SHOW_BLIZZARD, BM.Entries()[8].text)
 		pick(L.BANK_MENU_SHOW_BLIZZARD)
 		assert.equal("beside", BW.VisitMode())
-		assert.equal(L.BANK_MENU_HIDE_BLIZZARD, BM.Entries()[7].text)
+		assert.equal(L.BANK_MENU_HIDE_BLIZZARD, BM.Entries()[8].text)
 		BM.Toggle(BW.moreButton)
-		assert.equal(L.BANK_MENU_HIDE_BLIZZARD, BM.rows[7].text)
-		Fake.Fire(BM.rows[7], "OnClick")
+		assert.equal(L.BANK_MENU_HIDE_BLIZZARD, BM.rows[8].text)
+		Fake.Fire(BM.rows[8], "OnClick")
 		assert.equal("tiny", BW.VisitMode())
-		assert.equal(L.BANK_MENU_SHOW_BLIZZARD, BM.Entries()[7].text)
+		assert.equal(L.BANK_MENU_SHOW_BLIZZARD, BM.Entries()[8].text)
 	end)
 
 	-- Mutation: drop the InCombat refusal in BW.ToggleVisit.
@@ -229,7 +254,7 @@ describe("the bank window's header and its ... menu (week 13)", function()
 		pick(L.BANK_MENU_SHOW_BLIZZARD)
 		assert.equal(L.BANK_NOT_IN_COMBAT, BW.frame.title.text)
 		assert.equal("tiny", BW.VisitMode())
-		assert.equal(L.BANK_MENU_SHOW_BLIZZARD, BM.Entries()[7].text)
+		assert.equal(L.BANK_MENU_SHOW_BLIZZARD, BM.Entries()[8].text)
 	end)
 
 	-- Mutation: give an entry a tip of "" or a literal string.
@@ -243,10 +268,10 @@ describe("the bank window's header and its ... menu (week 13)", function()
 			assert.truthy(e.tip ~= "" and isL[e.tip], "entry " .. i)
 		end
 		BM.Toggle(BW.moreButton)
-		Fake.Fire(BM.rows[8], "OnEnter")
+		Fake.Fire(BM.rows[9], "OnEnter")
 		assert.equal(L.BANK_MENU_DEPOSIT, GameTooltip.text)
 		assert.equal(L.TIP_MENU_DEPOSIT, GameTooltip.calls.AddLine[1])
-		Fake.Fire(BM.rows[8], "OnLeave")
+		Fake.Fire(BM.rows[9], "OnLeave")
 		assert.falsy(GameTooltip.shown)
 	end)
 

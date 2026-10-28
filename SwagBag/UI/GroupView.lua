@@ -3,7 +3,12 @@
 -- is a stack of GROUPS in one scroll child. Each group has a header (name, item count,
 -- collapse, a tint for "deposits go here") and under it either its own category sections
 -- (New, categories, Free: one Engine/Layout.lua state per group) or, in the grid view, its
--- slots in physical order. In the list view (week 8, spec 2.2 v1.3, like the bags window's) each
+-- slots in physical order. 0.17 (spec 4): in the bags view (the bank's only) each of the group's
+-- bags (bank tabs) is a section of its own in physical order (Engine/PerBag.lua, ids "bag:<bag>"):
+-- a physical view like the grid (no Layout state, no New, Free, stack grouping or free tile; live
+-- changes repaint in place), its headers fold with a left-click (a Restack, held as every fold), and
+-- they take no drop and no right-click.
+-- In the list view (week 8, spec 2.2 v1.3, like the bags window's) each
 -- group's sections show one row per slot: the slot's own button scaled to the row's height
 -- (SetScale only: a button is never made, reparented or re-ID'd for it), then its name, count,
 -- item level and value (UI/ListRows.lua, cfg.rows), each section in Engine/Sort.lua's order. A
@@ -40,20 +45,22 @@
 --   v.Record(bag, slot), v.SetRecord(bag, slot, record), v.GroupOf(bag), v.Size(bag), v.IsOpen()
 --   v.Clear()                           window closed: hide the buttons, forget the layout
 --   v.drawn                             the view the current layout was drawn in ("sections" |
---                                       "list" | "grid"); the setting may differ while a layout waits
+--                                       "list" | "grid" | "bags"); the setting may differ while a layout waits
 --   v.stats = { lastLayoutMs, lastLayoutReason, phases = { groups, read, categories, positions,
 --     drawing } }   the last full layout's time, and where it went (ms; week 6, D20: /swagbag report)
 -- cfg = { key = "bank" | "guild", window = ErrorTrap window (default "bank"), child, scroll,
 --   button(bag, slot) -> button | nil;  describe(bag, slot) -> record | nil (paints the button),
 --   groups() -> { { id, bags = { { bag, size } } } } in display order,
 --   groupLabel(groupId, collapsed, count) -> text;  groupTint(groupId) -> true to tint,
---   view() -> "sections" | "list" | "grid";  columns() -> n;  newRows() -> n,
+--   view() -> "sections" | "list" | "grid" | "bags" (0.17: the bank only);  columns() -> n;  newRows() -> n,
 --   rows optional: a ListRows object (UI/ListRows.lua) over cfg.child; without it "list" draws as
 --   "sections";  onListFailed() optional: a list fell back to categories (F6),
 --   family(bag) optional -> a bag family for the free tile (default Adapter.BagFamily),
 --   onResize(width, height, keepTop);  onUpdated() optional, after a redraw while open,
 --   onDrop(sectionId) optional: an item dropped on a section header,
---   sectionLabel(groupId, header) optional: header = { id, count, collapsed, overflow },
+--   sectionLabel(groupId, header) optional -> text | nil (nil: the default label): header = { id, count,
+--   collapsed, overflow }; a bags-view header ("bag:" id) is { id, bag, size, free, collapsed } (free: the
+--   bag's empty slots, from the view's records; default label PerBag.Label with L.PERBAG_BAG),
 --   freeTile(view) optional -> true: each group's Free shows one tile per bag family with its
 --   number of free slots (Engine/Layout.lua, plan D19; families from cfg.family),
 --   stacks() optional -> bool, read at every build (0.14.0): true groups the stacks of one item in each
@@ -86,8 +93,9 @@ local GV = { SLOT = 37, GAP = 4, PAD = 4, SECTION_HEADER = 20, SECTION_GAP = 6, 
 SB.GroupView = GV
 
 -- Shared by the bank and guild bank windows (week 8): the view button's order (each click shows the
--- next one) and the button's label for it, and a column click's save-and-answer (the bags window keeps
--- its own, with the /swagbag list extras).
+-- next one; the guild bank's three views: the bank picks its four from its "..." menu) and the button's
+-- label for it, and a column click's save-and-answer (the bags window keeps its own, with the /swagbag
+-- list extras).
 GV.VIEW_NEXT = { sections = "list", list = "grid", grid = "sections" }
 GV.VIEW_BUTTON = { sections = SB.L.VIEW_TO_SECTIONS, list = SB.L.VIEW_TO_LIST, grid = SB.L.VIEW_TO_GRID }
 
@@ -105,6 +113,17 @@ end
 
 local function keyOf(bag, slot)
 	return SB.Layout.Key(bag, slot)
+end
+
+-- The views in physical slot order (the grid, and the per-bag view): no Layout state, so no New, Free,
+-- stack grouping or free tile, and live changes repaint in place.
+local function physical(view)
+	return view == "grid" or view == "bags"
+end
+
+-- A bags-view section ("bag:<bag>", Engine/PerBag.lua): no category behind it.
+local function isBagSection(sid)
+	return type(sid) == "string" and sid:sub(1, 4) == "bag:"
 end
 
 function GV.New(cfg)
@@ -168,6 +187,13 @@ function GV.New(cfg)
 			sectionGap = GV.SECTION_GAP, top = top }
 	end
 
+	-- The bags view (0.17): one section per bag of the group, each bag's slots in physical order under its
+	-- header; a folded bag (saved with the group's sections) keeps its header and hides its cells.
+	local function perBagPos(g, top)
+		local pb = SB.PerBag.Compute(g.bags, positionOpts(top, false), collapsedFor(g.id))
+		return { cells = pb.cells, placeholders = {}, headers = pb.headers, height = pb.height }
+	end
+
 	local function gridPos(g, top)
 		local grid = SB.GridLayout.Compute(g.bags, { columns = cfg.columns(), size = GV.SLOT, gap = GV.GAP,
 			padding = GV.PAD })
@@ -205,6 +231,8 @@ function GV.New(cfg)
 					end
 				end
 				pos = SB.Layout.Position(g.state, positionOpts(y, list), col)
+			elseif view == "bags" then
+				pos = perBagPos(g, y)
 			else
 				pos = gridPos(g, y)
 			end
@@ -327,11 +355,21 @@ function GV.New(cfg)
 	end
 
 	local owner = { window = window } -- header clicks and drops trap errors as this window (W3-22)
-	function owner.onClick(id)
+	function owner.onClick(id, mouseButton)
 		if dropGuard == id then
 			return
 		end
 		local gid, sid = parseId(id)
+		if isBagSection(sid) then
+			-- 0.17: a bag's header only folds, on a left-click with nothing on the cursor (no category: never a
+			-- drop, an item there stays on the cursor). The fold is a Restack of what is drawn, never a full
+			-- layout, so a held layout stays held, and it waits while a button it would move or hide is under
+			-- the mouse or anything is on the cursor (P5). Same groups, same cells: no drawn cell disappears.
+			if mouseButton ~= "RightButton" and not SB.Adapter.CursorItem() then
+				v.ToggleSection(gid, sid)
+			end
+			return
+		end
 		-- a group header is not a drop target (W3-24), nor a section header in a view with no
 		-- onDrop (the guild bank): the click collapses or expands as a plain click (W3-40)
 		if sid and cfg.onDrop and SB.Adapter.CursorItem() then
@@ -363,14 +401,31 @@ function GV.New(cfg)
 	-- guard: the click that follows is a plain click (it used to be swallowed for 0.3 s).
 	function owner.onDrop(id)
 		local _, sid = parseId(id)
-		if sid and cfg.onDrop and dropGuard ~= id then
+		if sid and cfg.onDrop and dropGuard ~= id and not isBagSection(sid) then
 			drop(id)
 		end
 	end
 
+	local function freeIn(h)
+		local free = 0
+		for slot = 1, h.size do
+			if not v.records[keyOf(h.bag, slot)] then
+				free = free + 1
+			end
+		end
+		return free
+	end
+
 	local function sectionLabel(gid, h, totals, vendor)
-		if cfg.sectionLabel then
-			return cfg.sectionLabel(gid, h)
+		if isBagSection(h.id) then
+			h.free = freeIn(h)
+		end
+		local own = cfg.sectionLabel and cfg.sectionLabel(gid, h)
+		if own then
+			return own
+		end
+		if isBagSection(h.id) then
+			return SB.PerBag.Label(SB.L.PERBAG_BAG:format(h.bag), h.size, h.free, h.collapsed)
 		end
 		return SB.SectionHeaders.Label(SB.Categories.Name(h.id), h.count, h.collapsed, h.overflow,
 			totals[gid] and totals[gid][h.id], vendor)
@@ -641,7 +696,7 @@ function GV.New(cfg)
 			end
 			return id
 		end
-		local sections = view ~= "grid"
+		local sections = not physical(view)
 		local list = view == "list"
 		local order = sections and SB.Categories.SectionOrder() or nil
 		-- 0.14.0: the window's choice, read once per build (no cfg.stacks: the guild bank, the alt viewer)
