@@ -217,9 +217,11 @@ v1.4 (0.14.3): "Switch by themselves" is off by default (AC8.1, section 6): focu
 
 v1.5 (0.15.0): WoW Forever groundwork (Stage A). Flavor detection and the capability table in the Adapter, bag IDs from Enum.BagIndex, Retail-only features off on Forever, Forever's bank and guild bank left to Blizzard. Not declared in the TOC; no Forever upload.
 
+v1.6 (0.17.0): alt gold and currencies (the bags footer tooltips list every character, the Warband bank as last known, and the total; Syndicator when present, else SwagBag's own saved data); item-level colors (overlays.ilvlColors, off by default; steps filled from the equipped item level); the per-bag view (one section per bag in the bags window, one per tab in the bank; bags.view / bank.view accept "bags"; folds are remembered).
+
 ### 2.3 Later (demand-driven)
 
-Per-bag view; freeform drag layout; i18n (localized keywords and UI strings); Wago distribution. (TSM price source and Masque skins shipped in week 9.)
+Freeform drag layout; i18n (localized keywords and UI strings); Wago distribution. (TSM price source and Masque skins shipped in week 9.)
 
 ### 2.4 Publish bar
 

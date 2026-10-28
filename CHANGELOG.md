@@ -2,6 +2,12 @@
 
 Newest first. Each "## <version>" section is the changelog CurseForge shows for that upload (scripts/release.sh reads it).
 
+## 0.17.0
+
+- **Every character's gold and currencies, in a tooltip:** hover the gold in your bags footer to see the gold of all your characters, the Warband bank (as last seen) and the total. Hover a currency or a crest to see how many each character has. With Syndicator your characters show at once; without it, log in on each character once with 0.17 and it joins the list. The footer itself looks the same.
+- **Colored item levels (off until you ask):** turn on "Color item levels" in Settings > Overlays, or type `/swagbag ilvlcolors on`. The first time, SwagBag fills in four steps from your equipped item level: green at your level, blue 10 above, purple 20 above. Item levels on icons and in the list view take the color of the step they have reached. You can change the levels and pick from six colors in the same place; `/swagbag ilvlcolors off` turns them white again and keeps your steps.
+- **One section per bag, or per bank tab:** the view button on the bags window now cycles Categories, List, Grid and Bags (or type `/swagbag view bags`). In the bank, open the `...` menu and pick Bags to get one section per bank tab, named as in Blizzard's bank. Each header shows the bag's name, slots and free slots. Click a header to fold it; it stays folded.
+
 ## 0.16.1
 
 - **Deposit warbound asks instead of refusing:** when SwagBag can't tell whether an item in your bags can still be refunded, a window asks whether to deposit anyway. Yes deposits; No leaves everything in your bags. If SwagBag knows an item can still be refunded, it still refuses without asking, so you never lose a refund by accident.
