@@ -3,7 +3,7 @@
 local ADDON, SB = ...
 
 SB.name = ADDON
-SB.VERSION = "0.16.0"
+SB.VERSION = "0.16.1"
 SB.CHAT_PREFIX = "|cff33ff99SwagBag|r: "
 
 -- Print one chat line. Output goes through the Adapter so tests can capture it.

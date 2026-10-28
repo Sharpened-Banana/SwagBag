@@ -1,4 +1,4 @@
--- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip
+-- luacheck: globals CreateFrame UIParent UISpecialFrames GameTooltip StaticPopupDialogs StaticPopup_Show StaticPopup_Hide YES NO
 -- The bank window's frame handling (check V2): tiny mode, beside, the read-only deposit
 -- target, Esc, Safe Mode. The bank contents are covered by spec/bankwindow_groups_spec.lua.
 local Loader = dofile("spec/helpers/loader.lua")
@@ -492,6 +492,43 @@ describe("BankWindow frames (check V2)", function()
 		Fake.Fire(BW.depositButton, "OnClick")
 		assert.equal(SB.L.DEPOSIT_UNSURE, BW.frame.title.text)
 		assert.equal(0, A.warbandDeposits, "nothing was deposited")
+	end)
+
+	-- User request 2026-10-26: when the refunds can't be told, ask in a window; Yes deposits anyway. Mutations: in
+	-- the dialog's OnAccept, drop the combat check; or ask also when an item is known to be refundable.
+	it("an unknown refund answer asks Yes or No: Yes deposits, No leaves everything; the question goes with the bank", function()
+		local shown, hidden
+		StaticPopupDialogs, YES, NO = {}, "Yes", "No"
+		StaticPopup_Show = function(which)
+			shown = which
+		end
+		StaticPopup_Hide = function(which)
+			hidden = which
+		end
+		openBank()
+		A.warband.refundable = nil
+		Fake.Fire(BW.depositButton, "OnClick")
+		local d = StaticPopupDialogs.SWAGBAG_DEPOSIT_UNSURE
+		assert.equal("SWAGBAG_DEPOSIT_UNSURE", shown)
+		assert.same({ SB.L.DEPOSIT_UNSURE_ASK, "Yes", "No" }, { d.text, d.button1, d.button2 })
+		assert.equal(SB.L.DEPOSIT_ASKED, BW.frame.title.text)
+		assert.equal(0, A.warbandDeposits, "nothing moves before the answer (No calls nothing)")
+		A.combat = true
+		d.OnAccept()
+		assert.equal(0, A.warbandDeposits, "Yes in combat still waits for combat to end")
+		assert.equal(SB.L.DEPOSIT_AFTER_COMBAT, BW.frame.title.text)
+		A.combat = false
+		d.OnAccept()
+		assert.equal(1, A.warbandDeposits, "Yes deposits, refunds unknown")
+		assert.equal(SB.L.DEPOSIT_STARTED, BW.frame.title.text)
+		shown = nil
+		A.warband.refundable = true
+		Fake.Fire(BW.depositButton, "OnClick")
+		assert.is_nil(shown, "a refund known to be lost is still refused without a question")
+		assert.equal(SB.L.DEPOSIT_REFUNDABLE, BW.frame.title.text)
+		closeBank()
+		assert.equal("SWAGBAG_DEPOSIT_UNSURE", hidden)
+		StaticPopupDialogs, StaticPopup_Show, StaticPopup_Hide, YES, NO = nil, nil, nil, nil, nil
 	end)
 
 	-- Never invisible but clickable. Mutation: create the button on Blizzard's bank (parent bf).

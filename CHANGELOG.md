@@ -2,6 +2,10 @@
 
 Newest first. Each "## <version>" section is the changelog CurseForge shows for that upload (scripts/release.sh reads it).
 
+## 0.16.1
+
+- **Deposit warbound asks instead of refusing:** when SwagBag can't tell whether an item in your bags can still be refunded, a window asks whether to deposit anyway. Yes deposits; No leaves everything in your bags. If SwagBag knows an item can still be refunded, it still refuses without asking, so you never lose a refund by accident.
+
 ## 0.16.0
 
 - **Search by armor type:** `plate`, `mail`, `cloth armor`, `leather armor`, `shield` (and `libram`, `idol`, `totem`, `sigil`, `relic` where the game has them).

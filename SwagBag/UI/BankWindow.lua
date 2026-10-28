@@ -786,9 +786,10 @@ frame.title:SetWordWrap(false)
 -- for it nor set). It sits on the Warband group's header in this window, so it shows in tiny and beside
 -- mode alike and hides with the window: never invisible but clickable. Every click answers in the title (P2).
 -- It refuses in combat (nothing is queued, like Sort), while the warband bank is locked, and when a
--- deposit would end an item's refund or that cannot be told: Blizzard's own button asks first, and
--- the "..." menu's Show Blizzard's bank entry shows it. SwagBag only reads the result: the items arrive in the
--- warband group's New like any deposit (spec 4.3).
+-- deposit would end an item's refund: Blizzard's own button asks first, and the "..." menu's Show Blizzard's bank
+-- entry shows it. When the refunds cannot be told (user request, 0.16.1), SwagBag asks Yes or No in a window and
+-- Yes deposits anyway; the question goes away with the bank. SwagBag only reads the result: the items arrive in
+-- the warband group's New like any deposit (spec 4.3).
 local function carried()
 	local A, list = SB.Adapter, {}
 	for _, bag in ipairs(A.GetBagIDs("bags")) do
@@ -800,7 +801,32 @@ local function carried()
 	return list
 end
 
-function BW.DepositWarband()
+local DEPOSIT_ASK = "SWAGBAG_DEPOSIT_UNSURE"
+
+-- Ask whether to deposit although the refunds cannot be told. Without Blizzard's dialogs: refused, as before.
+local function askDeposit()
+	if not (StaticPopupDialogs and StaticPopup_Show) then
+		BW.Flash(L.DEPOSIT_UNSURE)
+		return
+	end
+	StaticPopupDialogs[DEPOSIT_ASK] = StaticPopupDialogs[DEPOSIT_ASK] or {
+		text = L.DEPOSIT_UNSURE_ASK,
+		button1 = YES,
+		button2 = NO,
+		OnAccept = Guard("bank.depositAnyway", function()
+			BW.DepositWarband(true)
+		end, "bank"),
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+	}
+	StaticPopup_Show(DEPOSIT_ASK)
+	BW.Flash(L.DEPOSIT_ASKED)
+end
+
+-- refundsAnyway: the player said Yes to depositing although the refunds cannot be told (combat, a locked bank
+-- and an item known to be refundable still refuse).
+function BW.DepositWarband(refundsAnyway)
 	local A = SB.Adapter
 	if A.InCombat() then
 		BW.Flash(L.DEPOSIT_AFTER_COMBAT)
@@ -813,8 +839,11 @@ function BW.DepositWarband()
 		return false
 	end
 	local refundable = A.RefundableForWarband(carried())
-	if refundable ~= false then -- true, or nil: it cannot be told
-		BW.Flash(refundable and L.DEPOSIT_REFUNDABLE or L.DEPOSIT_UNSURE)
+	if refundable == true then
+		BW.Flash(L.DEPOSIT_REFUNDABLE)
+		return false
+	elseif refundable == nil and not refundsAnyway then -- it cannot be told: the player decides
+		askDeposit()
 		return false
 	end
 	local ok, err = A.DepositWarband()
@@ -1273,6 +1302,9 @@ end, "bank")
 
 SB.On("BANKFRAME_CLOSED", function()
 	BW.OnBankClosed()
+	if StaticPopup_Hide then
+		StaticPopup_Hide(DEPOSIT_ASK) -- the bank is gone: its question goes with it
+	end
 end, "bank")
 
 -- The item tooltip of a carried item says where right-click sends it, or that the bank refuses it.
