@@ -1,4 +1,4 @@
--- SwagBag bags window (spec F1, F3). Three views, switched with the header button
+-- SwagBag bags window (spec F1, F3). Four views, switched with the header button
 -- without /reload, in or out of combat (AC3.1):
 --   "sections" (default)  category sections from Engine/Layout.lua: New on top, Free
 --                         at the bottom, collapsible headers remembered per character
@@ -8,6 +8,10 @@
 --                         Engine/Sort.lua. Same layout engine, so New, Free, placeholders,
 --                         collapse, focus modes and the hover guard work exactly as in "sections"
 --   "grid"                one grid in physical slot order (AC3.6)
+--   "bags"                0.17 (spec 4): one section per equipped bag (Engine/PerBag.lua), its header the
+--                         bag's name, slots and free slots, its slots in physical order. A physical view like
+--                         the grid (no New, Free, stack grouping, free tile or focus; bag updates repaint in
+--                         place); a header click folds that bag, saved per character with the sections' folds
 -- Movable, Ctrl+wheel scale 50-200 %, remembers its position per character, closes on
 -- Esc, scrolls with a clamped offset (spec 4.4), and stays hidden until laid out.
 local _, SB = ...
@@ -21,7 +25,8 @@ local W = {
 	stats = {},
 	sortSawUpdate = false, -- a bag update arrived since the pending Sort began
 	sortPending = false, -- a Sort was pressed and its bag updates are still settling
-	state = nil, -- sections view: Layout state while open (nil when closed or in grid view)
+	state = nil, -- sections view: Layout state while open (nil when closed or in the grid or bags view)
+	perBag = nil, -- bags view: the last PerBag.Compute result while drawn (its headers are relabelled in place)
 	pos = nil, -- sections view: last Layout.Position result
 	view = nil, -- sections view: the collapsed lookup W.pos was built with (what is drawn, W4-1)
 	order = nil, -- sections view: the section order W.pos was built with (what is drawn, W4-1)
@@ -124,6 +129,7 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 		return
 	end
 	W.state, W.pos, W.view, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, nil, false, false, false
+	W.perBag = nil
 	W.order, W.areaHeld, W.scaleWarned = nil, false, false
 	W.ClearDropGuard()
 	if SB.Focus then
@@ -357,14 +363,15 @@ end, "bags"))
 ---------------------------------------------------------------------------
 -- Views and collapse state
 ---------------------------------------------------------------------------
-W.VIEWS = { "sections", "list", "grid" } -- the view button's order: each click shows the next one
-local VIEW_NEXT = { sections = "list", list = "grid", grid = "sections" }
-local VIEW_BUTTON = { sections = L.VIEW_TO_SECTIONS, list = L.VIEW_TO_LIST, grid = L.VIEW_TO_GRID }
-local VIEW_FLASH = { sections = L.VIEW_SECTIONS, list = L.VIEW_LIST, grid = L.VIEW_GRID }
+W.VIEWS = { "sections", "list", "grid", "bags" } -- the view button's order: each click shows the next one
+local VIEW_NEXT = { sections = "list", list = "grid", grid = "bags", bags = "sections" }
+local VIEW_BUTTON = { sections = L.VIEW_TO_SECTIONS, list = L.VIEW_TO_LIST, grid = L.VIEW_TO_GRID,
+	bags = L.VIEW_TO_BAGS }
+local VIEW_FLASH = { sections = L.VIEW_SECTIONS, list = L.VIEW_LIST, grid = L.VIEW_GRID, bags = L.VIEW_BAGS }
 
 function W.View()
 	local v = SB.Config.Get("bags.view")
-	if v == "grid" or v == "list" then
+	if v == "grid" or v == "list" or v == "bags" then
 		return v
 	end
 	return "sections"
@@ -372,6 +379,12 @@ end
 
 local function isList()
 	return W.drawn == "list"
+end
+
+-- The views in physical slot order (the grid, and the per-bag view): no Layout state, so no New, Free,
+-- stack grouping, free tile or focus, and bag updates repaint in place.
+local function physical(view)
+	return view == "grid" or view == "bags"
 end
 
 -- [sectionId] = true for collapsed sections, saved per character (AC3.2).
@@ -472,7 +485,7 @@ local function titleButton(text, label, onClick, width)
 end
 
 -- Config is not initialized while this file loads, so the real label is set in W.Open(). The button
--- names the view a click shows next (sections -> list -> grid -> sections).
+-- names the view a click shows next (sections -> list -> grid -> bags -> sections).
 W.viewButton = titleButton(L.VIEW_TO_LIST, "bags.viewButton", function()
 	W.ToggleView()
 end)
@@ -668,9 +681,9 @@ local function paintStacks(pos)
 end
 
 -- What makes two stacks one icon (Engine/Stacks.lua), or nil: nothing groups while bags.stacks is
--- "all", without Engine/Stacks.lua, or in the grid (the physical order).
+-- "all", without Engine/Stacks.lua, or in the grid or bags view (the physical order).
 function W.StackKey(record)
-	if SB.Stacks and SB.Stacks.Enabled() and W.drawn ~= "grid" then
+	if SB.Stacks and SB.Stacks.Enabled() and not physical(W.drawn) then
 		return SB.Stacks.Key(record)
 	end
 	return nil
@@ -694,6 +707,49 @@ local function layoutGrid(bags)
 	paintStacks(nil)
 	paintTiles(nil)
 	return g.width, g.height
+end
+
+-- The bags view's header for one PerBag header entry: the bag's name (L.PERBAG_BAG when it cannot be
+-- read), its slots and its empty slots (from the records, so it follows every repaint).
+local function perBagLabel(h)
+	local free = 0
+	for slot = 1, h.size do
+		if not (W.records[h.bag] and W.records[h.bag][slot]) then
+			free = free + 1
+		end
+	end
+	return SB.PerBag.Label(SB.Adapter.BagName(h.bag) or L.PERBAG_BAG:format(h.bag), h.size, free, h.collapsed)
+end
+
+-- The bags view (0.17, spec 4): one section per bag, physical order, drawn like the grid (every button at
+-- scale 1, painted and described; no stack grouping, no free tile). A folded bag's buttons are hidden and
+-- its header stays. Headers come from SB.SectionHeaders (W.Layout released this window's first).
+local function layoutPerBag(bags)
+	local A, B, H = SB.Adapter, SB.Buttons, SB.SectionHeaders
+	local pos = SB.PerBag.Compute(bags, { columns = columns(), size = W.SLOT, gap = W.GAP, padding = W.PAD,
+		header = W.SECTION_HEADER, sectionGap = W.SECTION_GAP }, W.Collapsed())
+	W.cells = pos.cells
+	for _, c in ipairs(pos.cells) do
+		local button = B.Get(c.bag, c.slot)
+		if button then
+			setScale(button, 1)
+			B.Paint(button, A.GetSlot(c.bag, c.slot))
+			describe(c.bag, c.slot)
+			if c.shown then
+				place(button, c.x, c.y)
+				button:Show()
+			else
+				button:Hide()
+			end
+		end
+	end
+	paintStacks(nil)
+	paintTiles(nil)
+	W.perBag = pos
+	for _, h in ipairs(pos.headers) do
+		H.Acquire(child, h.id, perBagLabel(h), W.PAD, h.y, pos.width - 2 * W.PAD)
+	end
+	return pos.width, pos.height
 end
 
 -- A cell whose slot is past the bag's current size (the bag shrank and the "removed" change
@@ -773,10 +829,16 @@ end
 -- A stack's count or an item's price can change a section's total with no button moving:
 -- set the header texts in place (only those that differ); nothing is released or acquired.
 function W.RefreshHeaders()
+	local H = SB.SectionHeaders
+	if W.drawn == "bags" and W.perBag and frame:IsShown() then -- the bags view: each bag's free count
+		for _, h in ipairs(W.perBag.headers) do
+			H.SetLabel(child, h.id, perBagLabel(h))
+		end
+		return
+	end
 	if not (W.state and W.pos and frame:IsShown()) then
 		return
 	end
-	local H = SB.SectionHeaders
 	local labels = headerLabels(W.pos)
 	for i, h in ipairs(W.pos.headers) do
 		H.SetLabel(child, h.id, labels[i])
@@ -992,13 +1054,15 @@ function W.Layout(reason)
 		W.columnsBar:Hide()
 	end
 	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -W.HeaderHeight())
-	W.records, W.state, W.pos, W.view, W.order, W.areaHeld = {}, nil, nil, nil, nil, false
+	W.records, W.state, W.pos, W.view, W.order, W.areaHeld, W.perBag = {}, nil, nil, nil, nil, false, nil
 	W.pendingNew = {}
 	B.ReleasePlaceholders(child)
 	SB.SectionHeaders.ReleaseAll(child)
 	local width, height
 	if W.drawn == "grid" then
 		width, height = layoutGrid(bags)
+	elseif W.drawn == "bags" then
+		width, height = layoutPerBag(bags)
 	else
 		width, height = layoutSections(bags)
 	end
@@ -1235,7 +1299,7 @@ function W.RequestLayout(reason)
 	return true
 end
 
--- view: "sections" | "list" | "grid". Returns true when the setting changed (the window regroups
+-- view: "sections" | "list" | "grid" | "bags". Returns true when the setting changed (the window regroups
 -- now, or once the mouse leaves the items), false (with a title flash) while read-only.
 -- quiet: the caller answers itself (/swagbag view, the Settings row), so a cut-short flash adds no
 -- chat line (ruling W5-4).
@@ -1364,8 +1428,41 @@ function W.DropOnSection(id)
 	return true
 end
 
+-- The bags view's headers ("bag:N", Engine/PerBag.lua) have no category: a left-click folds or opens that
+-- bag (saved per character, keyed by bag ID) through a full layout held like every layout (P5: it waits
+-- while the mouse is over the items or anything is on the cursor, and says so in the title, P2). It flips
+-- what is drawn, as W.ToggleSection does. A right-click, Shift+right-click, a drop and the hover hint do
+-- nothing (no section actions, no manual list); an item on the cursor stays there.
+local function isBagHeader(id)
+	return type(id) == "string" and id:sub(1, 4) == "bag:"
+end
+
+local function clickBagHeader(id, mouseButton)
+	if mouseButton == "RightButton" or SB.Adapter.CursorItem() then
+		return
+	end
+	local drawn
+	for _, h in ipairs(W.perBag and W.perBag.headers or {}) do
+		if h.id == id then
+			drawn = h
+		end
+	end
+	if not drawn then
+		return
+	end
+	W.Collapsed()[id] = (not drawn.collapsed) or nil
+	if not W.RequestLayout("collapse") then
+		W.Flash((drawn.collapsed and L.HEADER_FLASH_OPEN or L.HEADER_FLASH_COLLAPSED):format(
+			SB.Adapter.BagName(drawn.bag) or L.PERBAG_BAG:format(drawn.bag)))
+	end
+end
+
 -- Week 7 (user pick 6): Shift+right-click opens the section actions (UI/SectionActions.lua).
 SB.SectionHeaders.onClick = function(id, mouseButton, header)
+	if isBagHeader(id) then
+		clickBagHeader(id, mouseButton)
+		return
+	end
 	if dropGuard == id then
 		return
 	end
@@ -1380,12 +1477,12 @@ SB.SectionHeaders.onClick = function(id, mouseButton, header)
 	end
 end
 SB.SectionHeaders.onDrop = function(id)
-	if dropGuard ~= id then
+	if dropGuard ~= id and not isBagHeader(id) then
 		W.DropOnSection(id)
 	end
 end
 SB.SectionHeaders.onEnter = function(id, header)
-	if SB.SectionActions then
+	if SB.SectionActions and not isBagHeader(id) then
 		SB.SectionActions.Hint(id, header)
 	end
 end
@@ -1545,7 +1642,8 @@ end
 
 ---------------------------------------------------------------------------
 -- Live updates while open (spec 4.3)
---   grid view:     repaint in place; a bag that changes size lays the grid out again
+--   grid and bags views: repaint in place (the bags view's headers follow the free count); a bag that
+--                  changes size lays the view out again
 --   sections view: count, lock, cooldown and loaded data repaint in place; an emptied
 --                  slot or a different item goes through Layout.Apply (placeholder, New,
 --                  Free); a bag that grows or shrinks adds or removes Free slots. A button
@@ -1713,7 +1811,7 @@ SB.Inventory.OnChanged(Guard("bags.inventory", function(mask, changes)
 		end, "bags")
 	end
 	if not W.state and Inv.Has(mask, Inv.R.SIZE) then
-		W.RequestLayout("size") -- grid view: the grid is the physical order; guarded by rule 5
+		W.RequestLayout("size") -- grid or bags view: the physical order; guarded by rule 5
 		return
 	end
 	local touched = false
@@ -1792,8 +1890,9 @@ end, "bags"))
 
 -- A focus mode switched, paused or resumed, or a focus setting changed (Engine/Focus.lua): the
 -- title and the Pause button follow at once; the sections re-stack, held back while a button
--- that would move is under the mouse or anything is on the cursor (CursorBusy). In the grid view there are no
--- sections, so only the title changes. A closed window picks the state up on its next open.
+-- that would move is under the mouse or anything is on the cursor (CursorBusy). In the grid and bags
+-- views there are no category sections (a mode never folds or reorders a bag), so only the title
+-- changes. A closed window picks the state up on its next open.
 SB.On("SB_FOCUS_CHANGED", function()
 	W.RefreshTitle()
 	W.RefreshModeButton()
@@ -1838,7 +1937,7 @@ SB.Slash.Register("new", L.HELP_NEW, function(arg)
 	return arg == "always" and L.NEW_MODE_ALWAYS or L.NEW_MODE_AUTO
 end, "bags")
 
--- /swagbag view [sections|list|grid]: show or switch the bags' view (the view button's three views).
+-- /swagbag view [sections|list|grid|bags]: show or switch the bags' view (the view button's four views).
 SB.Slash.Register("view", L.HELP_VIEW, function(arg)
 	arg = (arg or ""):lower()
 	if not VIEW_NEXT[arg] then

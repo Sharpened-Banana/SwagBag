@@ -103,6 +103,14 @@ describe("Profiles (week 7)", function()
 			{ itemID = 211880, threshold = 5 } }, data.watch)
 	end)
 
+	-- 0.17: the bags' per-bag view is a word the share string accepts. Mutation: drop "bags" from
+	-- VALID["bags.view"] (the player's own string would be refused whole).
+	it("bags.view \"bags\" round-trips", function()
+		C.Set("bags.view", "bags")
+		local data = assert(Pr.Parse(Pr.Export(false)))
+		assert.equal("bags", data.settings["bags.view"])
+	end)
+
 	-- 0.13.1. Mutation: drop ["bank.groupColors"] from Profiles.LABELS (the preview would show a dotted path), or
 	-- drop `groupColors = true` from Config.Defaults (no default to export against).
 	it("bank.groupColors round-trips false and is named in the preview", function()

@@ -80,7 +80,7 @@ end
 local COLUMNS, SECTION_IDS = range(4, 40, true), pattern("^[%w_,]*$")
 local VALID = {
 	["bags.columns"] = COLUMNS, ["bags.scale"] = range(0.5, 2), ["bags.newRows"] = range(0, 10, true),
-	["bags.view"] = words("sections", "grid", "list"), ["bags.stacks"] = words("one", "all"),
+	["bags.view"] = words("sections", "grid", "list", "bags"), ["bags.stacks"] = words("one", "all"),
 	["bags.list.sort"] = words("value", "name", "count", "ilvl"),
 	["bags.footer.entries"] = pattern("^[%a,%-]*$"),
 	["bank.blizzardFrame"] = words("tiny", "beside"), ["bank.show"] = words("one", "both"),

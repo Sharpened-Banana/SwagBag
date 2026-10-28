@@ -8,7 +8,7 @@ local FILES = {
 	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
 	"SwagBag/Core/Slash.lua", "SwagBag/Engine/OverlayData.lua",
 	"SwagBag/Engine/Items.lua", "SwagBag/Engine/Inventory.lua", "SwagBag/Engine/GridLayout.lua",
-	"SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
+	"SwagBag/Engine/PerBag.lua", "SwagBag/Engine/Query/Lexer.lua", "SwagBag/Engine/Query/Parser.lua", "SwagBag/Engine/Query/Query.lua",
 	"SwagBag/Engine/Keywords.lua", "SwagBag/Engine/Search.lua", "SwagBag/Engine/CategoryDefaults.lua",
 	"SwagBag/Engine/Categories.lua", "SwagBag/Engine/Categorizer.lua", "SwagBag/Engine/Layout.lua",
 	"SwagBag/Engine/Prices.lua", "SwagBag/Providers/Auctionator.lua", "SwagBag/Engine/Sort.lua",
@@ -222,7 +222,7 @@ describe("BagsWindow category view", function()
 		assert.falsy(B.Get(0, 4).shown)
 	end)
 
-	-- Week 5: the button shows the next view, sections -> list -> grid -> sections.
+	-- Week 5: the button shows the next view, sections -> list -> grid -> bags (0.17) -> sections.
 	it("the header button switches to the list, the grid and back without /reload, also in combat (AC3.1)", function()
 		W.Open()
 		A.combat = true
@@ -232,10 +232,14 @@ describe("BagsWindow category view", function()
 		assert.equal(SB.L.VIEW_LIST, W.frame.title.text)
 		W.viewButton.scripts.OnClick(W.viewButton)
 		assert.equal("grid", SB.Config.Get("bags.view"))
-		assert.equal(SB.L.VIEW_TO_SECTIONS, W.viewButton.text)
+		assert.equal(SB.L.VIEW_TO_BAGS, W.viewButton.text)
 		assert.equal(SB.L.VIEW_GRID, W.frame.title.text)
 		assert.same({ 4, -4 }, at(0, 1), "grid: physical order")
 		assert.same({}, headers())
+		W.viewButton.scripts.OnClick(W.viewButton)
+		assert.equal("bags", SB.Config.Get("bags.view"))
+		assert.equal(SB.L.VIEW_TO_SECTIONS, W.viewButton.text)
+		assert.same({ "- Backpack · 16 slots · 10 free" }, headers())
 		W.viewButton.scripts.OnClick(W.viewButton)
 		assert.equal("sections", SB.Config.Get("bags.view"))
 		assert.equal(SB.L.VIEW_TO_LIST, W.viewButton.text)
@@ -429,8 +433,11 @@ describe("BagsWindow category view", function()
 	it("the view toggle in the grid works in combat and the button label follows the saved view on Open", function()
 		SB.Config.Set("bags.view", "grid")
 		W.Open()
-		assert.equal(SB.L.VIEW_TO_SECTIONS, W.viewButton.text)
+		assert.equal(SB.L.VIEW_TO_BAGS, W.viewButton.text)
 		A.combat = true
+		W.viewButton.scripts.OnClick(W.viewButton)
+		assert.equal(1, #headers(), "the bags view: one section for the backpack")
+		assert.equal(SB.L.VIEW_TO_SECTIONS, W.viewButton.text)
 		W.viewButton.scripts.OnClick(W.viewButton)
 		assert.equal(7, #headers())
 		assert.equal(SB.L.VIEW_TO_LIST, W.viewButton.text)
