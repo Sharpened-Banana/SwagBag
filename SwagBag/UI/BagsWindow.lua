@@ -724,10 +724,14 @@ end
 -- The bags view (0.17, spec 4): one section per bag, physical order, drawn like the grid (every button at
 -- scale 1, painted and described; no stack grouping, no free tile). A folded bag's buttons are hidden and
 -- its header stays. Headers come from SB.SectionHeaders (W.Layout released this window's first).
+local function perBagPosition(bags, collapsed)
+	return SB.PerBag.Compute(bags, { columns = columns(), size = W.SLOT, gap = W.GAP, padding = W.PAD,
+		header = W.SECTION_HEADER, sectionGap = W.SECTION_GAP }, collapsed)
+end
+
 local function layoutPerBag(bags)
 	local A, B, H = SB.Adapter, SB.Buttons, SB.SectionHeaders
-	local pos = SB.PerBag.Compute(bags, { columns = columns(), size = W.SLOT, gap = W.GAP, padding = W.PAD,
-		header = W.SECTION_HEADER, sectionGap = W.SECTION_GAP }, W.Collapsed())
+	local pos = perBagPosition(bags, W.Collapsed())
 	W.cells = pos.cells
 	for _, c in ipairs(pos.cells) do
 		local button = B.Get(c.bag, c.slot)
@@ -1429,12 +1433,42 @@ function W.DropOnSection(id)
 end
 
 -- The bags view's headers ("bag:N", Engine/PerBag.lua) have no category: a left-click folds or opens that
--- bag (saved per character, keyed by bag ID) through a full layout held like every layout (P5: it waits
--- while the mouse is over the items or anything is on the cursor, and says so in the title, P2). It flips
--- what is drawn, as W.ToggleSection does. A right-click, Shift+right-click, a drop and the hover hint do
--- nothing (no section actions, no manual list); an item on the cursor stays there.
+-- bag (saved per character, keyed by bag ID). It flips what is drawn, as W.ToggleSection does. Like the
+-- category view's re-stack it lays out at once unless that would move something under the pointer (P5):
+-- anything on the cursor, the clicked header itself moving (a held size or bag-swap layout still waits),
+-- or a button under the mouse that would move or hide. Then the held W.RequestLayout applies it once the
+-- mouse leaves the items, and the title says so (P2). Folding bag N never moves header N or anything
+-- above it. A right-click, Shift+right-click, a drop and the hover hint do nothing (no section actions,
+-- no manual list); an item on the cursor stays there.
 local function isBagHeader(id)
 	return type(id) == "string" and id:sub(1, 4) == "bag:"
+end
+
+local function perBagHeaderY(pos, id)
+	for _, h in ipairs(pos.headers) do
+		if h.id == id then
+			return h.y
+		end
+	end
+end
+
+-- True when laying out `pos` now moves nothing under the pointer (see above).
+local function perBagFoldSafe(id, pos)
+	if SB.Adapter.CursorBusy() or perBagHeaderY(W.perBag, id) ~= perBagHeaderY(pos, id) then
+		return false
+	end
+	local drawn = {}
+	for _, c in ipairs(W.perBag.cells) do
+		drawn[SB.Layout.Key(c.bag, c.slot)] = c
+	end
+	for _, c in ipairs(pos.cells) do
+		local d = drawn[SB.Layout.Key(c.bag, c.slot)]
+		local moves = not d or d.x ~= c.x or d.y ~= c.y or d.shown ~= c.shown
+		if moves and buttonBusy(c.bag, c.slot) then
+			return false
+		end
+	end
+	return true
 end
 
 local function clickBagHeader(id, mouseButton)
@@ -1450,8 +1484,11 @@ local function clickBagHeader(id, mouseButton)
 	if not drawn then
 		return
 	end
-	W.Collapsed()[id] = (not drawn.collapsed) or nil
-	if not W.RequestLayout("collapse") then
+	local set = W.Collapsed()
+	set[id] = (not drawn.collapsed) or nil
+	if perBagFoldSafe(id, perBagPosition(bagList(), set)) then
+		W.Layout("collapse")
+	elseif not W.RequestLayout("collapse") then
 		W.Flash((drawn.collapsed and L.HEADER_FLASH_OPEN or L.HEADER_FLASH_COLLAPSED):format(
 			SB.Adapter.BagName(drawn.bag) or L.PERBAG_BAG:format(drawn.bag)))
 	end

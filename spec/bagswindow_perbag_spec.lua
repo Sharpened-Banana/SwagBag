@@ -267,17 +267,63 @@ describe("BagsWindow per-bag view", function()
 		assert.truthy(B.Get(1, 1).shown)
 	end)
 
-	it("a header click waits while the mouse is over the items, then folds", function()
+	-- Fix round 1: the header sits over the items, so the mouse there alone never holds a fold (as the
+	-- category view's re-stack). Mutation: in clickBagHeader, always W.RequestLayout("collapse").
+	it("a header click with the mouse over the header (no button under it) folds at once", function()
 		W.Open()
 		W.scroll.mouseOver = true
 		header("bag:1").scripts.OnClick(header("bag:1"), "LeftButton")
-		assert.truthy(B.Get(1, 1).shown, "held: nothing moves under the mouse")
-		assert.equal(SB.L.HEADER_FLASH_COLLAPSED:format("Wildercloth Bag"), W.frame.title.text)
-		A.Advance(W.RETRY)
-		assert.truthy(B.Get(1, 1).shown)
+		assert.falsy(B.Get(1, 1).shown, "folded at once")
+		assert.equal("+ Wildercloth Bag · 20 slots · 18 free", header("bag:1").text.text)
+		header("bag:0").scripts.OnClick(header("bag:0"), "LeftButton")
+		assert.falsy(B.Get(0, 1).shown, "the top bag folds at once too")
+	end)
+
+	-- Mutation: drop the CursorBusy check in perBagFoldSafe.
+	it("a header click with anything on the cursor waits", function()
+		W.Open()
+		A.cursorOther = "targeting" -- a spell waiting for its target (an item would be a drop: nothing)
+		W.scroll.mouseOver = true
+		header("bag:1").scripts.OnClick(header("bag:1"), "LeftButton")
+		assert.truthy(B.Get(1, 1).shown, "held")
+		A.cursorOther = nil
 		W.scroll.mouseOver = false
 		A.Advance(W.RETRY)
 		assert.falsy(B.Get(1, 1).shown)
+	end)
+
+	-- Mutation: drop the buttonBusy check in perBagFoldSafe.
+	it("a header click waits while a button that would move is under the mouse, then folds", function()
+		W.Open()
+		local below = B.Get(1, 1)
+		local y = below.y
+		W.scroll.mouseOver = true
+		below.mouseOver = true -- bag 1 moves up when the backpack folds
+		header("bag:0").scripts.OnClick(header("bag:0"), "LeftButton")
+		assert.truthy(B.Get(0, 1).shown, "held: nothing moves under the mouse")
+		assert.equal(y, below.y)
+		assert.equal(SB.L.HEADER_FLASH_COLLAPSED:format("Backpack"), W.frame.title.text)
+		A.Advance(W.RETRY)
+		assert.truthy(B.Get(0, 1).shown)
+		below.mouseOver = false
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.falsy(B.Get(0, 1).shown)
+		assert.truthy(below.y > y)
+	end)
+
+	-- Mutation: drop the header-y check in perBagFoldSafe (a held bag-size layout would be drawn by the click).
+	it("a header click waits while its own header would move (a held size change above it)", function()
+		W.Open()
+		W.scroll.mouseOver = true
+		A.SetBagSize(0, 28) -- the backpack grows a row: bag 1's header moves down, held under the mouse
+		bagUpdate(0)
+		header("bag:1").scripts.OnClick(header("bag:1"), "LeftButton")
+		assert.truthy(B.Get(1, 1).shown, "held")
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.falsy(B.Get(1, 1).shown)
+		assert.equal("- Backpack · 28 slots · 15 free", header("bag:0").text.text)
 	end)
 
 	it("a 'bag:' header right-click / drop / Shift+right-click does nothing", function()
