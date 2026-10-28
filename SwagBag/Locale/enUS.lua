@@ -1455,3 +1455,9 @@ L.PASTE_NOTE_ALSO = "\"%s\" is a SwagBag keyword and matches only that (Baganato
 	.. " with it: %s)."
 L.PASTE_NOTE_DIFFERENT = "\"%s\" means something else in SwagBag (upgrade: has an upgrade track; bop: binds when"
 	.. " picked up). Baganator: an upgrade for you; currently bound."
+
+-- Per-bag view (0.17): Engine/PerBag.lua, Core/Adapter.lua
+L.PERBAG_HEADER = "%s · %d slots · %d free"
+L.PERBAG_BACKPACK = "Backpack"
+L.PERBAG_BAG = "Bag %d"
+L.PERBAG_TAB = "Tab %d"

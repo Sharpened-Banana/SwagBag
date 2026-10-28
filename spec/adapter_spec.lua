@@ -604,3 +604,35 @@ describe("Adapter lock-warning helpers (week 10)", function()
 		assert.falsy(A.IsScrapper(10))
 	end)
 end)
+
+describe("Adapter.BagName (real adapter, stubbed globals)", function()
+	local A
+	before_each(function()
+		local SB = { L = { PERBAG_BACKPACK = "Backpack" } }
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+	end)
+
+	after_each(function()
+		C_Container, issecretvalue = nil, nil
+	end)
+
+	-- Mutation: ask the game for bag 0's name instead of using L.PERBAG_BACKPACK.
+	it("BagName: backpack, a named bag, a secret name", function()
+		assert.is_nil(A.BagName(1), "no API")
+		C_Container = { GetBagName = function(bag) return bag == 3 and "Embroidered Bag" or nil end }
+		assert.equal("Backpack", A.BagName(0))
+		assert.equal("Embroidered Bag", A.BagName(3))
+		assert.is_nil(A.BagName(2), "no bag equipped")
+		C_Container.GetBagName = function() return "" end
+		assert.is_nil(A.BagName(2), "empty text")
+		C_Container.GetBagName = function() return 5 end
+		assert.is_nil(A.BagName(2), "not text")
+		C_Container.GetBagName = function() error("boom") end
+		assert.is_nil(A.BagName(2))
+		C_Container.GetBagName = function() return "Hidden" end
+		issecretvalue = function(v) return v == "Hidden" end
+		assert.is_nil(A.BagName(2), "a secret name")
+		assert.equal("Backpack", A.BagName(0), "the backpack name is ours")
+	end)
+end)

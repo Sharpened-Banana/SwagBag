@@ -535,6 +535,26 @@ function M.AddContainers(m)
 		return m.sizes[bag] or 0
 	end
 
+	-- Bag and bank tab names for the per-bag view: m.bagNames[bag] = name; m.tabNames = { bank = { [tabID] = name },
+	-- warband = {} }, keyed by the same IDs m.bagIDs lists for the tabs. Bag 0 is always "Backpack".
+	m.bagNames = {}
+	m.tabNames = { bank = {}, warband = {} }
+
+	function m.BagName(bag)
+		if bag == 0 then
+			return "Backpack"
+		end
+		return m.bagNames[bag]
+	end
+
+	function m.BankTabNames(kind)
+		local out = {}
+		for id, name in pairs(m.tabNames[kind] or {}) do
+			out[id] = name
+		end
+		return out
+	end
+
 	-- A slot put with { secretID = true } reads as empty, as the real Adapter reads an item whose ID is a secret
 	-- value (final review item 6: in an instance).
 	function m.GetSlot(bag, slot)

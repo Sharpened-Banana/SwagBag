@@ -457,6 +457,47 @@ function A.GetBagIDs(kind)
 	return out
 end
 
+-- A bag's name for the per-bag view: bag 0 is L.PERBAG_BACKPACK; any other bag asks the game. nil when the
+-- game has no name (no bag equipped), the name is not text or is secret, or the call fails (the caller falls
+-- back to L.PERBAG_BAG).
+function A.BagName(bag)
+	if bag == 0 then
+		return SB.L.PERBAG_BACKPACK
+	end
+	if not (C_Container and C_Container.GetBagName) then
+		return nil
+	end
+	local ok, name = pcall(C_Container.GetBagName, bag)
+	if ok and type(name) == "string" and name ~= "" and not isSecret(name) then
+		return name
+	end
+	return nil
+end
+
+-- Names of the purchased bank tabs: { [tabID] = name }. kind: "bank" | "warband". A tab with no readable
+-- name (missing, empty, secret) is absent; the caller falls back to L.PERBAG_TAB.
+function A.BankTabNames(kind)
+	local bt = Enum and Enum.BankType
+	local bankType = bt and ((kind == "bank" and bt.Character) or (kind == "warband" and bt.Account))
+	local out = {}
+	if not bankType or not (C_Bank and C_Bank.FetchPurchasedBankTabData) then
+		return out
+	end
+	local ok, tabs = pcall(C_Bank.FetchPurchasedBankTabData, bankType)
+	if ok and type(tabs) == "table" then
+		for _, t in ipairs(tabs) do
+			if type(t) == "table" then
+				local id, name = t.ID, t.name
+				if type(id) == "number" and not isSecret(id) and type(name) == "string" and name ~= ""
+					and not isSecret(name) then
+					out[id] = name
+				end
+			end
+		end
+	end
+	return out
+end
+
 function A.NumSlots(bag)
 	local ok, n = pcall(C_Container.GetContainerNumSlots, bag)
 	if ok and type(n) == "number" and not isSecret(n) then
@@ -2248,6 +2289,7 @@ A.CHECKS = {
 	{ path = "C_Container.GetContainerItemInfo", window = "bags", required = true },
 	{ path = "C_Container.GetContainerItemCooldown", window = "bags", required = true },
 	{ path = "C_Container.GetContainerNumFreeSlots", window = "bags", required = false },
+	{ path = "C_Container.GetBagName", window = "bags", required = false },
 	{ path = "C_Container.GetContainerItemEquipmentSetInfo", window = "bags", required = false },
 	{ path = "C_Container.GetContainerItemQuestInfo", window = "bags", required = false },
 	{ path = "C_Container.SortBags", window = "bags", required = false },
@@ -2311,6 +2353,7 @@ A.CHECKS = {
 	{ path = "Enum.BankType.Character", value = 0, window = "bank", required = true },
 	{ path = "Enum.BankType.Account", value = 2, window = "bank", required = true },
 	{ path = "C_Bank.FetchPurchasedBankTabIDs", window = "bank", required = true },
+	{ path = "C_Bank.FetchPurchasedBankTabData", window = "bank", required = false },
 	{ path = "BankFrame", window = "bank", required = true },
 	{ path = "BankFrame.GetActiveBankType", window = "bank", required = true },
 	{ path = "BankFrame.TabSystem", window = "bank", required = true },

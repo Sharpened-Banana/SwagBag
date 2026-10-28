@@ -144,3 +144,40 @@ describe("Adapter warband deposit (real adapter, stubbed globals)", function()
 		assert.equal(false, A.ShowWarbandMoneyPopup("deposit"))
 	end)
 end)
+
+describe("Adapter.BankTabNames (real adapter, stubbed globals)", function()
+	local A
+	before_each(function()
+		local SB = {}
+		assert(loadfile("SwagBag/Core/Adapter.lua"))("SwagBag", SB)
+		A = SB.Adapter
+		Enum = { BankType = { Character = 0, Account = 2 } }
+	end)
+
+	after_each(function()
+		C_Bank, Enum, issecretvalue = nil, nil, nil
+	end)
+
+	-- Mutation: ask for the character bank whatever the kind.
+	it("BankTabNames: names by tab ID, a secret name left out", function()
+		assert.same({}, A.BankTabNames("bank"), "no API")
+		local asked = {}
+		C_Bank = { FetchPurchasedBankTabData = function(bankType)
+			asked[#asked + 1] = bankType
+			if bankType == 2 then
+				return { { ID = 15, name = "Alts" } }
+			end
+			return { { ID = 6, name = "Potions" }, { ID = 7, name = "Hidden" }, { ID = 8 },
+				{ ID = 9, name = "" }, { name = "No ID" }, "junk" }
+		end }
+		issecretvalue = function(v) return v == "Hidden" end
+		assert.same({ [6] = "Potions" }, A.BankTabNames("bank"))
+		assert.same({ [15] = "Alts" }, A.BankTabNames("warband"))
+		assert.same({ 0, 2 }, asked)
+		assert.same({}, A.BankTabNames("bags"), "not a bank kind")
+		C_Bank.FetchPurchasedBankTabData = function() error("boom") end
+		assert.same({}, A.BankTabNames("bank"))
+		C_Bank.FetchPurchasedBankTabData = function() return nil end
+		assert.same({}, A.BankTabNames("bank"))
+	end)
+end)
