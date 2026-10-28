@@ -362,6 +362,41 @@ local function barFrame()
 	return F.bar
 end
 
+-- Below the tooltip's own lines: a blank line, then every character (AltData.Wealth) from build(list) ->
+-- rows[, total, warband], the value of a row from text(row), class-coloured names. Gold also gets the
+-- Warband bank and the total. Only the current character listed: the gray hint instead.
+local function addCharacters(T, build, text)
+	local AD = SB.AltData
+	if not (AD and SB.Wealth) then
+		return
+	end
+	local list = AD.Wealth()
+	if type(list) ~= "table" then
+		return
+	end
+	T:AddLine(" ")
+	if #list <= 1 then
+		T:AddLine(L.FOOTER_ALTS_NONE, 0.6, 0.6, 0.6)
+		return
+	end
+	local rows, total, warband = build(list)
+	for _, row in ipairs(rows) do
+		if row.more then
+			T:AddLine(L.FOOTER_ALTS_MORE:format(row.more), 0.6, 0.6, 0.6)
+		else
+			local colour = SB.Adapter.ClassColour(row.class)
+			local name = colour and (colour .. row.name .. "|r") or row.name
+			T:AddDoubleLine(name, text(row), 1, 1, 1, 1, 1, 1)
+		end
+	end
+	if total then
+		if warband then
+			T:AddDoubleLine(L.FOOTER_WARBAND_GOLD, F.GoldText(warband) .. "g", 1, 1, 1, 1, 1, 1)
+		end
+		T:AddDoubleLine(L.FOOTER_TOTAL, F.GoldText(total) .. "g", 1, 0.82, 0, 1, 1, 1)
+	end
+end
+
 -- Standard tooltips (P2: hovering answers). Plain GameTooltip calls, nothing secure.
 function F.Tooltip(owner, item)
 	local T = GameTooltip
@@ -374,6 +409,11 @@ function F.Tooltip(owner, item)
 		if not pcall(T.SetCurrencyByID, T, tip.id) then
 			T:SetText(item.text)
 		end
+		addCharacters(T, function(list)
+			return SB.Wealth.CurrencyLines(list, tip.id)
+		end, function(row)
+			return tostring(row.quantity)
+		end)
 	elseif tip.kind == "item" then
 		if not pcall(T.SetItemByID, T, tip.id) then
 			T:SetText(item.text)
@@ -385,6 +425,13 @@ function F.Tooltip(owner, item)
 	elseif tip.kind == "money" then
 		T:SetText(L.FOOTER_GOLD)
 		T:AddLine(SB.Adapter.MoneyText(tip.copper), 1, 1, 1) -- gold, silver and copper, with the client's coins
+		addCharacters(T, function(list)
+			local warband = SB.Wealth.RefreshWarband()
+			local rows, total = SB.Wealth.GoldLines(list, warband)
+			return rows, total, warband
+		end, function(row)
+			return F.GoldText(row.copper) .. "g"
+		end)
 	else
 		T:SetText(L.FOOTER_FREE_TITLE)
 		T:AddLine(L.FOOTER_FREE_BAGS:format(tip.counts.any), 1, 1, 1)

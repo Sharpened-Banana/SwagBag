@@ -279,6 +279,70 @@ describe("Footer (ruling W4-14)", function()
 			F.GoldText(9990000), F.GoldText(10000000), F.GoldText(100000000000) })
 	end)
 
+	-- Task 0.17-3 (alt gold). Mutations: drop the warband line; sort the lines poorest first; skip the blank line.
+	local function recordLines()
+		local lines = {}
+		GameTooltip.SetText = function(_, t) lines[#lines + 1] = { t } end
+		GameTooltip.AddLine = function(_, t, r, g, b) lines[#lines + 1] = { t, r, g, b } end
+		GameTooltip.AddDoubleLine = function(_, l, r) lines[#lines + 1] = { l, r, double = true } end
+		return lines
+	end
+	local function loadWealth()
+		for _, path in ipairs({ "SwagBag/Engine/Snapshots.lua", "SwagBag/Engine/AltData.lua", "SwagBag/Engine/Wealth.lua" }) do
+			Loader.LoadFile(SB, path)
+		end
+		SB.Config.Init(nil, nil)
+		local db = SB.Snapshots.DB()
+		db.chars["Ann-Tichondrius"] = { class = "MAGE", money = 90000000 }
+		db.chars["Ann-Argent Dawn"] = { class = "PRIEST", money = 50000000, currencies = { [3056] = 40 } }
+		db.chars["Cy-Argent Dawn"] = { class = "ROGUE", money = 0, currencies = { [3056] = 0 } }
+		A.WarbandMoney = function() return 10000000 end
+		A.ClassColour = function(c) return c == "MAGE" and "|cff3fc7eb" or nil end
+	end
+
+	it("the gold tooltip adds every character, the warband bank and the total", function()
+		loadWealth()
+		A.money = 20000000
+		F.Refresh()
+		local lines = recordLines()
+		Fake.Fire(F.widgets[1], "OnEnter")
+		assert.same({ SB.L.FOOTER_GOLD }, lines[1])
+		assert.same({ A.MoneyText(20000000), 1, 1, 1 }, lines[2])
+		assert.equal(" ", lines[3][1], "a blank line")
+		assert.same({ "|cff3fc7ebAnn-Tichondrius|r", "9,000g" }, { lines[4][1], lines[4][2] })
+		assert.same({ "Ann-Argent Dawn", "5,000g" }, { lines[5][1], lines[5][2] })
+		assert.same({ "|cff3fc7ebSwagger|r", "2,000g" }, { lines[6][1], lines[6][2] })
+		assert.same({ SB.L.FOOTER_WARBAND_GOLD, "1,000g" }, { lines[7][1], lines[7][2] })
+		assert.same({ SB.L.FOOTER_TOTAL, "17,000g" }, { lines[8][1], lines[8][2] })
+		assert.equal(8, #lines)
+	end)
+
+	it("with no alt saved the tooltip says how to add them", function()
+		loadWealth()
+		SB.Snapshots.DB().chars = {}
+		A.WarbandMoney = function() return nil end
+		F.Refresh()
+		local lines = recordLines()
+		Fake.Fire(F.widgets[1], "OnEnter")
+		assert.same({ SB.L.FOOTER_GOLD }, lines[1])
+		assert.equal(SB.L.FOOTER_ALTS_NONE, lines[#lines][1])
+		assert.equal("Log in on your other characters once to add them here.", SB.L.FOOTER_ALTS_NONE)
+		assert.falsy(lines[#lines][2] == SB.L.FOOTER_TOTAL)
+	end)
+
+	it("the currency tooltip lists each character's quantity of that currency", function()
+		loadWealth()
+		F.Refresh()
+		local lines = recordLines()
+		for i, it in ipairs(F.items) do
+			if it.tip.kind == "currency" and it.tip.id == 3056 then
+				Fake.Fire(F.widgets[i], "OnEnter")
+			end
+		end
+		assert.same({ 3056 }, GameTooltip.calls.SetCurrencyByID)
+		assert.same({ "Ann-Argent Dawn", "40" }, { lines[#lines][1], lines[#lines][2] })
+	end)
+
 	-- M2. Mutation: delete the SB_BAGS_CLOSED handler in Footer.lua.
 	it("closing the bags marks the footer to be re-read on the next open", function()
 		F.Refresh()
