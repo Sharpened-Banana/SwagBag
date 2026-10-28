@@ -326,6 +326,41 @@ describe("BagsWindow per-bag view", function()
 		assert.equal("- Backpack · 28 slots · 15 free", header("bag:0").text.text)
 	end)
 
+	-- Fix round 2: a fold drawn at once is a full layout, so a held one (here a view change) must not be
+	-- drawn by the click. Mutation: drop the W.layoutHeld check in perBagFoldSafe.
+	it("a header click while a view change is held redraws nothing until the mouse leaves", function()
+		W.Open()
+		W.scroll.mouseOver = true
+		W.SetView("grid")
+		assert.equal("bags", W.drawn, "held")
+		header("bag:1").scripts.OnClick(header("bag:1"), "LeftButton")
+		assert.equal("bags", W.drawn, "still held")
+		assert.truthy(B.Get(1, 1).shown)
+		assert.truthy(header("bag:1"), "the bags view's headers stay")
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.equal("grid", W.drawn)
+		assert.equal(true, SB.Config.UI().collapsed.bags["bag:1"], "the fold is saved for the next bags view")
+	end)
+
+	-- Fix round 2: a drawn slot the new position leaves out would be hidden under the mouse. Mutation: drop the
+	-- loop over the drawn cells in perBagFoldSafe.
+	it("a header click waits while a slot that would disappear is under the mouse", function()
+		W.Open()
+		A.SetBagSize(1, 8) -- shrunk with no event yet (nothing held)
+		local gone = B.Get(1, 20)
+		gone.mouseOver = true
+		W.scroll.mouseOver = true
+		header("bag:0").scripts.OnClick(header("bag:0"), "LeftButton")
+		assert.truthy(gone.shown, "held")
+		assert.truthy(B.Get(0, 1).shown)
+		gone.mouseOver = false
+		W.scroll.mouseOver = false
+		A.Advance(W.RETRY)
+		assert.falsy(B.Get(0, 1).shown)
+		assert.falsy(gone.shown)
+	end)
+
 	it("a 'bag:' header right-click / drop / Shift+right-click does nothing", function()
 		local calls = {}
 		SB.SectionActions = {

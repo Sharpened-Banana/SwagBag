@@ -27,6 +27,7 @@ local W = {
 	sortPending = false, -- a Sort was pressed and its bag updates are still settling
 	state = nil, -- sections view: Layout state while open (nil when closed or in the grid or bags view)
 	perBag = nil, -- bags view: the last PerBag.Compute result while drawn (its headers are relabelled in place)
+	layoutHeld = nil, -- the reason of a full layout W.RequestLayout is holding under the pointer, or nil
 	pos = nil, -- sections view: last Layout.Position result
 	view = nil, -- sections view: the collapsed lookup W.pos was built with (what is drawn, W4-1)
 	order = nil, -- sections view: the section order W.pos was built with (what is drawn, W4-1)
@@ -129,7 +130,7 @@ frame:SetScript("OnHide", Guard("bags.hide", function(self)
 		return
 	end
 	W.state, W.pos, W.view, W.sortPending, W.sortSawUpdate, W.dragging = nil, nil, nil, false, false, false
-	W.perBag = nil
+	W.perBag, W.layoutHeld = nil, nil
 	W.order, W.areaHeld, W.scaleWarned = nil, false, false
 	W.ClearDropGuard()
 	if SB.Focus then
@@ -1026,6 +1027,7 @@ end
 function W.Layout(reason)
 	local A, B = SB.Adapter, SB.Buttons
 	local t0 = A.ProfileMs()
+	W.layoutHeld = nil -- this layout draws whatever a held one would have drawn
 	W.drawn = W.View()
 	if W.drawn == "list" and not W.rows then
 		W.drawn = "sections"
@@ -1294,6 +1296,7 @@ function W.RequestLayout(reason)
 		return false
 	end
 	if SB.Adapter.CursorBusy() or scroll:IsMouseOver() then
+		W.layoutHeld = reason
 		SB.Debounce("bags.layout", W.RETRY, function()
 			W.RequestLayout(reason)
 		end, "bags")
@@ -1452,19 +1455,29 @@ local function perBagHeaderY(pos, id)
 	end
 end
 
--- True when laying out `pos` now moves nothing under the pointer (see above).
+-- True when laying out `pos` now moves nothing under the pointer (see above). W.Layout is a full layout
+-- that draws whatever is current, so a held one (a view change, a size change, a scale retry: W.layoutHeld)
+-- or a view setting that is no longer "bags" makes the click wait for it too.
 local function perBagFoldSafe(id, pos)
-	if SB.Adapter.CursorBusy() or perBagHeaderY(W.perBag, id) ~= perBagHeaderY(pos, id) then
+	if W.layoutHeld or W.drawn ~= "bags" or W.View() ~= "bags" or SB.Adapter.CursorBusy()
+		or perBagHeaderY(W.perBag, id) ~= perBagHeaderY(pos, id) then
 		return false
 	end
-	local drawn = {}
+	local drawn, now = {}, {}
 	for _, c in ipairs(W.perBag.cells) do
 		drawn[SB.Layout.Key(c.bag, c.slot)] = c
 	end
 	for _, c in ipairs(pos.cells) do
-		local d = drawn[SB.Layout.Key(c.bag, c.slot)]
+		local key = SB.Layout.Key(c.bag, c.slot)
+		local d = drawn[key]
+		now[key] = true
 		local moves = not d or d.x ~= c.x or d.y ~= c.y or d.shown ~= c.shown
 		if moves and buttonBusy(c.bag, c.slot) then
+			return false
+		end
+	end
+	for key, d in pairs(drawn) do -- a drawn slot the new position leaves out (its bag shrank) is hidden
+		if not now[key] and buttonBusy(d.bag, d.slot) then
 			return false
 		end
 	end
