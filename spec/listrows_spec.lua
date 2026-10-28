@@ -40,6 +40,23 @@ describe("ListRows", function()
 		assert.equal("285", ring.ilvl)
 	end)
 
+	it("the ilvl column takes its step's color; white below the lowest step, with colors off, or with no level", function()
+		Loader.LoadFile(SB, "SwagBag/Engine/IlvlColors.lua")
+		local function paint(slot)
+			local button = Fake.New("Button", parent)
+			rows.Place(button, 0, 0, 300, 20, true)
+			rows.Paint(button, 0, slot, record(slot))
+			return rows.rows[button]
+		end
+		SB.Config.Set("overlays.ilvlSteps", "280:green,300:purple")
+		assert.same({ 1, 1, 1 }, paint(3).ilvl.calls.SetTextColor) -- colors off
+		SB.Config.Set("overlays.ilvlColors", true)
+		assert.same({ 0.12, 1, 0 }, paint(3).ilvl.calls.SetTextColor) -- the ring, 285
+		assert.same({ 1, 1, 1 }, paint(1).ilvl.calls.SetTextColor) -- a potion has no level
+		SB.Config.Set("overlays.ilvlSteps", "290:green")
+		assert.same({ 1, 1, 1 }, paint(3).ilvl.calls.SetTextColor)
+	end)
+
 	-- 0.14.0 stack grouping: one row for several stacks. Mutation: Value from the shown stack alone (no * total / count).
 	it("a row with a total shows it in Count and values the total", function()
 		A.items[Fixtures.HEALING_POTION].sellPrice = 200 -- the shown stack of 5: 10s; the group of 12: 24s

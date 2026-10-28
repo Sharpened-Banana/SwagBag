@@ -6,7 +6,7 @@ local Fixtures = dofile("spec/fixtures/items.lua")
 
 local FILES = {
 	"SwagBag/Core/Events.lua", "SwagBag/Core/SafeMode.lua", "SwagBag/Core/ErrorTrap.lua", "SwagBag/Core/Config.lua",
-	"SwagBag/Core/Slash.lua", "SwagBag/Engine/Items.lua", "SwagBag/Engine/OverlayData.lua",
+	"SwagBag/Core/Slash.lua", "SwagBag/Engine/Items.lua", "SwagBag/Engine/OverlayData.lua", "SwagBag/Engine/IlvlColors.lua",
 }
 
 describe("Overlays (spec F9)", function()
@@ -68,6 +68,38 @@ describe("Overlays (spec F9)", function()
 		A.dungeons[503] = "Ara-Kara, City of Echoes"
 		local _, r = draw(0, 5)
 		assert.same({ "+12", "AKCE", "" }, { r.topLeft.text, r.bottomLeft.text, r.bind.text })
+	end)
+
+	-- 0.17 item-level colors. Mutation: drop the white reset (a pooled button keeps the last color), or color
+	-- the keystone's "+12" as an item level.
+	it("the item level takes its step's color; a keystone level stays white", function()
+		A.dungeons[503] = "Ara-Kara, City of Echoes"
+		SB.Config.Set("overlays.ilvlColors", true)
+		SB.Config.Set("overlays.ilvlSteps", "280:green,300:purple")
+		local b, r = draw(0, 3) -- the ring, 285
+		assert.same({ 0.12, 1, 0 }, r.topLeft.calls.SetTextColor)
+		SB.Config.Set("overlays.ilvlSteps", "290:green") -- below the lowest step: white again, same button
+		Ov.Apply(b, SB.Items.Describe(0, 3), 0)
+		assert.same({ 1, 1, 1 }, Ov.regions[b].topLeft.calls.SetTextColor)
+		SB.Config.Set("overlays.ilvlSteps", "1:orange")
+		local _, k = draw(0, 5) -- the keystone
+		assert.equal("+12", k.topLeft.text)
+		assert.same({ 1, 1, 1 }, k.topLeft.calls.SetTextColor)
+		SB.Config.Set("overlays.ilvlColors", false)
+		local _, off = draw(0, 3)
+		assert.same({ 1, 1, 1 }, off.topLeft.calls.SetTextColor)
+	end)
+
+	it("changing the colors or the steps re-draws the open windows", function()
+		local b, r = draw(0, 3)
+		local record = SB.Items.Describe(0, 3)
+		SB.BagsWindow = { IsOpen = function() return true end,
+			ForEachSlot = function(fn) fn(b, record, 0, 3) end }
+		SB.Config.Set("overlays.ilvlSteps", "280:blue")
+		SB.Config.Set("overlays.ilvlColors", true)
+		assert.same({ 0, 0.44, 0.87 }, r.topLeft.calls.SetTextColor)
+		SB.Config.Set("overlays.ilvlSteps", "280:orange")
+		assert.same({ 1, 0.5, 0 }, r.topLeft.calls.SetTextColor)
 	end)
 
 	it("a junk coin on gray items; nothing on a potion", function()

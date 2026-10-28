@@ -64,8 +64,10 @@ Config.Defaults = {
 		-- learn (week 7): a green glow on items to open or learn (caches, toys, mounts, pets, decor, knowledge).
 		-- lock (week 7): a small padlock on items the user locked (Engine/Locks.lua).
 		-- uncollected (week 7): a star on gear whose look is not collected, and on new toys, mounts, pets.
+		-- ilvlColors / ilvlSteps (0.17, Engine/IlvlColors.lua): colour the item level by steps, off by
+		-- default (item levels stay white); steps is text like "680:green,690:blue", up to 4.
 		overlays = { ilvl = true, track = true, upgrade = true, keystone = true, junk = true, bind = false,
-			learn = true, lock = true, uncollected = true, usePawn = false },
+			learn = true, lock = true, uncollected = true, usePawn = false, ilvlColors = false, ilvlSteps = "" },
 		-- Focus modes (spec 6, Engine/Focus.lua). auto: modes switch by themselves (AC8.1); off by
 		-- default since 0.14.3 (user request: sections moving with what you do is opt-in);
 		-- resolve: "merge" (open the union, default) | "priority" (combat > activity > location,

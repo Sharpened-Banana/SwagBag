@@ -199,6 +199,18 @@ function Ov.Apply(button, record, bag)
 		or (on("keystone") and d.keystone and L.OVERLAY_KEYSTONE:format(d.keystone.level)) or ""
 	local bottom = (on("track") and d.track) or (on("keystone") and d.keystone and d.keystone.dungeon) or ""
 	r.topLeft:SetText(top)
+	-- Item-level colors (0.17): only the item level takes a step's color; a keystone's "+12" and a pooled
+	-- button's old color go back to white.
+	local IC = SB.IlvlColors
+	local cr, cg, cb
+	if IC and d.ilvl and top == tostring(d.ilvl) then
+		cr, cg, cb = IC.For(d.ilvl)
+	end
+	if cr then
+		r.topLeft:SetTextColor(cr, cg, cb)
+	else
+		r.topLeft:SetTextColor(1, 1, 1)
+	end
 	r.bottomLeft:SetText(bottom)
 	r.bind:SetText(on("bind") and d.bind or "")
 	show(r.arrow, on("upgrade") and d.upgrade)
@@ -337,6 +349,22 @@ function Ov.RefreshAll()
 		each(offline.view.ForEachSlot)
 	end
 end
+
+-- The colors or their steps changed (or every setting did): the icons and the list rows follow. The cache
+-- in Engine/IlvlColors.lua is dropped by its own listener, which loads first.
+SB.On("SB_CONFIG_CHANGED", function(_, path)
+	if path ~= nil and path ~= "overlays.ilvlColors" and path ~= "overlays.ilvlSteps" then
+		return
+	end
+	Ov.RefreshAll()
+	local bags, bank = SB.BagsWindow, SB.BankWindow
+	if bags and bags.IsOpen() and bags.RequestLayout then
+		bags.RequestLayout("ilvlcolors")
+	end
+	if bank and bank.IsOpen() and bank.view and bank.view.RequestLayout then
+		bank.view.RequestLayout("ilvlcolors")
+	end
+end, "none")
 
 -- A gear swap fires one event per slot: re-draw once, after the last one.
 SB.On("PLAYER_EQUIPMENT_CHANGED", function()

@@ -266,6 +266,13 @@ function LR.New(parent, _window, flash, opts)
 		row.name:SetText(t.name)
 		row.count:SetText(t.count)
 		row.ilvl:SetText(t.ilvl)
+		-- Item-level colors (0.17): white unless colors are on and the level reaches a step (rows are pooled).
+		local IC = SB.IlvlColors
+		local cr, cg, cb
+		if IC then
+			cr, cg, cb = IC.For(tonumber(t.ilvl))
+		end
+		row.ilvl:SetTextColor(cr or 1, cg or 1, cb or 1)
 		row.value:SetText(t.value)
 	end
 

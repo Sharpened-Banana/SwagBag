@@ -29,6 +29,7 @@ Engine/Items.lua
 Engine/ItemFacts.lua
 Engine/Inventory.lua
 Engine/GridLayout.lua
+Engine/IlvlColors.lua
 Engine/Query/Lexer.lua
 Engine/Query/Parser.lua
 Engine/Query/Query.lua

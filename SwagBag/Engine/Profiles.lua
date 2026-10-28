@@ -121,6 +121,7 @@ local LABELS = {
 	["overlays.keystone"] = "SET_OV_KEYSTONE", ["overlays.junk"] = "SET_OV_JUNK", ["overlays.bind"] = "SET_OV_BIND",
 	["overlays.learn"] = "SET_OV_LEARN", ["overlays.lock"] = "SET_OV_LOCK", ["overlays.uncollected"] = "SET_OV_UNCOLLECTED",
 	["overlays.usePawn"] = "PROFILE_LABEL_PAWN",
+	["overlays.ilvlColors"] = "PROFILE_LABEL_ILVL_COLORS", ["overlays.ilvlSteps"] = "PROFILE_LABEL_ILVL_STEPS",
 	["focus.auto"] = "PROFILE_LABEL_FOCUS_AUTO", ["focus.resolve"] = "PROFILE_LABEL_FOCUS_RESOLVE",
 	["focus.peek"] = "PROFILE_LABEL_FOCUS_PEEK", ["focus.announce"] = "PROFILE_LABEL_FOCUS_ANNOUNCE",
 	["focus.style"] = "PROFILE_LABEL_FOCUS_STYLE",
