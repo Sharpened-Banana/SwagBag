@@ -39,6 +39,15 @@ describe("Wealth", function()
 		assert.equal(500, me().money)
 	end)
 
+	it("keeps the saved currencies when the game lists none yet", function()
+		A.money = 10
+		A.backpack = { { id = 3008, name = "Valorstones", quantity = 50 } }
+		W.Save()
+		A.backpack, A.currencies = {}, {}
+		W.Save()
+		assert.same({ [3008] = 50 }, me().currencies)
+	end)
+
 	it("writes nothing while the settings are read-only", function()
 		A.money = 500
 		SB.Config.readOnly = true

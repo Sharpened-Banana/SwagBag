@@ -284,15 +284,16 @@ function own.wealth()
 	if type(live) ~= "number" or SB.Adapter.IsSecret(live) then
 		live = nil
 	end
-	local db = SB.Snapshots.DB()
+	local db, listed = SB.Snapshots.DB(), false
 	for raw, c in pairs(db.chars) do
 		if type(c) == "table" and (type(c.money) == "number" or type(c.currencies) == "table") then
 			local name, realm = splitKey(raw)
+			listed = listed or raw == me
 			list[#list + 1] = { key = AD.Canon(raw), name = name, realm = realm, class = c.class,
 				current = raw == me, money = raw == me and live or c.money, currencies = c.currencies }
 		end
 	end
-	if not db.chars[me] and live then
+	if not listed and live then
 		local name, realm = splitKey(me)
 		list[#list + 1] = { key = AD.Canon(me), name = name, realm = realm, class = SB.Adapter.CharInfo().class,
 			current = true, money = live }

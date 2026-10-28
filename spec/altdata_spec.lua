@@ -70,6 +70,15 @@ describe("AltData", function()
 			currencies = { [3008] = 3 }, current = false }, list[2])
 	end)
 
+	it("Own wealth lists the current character when its table exists but has no money or currencies yet", function()
+		Snap.Save("bags") -- creates chars[me] with class and level only
+		A.money = 777
+		local list = AD.Wealth()
+		assert.equal(1, #list)
+		assert.equal(true, list[1].current)
+		assert.equal(777, list[1].money)
+	end)
+
 	it("Own containers: bags, bank, the warband bank and the character's guild bank, decoded", function()
 		alt("Abby-Argent Dawn", "1:item:210796;20\n3:item:211880;2\n", "5:item:210930;100\n",
 			{ guild = "Tidewatch-Argent Dawn" })

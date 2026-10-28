@@ -3,7 +3,8 @@
 -- own table in SwagBagDB.chars (Engine/Snapshots.lua), read back through AltData.Wealth.
 --   Wealth.Save() -> bool   writes c.money (copper) and c.currencies ({ [currencyID] = quantity })
 --       on the current character; the currencies are the union by id of the backpack list and the
---       Currency tab list, a quantity of 0 leaves the id out. Gold the game cannot say leaves
+--       Currency tab list, a quantity of 0 leaves the id out; lists that come back empty leave the
+--       saved ones as they were. Gold the game cannot say leaves
 --       money as it was. Read-only settings: nothing written, false
 --   Wealth.DELAY   seconds the saves after PLAYER_MONEY / CURRENCY_DISPLAY_UPDATE wait for the last
 --       one (SB.Debounce); PLAYER_ENTERING_WORLD saves the same way, PLAYER_LOGOUT at once
@@ -30,16 +31,19 @@ function Wealth.Save()
 	if type(money) == "number" and not A.IsSecret(money) then
 		c.money = money
 	end
-	local currencies = {}
+	local currencies, any = {}, false
 	for _, list in ipairs({ A.BackpackCurrencies() or {}, A.CurrencyList() or {} }) do
 		for _, cur in ipairs(list) do
 			local q = quantityOf(cur)
 			if type(cur.id) == "number" and q then
 				currencies[cur.id] = q
+				any = true
 			end
 		end
 	end
-	c.currencies = currencies
+	if any then -- both lists empty means the client has not loaded them yet: keep what was saved
+		c.currencies = currencies
+	end
 	return true
 end
 
