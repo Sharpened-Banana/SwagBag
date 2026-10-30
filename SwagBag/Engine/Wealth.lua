@@ -2,15 +2,16 @@
 -- show every character (spec 2). Pure Lua over the Adapter; the data lives on the character's
 -- own table in SwagBagDB.chars (Engine/Snapshots.lua), read back through AltData.Wealth.
 --   Wealth.Save() -> bool   writes c.money (copper) and c.currencies ({ [currencyID] = quantity })
---       on the current character; the currencies are the union by id of the backpack list, the
---       Currency tab list (collapsed headers hide theirs) and every id in SB.Crests.currencies,
---       a quantity of 0 leaves the id out; lists that come back empty leave the
---       saved ones as they were. Gold the game cannot say leaves
---       money as it was. Read-only settings: nothing written, false
+--       on the current character. The currencies are merged into what was saved: every id in the backpack
+--       list, the Currency tab list and SB.Crests.currencies takes its quantity, and every id saved before
+--       but in none of those lists (a collapsed Currency-tab header hides its currencies) is asked again by
+--       id; an id the client does not answer for keeps its saved quantity. A quantity of 0 removes the id,
+--       so spending the last of a currency is saved. Gold the game cannot say leaves money as it was.
+--       Read-only settings: nothing written, false
 --   Wealth.MAX_LINES   the most character lines a tooltip lists; the rest become one { more = n } entry
 --   Wealth.GoldLines(list, warband) -> lines, total   pure, over AltData.Wealth entries: { { name, copper,
---       class } } richest first (ties by name), money > 0 only, "-realm" only where another entry shares
---       the name, capped with a last { more = n }; total = every character's gold + warband (nil: 0)
+--       class } } richest first (ties by name), money > 0 only, "-realm" only where another listed line
+--       shares the name, capped with a last { more = n }; total = every character's gold + warband (nil: 0)
 --   Wealth.CurrencyLines(list, currencyID) -> lines   the same with quantity, most first
 --   Wealth.RefreshWarband() -> copper|nil   the Warband bank's gold when the client says, saved in
 --       SwagBagDB.warbandMoney (not while read-only); else the saved amount. Also on BANKFRAME_OPENED.
@@ -23,9 +24,10 @@ local _, SB = ...
 local Wealth = { DELAY = 2, MAX_LINES = 20 }
 SB.Wealth = Wealth
 
+-- The quantity the client gave (0 included), or nil when it cannot be told.
 local function quantityOf(c)
 	local q = c and c.quantity
-	if type(q) == "number" and not SB.Adapter.IsSecret(q) and q > 0 then
+	if type(q) == "number" and not SB.Adapter.IsSecret(q) and q >= 0 then
 		return q
 	end
 	return nil
@@ -41,7 +43,12 @@ function Wealth.Save()
 	if type(money) == "number" and not A.IsSecret(money) then
 		c.money = money
 	end
-	local currencies, any = {}, false
+	local currencies, seen = {}, {}
+	if type(c.currencies) == "table" then
+		for id, q in pairs(c.currencies) do
+			currencies[id] = q
+		end
+	end
 	local lists = { A.BackpackCurrencies() or {}, A.CurrencyList() or {} }
 	-- the Currency tab list hides what a collapsed header holds: the season's crests are read by id too
 	local crestIds = SB.Crests and SB.Crests.currencies
@@ -52,18 +59,29 @@ function Wealth.Save()
 		end
 		lists[#lists + 1] = extra
 	end
+	local function take(cur)
+		local q = quantityOf(cur)
+		if type(cur.id) == "number" and q then
+			currencies[cur.id] = q > 0 and q or nil
+			seen[cur.id] = true
+		end
+	end
 	for _, list in ipairs(lists) do
 		for _, cur in ipairs(list) do
-			local q = quantityOf(cur)
-			if type(cur.id) == "number" and q then
-				currencies[cur.id] = q
-				any = true
+			take(cur)
+		end
+	end
+	-- Saved before but not listed now (under a collapsed header, or spent to 0 and gone from the backpack list):
+	-- asked by id. No answer (the client has not loaded its currencies yet) keeps the saved quantity.
+	for id in pairs(type(c.currencies) == "table" and c.currencies or {}) do
+		if not seen[id] then
+			local cur = A.CurrencyInfo(id)
+			if cur then
+				take(cur)
 			end
 		end
 	end
-	if any then -- both lists empty means the client has not loaded them yet: keep what was saved
-		c.currencies = currencies
-	end
+	c.currencies = currencies
 	return true
 end
 
@@ -74,13 +92,19 @@ local function lines(list, value, field)
 	local function nameOf(e)
 		return e.name or e.key or "?"
 	end
+	local function shown(e)
+		local v = value(e)
+		return type(v) == "number" and v > 0 and v or nil
+	end
 	for _, e in ipairs(list) do
-		shared[nameOf(e)] = (shared[nameOf(e)] or 0) + 1
+		if shown(e) then -- only the lines the tooltip shows: a namesake with none of this value adds no "-realm"
+			shared[nameOf(e)] = (shared[nameOf(e)] or 0) + 1
+		end
 	end
 	local rows, total = {}, 0
 	for _, e in ipairs(list) do
-		local v = value(e)
-		if type(v) == "number" and v > 0 then
+		local v = shown(e)
+		if v then
 			total = total + v
 			local name = nameOf(e)
 			name = shared[name] > 1 and e.realm and (name .. "-" .. e.realm) or name

@@ -13,6 +13,10 @@
 --   pos = { cells = { {bag, slot, x, y, shown} }, headers = { {id, bag, y, collapsed, size} }, width, height }
 --     y is negative (TOPLEFT offsets); width is the grid width for opts.columns.
 -- PerBag.Id(bag) -> "bag:" .. bag   the section id, also the collapse key
+-- PerBag.IsId(id) -> bool   a bags-view section id (no category behind it)
+-- PerBag.Free(has, bag, size) -> n   the bag's empty slots; has(bag, slot) -> truthy when the slot holds an item
+-- PerBag.Physical(view) -> bool   the views in physical slot order ("grid", "bags"): no Layout state, so no New,
+--   Free, stack grouping, free tile or focus, and live changes repaint in place
 -- PerBag.Label(name, size, free, collapsed) -> text   the header text, with the same "-" / "+" collapse
 --   mark SB.SectionHeaders.Label puts in front
 local _, SB = ...
@@ -22,6 +26,24 @@ SB.PerBag = PerBag
 
 function PerBag.Id(bag)
 	return "bag:" .. bag
+end
+
+function PerBag.IsId(id)
+	return type(id) == "string" and id:sub(1, 4) == "bag:"
+end
+
+function PerBag.Free(has, bag, size)
+	local free = 0
+	for slot = 1, size do
+		if not has(bag, slot) then
+			free = free + 1
+		end
+	end
+	return free
+end
+
+function PerBag.Physical(view)
+	return view == "grid" or view == "bags"
 end
 
 function PerBag.Label(name, size, free, collapsed)

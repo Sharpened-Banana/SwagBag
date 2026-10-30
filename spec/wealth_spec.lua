@@ -48,6 +48,43 @@ describe("Wealth", function()
 		assert.same({ [3008] = 50 }, me().currencies)
 	end)
 
+	-- Review fix (PR #1). Mutation: Save starts from an empty table again (or skips the ask-by-id loop).
+	it("a currency under a collapsed Currency-tab header keeps its saved amount, asked again by id", function()
+		A.money = 1
+		A.currencies = { { id = 3008, name = "Valorstones", quantity = 50 }, { id = 3100, name = "Other", quantity = 7 } }
+		W.Save()
+		A.currencies = { { id = 3008, name = "Valorstones", quantity = 60 } } -- the header holding 3100 is collapsed
+		local real = A.CurrencyInfo
+		A.CurrencyInfo = function(id)
+			if id == 3100 then
+				return { id = 3100, name = "Other", quantity = 9 }
+			end
+			return real(id)
+		end
+		W.Save()
+		assert.same({ [3008] = 60, [3100] = 9 }, me().currencies)
+		A.CurrencyInfo = function() return nil end -- the client cannot answer by id: the saved amount stays
+		A.currencies = { { id = 3008, name = "Valorstones", quantity = 61 } }
+		W.Save()
+		assert.same({ [3008] = 61, [3100] = 9 }, me().currencies)
+	end)
+
+	-- Review fix (PR #1). Mutation: quantityOf refuses 0 again (a spent currency keeps its old amount).
+	it("spending the last of a currency is saved: it leaves the list, even when it was the only one", function()
+		A.money = 1
+		A.backpack = { { id = 3008, name = "Valorstones", quantity = 40 } }
+		W.Save()
+		assert.same({ [3008] = 40 }, me().currencies)
+		A.backpack = { { id = 3008, name = "Valorstones", quantity = 0 } }
+		W.Save()
+		assert.same({}, me().currencies)
+		A.backpack = { { id = 3008, name = "Valorstones", quantity = 40 } }
+		W.Save()
+		A.backpack, A.currencies = {}, { { id = 3008, name = "Valorstones", quantity = 0 } } -- gone from the backpack list
+		W.Save()
+		assert.same({}, me().currencies)
+	end)
+
 	it("writes nothing while the settings are read-only", function()
 		A.money = 500
 		SB.Config.readOnly = true
@@ -156,6 +193,14 @@ describe("Wealth", function()
 		end
 		W.Save()
 		assert.same({ [3008] = 5, [3100] = 12 }, me().currencies)
+	end)
+
+	-- Review fix (PR #1). Mutation: count the namesakes over the whole list again.
+	it("a namesake with none of the currency adds no realm suffix", function()
+		local list = { entry("Bob", "Silvermoon", 100, { [3008] = 5 }), entry("Bob", "Ravencrest", 200, {}) }
+		assert.equal("Bob", W.CurrencyLines(list, 3008)[1].name)
+		local gold = W.GoldLines(list, nil)
+		assert.same({ "Bob-Ravencrest", "Bob-Silvermoon" }, { gold[1].name, gold[2].name })
 	end)
 
 	-- Mutation: lines() indexes e.name unguarded.

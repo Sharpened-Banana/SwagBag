@@ -487,8 +487,16 @@ BW.view = SB.GroupView.New({
 	end,
 	describe = describe,
 	groups = function()
-		-- the tabs' names are read with the tabs, at every full layout (a renamed tab: BANK_TAB_SETTINGS_UPDATED)
+		-- the tabs' names and places ("Tab N") are read with the tabs, at every full layout (a renamed tab:
+		-- BANK_TAB_SETTINGS_UPDATED), so a header refresh asks the client nothing
 		BW.tabNames = { bank = SB.Adapter.BankTabNames("bank"), warband = SB.Adapter.BankTabNames("warband") }
+		BW.tabPlaces = {}
+		for _, gid in ipairs({ "bank", "warband" }) do
+			BW.tabPlaces[gid] = {}
+			for i, bag in ipairs(SB.Adapter.GetBagIDs(gid)) do
+				BW.tabPlaces[gid][bag] = i
+			end
+		end
 		return { { id = "bank", bags = bagsOf("bank") }, { id = "warband", bags = bagsOf("warband") } }
 	end,
 	-- The bags view's tab headers (0.17): the tab's own name, else "Tab N" by its place among the bank's tabs;
@@ -499,13 +507,7 @@ BW.view = SB.GroupView.New({
 		end
 		local name = BW.tabNames and BW.tabNames[gid] and BW.tabNames[gid][h.bag]
 		if not name then
-			local place = h.bag
-			for i, bag in ipairs(SB.Adapter.GetBagIDs(gid)) do
-				if bag == h.bag then
-					place = i
-				end
-			end
-			name = L.PERBAG_TAB:format(place)
+			name = L.PERBAG_TAB:format(BW.tabPlaces and BW.tabPlaces[gid] and BW.tabPlaces[gid][h.bag] or h.bag)
 		end
 		return SB.PerBag.Label(name, h.size, h.free, h.collapsed)
 	end,

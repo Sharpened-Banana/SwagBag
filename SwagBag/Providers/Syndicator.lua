@@ -116,15 +116,19 @@ end
 
 -- Gold and currencies of every shown character that has either (Own's rule: a character with neither is
 -- left out, never shown as 0; money is nil when not a number). nil when none qualifies (an older Syndicator
--- that does not save them), so Own answers. Currencies keep numbers only.
+-- that does not save them), so Own answers, even when the current character would be added below.
+-- Currencies keep numbers only. The current character always shows with its live gold: added when
+-- Syndicator leaves it out (hidden there, or nothing saved for it yet), filled in when its money is unknown.
 function P.wealth()
 	local S = api()
 	if not S then
 		return nil
 	end
 	local out, listed = {}, false
+	local A = SB.Adapter
+	local live = A.Money()
+	live = type(live) == "number" and not A.IsSecret(live) and live or nil
 	for _, e in ipairs(shownList(S)) do
-		listed = listed or e.current
 		local d = e.data
 		e.data = nil
 		e.money = type(d.money) == "number" and not secret(d.money) and d.money or nil
@@ -138,18 +142,23 @@ function P.wealth()
 		end
 		if e.money or next(e.currencies) then
 			out[#out + 1] = e
+			if e.current then
+				listed = true
+				e.money = e.money or live
+			end
 		end
 	end
-	local A = SB.Adapter
-	local live = A.Money()
-	if not listed and type(live) == "number" and not A.IsSecret(live) then
+	if #out == 0 then
+		return nil -- nothing from Syndicator: Own answers (it has this character too, and the alts it saved)
+	end
+	if not listed and live then
 		-- hidden in Syndicator: you still see yourself, with the live gold (Own's rule)
 		local me = A.CharKey()
 		out[#out + 1] = { key = AD.Canon(me), name = me:match("^[^%-]+") or me, realm = me:match("%-(.+)$"),
 			class = A.CharInfo().class, current = true, money = live, currencies = {} }
 		table.sort(out, byCurrent)
 	end
-	return #out > 0 and out or nil
+	return out
 end
 
 -- One Syndicator container (a list of slots) as { size, slots = { [slot] = { link, count } } }.

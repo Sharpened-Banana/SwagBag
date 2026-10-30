@@ -27,6 +27,7 @@ local W = {
 	sortPending = false, -- a Sort was pressed and its bag updates are still settling
 	state = nil, -- sections view: Layout state while open (nil when closed or in the grid or bags view)
 	perBag = nil, -- bags view: the last PerBag.Compute result while drawn (its headers are relabelled in place)
+	bagNames = {}, -- bags view: [bag] = its name, read at each full layout (a header refresh asks the client nothing)
 	layoutHeld = nil, -- the reason of a full layout W.RequestLayout is holding under the pointer, or nil
 	pos = nil, -- sections view: last Layout.Position result
 	view = nil, -- sections view: the collapsed lookup W.pos was built with (what is drawn, W4-1)
@@ -382,10 +383,9 @@ local function isList()
 	return W.drawn == "list"
 end
 
--- The views in physical slot order (the grid, and the per-bag view): no Layout state, so no New, Free,
--- stack grouping, free tile or focus, and bag updates repaint in place.
+-- The views in physical slot order (the grid, and the per-bag view): Engine/PerBag.lua, shared with GroupView.
 local function physical(view)
-	return view == "grid" or view == "bags"
+	return SB.PerBag.Physical(view)
 end
 
 -- [sectionId] = true for collapsed sections, saved per character (AC3.2).
@@ -713,13 +713,10 @@ end
 -- The bags view's header for one PerBag header entry: the bag's name (L.PERBAG_BAG when it cannot be
 -- read), its slots and its empty slots (from the records, so it follows every repaint).
 local function perBagLabel(h)
-	local free = 0
-	for slot = 1, h.size do
-		if not (W.records[h.bag] and W.records[h.bag][slot]) then
-			free = free + 1
-		end
-	end
-	return SB.PerBag.Label(SB.Adapter.BagName(h.bag) or L.PERBAG_BAG:format(h.bag), h.size, free, h.collapsed)
+	local free = SB.PerBag.Free(function(bag, slot)
+		return W.records[bag] and W.records[bag][slot]
+	end, h.bag, h.size)
+	return SB.PerBag.Label(W.bagNames[h.bag] or L.PERBAG_BAG:format(h.bag), h.size, free, h.collapsed)
 end
 
 -- The bags view (0.17, spec 4): one section per bag, physical order, drawn like the grid (every button at
@@ -733,6 +730,10 @@ end
 local function layoutPerBag(bags)
 	local A, B, H = SB.Adapter, SB.Buttons, SB.SectionHeaders
 	local pos = perBagPosition(bags, W.Collapsed())
+	W.bagNames = {}
+	for _, b in ipairs(bags) do
+		W.bagNames[b.bag] = SB.Adapter.BagName(b.bag)
+	end
 	W.cells = pos.cells
 	for _, c in ipairs(pos.cells) do
 		local button = B.Get(c.bag, c.slot)
@@ -1444,7 +1445,7 @@ end
 -- above it. A right-click, Shift+right-click, a drop and the hover hint do nothing (no section actions,
 -- no manual list); an item on the cursor stays there.
 local function isBagHeader(id)
-	return type(id) == "string" and id:sub(1, 4) == "bag:"
+	return SB.PerBag.IsId(id)
 end
 
 local function perBagHeaderY(pos, id)
@@ -1484,6 +1485,40 @@ local function perBagFoldSafe(id, pos)
 	return true
 end
 
+-- A fold drawn at once moves buttons and headers only (review fix, PR #1): the slots were read and painted by
+-- the last layout and a fold changes no slot, so nothing is read or painted again (as GroupView's Restack for
+-- the bank's bags view). Only while every bag still has the size that layout drew; otherwise the full layout.
+local function sameSizes(bags)
+	for _, b in ipairs(bags) do
+		if W.sizes[b.bag] ~= b.size then
+			return false
+		end
+	end
+	return true
+end
+
+local function restackPerBag(pos)
+	local B, H = SB.Buttons, SB.SectionHeaders
+	for _, c in ipairs(pos.cells) do
+		local button = B.Get(c.bag, c.slot)
+		if button then
+			if c.shown then
+				place(button, c.x, c.y)
+				button:Show()
+			else
+				button:Hide()
+			end
+		end
+	end
+	W.cells, W.perBag = pos.cells, pos
+	H.ReleaseAll(child)
+	for _, h in ipairs(pos.headers) do
+		H.Acquire(child, h.id, perBagLabel(h), W.PAD, h.y, pos.width - 2 * W.PAD)
+	end
+	sizeFrame(pos.width, pos.height, true)
+	SB.Emit("SB_BAGS_LAYOUT", "collapse") -- the search, the tour and the bank's worth line follow, as after a layout
+end
+
 local function clickBagHeader(id, mouseButton)
 	if mouseButton == "RightButton" or SB.Adapter.CursorItem() then
 		return
@@ -1499,11 +1534,17 @@ local function clickBagHeader(id, mouseButton)
 	end
 	local set = W.Collapsed()
 	set[id] = (not drawn.collapsed) or nil
-	if perBagFoldSafe(id, perBagPosition(bagList(), set)) then
-		W.Layout("collapse")
+	local bags = bagList()
+	local pos = perBagPosition(bags, set)
+	if perBagFoldSafe(id, pos) then
+		if sameSizes(bags) then
+			restackPerBag(pos)
+		else
+			W.Layout("collapse")
+		end
 	elseif not W.RequestLayout("collapse") then
 		W.Flash((drawn.collapsed and L.HEADER_FLASH_OPEN or L.HEADER_FLASH_COLLAPSED):format(
-			SB.Adapter.BagName(drawn.bag) or L.PERBAG_BAG:format(drawn.bag)))
+			W.bagNames[drawn.bag] or L.PERBAG_BAG:format(drawn.bag)))
 	end
 end
 

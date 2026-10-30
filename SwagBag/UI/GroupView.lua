@@ -115,15 +115,13 @@ local function keyOf(bag, slot)
 	return SB.Layout.Key(bag, slot)
 end
 
--- The views in physical slot order (the grid, and the per-bag view): no Layout state, so no New, Free,
--- stack grouping or free tile, and live changes repaint in place.
+-- The physical views and the bags-view sections: Engine/PerBag.lua (shared with the bags window).
 local function physical(view)
-	return view == "grid" or view == "bags"
+	return SB.PerBag.Physical(view)
 end
 
--- A bags-view section ("bag:<bag>", Engine/PerBag.lua): no category behind it.
 local function isBagSection(sid)
-	return type(sid) == "string" and sid:sub(1, 4) == "bag:"
+	return SB.PerBag.IsId(sid)
 end
 
 function GV.New(cfg)
@@ -407,13 +405,9 @@ function GV.New(cfg)
 	end
 
 	local function freeIn(h)
-		local free = 0
-		for slot = 1, h.size do
-			if not v.records[keyOf(h.bag, slot)] then
-				free = free + 1
-			end
-		end
-		return free
+		return SB.PerBag.Free(function(bag, slot)
+			return v.records[keyOf(bag, slot)]
+		end, h.bag, h.size)
 	end
 
 	local function sectionLabel(gid, h, totals, vendor)

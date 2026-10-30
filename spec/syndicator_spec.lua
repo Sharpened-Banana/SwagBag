@@ -404,6 +404,33 @@ describe("Syndicator provider", function()
 		assert.equal(2, #list)
 	end)
 
+	-- Review fix (PR #1). Mutation: P.wealth sets `listed` for the current character before its money is checked.
+	it("wealth adds the current character with its live gold when Syndicator has not saved it yet", function()
+		api.chars["Abby-ArgentDawn"].money = 50 -- Swagger is shown in Syndicator but has nothing saved yet
+		A.money = 999
+		local list, source = AD.Wealth()
+		assert.equal("Syndicator", source)
+		assert.equal(2, #list)
+		assert.equal(true, list[1].current)
+		assert.equal(999, list[1].money)
+	end)
+
+	it("the current character with currencies only in Syndicator shows its live gold", function()
+		api.chars["Swagger-ArgentDawn"].currencies = { [3008] = 4 }
+		A.money = 999
+		local list = AD.Wealth()
+		assert.equal(999, list[1].money)
+		assert.same({ [3008] = 4 }, list[1].currencies)
+	end)
+
+	-- Review fix (PR #1). Mutation: P.wealth returns its list with only the added current character again.
+	it("hidden in a Syndicator that saves no money, wealth still hands over to Own", function()
+		api.chars["Swagger-ArgentDawn"].details.show.inventory = false
+		A.money = 999
+		local _, source = AD.Wealth()
+		assert.equal("Own", source)
+	end)
+
 	it("a Syndicator without money hands wealth to Own", function()
 		local _, source = AD.Wealth()
 		assert.equal("Own", source)

@@ -364,7 +364,8 @@ end
 
 -- Below the tooltip's own lines: a blank line, then every character (AltData.Wealth) from build(list) ->
 -- rows[, total, warband], the value of a row from text(row), class-coloured names. Gold also gets the
--- Warband bank and the total. Only the current character listed: the gray hint instead.
+-- Warband bank and the total. Only the current character listed: the gray hint instead of the character
+-- lines; gold still gets the Warband bank and the total while the Warband bank holds gold.
 local function addCharacters(T, build, text)
 	local AD = SB.AltData
 	if not (AD and SB.Wealth) then
@@ -375,11 +376,14 @@ local function addCharacters(T, build, text)
 		return
 	end
 	T:AddLine(" ")
+	local rows, total, warband = build(list)
 	if #list <= 1 then
 		T:AddLine(L.FOOTER_ALTS_NONE, 0.6, 0.6, 0.6)
-		return
+		rows = {}
+		if not (warband and warband > 0) then
+			total = nil -- only this character's gold: the line above already says it
+		end
 	end
-	local rows, total, warband = build(list)
 	for _, row in ipairs(rows) do
 		if row.more then
 			T:AddLine(L.FOOTER_ALTS_MORE:format(row.more), 0.6, 0.6, 0.6)

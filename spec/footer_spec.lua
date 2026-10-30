@@ -330,6 +330,20 @@ describe("Footer (ruling W4-14)", function()
 		assert.falsy(lines[#lines][2] == SB.L.FOOTER_TOTAL)
 	end)
 
+	-- Review fix (PR #1). Mutation: addCharacters returns right after the hint again.
+	it("with no alt saved, gold still shows the Warband bank and the total", function()
+		loadWealth()
+		SB.Snapshots.DB().chars = {}
+		A.WarbandMoney = function() return 50000000 end -- 5,000g
+		F.Refresh()
+		local lines = recordLines()
+		Fake.Fire(F.widgets[1], "OnEnter")
+		local n = #lines
+		assert.equal(SB.L.FOOTER_ALTS_NONE, lines[n - 2][1])
+		assert.same({ SB.L.FOOTER_WARBAND_GOLD, "5,000g" }, { lines[n - 1][1], lines[n - 1][2] })
+		assert.equal(SB.L.FOOTER_TOTAL, lines[n][1])
+	end)
+
 	it("the currency tooltip lists each character's quantity of that currency", function()
 		loadWealth()
 		F.Refresh()
@@ -340,7 +354,8 @@ describe("Footer (ruling W4-14)", function()
 			end
 		end
 		assert.same({ 3056 }, GameTooltip.calls.SetCurrencyByID)
-		assert.same({ "Ann-Argent Dawn", "40" }, { lines[#lines][1], lines[#lines][2] })
+		-- Ann-Tichondrius has none of it, so this Ann needs no realm (review fix, PR #1)
+		assert.same({ "Ann", "40" }, { lines[#lines][1], lines[#lines][2] })
 	end)
 
 	-- M2. Mutation: delete the SB_BAGS_CLOSED handler in Footer.lua.

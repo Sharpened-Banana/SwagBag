@@ -279,6 +279,29 @@ describe("BagsWindow per-bag view", function()
 		assert.falsy(B.Get(0, 1).shown, "the top bag folds at once too")
 	end)
 
+	-- Review fix (PR #1): a fold moves buttons and headers only. Mutation: clickBagHeader calls W.Layout("collapse")
+	-- when the sizes are unchanged (every slot is painted again).
+	it("a fold paints no slot again and moves the bags below it", function()
+		W.Open()
+		local paints = 0
+		local paint = B.Paint
+		B.Paint = function(...)
+			paints = paints + 1
+			return paint(...)
+		end
+		local below = B.Get(1, 1)
+		local y = below.y
+		header("bag:0").scripts.OnClick(header("bag:0"), "LeftButton")
+		assert.equal(0, paints)
+		assert.falsy(B.Get(0, 1).shown)
+		assert.truthy(below.y > y, "bag 1 moved up")
+		assert.equal("+ Backpack · 16 slots · 3 free", header("bag:0").text.text)
+		header("bag:0").scripts.OnClick(header("bag:0"), "LeftButton")
+		assert.equal(0, paints)
+		assert.truthy(B.Get(0, 1).shown)
+		assert.equal(y, below.y)
+	end)
+
 	-- Mutation: drop the CursorBusy check in perBagFoldSafe.
 	it("a header click with anything on the cursor waits", function()
 		W.Open()

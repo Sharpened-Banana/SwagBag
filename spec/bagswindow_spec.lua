@@ -68,7 +68,7 @@ describe("BagsWindow", function()
 			"SwagBag/Core/SafeMode.lua",
 			"SwagBag/Core/Config.lua",
 			"SwagBag/Core/Slash.lua",
-			"SwagBag/Engine/GridLayout.lua",
+			"SwagBag/Engine/GridLayout.lua", "SwagBag/Engine/PerBag.lua",
 		})
 		A = SB.Adapter
 		SB.Config.Init(nil, nil)
