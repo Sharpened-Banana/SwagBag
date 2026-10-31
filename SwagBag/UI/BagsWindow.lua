@@ -120,6 +120,25 @@ function W.ClampScroll()
 	scroll:SetVerticalScroll(SB.GridLayout.ClampOffset(scroll:GetVerticalScroll(), child:GetHeight(), scroll:GetHeight()))
 end
 
+-- 0.17: the category sidebar (UI/CategorySidebar.lua) beside this window; a click is W.SidebarClick (below).
+-- Without that file (a load failure) the bags simply have no sidebar.
+W.sidebar = SB.CategorySidebar and SB.CategorySidebar.New({ key = "bags", parent = frame, window = "bags",
+	onClick = function(entry)
+		W.SidebarClick(entry.id)
+	end }) or nil
+
+-- The sidebar's lines for what is drawn: one per section header (the categories and list views), none otherwise.
+local function updateSidebar(pos)
+	if not W.sidebar then
+		return
+	end
+	local entries = {}
+	for i, h in ipairs(pos and pos.headers or {}) do
+		entries[i] = { id = h.id, text = SB.CategorySidebar.Label(SB.Categories.Name(h.id), h.count, h.collapsed) }
+	end
+	W.sidebar.Update(entries)
+end
+
 -- Esc, the X button and W.Close() all hide the frame. Spec 4.3 "window closes":
 -- placeholders are released, the layout is forgotten and the scroll goes back to the top;
 -- the next open lays out fully (and UI/SearchBox.lua clears the search).
@@ -281,7 +300,9 @@ local function sizeFrame(width, height, keepTop)
 	if pinned then
 		local shortfall = viewHeight - (top - header - foot)
 		if shortfall > 0 then
-			if not (frame:IsMouseOver() or scroll:IsMouseOver() or SB.Adapter.CursorBusy()) then
+			-- The sidebar hangs on the window (0.17): a line under the mouse would move with the top edge.
+			if not (frame:IsMouseOver() or scroll:IsMouseOver() or (W.sidebar and W.sidebar.IsMouseOver())
+				or SB.Adapter.CursorBusy()) then
 				-- Ruling W4-25: nothing is under the pointer, so the whole window may move (P5): the top
 				-- edge goes up by the shortfall, never past the top of the screen. The bottom edge stays
 				-- on the screen (the room clamp below still holds).
@@ -830,6 +851,7 @@ local function renderExtras(pos)
 	for i, h in ipairs(pos.headers) do
 		H.Acquire(child, h.id, labels[i], W.PAD, h.y, pos.width - 2 * W.PAD)
 	end
+	updateSidebar(pos)
 end
 
 -- A stack's count or an item's price can change a section's total with no button moving:
@@ -1068,8 +1090,10 @@ function W.Layout(reason)
 	local width, height
 	if W.drawn == "grid" then
 		width, height = layoutGrid(bags)
+		updateSidebar(nil)
 	elseif W.drawn == "bags" then
 		width, height = layoutPerBag(bags)
+		updateSidebar(nil)
 	else
 		width, height = layoutSections(bags)
 	end
@@ -1275,6 +1299,24 @@ function W.ClickSection(id)
 	else
 		flashSection(L.HEADER_FLASH_PEEK, id)
 	end
+end
+
+-- 0.17, a click on a sidebar line ("brings up that category and that's it"): a section drawn folded unfolds
+-- exactly as a left-click on its header does (W.ClickSection: a focus mode's fold is a peek), then the view scrolls
+-- so its header is at the top (clamped). Nothing else changes. The pointer is on the sidebar, outside the items, so
+-- the hover guards let the re-stack land; one still held (a button that would move is under the mouse) scrolls
+-- nothing, and its title flash says what happened. With anything on the cursor nothing happens (spec 4.2 rule 5).
+function W.SidebarClick(id)
+	if SB.Adapter.CursorBusy() or not (W.pos and W.view and headerY(W.pos, id)) then
+		return
+	end
+	if W.view[id] then
+		W.ClickSection(id)
+		if W.view[id] then
+			return
+		end
+	end
+	scroll:SetVerticalScroll(SB.GridLayout.ClampOffset(-headerY(W.pos, id), child:GetHeight(), scroll:GetHeight()))
 end
 
 -- A right-click on a header while a focus mode applies: keep that section open until the mode
@@ -1716,6 +1758,9 @@ function W.Open()
 	W.RefreshTitle()
 	frame:Show()
 	W.Layout("open")
+	if W.sidebar then -- its side is chosen once the window has its place and size
+		W.sidebar.Place()
+	end
 	return true
 end
 

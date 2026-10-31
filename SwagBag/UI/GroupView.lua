@@ -34,6 +34,10 @@
 --                                       "left" | "arrived" | "added" | "removed" (Layout.Apply)
 --   v.Restack() -> bool                 redraw after a collapse or expand (held back like a move)
 --   v.ToggleSection(groupId, sectionId), v.ToggleGroup(groupId)
+--   v.ClickGroup(groupId) -> bool       0.17: what a click on the group's header does (the window's toggleGroup
+--                                       first, else the saved fold); false while the re-stack is held
+--   v.GroupClosed(groupId) -> bool      the group is folded (the window's rule, else the saved set)
+--   v.Collapsed(groupId) -> set         the group's saved section folds ([sectionId] = true)
 --   v.Relabel()                         redraw the headers only (nothing moves)
 --   v.RefreshTotals()                   section headers' text in place (a count or price changed)
 --   v.ForEachSlot(fn)                   fn(button, record, bag, slot) for every slot (search), the stacks
@@ -204,14 +208,17 @@ function GV.New(cfg)
 
 	-- Pixel positions of every group, stacked top to bottom. Combined result:
 	-- { cells, byKey, placeholders, headers = { { group, id, y, count, overflow, collapsed } },
-	--   groupHeaders = { { id, y, count, collapsed } }, tiles = { free tile cells },
+	--   groupHeaders = { { id, y, count, collapsed } }, folded = { { group, id, count, collapsed } } (0.17: the
+	--   sections of each folded group, not drawn, with their own saved folds; the category sidebar lists them),
+	--   tiles = { free tile cells },
 	--   stacks = { every group's pos.stacks entries }, width, height }
 	-- groups/records/view default to the view's own (a full layout positions a candidate first).
 	local function positionAll(groups, records, view)
 		groups, records, view = groups or v.groups, records or v.records, view or v.drawn
 		local list = view == "list"
 		local cols = cfg.columns()
-		local all = { cells = {}, byKey = {}, placeholders = {}, headers = {}, groupHeaders = {}, tiles = {}, stacks = {},
+		local all = { cells = {}, byKey = {}, placeholders = {}, headers = {}, groupHeaders = {}, folded = {}, tiles = {},
+			stacks = {},
 			width = list and GV.LIST_WIDTH or (GV.PAD * 2 + cols * GV.SLOT + (cols - 1) * GV.GAP) }
 		local y = 0
 		for _, g in ipairs(groups) do
@@ -259,6 +266,11 @@ function GV.New(cfg)
 					all.headers[#all.headers + 1] = h
 				end
 				y = pos.height
+			else
+				local own = collapsedFor(g.id)
+				for _, h in ipairs(pos.headers) do
+					all.folded[#all.folded + 1] = { group = g.id, id = h.id, count = h.count, collapsed = own[h.id] == true }
+				end
 			end
 			y = y + GV.GROUP_GAP
 		end
@@ -376,10 +388,8 @@ function GV.New(cfg)
 		end
 		if sid then
 			v.ToggleSection(gid, sid)
-		elseif cfg.toggleGroup and cfg.toggleGroup(gid) then
-			v.Restack() -- the window folded it itself: nothing to save
 		else
-			v.ToggleGroup(gid)
+			v.ClickGroup(gid)
 		end
 	end
 
@@ -1122,6 +1132,14 @@ function GV.New(cfg)
 		set[gid] = not set[gid] or nil
 		return v.Restack()
 	end
+
+	function v.ClickGroup(gid)
+		if cfg.toggleGroup and cfg.toggleGroup(gid) then
+			return v.Restack() -- the window folded it itself: nothing to save
+		end
+		return v.ToggleGroup(gid)
+	end
+	v.GroupClosed = groupClosed
 
 	---------------------------------------------------------------------------
 	-- Access

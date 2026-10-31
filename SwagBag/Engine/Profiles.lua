@@ -109,6 +109,7 @@ local LABELS = {
 	["bags.newRows"] = "PROFILE_LABEL_NEW_ROWS", ["bags.showIlvl"] = "PROFILE_LABEL_SHOW_ILVL",
 	["bags.list.sort"] = "SET_LIST_SORT", ["bags.list.desc"] = "PROFILE_LABEL_LIST_DESC",
 	["bags.footer.entries"] = "PROFILE_LABEL_FOOTER", ["bags.warnOtherAddons"] = "SET_OTHER_BAGS",
+	["bags.sidebar"] = "SET_SIDEBAR",
 	["bank.blizzardFrame"] = "SET_BANK_FRAME", ["bank.show"] = "SET_BANK_SHOW", ["bank.view"] = "PROFILE_LABEL_BANK_VIEW",
 	["bank.columns"] = "PROFILE_LABEL_BANK_COLUMNS", ["bank.groupColors"] = "SET_BANK_COLORS",
 	["bank.gold"] = "SET_BANK_GOLD",

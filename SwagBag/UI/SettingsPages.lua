@@ -105,6 +105,12 @@ local function bagsRows()
 				return v and L.SET_REAGENTS_OWN_DONE or L.SET_REAGENTS_MIXED_DONE
 			end },
 		onOff(L.SET_TITLE_ILVL, "bags.showIlvl", "overlays title"),
+		-- 0.17: the category sidebar beside the bags and bank windows; every click runs /swagbag sidebar.
+		(function()
+			local row = onOff(L.SET_SIDEBAR, "bags.sidebar", "sidebar")
+			row.tip = L.SET_SIDEBAR_TIP
+			return row
+		end)(),
 		-- Week 9 (user pick 8): what Sort does; every click runs /swagbag sort.
 		{ kind = "choice", label = L.SET_SORT, tip = L.SET_SORT_TIP, width = 150, get = get("sort.mode"),
 			choices = { { value = "blizzard", text = L.SET_SORT_BLIZZARD }, { value = "stacks", text = L.SET_SORT_STACKS } },

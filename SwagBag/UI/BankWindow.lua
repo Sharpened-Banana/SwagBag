@@ -121,6 +121,16 @@ local function clampScroll()
 	scroll:SetVerticalScroll(SB.GridLayout.ClampOffset(scroll:GetVerticalScroll(), child:GetHeight(), scroll:GetHeight()))
 end
 
+-- 0.17: the category sidebar (UI/CategorySidebar.lua) beside this window; on the right while Blizzard's bank is
+-- shown on the left ("beside"). A click is BW.SidebarClick (below). No file, no sidebar.
+BW.sidebar = SB.CategorySidebar and SB.CategorySidebar.New({ key = "bank", parent = frame, window = "bank",
+	onClick = function(entry)
+		BW.SidebarClick(entry)
+	end,
+	blocked = function()
+		return BW.VisitMode() == "beside"
+	end }) or nil
+
 scroll:EnableMouseWheel(true)
 scroll:SetScript("OnMouseWheel", Guard("bank.wheel", function(_, delta)
 	scroll:SetVerticalScroll(scroll:GetVerticalScroll() - delta * (SB.GroupView.SLOT + SB.GroupView.GAP) * 3)
@@ -332,6 +342,9 @@ function BW.ToggleVisit()
 	end
 	BW.visit = BW.VisitMode() == "tiny" and "beside" or "tiny"
 	BW.ApplyMode()
+	if BW.sidebar then -- the window jumped beside Blizzard's bank (or back): the side follows
+		BW.sidebar.Place()
+	end
 	BW.Flash(BW.visit == "beside" and L.BANK_SHOWING_BLIZZARD or L.BANK_HIDING_BLIZZARD, BW.VISIT_FLASH, true)
 	return true
 end
@@ -575,6 +588,7 @@ BW.view = SB.GroupView.New({
 	end,
 	onHeaders = function(list)
 		BW.PlaceDepositControls(list)
+		BW.UpdateSidebar()
 	end,
 	view = BW.View,
 	columns = function()
@@ -1275,6 +1289,9 @@ function BW.Open()
 	BW.ApplyMode()
 	BW.RefreshReagents()
 	BW.Layout("open")
+	if BW.sidebar then -- its side is chosen once the window has its place
+		BW.sidebar.Place()
+	end
 	SB.Emit("SB_BANK_OPENED")
 	BW.RefreshStillOpen()
 	return true
@@ -1282,6 +1299,60 @@ end
 
 function BW.Close()
 	frame:Hide()
+end
+
+---------------------------------------------------------------------------
+-- The category sidebar (0.17)
+---------------------------------------------------------------------------
+-- Its lines for what is drawn (the categories and list views): each bank as a heading with its categories under
+-- it, the folded bank's too (GroupView's pos.folded, with their own saved folds). None in the grid and bags views.
+function BW.UpdateSidebar()
+	if not BW.sidebar then
+		return
+	end
+	local v, S, entries = BW.view, SB.CategorySidebar, {}
+	local pos = v.pos
+	if pos and (v.drawn == "sections" or v.drawn == "list") then
+		for _, g in ipairs(pos.groupHeaders) do
+			entries[#entries + 1] = { group = g.id, heading = true, text = S.Label(groupName(g.id), g.count, g.collapsed) }
+			for _, list in ipairs({ pos.headers, pos.folded or {} }) do
+				for _, h in ipairs(list) do
+					if h.group == g.id then
+						entries[#entries + 1] = { group = g.id, id = h.id, indent = true,
+							text = S.Label(SB.Categories.Name(h.id), h.count, h.collapsed) }
+					end
+				end
+			end
+		end
+	end
+	BW.sidebar.Update(entries)
+end
+
+-- A click on a sidebar line ("brings up that category and that's it"): a folded bank opens exactly as a click on
+-- its header opens it (in "one" mode for this visit only), a folded section unfolds as its header click does
+-- (saved), then the view scrolls so the header is at the top (clamped). Each step is a Restack, held while a button
+-- it would move is under the mouse; a held step scrolls nothing. Anything on the cursor: nothing happens.
+function BW.SidebarClick(entry)
+	local v = BW.view
+	if SB.Adapter.CursorBusy() or not v.pos then
+		return
+	end
+	local gid, sid = entry.group, entry.id
+	if v.GroupClosed(gid) and (not v.ClickGroup(gid) or v.GroupClosed(gid)) then
+		return
+	end
+	if sid and v.Collapsed(gid)[sid] and not v.ToggleSection(gid, sid) then
+		return
+	end
+	local y
+	for _, h in ipairs(sid and v.pos.headers or v.pos.groupHeaders) do
+		if (sid and h.group == gid and h.id == sid) or (not sid and h.id == gid) then
+			y = h.y
+		end
+	end
+	if y then
+		scroll:SetVerticalScroll(SB.GridLayout.ClampOffset(-y, child:GetHeight(), scroll:GetHeight()))
+	end
 end
 
 -- Esc, the X button and BW.Close() hide only SwagBag's window; during a visit Blizzard's bank is

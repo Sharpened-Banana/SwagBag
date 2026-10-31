@@ -1242,6 +1242,16 @@ L.REPORT_OTHER_BAGS = "Other bag addons on: %s"
 L.HELP_OTHER_BAGS = "otherbags [on|off]: a chat line at login while another bag addon is on too"
 L.OTHER_BAGS_STATE = "Warning at login about other bag addons: %s. Type /swagbag otherbags on or otherbags off."
 L.OTHER_BAGS_USAGE = "Use /swagbag otherbags, otherbags on, or otherbags off."
+
+-- Category sidebar (0.17, UI/CategorySidebar.lua)
+L.SIDEBAR_LINE = "%s%s (%d)" -- "+ " while folded, the section's name, its item count (the header's)
+L.HELP_SIDEBAR = "sidebar [on|off]: the list of categories beside your bags and bank (a click brings that category up)"
+L.SIDEBAR_STATE = "Category sidebar: %s. Type /swagbag sidebar on or sidebar off."
+L.SIDEBAR_ON = "Category sidebar on: click a category beside your bags or bank to bring it up."
+L.SIDEBAR_OFF = "Category sidebar off. /swagbag sidebar on brings it back."
+L.SET_SIDEBAR = "Category sidebar"
+L.SET_SIDEBAR_TIP = "A list of your categories and their counts beside the bags and bank windows. Click one to bring"
+	.. " it up (it unfolds if folded). The small arrow at its top shrinks it to a thin strip."
 L.OTHER_BAGS_ON = "SwagBag warns at login while another bag addon is on too."
 L.OTHER_BAGS_OFF = "No more warning at login about other bag addons. /swagbag report still names them."
 L.SET_OTHER_BAGS = "Other bag addons"

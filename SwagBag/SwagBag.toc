@@ -74,6 +74,7 @@ UI/Skins.lua
 UI/ReportBox.lua
 UI/Buttons.lua
 UI/SectionHeaders.lua
+UI/CategorySidebar.lua
 UI/ListRows.lua
 UI/BagsWindow.lua
 UI/SectionActions.lua

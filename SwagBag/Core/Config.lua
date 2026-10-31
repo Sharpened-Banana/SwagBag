@@ -31,6 +31,9 @@ Config.Defaults = {
 			showIlvl = true, freeTile = true, newAlways = false, stacks = "one",
 			-- warnOtherAddons (week 9): one chat line at login while another bag addon is on too (Core/Report.lua).
 			warnOtherAddons = true,
+			-- sidebar (0.17, UI/CategorySidebar.lua): the category list beside the bags and bank windows. One setting
+			-- for both windows; shrinking it to a strip is per character (ui.sidebarShrunk).
+			sidebar = true,
 			-- list: the list view's order (Engine/Sort.lua; the bags window's third view). sort: "value" |
 			-- "name" | "count" | "ilvl"; desc: highest first (Z to A for names). Default: worth most first.
 			list = { sort = "value", desc = true },
