@@ -75,6 +75,28 @@ describe("Layout (build, position, collapse)", function()
 		assert.equal(6, #pos.cells)
 	end)
 
+	-- 0.18 (the "Like EllesmereUI" look). Mutation: pad New or Free too, or put the "+" on every pad.
+	it("padRows fills each open section's last row after its items, the first square a + tile; nothing moves", function()
+		local st = sample()
+		local opts = {}
+		for k, v in pairs(OPTS) do
+			opts[k] = v
+		end
+		opts.padRows = true
+		local padded = L.Position(st, opts, {})
+		local pads = {}
+		for i, p in ipairs(padded.pads) do
+			pads[i] = p.section .. "@" .. p.x .. "," .. p.y .. (p.plus and "+" or "")
+		end
+		-- a holds 2 of 4 columns, b 1: New and Free get none
+		assert.same({ "a@25,-36+", "a@37,-36", "b@13,-54+", "b@25,-54", "b@37,-54" }, pads)
+		local plain = L.Position(st, OPTS, {})
+		assert.same({}, plain.pads)
+		plain.pads, padded.pads = nil, nil
+		assert.same(plain, padded, "pads move no item and change no height")
+		assert.same({}, L.Position(st, opts, { a = true, b = true }).pads, "a folded section has no pads")
+	end)
+
 	it("collapsing hides a section and re-stacks the ones below; expanding returns every item to its cell", function()
 		local st = sample()
 		local open = L.Position(st, OPTS, {})

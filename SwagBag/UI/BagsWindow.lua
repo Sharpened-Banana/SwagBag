@@ -122,10 +122,37 @@ end
 
 -- 0.17: the category sidebar (UI/CategorySidebar.lua) beside this window; a click is W.SidebarClick (below).
 -- Without that file (a load failure) the bags simply have no sidebar.
+-- 0.18: the "Like EllesmereUI" look (Theme.Layout "insideSidebar") puts it inside the window's left edge, between
+-- the search row and the footer; sizeFrame then makes the window wider by W.InsideWidth() and starts the items
+-- right of it.
+W.INSIDE_GAP = 6
 W.sidebar = SB.CategorySidebar and SB.CategorySidebar.New({ key = "bags", parent = frame, window = "bags",
 	onClick = function(entry)
 		W.SidebarClick(entry.id)
+	end,
+	inside = function()
+		if SB.Theme and SB.Theme.Layout("insideSidebar") then
+			return W.HeaderHeight(), W.foot or W.FOOTER
+		end
+		return nil
 	end }) or nil
+
+-- /swagbag sidebar on|off with the list inside the window: the window makes or gives back its room.
+if W.sidebar then
+	W.sidebar.onToggled = function()
+		if SB.Theme and SB.Theme.Layout("insideSidebar") then
+			W.RequestLayout("sidebar")
+		end
+	end
+end
+
+-- The room the sidebar takes inside the window (0 while it is beside it, hidden, or the look keeps it outside).
+function W.InsideWidth()
+	if W.sidebar and SB.Theme and SB.Theme.Layout("insideSidebar") and W.sidebar.frame:IsShown() then
+		return W.sidebar.frame:GetWidth() + W.INSIDE_GAP
+	end
+	return 0
+end
 
 -- The sidebar's lines for what is drawn: one per section header (the categories and list views), none otherwise.
 local function updateSidebar(pos)
@@ -286,6 +313,10 @@ local function sizeFrame(width, height, keepTop)
 	if not keepTop then
 		W.footHeld = false -- opening lays out from scratch
 	end
+	local inset = W.InsideWidth()
+	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + inset, -W.HeaderHeight())
+	W.columnsBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + inset + W.PAD + W.LIST_ROW + W.ROW_TEXT_GAP, -W.HEADER)
+	width = width + inset
 	local foot = W.FOOTER + (SB.Footer and SB.Footer.Layout(width + 8) or 0)
 	if W.footHeld and W.foot and foot < W.foot then
 		foot = W.foot
@@ -325,6 +356,9 @@ local function sizeFrame(width, height, keepTop)
 		if grown then
 			savePosition() -- a reopen lands where the window is now
 		end
+	end
+	if inset > 0 then
+		W.sidebar.Place() -- inside: it spans the search row to the footer, which may have changed
 	end
 	W.ClampScroll()
 end
@@ -456,7 +490,7 @@ local function positionOpts(order)
 			sectionGap = W.SECTION_GAP, order = order }
 	end
 	return { columns = columns(), size = W.SLOT, gap = W.GAP, padding = W.PAD, header = W.SECTION_HEADER,
-		sectionGap = W.SECTION_GAP, order = order }
+		sectionGap = W.SECTION_GAP, order = order, padRows = SB.Theme and SB.Theme.Layout("padSlots") or nil }
 end
 
 -- Layout.Position for the drawn view and section order. A list is LIST_WIDTH wide (its single
@@ -831,6 +865,63 @@ local function headerLabels(pos)
 	return labels
 end
 
+-- 0.18 (the "Like EllesmereUI" look, Theme.Layout "padSlots"): the empty squares that fill each section's last
+-- row (Layout.Position's pos.pads), pooled. Each takes a dropped item into its section, as the header does
+-- (W.DropOnSection, looked up at the drop: it is defined below); the first shows a "+". Plain frames, no item
+-- button, nothing secure, so they work in combat.
+W.pads = {}
+
+local function padFrame(i)
+	local f = W.pads[i]
+	if f then
+		return f
+	end
+	f = CreateFrame("Button", nil, child)
+	f:SetSize(W.SLOT, W.SLOT)
+	f:EnableMouse(true)
+	f:RegisterForClicks("LeftButtonUp")
+	f.bg = f:CreateTexture(nil, "BACKGROUND")
+	f.bg:SetAllPoints(f)
+	SB.Theme.Slot(f.bg)
+	f.plus = f:CreateFontString(nil, "OVERLAY", "GameFontDisableLarge")
+	f.plus:SetPoint("CENTER", f, "CENTER", 0, 0)
+	f.plus:SetText("+")
+	local function drop(self)
+		if SB.Adapter.CursorItem() then
+			W.DropOnSection(self.section)
+		end
+	end
+	f:SetScript("OnReceiveDrag", Guard("bags.padDrop", drop, "bags"))
+	f:SetScript("OnClick", Guard("bags.padClick", drop, "bags"))
+	f:SetScript("OnEnter", Guard("bags.padTip", function(self)
+		if self.plus:IsShown() then
+			GameTooltip:SetOwner(self, "ANCHOR_TOP")
+			GameTooltip:SetText(L.PAD_TIP:format(SB.Categories.Name(self.section)), 1, 1, 1, 1, true)
+			GameTooltip:Show()
+		end
+	end, "bags"))
+	f:SetScript("OnLeave", Guard("bags.padTipHide", function()
+		GameTooltip:Hide()
+	end, "bags"))
+	W.pads[i] = f
+	return f
+end
+
+local function renderPads(pads)
+	pads = pads or {}
+	for i, p in ipairs(pads) do
+		local f = padFrame(i)
+		f.section = p.section
+		f:ClearAllPoints()
+		f:SetPoint("TOPLEFT", child, "TOPLEFT", p.x, p.y)
+		f.plus:SetShown(p.plus == true)
+		f:Show()
+	end
+	for i = #pads + 1, #W.pads do
+		W.pads[i]:Hide()
+	end
+end
+
 -- Placeholders and headers (a handful) are redrawn whole; they live in this window's child,
 -- so nothing another window drew is released.
 local function renderExtras(pos)
@@ -851,6 +942,7 @@ local function renderExtras(pos)
 	for i, h in ipairs(pos.headers) do
 		H.Acquire(child, h.id, labels[i], W.PAD, h.y, pos.width - 2 * W.PAD)
 	end
+	renderPads(pos.pads)
 	updateSidebar(pos)
 end
 
@@ -1087,6 +1179,7 @@ function W.Layout(reason)
 	W.pendingNew = {}
 	B.ReleasePlaceholders(child)
 	SB.SectionHeaders.ReleaseAll(child)
+	renderPads(nil) -- the categories view draws its own again; the grid and bags views have none
 	local width, height
 	if W.drawn == "grid" then
 		width, height = layoutGrid(bags)
@@ -1716,10 +1809,21 @@ W.sortButton:SetPoint("RIGHT", W.modeButton, "LEFT", -4, 0)
 
 -- W3-26 parity: the title (and its flashes) ends left of the leftmost SHOWN title button, on one
 -- line. leftmost: a button shown left of Sort ("Bank still open", BankWindow.lua), or nil.
+-- 0.18: the "Like EllesmereUI" look (Theme.Layout "centredTitle") centres it over the window, clear of the
+-- portrait and the slot count (UI/LookLayout.lua).
+W.TITLE_INSET = 125
 function W.BoundTitle(leftmost)
+	W.titleLeftmost = leftmost
 	frame.title:ClearAllPoints()
+	if SB.Theme and SB.Theme.Layout("centredTitle") then
+		frame.title:SetPoint("TOPLEFT", W.TITLE_INSET, -8)
+		frame.title:SetPoint("TOPRIGHT", -W.TITLE_INSET, -8)
+		frame.title:SetJustifyH("CENTER")
+		return
+	end
 	frame.title:SetPoint("TOPLEFT", 10, -8)
 	frame.title:SetPoint("RIGHT", leftmost or W.sortButton, "LEFT", -6, 0)
+	frame.title:SetJustifyH("LEFT")
 end
 frame.title:SetJustifyH("LEFT")
 frame.title:SetWordWrap(false)

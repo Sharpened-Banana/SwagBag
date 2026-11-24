@@ -392,6 +392,31 @@ describe("Themes: /swagbag theme, Settings > Look, the windows", function()
 		local again = H.Acquire(parent, "#bank", "Bank", 0, 0, 100)
 		assert.same({ 1, 1, 1, 0.03 }, again.bg.calls.SetColorTexture, "a reacquired header loses the tint")
 	end)
+
+	-- 0.18 (user request). Mutation: in validPalette drop headerLine, or in SectionHeaders never call styleLine
+	-- from the SB_THEME_CHANGED handler.
+	it("Like EllesmereUI: bronze border, no header band, a bronze line after each header; other looks have no line", function()
+		Loader.LoadFile(SB, "SwagBag/UI/SectionHeaders.lua")
+		local H = SB.SectionHeaders
+		local parent, main, slot = Fake.New("Frame"), Fake.New("Frame"), Fake.New("Texture")
+		T.Window(main, "main")
+		T.Slot(slot)
+		local h = H.Acquire(parent, "c_junk", "Junk", 0, 0, 100)
+		assert.falsy(h.line.shown, "the Blizzard look has no line")
+		assert.truthy(T.Apply("ellesmere", true))
+		assert.equal("ellesmere", SB.Config.Get("theme.name"))
+		assert.same({ { bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2,
+			tile = false, insets = { left = 2, right = 2, top = 2, bottom = 2 } } }, main.calls.SetBackdrop)
+		assert.same({ 0.55, 0.44, 0.24, 1 }, main.calls.SetBackdropBorderColor)
+		assert.same({ 0.11, 0.105, 0.1, 1 }, slot.calls.SetColorTexture)
+		assert.same({ 0, 0, 0, 0 }, h.bg.calls.SetColorTexture)
+		assert.truthy(h.line.shown)
+		assert.same({ 0.55, 0.44, 0.24, 0.6 }, h.line.calls.SetColorTexture)
+		assert.truthy(T.Layout("padSlots") and T.Layout("insideSidebar") and T.Layout("portrait"))
+		assert.truthy(T.Apply("flat", false))
+		assert.falsy(h.line.shown)
+		assert.falsy(T.Layout("padSlots"))
+	end)
 end)
 
 describe("Themes: Matches ElvUI", function()
@@ -452,7 +477,7 @@ describe("Themes: Matches ElvUI", function()
 		assert.equal("blizzard", T.Current())
 		assert.equal("blizzard", SB.Config.Get("theme.name"))
 		SW.Show("look")
-		Fake.Fire(SW.buttons[4], "OnClick") -- Blizzard, Modern flat, Classic (0.14.5), Matches ElvUI
+		Fake.Fire(SW.buttons[5], "OnClick") -- Blizzard, Modern flat, Classic (0.14.5), Like EllesmereUI (0.18), Matches ElvUI
 		assert.equal("The ElvUI look needs ElvUI, which is not loaded. The look stays Blizzard.", SW.lastStatus)
 		assert.truthy(SW.selected[SW.buttons[1]], "Blizzard stays selected")
 		assert.equal(0, #SB.ErrorTrap.Recent(), "refused by available(), not by a palette that blew up")

@@ -2,6 +2,16 @@
 
 Newest first. Each "## <version>" section is the changelog CurseForge shows for that upload (scripts/release.sh reads it).
 
+## 0.18.0
+
+- **New look: Like EllesmereUI.** Pick it in Settings > Look or with `/swagbag theme ellesmere`. Your windows get a near-black panel with a thin bronze border, gold titles, and a bronze line after each category name instead of a shaded band. The bags window also changes shape:
+  - a round bag portrait at its top-left corner, the title centred, and "72 / 86 Slots" at the top right
+  - Sort, Pause, Reflow, View and Lock become round icon buttons at the end of the search row (hover one to see its name), and the search box stretches up to them
+  - each category fills its last row with empty squares, and the first one is a "+": drop an item there to keep it in that category, just like dropping it on the category's name
+  - the category list sits inside the window, on the left, instead of beside it
+- A search mistake shows in the title row while the look is on.
+- Every other look stays exactly as it was. Switch back any time; nothing needs a reload.
+
 ## 0.17.0
 
 - **Category sidebar:** a slim list beside your bags and your bank shows every category with how many items it holds, like `Consumables (12)`. Click one to bring it up: a folded category unfolds, and the window scrolls so that category is at the top. Nothing else changes. In the bank, `Character bank` and `Warband bank` each list their categories. Clicking a category in the folded bank opens that bank, just as clicking its header does. It shows in the Categories and List views, on the left (or on the right when the window is close to the screen's left edge or Blizzard's bank is shown beside it). The small arrow at its top shrinks it to a thin strip; click the strip to bring it back. Turn it off in Settings > Bags ("Category sidebar") or with `/swagbag sidebar off`.

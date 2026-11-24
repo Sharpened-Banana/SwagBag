@@ -14,12 +14,15 @@
 --   S.On() -> bool                                  the setting
 --   S.New(cfg) -> sb   cfg = { key = "bags" | "bank", parent = the window frame, window = ErrorTrap window,
 --                      onClick(entry) (trapped as cfg.window), blocked() optional -> true while the window's
---                      left side is taken (the bank's "shown" mode) }
+--                      left side is taken (the bank's "shown" mode), inside() optional -> top, bottom: the
+--                      sidebar sits inside the window's left edge between those offsets, with a divider line and
+--                      no border or shrink handle of its own (0.18, the "Like EllesmereUI" look); nil: beside it }
 --   sb.Update(entries)  entries = { { text, id, group, heading, indent } } top to bottom (the window's own
 --                       fields ride along to onClick); {} (another view) hides the sidebar
 --   sb.Place()          at open: pick the side and anchor to the window
 --   sb.IsMouseOver()    the window's own "under the pointer" tests count the sidebar
 --   sb.frame, sb.rows, sb.handle
+--   sb.onToggled        optional, set by the window: runs after /swagbag sidebar on|off redraws it
 local _, SB = ...
 
 local L = SB.L
@@ -74,6 +77,20 @@ function S.New(cfg)
 	end
 	frame:Hide()
 	sb.frame = frame
+	-- inside the window (cfg.inside): a line between the list and the items
+	local divider = frame:CreateTexture(nil, "ARTWORK")
+	divider:SetWidth(1)
+	divider:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+	divider:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+	divider:Hide()
+	sb.divider = divider
+
+	local function insideAt()
+		if cfg.inside then
+			return cfg.inside()
+		end
+		return nil
+	end
 
 	local scroll = CreateFrame("ScrollFrame", nil, frame)
 	scroll:SetPoint("TOPLEFT", frame, "TOPLEFT", S.PAD, -(S.HANDLE + S.PAD))
@@ -123,13 +140,14 @@ function S.New(cfg)
 	end
 
 	local function shrunk()
-		return shrunkSet()[cfg.key] == true
+		return shrunkSet()[cfg.key] == true and insideAt() == nil -- inside the window it never shrinks
 	end
 
 	-- The handle sits at the top corner next to the window, so shrinking never moves it; shrunk, it is the
 	-- whole strip.
 	local function placeHandle()
 		handle:ClearAllPoints()
+		handle:SetShown(insideAt() == nil)
 		local left = sb.side == "LEFT"
 		if shrunk() then
 			handle:SetAllPoints(frame)
@@ -190,8 +208,28 @@ function S.New(cfg)
 	end
 
 	function sb.Place()
-		sb.side = S.Side(parent:GetLeft(), S.WIDTH, cfg.blocked and cfg.blocked() or false)
 		frame:ClearAllPoints()
+		local top, bottom = insideAt()
+		if top then
+			sb.side = "LEFT"
+			frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 4, -top)
+			frame:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 4, bottom)
+			frame:SetBackdropColor(0, 0, 0, 0)
+			frame:SetBackdropBorderColor(0, 0, 0, 0)
+			local r, g, b, a = 0.55, 0.44, 0.24, 0.6
+			if SB.Theme and SB.Theme.HeaderLine and SB.Theme.HeaderLine() then
+				r, g, b, a = SB.Theme.HeaderLine()
+			end
+			divider:SetColorTexture(r, g, b, a)
+			divider:Show()
+			placeHandle()
+			return
+		end
+		divider:Hide()
+		if SB.Theme then -- back from inside: the look's own panel and border again
+			SB.Theme.Window(frame, "main")
+		end
+		sb.side = S.Side(parent:GetLeft(), S.WIDTH, cfg.blocked and cfg.blocked() or false)
 		if sb.side == "LEFT" then
 			frame:SetPoint("TOPRIGHT", parent, "TOPLEFT", 0, 0)
 			frame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMLEFT", 0, 0)
@@ -222,6 +260,9 @@ SB.Slash.Register("sidebar", L.HELP_SIDEBAR, function(arg)
 	end
 	for _, sb in ipairs(S.instances) do
 		sb.Draw()
+		if sb.onToggled then -- a window that keeps the sidebar inside makes or gives back its room
+			sb.onToggled()
+		end
 	end
 	return arg == "on" and L.SIDEBAR_ON or L.SIDEBAR_OFF
 end)

@@ -53,6 +53,20 @@ function H.IsVendor()
 	return SB.Prices ~= nil and SB.Prices.Source() == "Vendor"
 end
 
+-- The line after the header's text, while the look has one (Theme.HeaderLine; the "Like EllesmereUI" look).
+local function styleLine(h)
+	local r, g, b, a
+	if SB.Theme and SB.Theme.HeaderLine then
+		r, g, b, a = SB.Theme.HeaderLine()
+	end
+	if r then
+		h.line:SetColorTexture(r, g, b, a)
+		h.line:Show()
+	else
+		h.line:Hide()
+	end
+end
+
 local function create(parent)
 	local h = CreateFrame("Button", nil, parent)
 	h:SetHeight(H.HEIGHT)
@@ -67,6 +81,11 @@ local function create(parent)
 	if SB.Theme then
 		SB.Theme.Text(h.text, "header")
 	end
+	h.line = h:CreateTexture(nil, "ARTWORK")
+	h.line:SetHeight(1)
+	h.line:SetPoint("LEFT", h.text, "RIGHT", 8, 0)
+	h.line:SetPoint("RIGHT", h, "RIGHT", -4, 0)
+	styleLine(h)
 	-- The ErrorTrap window is the owner's (W3-22, spec P6): an error in a bank header puts the
 	-- bank window, not the bags window, in Safe Mode. No owner window: the bags window.
 	h:SetScript("OnClick", function(self, mouseButton)
@@ -117,6 +136,7 @@ function H.Acquire(parent, sectionId, label, x, y, width, owner)
 	h.sectionId = sectionId
 	tinted[h] = nil
 	h.bg:SetColorTexture(headerColor())
+	styleLine(h)
 	h.text:SetText(label)
 	labels[h] = label
 	h:SetWidth(width)
@@ -141,6 +161,7 @@ SB.On("SB_THEME_CHANGED", function()
 			if not tinted[h] then
 				h.bg:SetColorTexture(headerColor())
 			end
+			styleLine(h)
 		end
 	end
 end, "none")

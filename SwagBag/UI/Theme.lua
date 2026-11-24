@@ -13,6 +13,11 @@
 --                              Blizzard's is restyled)
 --   Theme.Row(row)             a list-view row's background (UI/ListRows.lua)
 --   Theme.HeaderColor() -> r, g, b, a   section headers' background (UI/SectionHeaders.lua)
+--   Theme.HeaderLine() -> r, g, b, a | nil   the line after a section header's text (UI/SectionHeaders.lua);
+--                              nil: no line (every look but "Like EllesmereUI")
+--   Theme.Layout(key) -> bool  a layout choice of the current look (0.18, the "Like EllesmereUI" look):
+--                              "portrait", "centredTitle", "iconButtons", "padSlots", "insideSidebar". The
+--                              windows ask it when they draw and lay out again on SB_THEME_CHANGED
 -- The "blizzard" theme (built in, the default) is exactly the look SwagBag had before themes
 -- (AC14.1): the same backdrop colours, Blizzard's fonts and the bag-slot atlas. More themes come
 -- from UI/Themes.lua. Theme.Register{ id, name, available() -> bool, unavailable (text), palette() }
@@ -21,7 +26,9 @@
 --     font object name } | { file, size, flags } (one font file, sizes by role), button = nil | { bg, border },
 --     edge = nil | { file, size, inset } (a textured window border; nil: a 1 px line in the backdrop texture),
 --     tile = nil | size (the backdrop texture repeats in squares of that size), slotTexture = nil | texture path
---     (drawn under each slot instead of the slot colour or atlas; 0.14.5, the Classic look) }
+--     (drawn under each slot instead of the slot colour or atlas; 0.14.5, the Classic look),
+--     headerLine = nil | colour (a line after each section header's text), layout = nil | { [key] = true }
+--     (the window layout choices Theme.Layout answers; 0.18, the "Like EllesmereUI" look) }
 --   Theme.Apply(id, save) -> ok, why   why: "unknown" | "unavailable" | "readonly"; save writes
 --     settings.theme.name. Emits SB_THEME_CHANGED(id).
 -- The saved theme is applied at login; one that is not available then (ElvUI not loaded) shows the
@@ -116,6 +123,12 @@ local function validPalette(p)
 	end
 	if type(p.slotTexture) ~= "string" then
 		out.slotTexture = nil
+	end
+	if not isColour(p.headerLine) then
+		out.headerLine = nil
+	end
+	if type(p.layout) ~= "table" then
+		out.layout = nil
 	end
 	return out
 end
@@ -224,6 +237,19 @@ local function styleRow(row)
 	else
 		row.bg:Hide()
 	end
+end
+
+function Theme.HeaderLine()
+	local c = palette and palette.headerLine
+	if not isColour(c) then
+		return nil
+	end
+	return c[1], c[2], c[3], c[4]
+end
+
+function Theme.Layout(key)
+	local l = palette and palette.layout
+	return type(l) == "table" and l[key] == true
 end
 
 function Theme.HeaderColor()

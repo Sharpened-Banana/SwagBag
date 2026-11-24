@@ -92,7 +92,7 @@ local VALID = {
 	["prices.tsm"] = words(unpack(SB.Adapter.TSM_PRICES)),
 	["focus.resolve"] = words("merge", "priority"), ["focus.peek"] = words("peek", "keep"),
 	["focus.style"] = words("front", "collapse"),
-	["vendor.repair"] = words("own", "guild", "off"), ["theme.name"] = words("blizzard", "flat", "classic", "elvui"),
+	["vendor.repair"] = words("own", "guild", "off"), ["theme.name"] = words("blizzard", "flat", "classic", "ellesmere", "elvui"),
 	["tooltip.counts"] = words("auto", "on", "off"), ["sort.mode"] = words("blizzard", "stacks"),
 }
 

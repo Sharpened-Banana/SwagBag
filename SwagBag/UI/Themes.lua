@@ -5,6 +5,12 @@
 --   "classic" Classic (0.14.5, user request): the original game's dialog windows, a dark stone background
 --            with the gold-trimmed border, gold title and header text, the old empty bag-slot squares.
 --            Only Blizzard's own textures; nothing of Blizzard's frames is restyled.
+--   "ellesmere" Like EllesmereUI (0.18, user request, matched by eye from a screenshot; nothing of EllesmereUI's
+--            is read or copied): a near-black panel with a thin bronze border, gold title and headers, a bronze
+--            line after each header instead of a band, dark slots. Its layout choices (Theme.Layout) give the
+--            bags window a round portrait, a centred title with the slot count, round icon buttons beside the
+--            search box, every section padded to full rows with a "+" drop tile, and the category list inside
+--            the window.
 --   "elvui"  Matches ElvUI: ElvUI's font, flat texture and colours, read from ElvUI itself through
 --            Adapter.ElvUIMedia each time it is applied. Only while ElvUI is loaded; otherwise the
 --            choice is refused with the reason, and a saved "elvui" shows the Blizzard look.
@@ -46,6 +52,29 @@ Theme.Register({
 			fonts = { titleLarge = "GameFontNormalLarge", title = "GameFontNormal", header = "GameFontNormal",
 				label = "GameFontNormal", body = "GameFontHighlightSmall", small = "GameFontHighlightSmall",
 				row = "GameFontHighlightSmall" },
+		}
+	end,
+})
+
+local BRONZE = { 0.55, 0.44, 0.24 }
+
+Theme.Register({
+	id = "ellesmere",
+	name = L.THEME_ELLESMERE,
+	available = function()
+		return true
+	end,
+	palette = function()
+		return {
+			window = { 0.075, 0.07, 0.06, 0.97 }, dialog = { 0.075, 0.07, 0.06, 0.98 },
+			border = { BRONZE[1], BRONZE[2], BRONZE[3], 1 },
+			header = { 0, 0, 0, 0 }, headerLine = { BRONZE[1], BRONZE[2], BRONZE[3], 0.6 },
+			row = { 1, 1, 1, 0.03 }, slot = { 0.11, 0.105, 0.1, 1 },
+			backdrop = Theme.BLANK, edge = { file = Theme.BLANK, size = 2, inset = 2 },
+			fonts = { titleLarge = "GameFontNormalLarge", title = "GameFontNormal", header = "GameFontNormal",
+				label = "GameFontNormal", body = "GameFontHighlightSmall", small = "GameFontHighlightSmall",
+				row = "GameFontHighlightSmall" },
+			layout = { portrait = true, centredTitle = true, iconButtons = true, padSlots = true, insideSidebar = true },
 		}
 	end,
 })

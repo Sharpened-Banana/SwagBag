@@ -10,6 +10,9 @@
 --     afterApply (optional, 0.14.0: runs after each search that applied; the bags window relights a grouped
 --     icon whose hidden stack matches) }
 --   box.editBox, box.Apply(), box.Run(), box.ShowError(text, err), box.ClearError(), box.Clear()
+--   box.errorLine   the message line (an error, or the soft warning); box.onMessage(text) optional, called after
+--                   each change of it (0.18: UI/LookLayout.lua moves it into the title row in the Like EllesmereUI
+--                   look and hides the slot count while it says something)
 local _, SB = ...
 
 local L = SB.L
@@ -45,6 +48,15 @@ local function new(o)
 	measure:SetFontObject(box:GetFontObject())
 	measure:Hide()
 
+	Box.errorLine = errorLine
+
+	-- Tells box.onMessage the line's text after each change.
+	function Box.Message()
+		if Box.onMessage then
+			Box.onMessage(errorLine:GetText() or "")
+		end
+	end
+
 	local function textWidth(text)
 		measure:SetText(text)
 		return measure:GetStringWidth()
@@ -54,6 +66,7 @@ local function new(o)
 	function Box.ClearError()
 		errorLine:SetTextColor(1, 0.82, 0) -- soft yellow: a warning is not an error
 		errorLine:SetText(o.search.lastWarning or "")
+		Box.Message()
 		underline:Hide()
 	end
 
@@ -62,6 +75,7 @@ local function new(o)
 	function Box.ShowError(text, err)
 		errorLine:SetTextColor(1, 0.1, 0.1) -- red, as GameFontRedSmall
 		errorLine:SetText(SB.Query.FormatError(err))
+		Box.Message()
 		local first, last = o.search.ErrorSpan(text, err)
 		if last < first then
 			underline:Hide()
@@ -83,6 +97,7 @@ local function new(o)
 		if matches == nil then
 			errorLine:SetTextColor(1, 0.1, 0.1)
 			errorLine:SetText(L.SEARCH_EVAL_FAILED)
+			Box.Message()
 			underline:Hide()
 		else
 			if o.search.lastError == nil then

@@ -38,6 +38,9 @@
 --   With stack groups, right after a representative's entry each member is a cell entry
 --   { bag, slot, shown = false, stackOf = repKey } with no x or y, and pos.stacks lists the groups:
 --   { { bag, slot, key, members = { { bag, slot } }, shown } } (shown: the representative's).
+--   opts.padRows (0.18, the "Like EllesmereUI" look): every open section but New and Free whose last row is not
+--   full is padded to the row's end: pos.pads = { { section, x, y, plus } } in the empty squares after its
+--   items, the first with plus = true (the "+" drop tile). Pads move nothing: they only fill empty space.
 -- Layout.Moves(oldPos, newPos) -> keys whose button position changes (hover guard, 4.2 #5)
 -- Layout.Apply(state, changes, isBusy, collapsed, areaBusy) -> result   while the window is open
 --   areaBusy() -> true while the mouse is over the items or an item is on the cursor (nil: never).
@@ -317,7 +320,7 @@ function Layout.Position(st, opts, collapsed)
 	collapsed = collapsed or {}
 	local cols, size, gap, pad = opts.columns, opts.size, opts.gap, opts.padding
 	local step = size + gap
-	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {}, stacks = {} }
+	local pos = { cells = {}, byKey = {}, placeholders = {}, headers = {}, tiles = {}, stacks = {}, pads = {} }
 	local y = (opts.top or 0) + pad
 	for _, id in ipairs(opts.order or st.order) do
 		local sec = st.sections[id]
@@ -385,6 +388,12 @@ function Layout.Position(st, opts, collapsed)
 						pos.cells[#pos.cells + 1] = entry
 						pos.byKey[key] = entry
 					end
+				end
+			end
+			if opts.padRows and rows > 0 and id ~= Layout.NEW and id ~= Layout.FREE then
+				for i = slots + 1, rows * cols do
+					pos.pads[#pos.pads + 1] = { section = id, x = pad + ((i - 1) % cols) * step,
+						y = -(y + math.floor((i - 1) / cols) * step), plus = i == slots + 1 }
 				end
 			end
 			if rows > 0 then
